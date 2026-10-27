@@ -3,7 +3,7 @@ extends SceneTree
 func _initialize() -> void:
 	var packer := PCKPacker.new()
 	DirAccess.make_dir_recursive_absolute("res://builds")
-	var result := packer.pck_start("res://builds/ShkyaNovosibirsk.pck")
+	var result := packer.pck_start("res://builds/ShkyaZaKhlebom.pck")
 	if result == OK:
 		result = packer.add_file("res://project.godot", "res://project.godot")
 	if result == OK:
@@ -16,7 +16,7 @@ func _initialize() -> void:
 		push_error("Packaging failed: " + error_string(result))
 		quit(1)
 	else:
-		print("PACK: builds/ShkyaNovosibirsk.pck")
+		print("PACK: builds/ShkyaZaKhlebom.pck")
 		quit()
 
 func _pack_dir(packer: PCKPacker, path: String) -> Error:

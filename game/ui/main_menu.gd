@@ -20,12 +20,12 @@ func _ready() -> void:
 	box.alignment = BoxContainer.ALIGNMENT_CENTER
 	box.add_theme_constant_override("separation", 24)
 	var title := Label.new()
-	title.text = "ШКЯ: НОВОСИБИРСК"
+	title.text = "ШКЯ: ЗА ХЛЕБОМ"
 	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	title.add_theme_font_size_override("font_size", 72)
 	box.add_child(title)
 	var subtitle := Label.new()
-	subtitle.text = "За хлебом"
+	subtitle.text = "Новосибирск"
 	subtitle.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	subtitle.add_theme_font_size_override("font_size", 40)
 	box.add_child(subtitle)
