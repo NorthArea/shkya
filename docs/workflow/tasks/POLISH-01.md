@@ -59,3 +59,10 @@
 
 Проверка: `make test` — SMOKE 10, MISSION 359, GREY01 101, DRIVE01 51, QUEST01 146, AUDIO 15, STUCK 88, ART01 14 (60 и 120 к/с); exit 0 (`builds/checks/polish01/stuck-make-test.log`). STUCK идёт 34,4 с (было около 15 с); отдельный прогон — 35,1 с, 88/88 (`stuck-final.log`).
 
+
+## P4 по звуку (27.10.2026)
+
+- Щелчок кнопок главного меню и паузы: плеер `UiClick` в `main.gd` вне мира, поэтому играет и на паузе. Проверки в `tests/polish01_audio.gd`: «main menu button clicks» и, в окне, «pause menu button clicks while paused».
+- Цикл мотора, каши и фона двора задан в импорте (`edit/loop_mode=2`). `SoundDirector` больше не меняет общие ресурсы во время игры (`_make_loop` удалён). Проверки зацикливания теперь проверяют сам импорт.
+- `assets/README.md`: по строке на каждый из 12 звуковых файлов.
+- Проверка: `make test` — AUDIO 16/16, остальные наборы 0 failures (`builds/checks/polish01/p4-make-test.log`). В окне AUDIO 18/18, предупреждений нет (`menu-click-window.log`).

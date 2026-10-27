@@ -18,7 +18,8 @@ func _run() -> void:
 	main = load("res://game/main.tscn").instantiate()
 	root.add_child(main)
 	await _frames(2)
-	main.start_game()
+	main.menu.start_button.pressed.emit()  # настоящая кнопка меню: щелчок вне мира
+	check(main.ui_click.playing and main.ui_click.stream == main.UI_CLICK, "main menu button clicks")
 	await _frames(10)
 	var world: DemoWorld = main.world
 	var sound = world.get_node("SoundDirector")
@@ -97,6 +98,10 @@ func _run() -> void:
 	if advanced <= 0.0:
 		print("NOT_RUN: audio playback does not advance with this audio driver; pause check needs a real device")
 	else:
+		main.set_paused(true)
+		main.ui_click.stop()
+		(main.pause_menu.find_children("*", "Button", true, false)[0] as Button).pressed.emit()
+		check(main.ui_click.playing, "pause menu button clicks while paused")
 		main.set_paused(true)
 		var paused_at: float = sound.ambience.get_playback_position()
 		await _frames(30)

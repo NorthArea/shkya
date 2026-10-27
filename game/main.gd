@@ -6,10 +6,13 @@ const InputSetup = preload("res://game/input_setup.gd")
 const WorldScene = preload("res://game/world/demo_world.tscn")
 const MainMenu = preload("res://game/ui/main_menu.gd")
 const PauseMenu = preload("res://game/ui/pause_menu.gd")
+const UI_CLICK := preload("res://assets/audio/ui_click.wav")
 
 var world: DemoWorld
 var menu: CanvasLayer
 var pause_menu: CanvasLayer
+## Щелчок кнопок меню и паузы (POLISH-01): плеер вне мира, играет и на паузе.
+var ui_click: AudioStreamPlayer
 
 func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
@@ -26,6 +29,14 @@ func _ready() -> void:
 	pause_menu.restart_requested.connect(start_game)
 	pause_menu.menu_requested.connect(return_to_menu)
 	add_child(pause_menu)
+	ui_click = AudioStreamPlayer.new()
+	ui_click.name = "UiClick"
+	ui_click.stream = UI_CLICK
+	ui_click.volume_db = -6.0
+	add_child(ui_click)
+	for layer in [menu, pause_menu]:
+		for button in layer.find_children("*", "Button", true, false):
+			button.pressed.connect(ui_click.play)
 
 ## Смена мира откладывается до конца кадра: её можно вызвать из сигнала самого мира
 ## (кнопка на панели финала, физический callback) без освобождения узла посреди обработки.

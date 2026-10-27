@@ -2,6 +2,7 @@ extends Node
 ## SoundDirector (POLISH-01): шаги по снегу, мотор и каша под колёсами «Лады», двери, интерфейс, звон хлеба,
 ## финал и фон двора. Только слушает мир, машину, миссию и диалоги — ничем не управляет.
 ## Звуки синтезированы tools/generate_audio.py (собственная генерация, см. assets/README.md).
+## Мотор, каша и фон двора зациклены при импорте (`edit/loop_mode=2` в .import).
 
 const STEP_DISTANCE := 0.75
 const STEPS: Array[AudioStream] = [
@@ -38,8 +39,6 @@ func _ready() -> void:
 	world.ready.connect(_setup, CONNECT_ONE_SHOT)
 
 func _setup() -> void:
-	for stream in [ENGINE, SKID, AMBIENCE]:
-		_make_loop(stream)
 	step_player = _player_3d(world.player, -6.0)
 	engine = _player_3d(world.car, -4.0, ENGINE)
 	skid = _player_3d(world.car, -80.0, SKID)
@@ -116,10 +115,3 @@ func _one_shot(player: Node, stream: AudioStream, key: String) -> void:
 	player.stream = stream
 	player.play()
 	played[key] += 1
-
-func _make_loop(stream: AudioStreamWAV) -> void:
-	if stream.loop_mode == AudioStreamWAV.LOOP_FORWARD:
-		return
-	stream.loop_mode = AudioStreamWAV.LOOP_FORWARD
-	stream.loop_begin = 0
-	stream.loop_end = int(stream.get_length() * stream.mix_rate)
