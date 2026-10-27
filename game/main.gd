@@ -44,7 +44,8 @@ func set_paused(paused: bool) -> void:
 	get_tree().paused = paused
 	pause_menu.visible = paused
 	if world:
-		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE if paused else Input.MOUSE_MODE_CAPTURED
+		var free_mouse := paused or world.ui_blocking
+		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE if free_mouse else Input.MOUSE_MODE_CAPTURED
 
 func _unhandled_input(event: InputEvent) -> void:
 	if not world:
@@ -52,7 +53,7 @@ func _unhandled_input(event: InputEvent) -> void:
 	if event.is_action_pressed(&"pause"):
 		set_paused(not get_tree().paused)
 		get_viewport().set_input_as_handled()
-	elif event is InputEventMouseButton and event.pressed and not get_tree().paused:
+	elif event is InputEventMouseButton and event.pressed and not get_tree().paused and not world.ui_blocking:
 		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 
 func _free_world() -> void:

@@ -6,6 +6,8 @@ extends Node3D
 const Layout = preload("res://game/world/layout.gd")
 
 var control_mode: StringName = &"on_foot"
+## true, пока открыт диалог или панель: мышь видна и не захватывается по клику (выставляет QuestFlow).
+var ui_blocking := false
 
 @onready var player: Ilyusha = $Ilyusha
 @onready var camera_rig: CameraRig = $CameraRig
@@ -62,6 +64,6 @@ func get_hud_state() -> Dictionary:
 		"target_position": null if target_id == &"" else anchor_position(target_id),
 		"babka_marker": mission.babka_marker(),
 		"speed_kmh": -1.0,
-		"toast": "",
+		"toast": $QuestFlow.toast_text(),
 		"complete": mission.state == MissionDirector.COMPLETE,
 	}
