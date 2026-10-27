@@ -1,4 +1,4 @@
-[gd_scene load_steps=12 format=3]
+[gd_scene load_steps=13 format=3]
 
 [ext_resource type="Script" path="res://game/world/demo_world.gd" id="1_world"]
 [ext_resource type="Script" path="res://game/world/level_geometry.gd" id="2_geometry"]
@@ -11,6 +11,7 @@
 [ext_resource type="Script" path="res://game/mission/mission_director.gd" id="9_mission"]
 [ext_resource type="Script" path="res://game/ui/game_hud.gd" id="10_hud"]
 [ext_resource type="Script" path="res://game/mission/quest_flow.gd" id="11_quest"]
+[ext_resource type="Script" path="res://game/audio/sound_director.gd" id="12_sound"]
 
 [node name="DemoWorld" type="Node3D"]
 script = ExtResource("1_world")
@@ -54,3 +55,6 @@ script = ExtResource("10_hud")
 
 [node name="QuestFlow" type="Node" parent="."]
 script = ExtResource("11_quest")
+
+[node name="SoundDirector" type="Node" parent="."]
+script = ExtResource("12_sound")
