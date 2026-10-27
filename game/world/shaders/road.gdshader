@@ -25,15 +25,18 @@ void fragment() {
 	float across = along_x > 0.5 ? world_pos.z - center.y : world_pos.x - center.x;
 	float along = along_x > 0.5 ? world_pos.x : world_pos.z;
 	float half_w = width * 0.5;
-	// Колеи: по две на каждую полосу.
+	// Колеи: по две на каждую полосу, слегка виляют. Между ними — серая каша, чтобы пары следов
+	// читались издалека (ревью ART-02: раньше колеи сливались в тёмные пятна).
 	float lane = abs(across) - half_w * 0.5;
-	float track = 1.0 - smoothstep(0.25, 0.45, abs(abs(lane) - 0.8));
 	float wobble = noise(vec2(along * 0.15, across * 0.5));
+	float sway = (noise(vec2(along * 0.08, sign(across) * 3.0)) - 0.5) * 0.35;
+	float track = 1.0 - smoothstep(0.22, 0.42, abs(abs(lane + sway) - 0.8));
 	// Каша: между колеями, по оси и у бордюров.
 	float edge = smoothstep(half_w - 2.2, half_w - 0.6, abs(across));
 	float mid = 1.0 - smoothstep(0.3, 1.2, abs(across));
-	float slushiness = clamp(max(edge, mid * 0.7) + (1.0 - track) * 0.35 * wobble - track * 0.8, 0.0, 1.0);
-	slushiness *= smoothstep(0.25, 0.6, noise(vec2(along * 0.6, across * 1.7)) + edge * 0.5);
+	float between = (1.0 - track) * mix(0.3, 0.62, noise(vec2(along * 0.6, across * 1.7)));
+	float slushiness = clamp(max(max(edge, mid * 0.8), between) - track * 0.9, 0.0, 1.0);
+	slushiness *= mix(0.75, 1.0, wobble);
 	vec3 color = mix(asphalt, slush, slushiness);
 	ALBEDO = color;
 	ROUGHNESS = mix(0.08, 0.75, slushiness);   // мокрые колеи отражают фонари
