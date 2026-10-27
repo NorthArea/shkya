@@ -29,3 +29,11 @@
 7. Тело внутри `KioskZone` определяется (для пешехода и для тела на слое Car).
 
 Проверка: `tests/grey01_acceptance.gd` в `make test` (headless, настоящий `main.tscn` и ввод через `Input`), лог `builds/checks/grey01/`. Кадры двора, выезда, улицы и киоска — `make capture` в `builds/screenshots/grey01/`, сверка масштаба с кадрами 01, 04–06. Независимое ревью кода и сценариев до `done`.
+
+## Реализация
+
+Исполнитель root, 27.10.2026. Файлы: `game/main.gd`, `game/world/` (`demo_world.tscn/.gd`, `layout.gd`, `greybox.gd`, `level_geometry.gd`, `lighting.gd`, `kiosk_zone.gd`), `game/player/ilyusha.tscn/.gd`, `game/camera/camera_rig.gd`, `game/interaction/interactable.gd`, `game/npc/npc.gd`, `game/vehicles/car_placeholder.gd`, `game/ui/` (`main_menu.gd`, `pause_menu.gd`, `game_hud.gd`), `tests/grey01_acceptance.gd`, `tools/capture.gd`, `Makefile` (`test`, `capture`). Внутренности узлов строятся кодом из `Layout`; сцены держат только именованные узлы раздела 7 канона.
+
+Раскладка (`layout.gd`): карта 200×250 м; двор на юго-западе (подъезд с козырьком и лампой, Бабка у двери, «Лада» справа от Илюши, как на кадре 01), выезд на северо-восток, улица A с запада на восток, улица B с юга на север, киоск «ХЛЕБ» у гаражей с площадкой `KIOSK_ZONE` 16×20 м. Маршрут машины 268,6 м. Мир уже читает `MissionDirector` (задача, маркер, подсказки C3); команды миссии не подключены — это QUEST-01.
+
+Разработческая проверка: `make test` — smoke 10/10, MISSION 359/359, **GREY01 90/90**, exit 0, без ERROR/WARNING и утечек. Пеший маршрут `route_walk` настоящим вводом — 57,5 с. Лог `builds/checks/grey01/make-test.log`. Кадры `make capture` → `builds/screenshots/grey01/` (меню, 01, 04, 05 ×3, 06, вид сверху): кириллица HUD читается, двор/выезд/улицы/киоск соответствуют раскладке. Это авторская проверка; независимое ревью ниже.

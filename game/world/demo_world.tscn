@@ -1,0 +1,52 @@
+[gd_scene load_steps=11 format=3]
+
+[ext_resource type="Script" path="res://game/world/demo_world.gd" id="1_world"]
+[ext_resource type="Script" path="res://game/world/level_geometry.gd" id="2_geometry"]
+[ext_resource type="Script" path="res://game/world/lighting.gd" id="3_lighting"]
+[ext_resource type="PackedScene" path="res://game/player/ilyusha.tscn" id="4_ilyusha"]
+[ext_resource type="Script" path="res://game/vehicles/car_placeholder.gd" id="5_car"]
+[ext_resource type="Script" path="res://game/npc/npc.gd" id="6_npc"]
+[ext_resource type="Script" path="res://game/world/kiosk_zone.gd" id="7_kiosk"]
+[ext_resource type="Script" path="res://game/camera/camera_rig.gd" id="8_camera"]
+[ext_resource type="Script" path="res://game/mission/mission_director.gd" id="9_mission"]
+[ext_resource type="Script" path="res://game/ui/game_hud.gd" id="10_hud"]
+
+[node name="DemoWorld" type="Node3D"]
+script = ExtResource("1_world")
+
+[node name="LevelGeometry" type="Node3D" parent="."]
+script = ExtResource("2_geometry")
+
+[node name="LightingAndWeather" type="Node3D" parent="."]
+script = ExtResource("3_lighting")
+
+[node name="Ilyusha" parent="." instance=ExtResource("4_ilyusha")]
+
+[node name="Car" type="StaticBody3D" parent="."]
+script = ExtResource("5_car")
+
+[node name="Babka" type="Node3D" parent="."]
+script = ExtResource("6_npc")
+interaction_id = &"babka"
+
+[node name="Vendor" type="Node3D" parent="."]
+script = ExtResource("6_npc")
+interaction_id = &"vendor"
+body_color = Color(0.55, 0.35, 0.30, 1)
+head_color = Color(0.95, 0.80, 0.70, 1)
+head_radius = 0.3
+hat_color = Color(0.45, 0.30, 0.25, 1)
+solid = false
+interact_radius = 2.0
+
+[node name="KioskZone" type="Area3D" parent="."]
+script = ExtResource("7_kiosk")
+
+[node name="CameraRig" type="Node3D" parent="."]
+script = ExtResource("8_camera")
+
+[node name="MissionDirector" type="Node" parent="."]
+script = ExtResource("9_mission")
+
+[node name="GameHUD" type="CanvasLayer" parent="."]
+script = ExtResource("10_hud")

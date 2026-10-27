@@ -1,0 +1,307 @@
+extends SceneTree
+## GREY-01: настоящий main.tscn, мир из Layout, ввод через Input. Критерии — карточка GREY-01.
+
+const Layout = preload("res://game/world/layout.gd")
+
+var failures: Array[String] = []
+var checks := 0
+var main: Node
+
+func _initialize() -> void:
+	call_deferred("_run")
+
+func _run() -> void:
+	create_timer(600.0, true, false, true).timeout.connect(func():
+		push_error("FAIL: grey01 exceeded 600 simulated seconds")
+		quit(2)
+	)
+	main = load("res://game/main.tscn").instantiate()
+	root.add_child(main)
+	await _frames(2)
+	check(main.menu.visible and main.world == null, "menu shown on launch, no world yet")
+	main.menu.start_button.pressed.emit()
+	await _frames(10)
+	var world: DemoWorld = main.world
+	check(world != null and not main.menu.visible, "НАЧАТЬ creates DemoWorld and hides menu")
+	if world == null:
+		_finish()
+		return
+	for name in ["LevelGeometry", "LightingAndWeather", "Ilyusha", "Car", "Babka", "Vendor", "KioskZone", "CameraRig", "MissionDirector", "GameHUD"]:
+		check(world.has_node(name), "DemoWorld has %s (canon §7)" % name)
+	_check_layout(world)
+	await _check_spawn_and_hud(world)
+	await _check_camera_relative(world)
+	await _check_walls(world)
+	await _check_interaction(world)
+	await _check_kiosk_zone(world)
+	await _check_route(world)
+	await _check_pause(world)
+	await _check_restart(world)
+	_finish()
+
+# --- критерий 2: раскладка ---
+
+func _check_layout(world: DemoWorld) -> void:
+	var b := Layout.BOUNDS
+	var outside := []
+	for body in world.get_node("LevelGeometry").get_children():
+		if not body is StaticBody3D or body.name.begins_with("Bound_") or body.name == "Ground":
+			continue
+		var shape: BoxShape3D = body.get_child(0).shape
+		var lo: Vector3 = body.position - shape.size * 0.5
+		var hi: Vector3 = body.position + shape.size * 0.5
+		if lo.x < b.position.x or hi.x > b.end.x or lo.z < b.position.y or hi.z > b.end.y or lo.y < -0.001:
+			outside.append(body.name)
+	check(outside.is_empty(), "all solids inside 200x250 bounds and on the ground %s" % [outside])
+	check(is_equal_approx(b.size.x, 200.0) and is_equal_approx(b.size.y, 250.0), "map is 200x250 m")
+	var points := {"spawn": Layout.SPAWN, "babka": Layout.BABKA, "car": Layout.CAR_SPAWN, "window": Layout.VENDOR_WINDOW}
+	for i in Layout.ROUTE_WALK.size():
+		points["walk%d" % i] = Layout.ROUTE_WALK[i]
+	for i in Layout.ROUTE_DRIVE.size():
+		points["drive%d" % i] = Layout.ROUTE_DRIVE[i]
+	for key in points:
+		var p: Vector3 = points[key]
+		check(b.has_point(Vector2(p.x, p.z)) and is_zero_approx(p.y), "point %s inside bounds at ground level" % key)
+		var hit := _solid_at(p, 0.5)
+		check(hit == "", "point %s is not inside solid %s" % [key, hit])
+	check(Layout.KIOSK_ZONE.has_point(Layout.VENDOR_WINDOW + Vector3.UP), "vendor window is inside kiosk zone")
+	check(Layout.KIOSK_ZONE.has_point(Layout.ROUTE_DRIVE[-1] + Vector3.UP), "drive route ends inside kiosk zone")
+	var drive := 0.0
+	for i in range(1, Layout.ROUTE_DRIVE.size()):
+		drive += Layout.ROUTE_DRIVE[i].distance_to(Layout.ROUTE_DRIVE[i - 1])
+	print("INFO: drive route length %.1f m" % drive)
+	check(drive >= 150.0 and drive <= 300.0, "drive yard→kiosk is a trip, not a chore (%.0f m)" % drive)
+
+func _solid_at(p: Vector3, margin: float) -> String:
+	for spec in Layout.SOLIDS:
+		var xz: Vector2 = spec[2]
+		var size: Vector3 = spec[3]
+		if absf(p.x - xz.x) < size.x * 0.5 + margin and absf(p.z - xz.y) < size.z * 0.5 + margin:
+			return spec[0]
+	return ""
+
+# --- появление и HUD ---
+
+func _check_spawn_and_hud(world: DemoWorld) -> void:
+	var player := world.player
+	check(player.global_position.distance_to(Layout.SPAWN) < 0.3, "Ilyusha spawns at Layout.SPAWN")
+	check(player.is_on_floor(), "Ilyusha stands on the ground")
+	check(world.camera_rig.camera.current, "CameraRig camera is current")
+	var hud := world.get_hud_state()
+	check(hud["title"] == "НОВОСИБИРСК" and hud["task"] == "Подойди к Бабке", "HUD objective of frame 01: %s / %s" % [hud["title"], hud["task"]])
+	check(hud["target_position"] is Vector3 and hud["target_position"].distance_to(Layout.BABKA) < 0.01, "HUD target is Babka")
+	check(hud["babka_marker"] == "!", "babka marker is ! before the quest")
+	check(hud["prompt"] == "", "no E prompt at spawn (Babka is %.1f m away)" % Layout.SPAWN.distance_to(Layout.BABKA))
+	check(hud["speed_kmh"] < 0.0, "no speed on foot")
+	var labels = world.get_node("GameHUD")
+	check(labels.title_label.text == "НОВОСИБИРСК" and labels.task_label.text.ends_with("Подойди к Бабке"), "GameHUD shows the objective")
+
+# --- критерий 5: ходьба относительно камеры ---
+
+func _check_camera_relative(world: DemoWorld) -> void:
+	var player := world.player
+	for case in [[PI * 0.5, Vector3.LEFT, "west"], [0.0, Vector3.FORWARD, "north"]]:
+		player.place(Layout.SPAWN, 0.0)
+		world.camera_rig.yaw = case[0]
+		await _frames(2)
+		var start := player.global_position
+		Input.action_press(&"move_forward")
+		await _frames(40)
+		Input.action_release(&"move_forward")
+		await _frames(10)
+		var moved := player.global_position - start
+		moved.y = 0.0
+		var along := moved.dot(case[1])
+		check(along > 2.0 and moved.length() - along < 0.3, "W with camera yaw %s walks %s (moved %s)" % [case[0], case[2], moved])
+
+# --- критерий 4: стены и сугробы ---
+
+func _check_walls(world: DemoWorld) -> void:
+	var player := world.player
+	var cases := [
+		# старт, yaw камеры, ось, граница, знак: игрок должен остаться по эту сторону
+		[Vector3(-51, 0, 62), 0.0, "z", 58.0 + 0.3, 1.0, "H3 wall"],
+		[Vector3(-70, 0, 80), PI * 0.5, "x", -73.5 + 0.3, 1.0, "yard snow bank"],
+		[Vector3(-95, 0, 32), PI * 0.5, "x", -100.0 + 0.3, 1.0, "map edge"],
+	]
+	for case in cases:
+		player.place(case[0], 0.0)
+		world.camera_rig.yaw = case[1]
+		await _frames(2)
+		Input.action_press(&"move_forward")
+		await _frames(150)
+		Input.action_release(&"move_forward")
+		await _frames(5)
+		var value: float = player.global_position.x if case[2] == "x" else player.global_position.z
+		check((value - case[3]) * case[4] >= 0.0, "%s blocks walking (%s=%.2f, limit %.2f)" % [case[5], case[2], value, case[3]])
+
+# --- критерий 6: подсказки и E ---
+
+func _check_interaction(world: DemoWorld) -> void:
+	var player := world.player
+	var mission := world.mission
+	var counts := {"babka": 0, "vendor": 0}
+	world.babka.interactable.interacted.connect(func(_a): counts["babka"] += 1)
+	world.vendor.interactable.interacted.connect(func(_a): counts["vendor"] += 1)
+	player.place(Layout.BABKA + Vector3(0, 0, -2.2), 0.0)
+	await _frames(4)
+	check(world.get_hud_state()["prompt"] == "E — ПОГОВОРИТЬ", "E prompt next to Babka: '%s'" % world.get_hud_state()["prompt"])
+	await _press_interact()
+	check(counts["babka"] == 1 and counts["vendor"] == 0, "E next to Babka fires Babka interaction once (%s)" % [counts])
+	player.place(Layout.VENDOR_WINDOW, 0.0)
+	await _frames(4)
+	check(world.get_hud_state()["prompt"] == "", "vendor has no prompt before BUY_BREAD")
+	await _press_interact()
+	check(counts["vendor"] == 0, "E at the kiosk does nothing before BUY_BREAD")
+	mission.interact(&"babka")
+	mission.accept()
+	mission.notify_entered_car()
+	mission.notify_arrived_kiosk()
+	check(mission.state == MissionDirector.BUY_BREAD, "mission driven to BUY_BREAD through its API")
+	await _frames(2)
+	check(world.get_hud_state()["prompt"] == "E — ПОГОВОРИТЬ", "vendor prompt in BUY_BREAD")
+	await _press_interact()
+	check(counts["vendor"] == 1, "E at the kiosk window fires vendor interaction")
+	player.place(Layout.SPAWN, 0.0)
+	await _frames(4)
+	check(world.get_hud_state()["prompt"] == "", "prompt disappears away from interactables")
+	await _press_interact()
+	check(counts["babka"] == 1 and counts["vendor"] == 1, "E far from everyone does nothing")
+
+func _press_interact() -> void:
+	var down := InputEventAction.new()
+	down.action = &"interact"
+	down.pressed = true
+	Input.parse_input_event(down)
+	await _frames(2)
+	var up := InputEventAction.new()
+	up.action = &"interact"
+	up.pressed = false
+	Input.parse_input_event(up)
+	await _frames(2)
+
+# --- критерий 7: зона киоска ---
+
+func _check_kiosk_zone(world: DemoWorld) -> void:
+	var zone = world.kiosk_zone
+	world.player.place(Layout.VENDOR_WINDOW, 0.0)
+	await _frames(3)
+	check(zone.is_occupied(), "KioskZone sees Ilyusha on foot")
+	world.player.place(Layout.SPAWN, 0.0)
+	await _frames(3)
+	check(not zone.is_occupied(), "KioskZone is empty when Ilyusha leaves")
+	var probe := CharacterBody3D.new()
+	probe.collision_layer = 4
+	probe.collision_mask = 0
+	var shape := CollisionShape3D.new()
+	var box := BoxShape3D.new()
+	box.size = Vector3(1.7, 1.4, 4.1)
+	shape.shape = box
+	probe.add_child(shape)
+	probe.position = Layout.ROUTE_DRIVE[-1] + Vector3(0, 0.7, 0)
+	world.add_child(probe)
+	await _frames(3)
+	check(zone.is_occupied(), "KioskZone sees a body on the Car layer")
+	probe.queue_free()
+	await _frames(3)
+
+# --- критерий 3: маршрут пешком настоящим вводом ---
+
+func _check_route(world: DemoWorld) -> void:
+	var player := world.player
+	player.place(Layout.ROUTE_WALK[0], 0.0)
+	await _frames(2)
+	var start_frame := Engine.get_physics_frames()
+	var ok := true
+	for i in range(1, Layout.ROUTE_WALK.size()):
+		if not await _walk_to(world, Layout.ROUTE_WALK[i]):
+			ok = false
+			check(false, "walk route reaches point %d %s (stuck at %s)" % [i, Layout.ROUTE_WALK[i], player.global_position])
+			break
+	Input.action_release(&"move_forward")
+	var seconds := (Engine.get_physics_frames() - start_frame) / 60.0
+	print("INFO: walk spawn→kiosk %.1f s" % seconds)
+	check(ok, "Ilyusha walks spawn → kiosk window by real input in %.1f s" % seconds)
+	check(ok and player.is_on_floor(), "Ilyusha is on the ground at the kiosk")
+
+func _walk_to(world: DemoWorld, target: Vector3) -> bool:
+	var player := world.player
+	var best := INF
+	var stalled := 0
+	Input.action_press(&"move_forward")
+	while true:
+		var delta := target - player.global_position
+		delta.y = 0.0
+		var distance := delta.length()
+		if distance < 0.8:
+			return true
+		world.camera_rig.yaw = atan2(-delta.x, -delta.z)
+		await physics_frame
+		if distance < best - 0.05:
+			best = distance
+			stalled = 0
+		else:
+			stalled += 1
+			if stalled > 90:
+				Input.action_release(&"move_forward")
+				return false
+	return false
+
+# --- пауза и перезапуск ---
+
+func _check_pause(world: DemoWorld) -> void:
+	world.player.place(Layout.SPAWN, 0.0)
+	world.camera_rig.yaw = 0.0
+	await _frames(3)
+	var pause := InputEventAction.new()
+	pause.action = &"pause"
+	pause.pressed = true
+	Input.parse_input_event(pause)
+	await _frames(2)
+	check(paused and main.pause_menu.visible, "Esc pauses the game and shows the pause menu")
+	var before := world.player.global_position
+	Input.action_press(&"move_forward")
+	await _frames(30)
+	Input.action_release(&"move_forward")
+	check(world.player.global_position.distance_to(before) < 0.01, "Ilyusha does not move while paused")
+	main.pause_menu.resume_requested.emit()
+	await _frames(2)
+	check(not paused and not main.pause_menu.visible, "ПРОДОЛЖИТЬ resumes")
+
+func _check_restart(old_world: DemoWorld) -> void:
+	main.set_paused(true)
+	main.pause_menu.restart_requested.emit()
+	await _frames(5)
+	var world: DemoWorld = main.world
+	check(not is_instance_valid(old_world), "НАЧАТЬ ЗАНОВО frees the old world")
+	check(world != null and world.mission.state == MissionDirector.NOT_STARTED, "restart begins at NOT_STARTED")
+	check(world != null and world.player.global_position.distance_to(Layout.SPAWN) < 0.3, "restart puts Ilyusha at spawn")
+	check(not paused and not main.pause_menu.visible, "restart unpauses")
+	main.set_paused(true)
+	main.pause_menu.menu_requested.emit()
+	await _frames(3)
+	check(main.world == null and main.menu.visible and not paused, "В ГЛАВНОЕ МЕНЮ returns to the menu")
+	main.menu.start_button.pressed.emit()
+	await _frames(5)
+	check(main.world != null and main.world.mission.state == MissionDirector.NOT_STARTED, "start from menu again begins at NOT_STARTED")
+
+# --- служебное ---
+
+func _frames(count: int) -> void:
+	for i in count:
+		await physics_frame
+
+func check(condition: bool, label: String) -> void:
+	checks += 1
+	if condition:
+		print("PASS: ", label)
+	else:
+		failures.append(label)
+		push_error("FAIL: " + label)
+
+func _finish() -> void:
+	print("GREY01: %d checks, %d failures" % [checks, failures.size()])
+	if is_instance_valid(main):
+		main.queue_free()
+	await process_frame
+	quit(0 if failures.is_empty() else 1)

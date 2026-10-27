@@ -1,0 +1,106 @@
+class_name Ilyusha
+extends CharacterBody3D
+## Илюша пешком: ходьба относительно камеры, взаимодействие по E (C3).
+## Visual — заглушка greybox; облик ШКЯ в зимнем костюме делает ART-01.
+
+const Greybox = preload("res://game/world/greybox.gd")
+
+const WALK_SPEED := 4.5
+const ACCELERATION := 30.0
+const TURN_RATE := 12.0
+const PROBE_RADIUS := 0.5
+
+var input_enabled := true
+var camera_rig: CameraRig
+var visual: Node3D
+var probe: Area3D
+
+func _ready() -> void:
+	collision_layer = 2       # Player
+	collision_mask = 1 | 4    # World, Car
+	floor_snap_length = 0.3
+	var capsule := CapsuleShape3D.new()
+	capsule.radius = 0.35
+	capsule.height = 1.5
+	var collider := CollisionShape3D.new()
+	collider.name = "CollisionShape3D"
+	collider.shape = capsule
+	collider.position.y = 0.75
+	add_child(collider)
+	visual = _build_placeholder_visual()
+	add_child(visual)
+	probe = Area3D.new()
+	probe.name = "InteractProbe"
+	probe.collision_layer = 0
+	probe.collision_mask = 8  # Interact
+	probe.monitorable = false
+	var sphere := SphereShape3D.new()
+	sphere.radius = PROBE_RADIUS
+	var probe_shape := CollisionShape3D.new()
+	probe_shape.shape = sphere
+	probe_shape.position.y = 0.9
+	probe.add_child(probe_shape)
+	add_child(probe)
+
+func _physics_process(delta: float) -> void:
+	var input := Vector2.ZERO
+	if input_enabled:
+		input = Input.get_vector(&"move_left", &"move_right", &"move_forward", &"move_back")
+	var yaw := camera_rig.yaw if camera_rig else 0.0
+	var direction := Vector3(input.x, 0.0, input.y).rotated(Vector3.UP, yaw)
+	var horizontal := Vector3(velocity.x, 0.0, velocity.z).move_toward(direction * WALK_SPEED, ACCELERATION * delta)
+	velocity.x = horizontal.x
+	velocity.z = horizontal.z
+	if is_on_floor():
+		velocity.y = 0.0
+	else:
+		velocity.y -= get_gravity().length() * delta
+	move_and_slide()
+	if direction.length_squared() > 0.01:
+		var facing := atan2(-direction.x, -direction.z)
+		visual.rotation.y = lerp_angle(visual.rotation.y, facing, clampf(TURN_RATE * delta, 0.0, 1.0))
+
+func _unhandled_input(event: InputEvent) -> void:
+	if input_enabled and event.is_action_pressed(&"interact"):
+		var target := current_interactable()
+		if target:
+			get_viewport().set_input_as_handled()
+			target.interact(self)
+
+## Ближайшая доступная зона взаимодействия, в которой стоит Илюша.
+func current_interactable() -> Interactable:
+	if not input_enabled:
+		return null
+	var best: Interactable = null
+	var best_distance := INF
+	for area in probe.get_overlapping_areas():
+		if area is Interactable and area.enabled and area.prompt != "":
+			var distance := global_position.distance_squared_to(area.global_position)
+			if distance < best_distance:
+				best = area
+				best_distance = distance
+	return best
+
+## Поставить на точку и остановить (появление, перезапуск, выход из машины).
+func place(point: Vector3, facing_yaw: float) -> void:
+	global_position = point
+	velocity = Vector3.ZERO
+	visual.rotation.y = facing_yaw
+
+func _build_placeholder_visual() -> Node3D:
+	var root := Node3D.new()
+	root.name = "Visual"
+	var parts := [
+		[Greybox.mesh_box(Vector3(0.5, 0.5, 0.35), Color(0.10, 0.35, 0.15)), Vector3(0, 0.25, 0)],   # брюки
+		[Greybox.mesh_capsule(0.36, 0.9, Color(0.62, 0.95, 0.10)), Vector3(0, 0.85, 0)],             # пуховик
+		[Greybox.mesh_cylinder(0.3, 0.38, 0.12, Color(0.95, 0.95, 0.95)), Vector3(0, 1.2, 0)],        # воротник
+		[Greybox.mesh_sphere(0.38, Color(0.98, 0.62, 0.72)), Vector3(0, 1.55, 0)],                   # голова
+		[Greybox.mesh_capsule(0.08, 0.35, Color(0.98, 0.62, 0.72)), Vector3(0, 1.6, -0.42)],         # нос
+		[Greybox.mesh_cylinder(0.0, 0.16, 0.3, Color(1.0, 0.85, 0.15)), Vector3(0, 2.0, 0.02)],       # завиток
+	]
+	for part in parts:
+		var mesh: MeshInstance3D = part[0]
+		mesh.position = part[1]
+		root.add_child(mesh)
+	root.get_child(4).rotation.x = deg_to_rad(-70.0)  # нос вперёд и чуть вверх
+	return root

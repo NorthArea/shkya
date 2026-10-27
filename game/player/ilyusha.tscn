@@ -1,0 +1,6 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://game/player/ilyusha.gd" id="1_ilyusha"]
+
+[node name="Ilyusha" type="CharacterBody3D"]
+script = ExtResource("1_ilyusha")
