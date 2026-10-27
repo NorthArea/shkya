@@ -108,7 +108,7 @@ def scallops(svg: Svg, points: list[tuple[float, float]], r: float, fill: str) -
 
 
 def frill_band(svg: Svg, cx: float, cy: float, rx: float, ry: float, a0: float, a1: float, n: int,
-               depth: float = 12.0) -> None:
+               depth: float = 12.0, width: float = LINE * 0.7) -> None:
     """Кружевная лента: ровный верхний край по дуге, нижний — фестонами (оборка шапки Бабки)."""
     top = arc_points(cx, cy - depth, rx, ry, a0, a1, n)
     low = arc_points(cx, cy, rx, ry, a0, a1, n)
@@ -120,7 +120,7 @@ def frill_band(svg: Svg, cx: float, cy: float, rx: float, ry: float, a0: float, 
         mx, my = (x0 + x1) / 2, (y0 + y1) / 2 + depth * 0.9
         d += f" Q{mx:.1f},{my:.1f} {x0:.1f},{y0:.1f}"
     d += " Z"
-    svg.path(d, LACE, INK, LINE * 0.7)
+    svg.path(d, LACE, INK, width)
 
 
 def arc_points(cx: float, cy: float, rx: float, ry: float, a0: float, a1: float, n: int) -> list[tuple[float, float]]:
@@ -359,7 +359,8 @@ def soft_shape(svg: Svg, d: str, fill: str, spots: list[tuple],
     svg.path(d, "none", INK, width)
 
 
-def jabot(svg: Svg, cx: float, top: float, bottom: float, half: float, n: int, depth: float) -> None:
+def jabot(svg: Svg, cx: float, top: float, bottom: float, half: float, n: int, depth: float,
+          width: float = LINE * 0.7) -> None:
     """Воротник-жабо одной лентой: боковины поднимаются за брылями, наружный край — фестоны."""
     outer = []
     for i in range(n + 1):
@@ -374,7 +375,7 @@ def jabot(svg: Svg, cx: float, top: float, bottom: float, half: float, n: int, d
         d += f" Q{mx + nx * k:.1f},{my + ny * k:.1f} {x1:.1f},{y1:.1f}"
     inner = half - depth * 1.2
     d += f" C{cx + inner:.1f},{bottom - 8:.1f} {cx - inner:.1f},{bottom - 8:.1f} {outer[0][0]:.1f},{outer[0][1]:.1f} Z"
-    svg.path(d, LACE, INK, LINE * 0.7)
+    svg.path(d, LACE, INK, width)
 
 
 def cuff_and_hand(svg: Svg, x: float, y: float, side: int, fingers: bool = True) -> None:
@@ -482,7 +483,7 @@ def babka(view: str) -> str:
         svg.path("M70,290 C62,330 60,360 62,385 M330,290 C338,330 340,360 338,385", width=FACE * 1.2)
         babka_hand(svg, 58, 408, -1)
         babka_hand(svg, 342, 408, 1)
-        jabot(svg, 200, 200, 252, 99, 14, 10)
+        jabot(svg, 200, 200, 266, 99, 14, 10, FACE)  # белого под подбородком ≈0,11 высоты лица (сверка v6)
         with svg.group("rotate(-4 200 120)"):
             soft_shape(svg, CAP_FRONT, B_HAT, [(176, 78, 50, 26, B_HAT_LIGHT)], LINE * 0.7)
         for x, s in ((122, -1), (278, 1)):
@@ -501,16 +502,18 @@ def babka(view: str) -> str:
                 d += f" L{x:.1f},{y + 4:.1f}"
             svg.path(d + " Z", LACE, INK, FACE)
         for x in (176, 224):
-            svg.path(f"M{x - 6},133 Q{x},129 {x + 6},133 Q{x},137 {x - 6},133 Z", "#FFFFFF", INK, FACE * 0.8)
-            svg.ellipse(x + 1.5, 133, 2.0, 2.0, INK, None)
-            svg.path(f"M{x - 6},139 Q{x},142 {x + 6},139", width=FACE * 0.7)
-        svg.path("M194,138 C193,152 194,158 200,158 C206,158 207,152 206,138", width=FACE)
-        svg.path("M188,150 C182,164 178,176 176,188 M212,150 C218,164 222,176 224,188", width=FACE)
+            svg.path(f"M{x - 6},146 Q{x},142 {x + 6},146 Q{x},150 {x - 6},146 Z", "#FFFFFF", INK, FACE * 0.8)
+            svg.ellipse(x + 1.5, 146, 2.0, 2.0, INK, None)
+            svg.path(f"M{x - 6},152 Q{x},155 {x + 6},152", width=FACE * 0.7)
+        svg.path("M176,139 L194,139 M206,139 L224,139", width=FACE)  # брови от переносицы (к02, к10)
+        svg.path("M194,140 C193,149 194,152 200,152 C206,152 207,149 206,140", width=FACE)
+        svg.path("M190,150 C184,166 180,180 178,194 M210,150 C216,166 220,180 222,194", width=FACE)
         # Открытый рот с рядом верхних зубов, ≈0,23 ширины лица (концепты 02, 10; V01 0:19, 0:40).
         # Тёмный открытый рот, уголки вниз, узкая полоса верхних зубов (концепты 02, 09, 10).
-        svg.path("M181,166 C192,158 208,158 219,166 C214,173 186,173 181,166 Z", INK, INK, FACE * 0.8)
-        svg.path("M190,161 L210,161 L209,164 L191,164 Z", "#FFFFFF", None)
-        svg.path("M200,161 L200,164", width=1.2)
+        # Рот отдельным пятном: прямой верх на y 158, между носом и ртом ≥5 ед. кожи (сверка v6).
+        svg.path("M181,158 L219,158 C216,175 184,175 181,158 Z", INK, INK, FACE * 0.8)
+        svg.path("M190,158 L210,158 L209,161 L191,161 Z", "#FFFFFF", None)
+        svg.path("M200,158 L200,161", width=1.2)
         svg.path("M184,206 Q200,212 216,206", width=FACE)
         svg.path("M144,204 Q158,214 172,208 M256,204 Q242,214 228,208", width=FACE * 0.9)
         svg.path("M180,224 Q200,230 220,224", width=FACE * 0.8)
@@ -540,7 +543,7 @@ def babka(view: str) -> str:
             svg.ellipse(x - 4, y, 2.4, 3.0, INK, None)
         svg.path("M200,262 C186,310 186,350 200,385", width=FACE * 1.2)
         babka_hand(svg, 210, 408, 1)
-        frill_band(svg, 215, 256, 66, 6, math.radians(186), math.radians(-6), 11, 10)
+        frill_band(svg, 215, 252, 66, 6, math.radians(186), math.radians(-6), 11, 18, FACE)
         head = ("M140,110 L262,112 C266,128 270,140 272,150 C284,152 292,160 290,170 C289,176 284,178 280,176 "
                 "C278,180 274,182 272,183 C278,188 280,195 276,200 C282,208 280,218 272,224 "
                 "C268,234 262,242 255,246 L142,246 C138,200 138,150 140,110 Z")
@@ -567,8 +570,8 @@ V_KNIT, V_KNIT_LIGHT = "#4E3B2D", "#64503E"
 V_BLOUSE = "#D9CFB8"
 V_NECK = "#C9433A"
 
-V_FACE = ("M150,98 C138,112 132,126 132,140 C124,166 118,194 120,216 C122,244 158,256 200,256 "
-          "C242,256 278,244 280,216 C282,194 276,166 268,140 C268,126 262,112 250,98 Z")
+V_FACE = ("M170,100 C152,104 142,118 138,136 C128,162 118,190 120,214 C122,236 150,256 200,256 "
+          "C250,256 278,236 280,214 C282,190 272,162 262,136 C258,118 248,104 230,100 Z")
 V_APRON = "#B9B2A0"
 
 
@@ -600,7 +603,6 @@ def vendor(view: str) -> str:
         svg.path("M194,276 L180,318 L196,312 Z M206,276 L222,322 L206,314 Z", V_NECK, INK, FACE)
         svg.ellipse(200, 274, 10, 9, V_NECK, INK, FACE)
         soft_shape(svg, V_FACE, V_SKIN, [(178, 140, 44, 60, "#FFFDEB"), (250, 210, 36, 44, V_SKIN_LO)])
-        svg.path("M176,108 Q200,104 224,108 M172,117 Q200,113 228,117", width=FACE * 0.8)
         for x in (176, 224):
             svg.path(f"M{x - 10},159 Q{x},152 {x + 10},159 Q{x},165 {x - 10},159 Z", "#FFFFFF", INK, FACE * 0.8)
             svg.ellipse(x + 1, 159.5, 2.6, 2.6, INK, None)
@@ -609,7 +611,7 @@ def vendor(view: str) -> str:
         svg.path("M195,156 C194,168 195,174 200,174 C205,174 206,168 205,156", width=FACE)
         svg.path("M183,188 C194,181 206,181 217,188 C212,196 188,196 183,188 Z", INK, INK, FACE * 0.8)
         svg.path("M190,184 L210,184 L209,187 L191,187 Z", "#FFFFFF", None)
-        svg.path("M184,162 C174,184 172,206 176,222 M216,162 C226,184 228,206 224,222", width=FACE * 0.9)
+        svg.path("M190,172 C184,186 182,198 184,210 M210,172 C216,186 218,198 216,210", width=FACE * 0.9)
         svg.path("M142,222 Q156,230 170,226 M184,224 Q200,230 216,224 M258,222 Q244,230 230,226", width=FACE * 0.9)
     else:
         face = ("M156,96 C151,130 151,190 156,246 L250,246 C266,234 268,220 258,210 C268,200 266,184 258,176 "
