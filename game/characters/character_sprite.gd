@@ -18,6 +18,8 @@ const WALK_SPEED_MIN := 0.4   # м/с: медленнее — стойка
 ## Множитель цвета: тонмаппер Filmic с экспозицией 1,1 и glow выбеливают плоскую заливку,
 ## подобран по кадрам builds/screenshots/art01/ под палитру паспорта.
 @export var tone := 0.72
+## Тёплый оттенок поверх тона: светлая кожа и платье NPC в холодном свете сцены серели (сверка ART-01, P3).
+@export var tint := Color.WHITE
 
 var sprite: Sprite3D
 var look_material: StandardMaterial3D
@@ -57,7 +59,7 @@ func _ready() -> void:
 	look_material.cull_mode = BaseMaterial3D.CULL_DISABLED
 	look_material.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
 	look_material.disable_fog = true
-	look_material.albedo_color = Color(tone, tone, tone)
+	look_material.albedo_color = Color(tone * tint.r, tone * tint.g, tone * tint.b)
 	look_material.albedo_texture = texture
 	sprite.material_override = look_material
 	sprite.pixel_size = height_m / texture.get_height()
