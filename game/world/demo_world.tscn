@@ -4,7 +4,7 @@
 [ext_resource type="Script" path="res://game/world/level_geometry.gd" id="2_geometry"]
 [ext_resource type="Script" path="res://game/world/lighting.gd" id="3_lighting"]
 [ext_resource type="PackedScene" path="res://game/player/ilyusha.tscn" id="4_ilyusha"]
-[ext_resource type="Script" path="res://game/vehicles/car_placeholder.gd" id="5_car"]
+[ext_resource type="Script" path="res://game/vehicles/lada.gd" id="5_car"]
 [ext_resource type="Script" path="res://game/npc/npc.gd" id="6_npc"]
 [ext_resource type="Script" path="res://game/world/kiosk_zone.gd" id="7_kiosk"]
 [ext_resource type="Script" path="res://game/camera/camera_rig.gd" id="8_camera"]
@@ -23,7 +23,7 @@ script = ExtResource("3_lighting")
 
 [node name="Ilyusha" parent="." instance=ExtResource("4_ilyusha")]
 
-[node name="Car" type="StaticBody3D" parent="."]
+[node name="Car" type="CharacterBody3D" parent="."]
 script = ExtResource("5_car")
 
 [node name="Babka" type="Node3D" parent="."]

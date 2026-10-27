@@ -34,6 +34,7 @@ func _run() -> void:
 	await _check_walls(world)
 	await _check_interaction(world)
 	await _check_kiosk_zone(world)
+	await _check_review_gaps(world)
 	await _check_route(world)
 	await _check_pause(world)
 	await _check_restart(world)
@@ -205,6 +206,72 @@ func _check_kiosk_zone(world: DemoWorld) -> void:
 	probe.queue_free()
 	await _frames(3)
 
+# --- пробелы из независимого ревью ---
+
+func _check_review_gaps(world: DemoWorld) -> void:
+	# Коридор машины: каждый участок маршрута в 1 м от любых коробок (ширина «Лады» 1,7 м).
+	var blocked := []
+	for i in range(1, Layout.ROUTE_DRIVE.size()):
+		var a := Layout.ROUTE_DRIVE[i - 1]
+		var b := Layout.ROUTE_DRIVE[i]
+		var steps := int(a.distance_to(b) / 0.5)
+		for s in steps + 1:
+			var hit := _solid_at(a.lerp(b, float(s) / maxf(steps, 1)), 1.0)
+			if hit != "":
+				blocked.append("%d:%s" % [i, hit])
+				break
+	check(blocked.is_empty(), "drive route segments keep 1 m clearance from solids %s" % [blocked])
+	# Мышь: вправо — камера и ходьба вправо.
+	var rig := world.camera_rig
+	var player := world.player
+	player.place(Layout.SPAWN, 0.0)
+	rig.yaw = 0.0
+	rig.apply_mouse(Vector2(400, 0))
+	check(rig.yaw < -0.5, "mouse right turns the camera right (yaw %.2f)" % rig.yaw)
+	await _frames(2)
+	var start := player.global_position
+	Input.action_press(&"move_forward")
+	await _frames(30)
+	Input.action_release(&"move_forward")
+	await _frames(5)
+	check(player.global_position.x - start.x > 1.0, "after mouse right, W walks to the east")
+	rig.apply_mouse(Vector2(0, 10000))
+	check(is_equal_approx(rig.pitch, CameraRig.PITCH_MIN), "pitch is clamped")
+	rig.pitch = CameraRig.PROFILES[&"on_foot"]["pitch"]
+	if DisplayServer.get_name() == "headless":
+		print("NOT_RUN: mouse capture modes need a window (run this test without --headless)")
+	else:
+		check(Input.mouse_mode == Input.MOUSE_MODE_CAPTURED, "mouse captured in game")
+		main.set_paused(true)
+		check(Input.mouse_mode == Input.MOUSE_MODE_VISIBLE, "mouse visible in pause")
+		main.set_paused(false)
+		check(Input.mouse_mode == Input.MOUSE_MODE_CAPTURED, "mouse captured again after resume")
+		var motion := InputEventMouseMotion.new()
+		motion.relative = Vector2(200, 0)
+		var before := rig.yaw
+		Input.parse_input_event(motion)
+		await _frames(2)
+		check(rig.yaw < before, "real mouse motion turns the camera while captured")
+	# Илюша не проходит сквозь «Ладу».
+	var car: Node3D = world.car
+	player.place(car.global_position + Vector3(-3.0, 0, 0), 0.0)
+	rig.yaw = -PI * 0.5  # смотреть на восток, на машину
+	await _frames(2)
+	Input.action_press(&"move_forward")
+	await _frames(90)
+	Input.action_release(&"move_forward")
+	check(player.global_position.x < car.global_position.x - 0.85 - 0.3, "Ilyusha is blocked by the car (x %.2f, car %.2f)" % [player.global_position.x, car.global_position.x])
+	# Выключенная зона не срабатывает даже при прямом вызове.
+	var fired := [0]
+	var zone: Interactable = world.babka.interactable
+	var counter := func(_a): fired[0] += 1
+	zone.interacted.connect(counter)
+	zone.enabled = false
+	zone.interact(player)
+	check(fired[0] == 0, "disabled Interactable does not fire")
+	zone.interacted.disconnect(counter)
+	await _frames(2)
+
 # --- критерий 3: маршрут пешком настоящим вводом ---
 
 func _check_route(world: DemoWorld) -> void:
@@ -222,6 +289,7 @@ func _check_route(world: DemoWorld) -> void:
 	var seconds := (Engine.get_physics_frames() - start_frame) / 60.0
 	print("INFO: walk spawn→kiosk %.1f s" % seconds)
 	check(ok, "Ilyusha walks spawn → kiosk window by real input in %.1f s" % seconds)
+	check(ok and seconds > 45.0 and seconds < 75.0, "walk time matches walking speed (%.1f s for ~255 m)" % seconds)
 	check(ok and player.is_on_floor(), "Ilyusha is on the ground at the kiosk")
 
 func _walk_to(world: DemoWorld, target: Vector3) -> bool:
@@ -253,12 +321,16 @@ func _check_pause(world: DemoWorld) -> void:
 	world.player.place(Layout.SPAWN, 0.0)
 	world.camera_rig.yaw = 0.0
 	await _frames(3)
-	var pause := InputEventAction.new()
-	pause.action = &"pause"
+	var pause := InputEventKey.new()
+	pause.physical_keycode = KEY_ESCAPE
 	pause.pressed = true
 	Input.parse_input_event(pause)
 	await _frames(2)
-	check(paused and main.pause_menu.visible, "Esc pauses the game and shows the pause menu")
+	var release := InputEventKey.new()
+	release.physical_keycode = KEY_ESCAPE
+	Input.parse_input_event(release)
+	await _frames(2)
+	check(paused and main.pause_menu.visible, "physical Esc pauses the game and shows the pause menu")
 	var before := world.player.global_position
 	Input.action_press(&"move_forward")
 	await _frames(30)

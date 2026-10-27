@@ -22,23 +22,39 @@ func _ready() -> void:
 	pause_menu = PauseMenu.new()
 	pause_menu.name = "PauseMenu"
 	pause_menu.resume_requested.connect(set_paused.bind(false))
+	pause_menu.reset_car_requested.connect(reset_car)
 	pause_menu.restart_requested.connect(start_game)
 	pause_menu.menu_requested.connect(return_to_menu)
 	add_child(pause_menu)
 
+## Смена мира откладывается до конца кадра: её можно вызвать из сигнала самого мира
+## (кнопка на панели финала, физический callback) без освобождения узла посреди обработки.
 func start_game() -> void:
-	_free_world()
-	world = WorldScene.instantiate()
-	world.process_mode = Node.PROCESS_MODE_PAUSABLE
-	add_child(world)
-	menu.hide()
-	set_paused(false)
+	_swap_world.call_deferred(true)
 
 func return_to_menu() -> void:
-	_free_world()
+	_swap_world.call_deferred(false)
+
+func _swap_world(new_game: bool) -> void:
+	if world:
+		remove_child(world)
+		world.queue_free()
+		world = null
+	if new_game:
+		world = WorldScene.instantiate()
+		world.process_mode = Node.PROCESS_MODE_PAUSABLE
+		add_child(world)
+		menu.hide()
+		set_paused(false)
+	else:
+		set_paused(false)
+		menu.show()
+		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+
+func reset_car() -> void:
+	if world:
+		world.reset_car()
 	set_paused(false)
-	menu.show()
-	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 
 func set_paused(paused: bool) -> void:
 	get_tree().paused = paused
@@ -55,9 +71,3 @@ func _unhandled_input(event: InputEvent) -> void:
 		get_viewport().set_input_as_handled()
 	elif event is InputEventMouseButton and event.pressed and not get_tree().paused and not world.ui_blocking:
 		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
-
-func _free_world() -> void:
-	if world:
-		remove_child(world)
-		world.free()
-		world = null

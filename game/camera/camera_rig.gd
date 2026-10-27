@@ -10,6 +10,7 @@ const PROFILES := {
 const PITCH_MIN := -1.1
 const PITCH_MAX := 0.35
 const FOLLOW_SHARPNESS := 14.0
+const CHASE_SHARPNESS := 3.0
 
 @export var mouse_sensitivity := 0.0025
 
@@ -19,7 +20,7 @@ var yaw := 0.0
 var pitch := -0.30
 var arm: SpringArm3D
 var camera: Camera3D
-
+var permanent_exclusions: Array[RID] = []
 func _ready() -> void:
 	arm = SpringArm3D.new()
 	arm.name = "Arm"
@@ -39,9 +40,16 @@ func follow(new_target: Node3D, new_profile: StringName = &"on_foot") -> void:
 	profile = new_profile
 	pitch = PROFILES[profile]["pitch"]
 	arm.clear_excluded_objects()
+	for rid in permanent_exclusions:
+		arm.add_excluded_object(rid)
 	if target is CollisionObject3D:
 		arm.add_excluded_object(target.get_rid())
 	snap()
+
+## Тела, которые не должны притягивать камеру (NPC рядом с героем).
+func exclude_permanently(rid: RID) -> void:
+	permanent_exclusions.append(rid)
+	arm.add_excluded_object(rid)
 
 ## Мгновенно поставить камеру за целью, без сглаживания.
 func snap() -> void:
@@ -49,18 +57,27 @@ func snap() -> void:
 		global_position = _goal()
 		arm.spring_length = PROFILES[profile]["distance"]
 		rotation = Vector3(pitch, yaw, 0.0)
+		reset_physics_interpolation()
 
-func _process(delta: float) -> void:
+## Камера движется в физическом кадре вместе с целью; плавность между кадрами даёт интерполяция физики.
+func _physics_process(delta: float) -> void:
 	if not target:
 		return
 	global_position = global_position.lerp(_goal(), 1.0 - exp(-FOLLOW_SHARPNESS * delta))
+	if profile == &"in_car":
+		# Камера преследования: плавно встаёт за машиной по её курсу.
+		yaw = lerp_angle(yaw, target.global_rotation.y, 1.0 - exp(-CHASE_SHARPNESS * delta))
 	arm.spring_length = lerpf(arm.spring_length, PROFILES[profile]["distance"], 1.0 - exp(-4.0 * delta))
 	rotation = Vector3(pitch, yaw, 0.0)
 
 func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventMouseMotion and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
-		yaw = wrapf(yaw - event.relative.x * mouse_sensitivity, -PI, PI)
-		pitch = clampf(pitch - event.relative.y * mouse_sensitivity, PITCH_MIN, PITCH_MAX)
+		apply_mouse(event.relative)
+
+## Мышь вправо — камера вправо, мышь вверх — взгляд вверх.
+func apply_mouse(relative: Vector2) -> void:
+	yaw = wrapf(yaw - relative.x * mouse_sensitivity, -PI, PI)
+	pitch = clampf(pitch - relative.y * mouse_sensitivity, PITCH_MIN, PITCH_MAX)
 
 func _goal() -> Vector3:
 	return target.global_position + Vector3.UP * PROFILES[profile]["height"]

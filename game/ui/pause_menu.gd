@@ -1,8 +1,8 @@
 extends CanvasLayer
-## Меню паузы: ПРОДОЛЖИТЬ / НАЧАТЬ ЗАНОВО / В ГЛАВНОЕ МЕНЮ.
-## Кнопку «СБРОСИТЬ АВТОМОБИЛЬ» добавляет DRIVE-01 через add_action().
+## Меню паузы: ПРОДОЛЖИТЬ / СБРОСИТЬ АВТОМОБИЛЬ / НАЧАТЬ ЗАНОВО / В ГЛАВНОЕ МЕНЮ.
 
 signal resume_requested
+signal reset_car_requested
 signal restart_requested
 signal menu_requested
 
@@ -27,6 +27,7 @@ func _ready() -> void:
 	box.add_child(title)
 	add_child(box)
 	add_action("ПРОДОЛЖИТЬ", resume_requested.emit)
+	add_action("СБРОСИТЬ АВТОМОБИЛЬ", reset_car_requested.emit)
 	add_action("НАЧАТЬ ЗАНОВО", restart_requested.emit)
 	add_action("В ГЛАВНОЕ МЕНЮ", menu_requested.emit)
 	visibility_changed.connect(_on_visibility_changed)

@@ -25,6 +25,8 @@ func _capture() -> void:
 	DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path(output_dir))
 	await _save("00_menu")
 	main.start_game()
+	for i in 3:
+		await process_frame
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 	var world: DemoWorld = main.world
 	for shot in SHOTS:

@@ -86,6 +86,7 @@ func place(point: Vector3, facing_yaw: float) -> void:
 	global_position = point
 	velocity = Vector3.ZERO
 	visual.rotation.y = facing_yaw
+	reset_physics_interpolation()
 
 func _build_placeholder_visual() -> Node3D:
 	var root := Node3D.new()
