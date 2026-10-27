@@ -28,7 +28,7 @@ void fragment() {
 	float h = clamp(p.y / half_height * 0.5 + 0.5, 0.0, 1.0);  // 0 — низ бокса, 1 — верх
 	// Потёки: вертикальные полосы шума, гуще к низу.
 	float streak = noise(vec2(along * 9.0, p.y * 1.5)) * noise(vec2(along * 3.0, 1.0));
-	float r = smoothstep(0.35, 0.75, streak + (1.0 - h) * 0.35) * rust_amount;
+	float r = smoothstep(0.25, 0.6, streak + (1.0 - h) * 0.4) * rust_amount;
 	float d = (1.0 - smoothstep(0.0, 0.45, h)) * (0.55 + 0.45 * noise(vec2(along * 4.0, p.y * 6.0))) * dirt_amount;
 	vec3 col = mix(paint, rust, r);
 	col = mix(col, dirt, d * 0.75);

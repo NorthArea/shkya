@@ -10,8 +10,8 @@ const PLATE := "н382кх 154"
 static func build() -> Node3D:
 	var root := Node3D.new()
 	root.name = "Visual"
-	var lower := _paint(1.0, 0.55, 0.31)
-	var upper := _paint(0.0, 0.3, 0.05)
+	var lower := _paint(1.0, 0.8, 0.31)
+	var upper := _paint(0.0, 0.45, 0.05)
 	var glass := _dark_glass()
 	var trim := Materials.plain(Color(0.10, 0.10, 0.11), 0.6)
 	var chrome := Materials.plain(Color(0.55, 0.56, 0.58), 0.3)
@@ -23,10 +23,12 @@ static func build() -> Node3D:
 	_box(root, "Trunk", Vector3(1.58, 0.06, 0.9), Vector3(0, 0.96, 1.6), upper)
 	# Кабина: тёмные стёкла, белые стойки и крыша.
 	_box(root, "SideGlass", Vector3(1.46, 0.48, 1.5), Vector3(0, 1.21, 0.2), glass)
-	var windshield := _box(root, "Windshield", Vector3(1.42, 0.62, 0.04), Vector3(0, 1.2, -0.72), glass)
-	windshield.rotation.x = deg_to_rad(-38.0)
-	var rear := _box(root, "RearWindow", Vector3(1.42, 0.58, 0.04), Vector3(0, 1.2, 1.12), glass)
-	rear.rotation.x = deg_to_rad(34.0)
+	# Лобовое от капота (z −0,83) к крыше (z −0,48), заднее от крыши (z 0,88) к багажнику (z 1,15):
+	# верх наклонён к центру машины.
+	var windshield := _box(root, "Windshield", Vector3(1.42, 0.59, 0.04), Vector3(0, 1.23, -0.655), glass)
+	windshield.rotation.x = deg_to_rad(36.0)
+	var rear := _box(root, "RearWindow", Vector3(1.42, 0.55, 0.04), Vector3(0, 1.23, 1.03), glass)
+	rear.rotation.x = deg_to_rad(-29.0)
 	_box(root, "Roof", Vector3(1.42, 0.06, 1.36), Vector3(0, 1.47, 0.2), upper)
 	for x in [-0.72, 0.72]:
 		for z in [-0.52, 0.2, 0.9]:
