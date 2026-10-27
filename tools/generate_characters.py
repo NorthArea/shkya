@@ -21,8 +21,8 @@ W, H = 400, 600
 SCALE = 2  # пиксели текстуры на единицу холста
 
 INK = "#141213"
-LINE = 3.6   # внешний контур тонкий, как в роликах V01/V02 (решение владельца 28.10.2026)
-THIN = 2.2   # детали лица и складки
+LINE = 1.8   # внешний контур тонкий, как в роликах V01/V02: ≈0,013 ширины лица (решение владельца 28.10.2026)
+THIN = 1.6   # детали лица и складки
 
 # Илюша
 SKIN, SKIN_HI, SKIN_LO, BLUSH = "#F4B3CD", "#FAD3E3", "#E296B6", "#EE8DA8"
@@ -329,13 +329,13 @@ def ilyusha_side(svg: Svg, phase: float | None, bob: float) -> None:
 # лицо — высокая груша с брылями (рот на 0,43 высоты лица), низкий мягкий чепец, шеи нет,
 # тело-бочонок в 2,4–3 ширины лица, руки входят в массу тела, свет — мягкие пятна.
 
-FACE = 2.2  # тонкие черты лица у старших персонажей
+FACE = 1.6  # тонкие черты лица у старших персонажей
 
 B_SKIN, B_SKIN_LO = "#FFFDE2", "#F1EECB"
 B_NAPE = "#EBDC9E"
 B_HAT, B_HAT_LIGHT = "#A9AD6E", "#C4C68C"
 B_DRESS, B_DRESS_LIGHT, B_DRESS_DARK = "#B6BA78", "#CDCF92", "#9A9E66"
-B_STOCK, B_BOOT = "#C2BF96", "#8A7E60"
+B_STOCK, B_BOOT = "#C2BF96", "#3A332B"
 
 
 def soft_spot(svg: Svg, clip_d: str, cx: float, cy: float, rx: float, ry: float, color: str,
@@ -453,7 +453,7 @@ def babka_hand(svg: Svg, x: float, y: float, side: int, nails: bool = True) -> N
         tip = y + 50 - abs(k - 1.5) * 4
         d = f"M{fx:.1f},{y + 10} Q{fx + spread + side * 4:.1f},{y + 32} {fx + spread * 1.6:.1f},{tip:.1f}"
         svg.path(d, "none", INK, 14)
-        svg.path(d, "none", B_SKIN, 14 - LINE * 0.6)
+        svg.path(d, "none", B_SKIN, 14 - LINE * 1.0)
         if nails:
             svg.ellipse(fx + spread * 1.6, tip - 3, 2.6, 3.2, B_SKIN_LO, INK, 1.2)
     svg.ellipse(x, y, 28, 20, B_SKIN, INK, LINE * 0.8)
@@ -488,7 +488,7 @@ def babka(view: str) -> str:
         with svg.group("rotate(-4 200 120)"):
             soft_shape(svg, CAP_FRONT, B_HAT, [(176, 78, 50, 26, B_HAT_LIGHT)], LINE * 0.7)
         for x, s in ((136, -1), (264, 1)):
-            svg.path(f"M{x},136 C{x + 12 * s},136 {x + 12 * s},156 {x},156 Z", B_SKIN, INK, FACE)
+            svg.path(f"M{x},136 C{x + 6 * s},136 {x + 6 * s},156 {x},156 Z", B_SKIN, INK, FACE)
         soft_shape(svg, FACE_PEAR, B_SKIN, [(176, 150, 50, 70, "#FFFFFF"), (252, 205, 34, 46, B_SKIN_LO),
                                             (148, 205, 28, 40, B_SKIN_LO)])
         with svg.group("rotate(-4 200 120)"):
@@ -507,7 +507,7 @@ def babka(view: str) -> str:
             svg.ellipse(x + 1.5, 146, 2.0, 2.0, INK, None)
             svg.path(f"M{x - 6},152 Q{x},155 {x + 6},152", width=FACE * 0.7)
         svg.path("M176,139 L194,139 M206,139 L224,139", width=FACE)  # брови от переносицы (к02, к10)
-        svg.path("M194,140 C193,149 194,152 200,152 C206,152 207,149 206,140", width=FACE)
+        svg.path("M194,137 C193,150 194,154 200,154 C206,154 207,150 206,137", width=FACE)
         svg.path("M190,150 C184,166 180,180 178,194 M210,150 C216,166 220,180 222,194", width=FACE)
         # Открытый рот с рядом верхних зубов, ≈0,23 ширины лица (концепты 02, 10; V01 0:19, 0:40).
         # Тёмный открытый рот, уголки вниз, узкая полоса верхних зубов (концепты 02, 09, 10).
@@ -571,8 +571,8 @@ V_KNIT, V_KNIT_LIGHT = "#4E3B2D", "#64503E"
 V_BLOUSE = "#D9CFB8"
 V_NECK = "#C9433A"
 
-V_FACE = ("M170,100 C152,104 142,118 138,136 C128,162 118,190 120,214 C122,236 150,256 200,256 "
-          "C250,256 278,236 280,214 C282,190 272,162 262,136 C258,118 248,104 230,100 Z")
+V_FACE = ("M166.4,100 C146.2,104 135.0,118 130.6,136 C119.4,162 108.2,190 110.4,214 C112.6,236 144.0,256 200.0,256 "
+          "C256.0,256 287.4,236 289.6,214 C291.8,190 280.6,162 269.4,136 C265.0,118 253.8,104 233.6,100 Z")
 V_APRON = "#B9B2A0"
 
 
