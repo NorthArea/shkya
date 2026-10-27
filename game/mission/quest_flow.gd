@@ -58,7 +58,7 @@ func _process(delta: float) -> void:
 	marker.visible = symbol != ""
 	marker.text = symbol
 	_marker_time += delta
-	marker.position.y = 2.75 + sin(_marker_time * 3.0) * 0.08
+	marker.position.y = 3.05 + sin(_marker_time * 3.0) * 0.08
 
 func _physics_process(_delta: float) -> void:
 	# Прибытие: Илюша или машина на площадке киоска, пока миссия ждёт прибытия.
@@ -149,7 +149,7 @@ func _build_marker() -> void:
 	marker.outline_size = 24
 	marker.modulate = Color(1.0, 0.85, 0.1)
 	marker.outline_modulate = Color(0.12, 0.10, 0.08)
-	marker.position = Vector3(0, 2.75, 0)
+	marker.position = Vector3(0, 3.05, 0)  # над шапкой Бабки (ART-01: верх облика 2,48 м)
 	marker.visible = false
 	world.get_node("Babka").add_child(marker)
 	thanks_bubble = Label3D.new()

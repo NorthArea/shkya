@@ -1,9 +1,9 @@
 class_name Ilyusha
 extends CharacterBody3D
 ## Илюша пешком: ходьба относительно камеры, взаимодействие по E (C3).
-## Visual — заглушка greybox; облик ШКЯ в зимнем костюме делает ART-01.
+## Visual — облик ШКЯ в зимнем костюме (ART-01, CharacterSprite); поворот Visual = взгляд Илюши.
 
-const Greybox = preload("res://game/world/greybox.gd")
+const CharacterSpriteScript = preload("res://game/characters/character_sprite.gd")
 
 const WALK_SPEED := 4.5
 const ACCELERATION := 30.0
@@ -27,7 +27,7 @@ func _ready() -> void:
 	collider.shape = capsule
 	collider.position.y = 0.75
 	add_child(collider)
-	visual = _build_placeholder_visual()
+	visual = _build_visual()
 	add_child(visual)
 	probe = Area3D.new()
 	probe.name = "InteractProbe"
@@ -88,20 +88,12 @@ func place(point: Vector3, facing_yaw: float) -> void:
 	visual.rotation.y = facing_yaw
 	reset_physics_interpolation()
 
-func _build_placeholder_visual() -> Node3D:
+func _build_visual() -> Node3D:
 	var root := Node3D.new()
 	root.name = "Visual"
-	var parts := [
-		[Greybox.mesh_box(Vector3(0.5, 0.5, 0.35), Color(0.10, 0.35, 0.15)), Vector3(0, 0.25, 0)],   # брюки
-		[Greybox.mesh_capsule(0.36, 0.9, Color(0.62, 0.95, 0.10)), Vector3(0, 0.85, 0)],             # пуховик
-		[Greybox.mesh_cylinder(0.3, 0.38, 0.12, Color(0.95, 0.95, 0.95)), Vector3(0, 1.2, 0)],        # воротник
-		[Greybox.mesh_sphere(0.38, Color(0.98, 0.62, 0.72)), Vector3(0, 1.55, 0)],                   # голова
-		[Greybox.mesh_capsule(0.08, 0.35, Color(0.98, 0.62, 0.72)), Vector3(0, 1.6, -0.42)],         # нос
-		[Greybox.mesh_cylinder(0.0, 0.16, 0.3, Color(1.0, 0.85, 0.15)), Vector3(0, 2.0, 0.02)],       # завиток
-	]
-	for part in parts:
-		var mesh: MeshInstance3D = part[0]
-		mesh.position = part[1]
-		root.add_child(mesh)
-	root.get_child(4).rotation.x = deg_to_rad(-70.0)  # нос вперёд и чуть вверх
+	var look: CharacterSprite = CharacterSpriteScript.new()
+	look.name = "Look"
+	look.character = "ilyusha"
+	look.height_m = 2.4
+	root.add_child(look)
 	return root
