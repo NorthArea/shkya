@@ -13,6 +13,7 @@ test:
 	./tools/run.command --headless --fixed-fps 60 --script tests/polish01_stuck.gd
 	./tools/run.command --headless --fixed-fps 60 --script tests/art01_sprite.gd
 	./tools/run.command --headless --fixed-fps 120 --script tests/art01_sprite.gd
+	mkdir -p builds/checks/qa01 && ./tools/run.command --headless --fixed-fps 60 --script tests/demo_acceptance.gd 2>&1 | tee builds/checks/qa01/make-test.log && grep -q '^DEMO_ACCEPTANCE: [0-9]* checks, 0 failures' builds/checks/qa01/make-test.log
 capture:
 	./tools/run.command --fixed-fps 60 --resolution 1920x1080 --script tools/capture.gd
 pack:
