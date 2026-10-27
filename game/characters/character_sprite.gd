@@ -20,7 +20,7 @@ const WALK_SPEED_MIN := 0.4   # м/с: медленнее — стойка
 @export var tone := 0.72
 
 var sprite: Sprite3D
-var material: StandardMaterial3D
+var look_material: StandardMaterial3D
 var view := &"front"
 var frame := -1  # -1 — стойка, 0..3 — ходьба
 var _idle := {}
@@ -48,25 +48,25 @@ func _ready() -> void:
 	sprite.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
 	sprite.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	# Свой материал: без тумана (персонаж читается на дистанции, как на кадрах 01–10) и с поправкой тона.
-	material = StandardMaterial3D.new()
-	material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	material.billboard_mode = BaseMaterial3D.BILLBOARD_FIXED_Y
-	material.billboard_keep_scale = true
-	material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA_SCISSOR
-	material.alpha_scissor_threshold = 0.5
-	material.cull_mode = BaseMaterial3D.CULL_DISABLED
-	material.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
-	material.disable_fog = true
-	material.albedo_color = Color(tone, tone, tone)
-	material.albedo_texture = texture
-	sprite.material_override = material
+	look_material = StandardMaterial3D.new()
+	look_material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	look_material.billboard_mode = BaseMaterial3D.BILLBOARD_FIXED_Y
+	look_material.billboard_keep_scale = true
+	look_material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA_SCISSOR
+	look_material.alpha_scissor_threshold = 0.5
+	look_material.cull_mode = BaseMaterial3D.CULL_DISABLED
+	look_material.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
+	look_material.disable_fog = true
+	look_material.albedo_color = Color(tone, tone, tone)
+	look_material.albedo_texture = texture
+	sprite.material_override = look_material
 	sprite.pixel_size = height_m / texture.get_height()
 	# Спрайт центрирован: поднять так, чтобы линия ног холста (y=590) легла на землю.
 	sprite.position.y = height_m * (0.5 - (CANVAS_HEIGHT - FEET_Y) / CANVAS_HEIGHT)
 	add_child(sprite)
 	add_child(_shadow())
 
-func _process(delta: float) -> void:
+func _process(_delta: float) -> void:
 	var camera := get_viewport().get_camera_3d()
 	if not camera or not sprite:
 		return
@@ -85,22 +85,23 @@ func _process(delta: float) -> void:
 		view = &"side"
 	# Бок нарисован лицом вправо: зеркалим, если персонаж смотрит влево на экране.
 	sprite.flip_h = view == &"side" and forward.dot(camera.global_basis.x) < 0.0
-	_update_walk(delta)
 	var frames: Array[Texture2D] = _walk[view]
 	var texture: Texture2D = frames[frame] if frame >= 0 and frame < frames.size() else _idle[view]
 	if sprite.texture != texture:
 		sprite.texture = texture
-		material.albedo_texture = texture
+		look_material.albedo_texture = texture
 
-func _update_walk(delta: float) -> void:
-	var position := global_position
+## Путь копится на шаге физики: в _process при physics_interpolation положение между шагами
+## не меняется, и на 120+ к/с ходьба сбрасывалась бы в стойку (ревью ART-01, P1).
+func _physics_process(delta: float) -> void:
+	var at := global_position
 	var moved := 0.0
 	if _last != Vector3.INF:
-		moved = Vector2(position.x - _last.x, position.z - _last.z).length()
-	_last = position
+		moved = Vector2(at.x - _last.x, at.z - _last.z).length()
+	_last = at
 	if moved > 1.0:  # телепорт (place, перезапуск) — не шаг
 		moved = 0.0
-	if delta > 0.0 and moved / delta >= WALK_SPEED_MIN and not (_walk[view] as Array).is_empty():
+	if delta > 0.0 and moved / delta >= WALK_SPEED_MIN:
 		_distance += moved
 		frame = int(_distance / walk_stride) % 4
 	else:

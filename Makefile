@@ -11,6 +11,8 @@ test:
 	./tools/run.command --headless --fixed-fps 60 --script tests/quest01_acceptance.gd
 	./tools/run.command --headless --fixed-fps 60 --script tests/polish01_audio.gd
 	./tools/run.command --headless --fixed-fps 60 --script tests/polish01_stuck.gd
+	./tools/run.command --headless --fixed-fps 60 --script tests/art01_sprite.gd
+	./tools/run.command --headless --fixed-fps 120 --script tests/art01_sprite.gd
 capture:
 	./tools/run.command --fixed-fps 60 --resolution 1920x1080 --script tools/capture.gd
 pack:

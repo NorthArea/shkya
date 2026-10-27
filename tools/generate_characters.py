@@ -21,8 +21,8 @@ W, H = 400, 600
 SCALE = 2  # пиксели текстуры на единицу холста
 
 INK = "#141213"
-LINE = 7.0   # внешний контур
-THIN = 3.6   # детали лица и складки
+LINE = 9.0   # внешний контур: «жирный чёрный контур» канона (раздел 2) приоритетнее паспорта
+THIN = 4.0   # детали лица и складки
 
 # Илюша
 SKIN, SKIN_HI, SKIN_LO, BLUSH = "#F4B3CD", "#FAD3E3", "#E296B6", "#EE8DA8"
@@ -34,8 +34,8 @@ BOOT, SOLE = "#3A3436", "#1C1819"
 
 # Бабка
 B_SKIN, B_SKIN_HI, B_SKIN_LO = "#F6F2CC", "#FFFDE9", "#DCD6A2"
-B_HAT, B_HAT_LO = "#A7A35E", "#8A874A"
-B_DRESS, B_DRESS_HI, B_DRESS_LO = "#B3AE6E", "#CBC78A", "#949050"
+B_HAT, B_HAT_LO = "#97A052", "#7A8440"
+B_DRESS, B_DRESS_HI, B_DRESS_LO = "#A3AD62", "#BCC57E", "#848E48"
 LACE = "#FFFFFF"
 B_SHOE = "#3A3330"
 
@@ -364,10 +364,10 @@ def babka(view: str) -> str:
                 svg.ellipse(x, 177, 3, 3, INK, None)
                 svg.path(f"M{x - 13},170 Q{x},164 {x + 13},170", width=THIN)
                 svg.path(f"M{x - 12},186 Q{x},192 {x + 12},186", width=THIN * 0.7)
-            svg.path("M190,176 C188,196 184,206 186,214 C190,222 210,222 214,214 C216,206 212,196 210,176", width=THIN)
+            svg.path("M190,170 C188,198 182,214 184,224 C188,234 212,234 216,224 C218,214 212,198 210,170", width=THIN)
             svg.path("M184,222 C176,236 176,252 186,262 M216,222 C224,236 224,252 214,262", width=THIN * 0.8)
-            svg.path("M184,236 C192,232 208,232 216,236 C210,244 190,244 184,236 Z", INK, None)
-            svg.path("M190,236 L193,240 M200,234 L200,239 M208,236 L206,240", stroke="#FFFFFF", width=2.2)
+            svg.path("M184,246 C192,242 208,242 216,246 C210,254 190,254 184,246 Z", INK, None)
+            svg.path("M190,246 L193,250 M200,244 L200,249 M208,246 L206,250", stroke="#FFFFFF", width=2.2)
             svg.path("M150,236 C156,256 172,268 200,268 C228,268 244,256 250,236", width=THIN * 0.8)
             svg.path("M176,262 Q200,276 224,262", width=THIN * 0.8)
         else:
@@ -398,7 +398,7 @@ def babka(view: str) -> str:
         svg.ellipse(246, 172, 7, 4.5, "#FFFFFF", INK, THIN * 0.8)
         svg.ellipse(249, 173, 2.6, 2.6, INK, None)
         svg.path("M236,166 Q246,160 256,166", width=THIN)
-        nose = "M262,170 C276,188 288,206 284,214 C280,220 268,218 264,214"
+        nose = "M262,164 C280,186 302,210 298,222 C294,230 276,228 268,220"
         svg.path(nose, B_SKIN, INK, THIN * 1.2)
         svg.path("M262,234 C270,232 278,234 282,236 C278,242 266,242 262,234 Z", INK, None)
         svg.path("M238,214 C230,236 232,252 244,262 M210,262 Q240,282 270,256", width=THIN * 0.8)
