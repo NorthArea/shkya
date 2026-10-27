@@ -13,11 +13,16 @@ const GARAGE_DOOR_SIDE := {"Garages_Yard": -1.0, "Garages_Kiosk": 1.0}   # дв�
 const GARAGE_COLORS := [Color(0.42, 0.30, 0.22), Color(0.30, 0.38, 0.32), Color(0.36, 0.38, 0.42), Color(0.45, 0.40, 0.33)]
 const CAR_COLORS := [Color(0.18, 0.22, 0.30), Color(0.55, 0.48, 0.36), Color(0.35, 0.12, 0.10)]
 const WARM := Color(1.0, 0.75, 0.42)
+const ENTRANCE_WALL_Z := 107.98   # северный фасад H1 (центр 115, глубина 14) — z = 108
+const ENTRANCE_DOOR_X := -40.0    # дверь по центру козырька
+
+var _mound_mesh: SphereMesh       # одна сетка на все комки сугробов
 
 # Надписи: [текст, позиция, поворот y, размер шрифта, цвет].
 const SIGNS := [
-	["3", Vector3(-41.7, 2.55, 107.94), PI, 90, Color(0.92, 0.92, 0.9)],
-	["кв. 36–60", Vector3(-41.7, 2.2, 107.94), PI, 36, Color(0.92, 0.92, 0.9)],
+	# Номер подъезда — слева от двери (если смотреть со двора), Бабка — справа у двери (кадры 01, 02, 09).
+	["3", Vector3(-38.75, 2.5, 107.93), PI, 90, Color(0.92, 0.92, 0.9)],
+	["кв. 36–60", Vector3(-38.75, 2.18, 107.93), PI, 36, Color(0.92, 0.92, 0.9)],
 	["АПТЕКА", Vector3(-70, 3.3, 14.05), 0.0, 120, Color(0.35, 1.0, 0.55)],
 	["ПРОДУКТЫ", Vector3(-40, 3.3, 14.05), 0.0, 120, Color(1.0, 0.35, 0.3)],
 	["ПРОДУКТЫ 24", Vector3(56.05, 3.3, -20), PI * 0.5, 110, Color(1.0, 0.8, 0.35)],
@@ -32,6 +37,7 @@ func _ready() -> void:
 	for i in solids.size():
 		_build_solid(i, solids[i])
 	_build_canopy()
+	_build_entrance()
 	_build_surfaces()
 	_build_bounds()
 	_build_signs()
@@ -94,6 +100,53 @@ func _build_canopy() -> void:
 	canopy.add_child(_slab(Layout.CANOPY[1], Vector3(0, Layout.CANOPY[1].y * 0.5 + 0.04, 0)))
 	add_child(canopy)
 
+## Подъезд (кадры 01, 02, 09): коричневая металлическая дверь, круглая лампа под козырьком, опоры козырька,
+## табличка с номером и объявления. Только вид, без коллизий: путь к Бабке не меняется.
+func _build_entrance() -> void:
+	var root := Node3D.new()
+	root.name = "Entrance"
+	add_child(root)
+	var canopy_center: Vector3 = Layout.CANOPY[0]
+	var canopy_size: Vector3 = Layout.CANOPY[1]
+	var canopy_bottom := canopy_center.y - canopy_size.y * 0.5
+	var z := ENTRANCE_WALL_Z
+	# Дверь в тёмном проёме, ручка и домофон.
+	_part(root, Vector3(1.5, 2.35, 0.04), Vector3(ENTRANCE_DOOR_X, 1.175, z - 0.01), Materials.plain(Color(0.10, 0.09, 0.08), 0.9))
+	var door_metal := StandardMaterial3D.new()   # свой: общий кэш plain() без metallic
+	door_metal.albedo_color = Color(0.32, 0.22, 0.15)
+	door_metal.roughness = 0.45
+	door_metal.metallic = 0.5
+	_part(root, Vector3(1.25, 2.15, 0.06), Vector3(ENTRANCE_DOOR_X, 1.075, z - 0.04), door_metal)
+	_part(root, Vector3(0.05, 0.3, 0.05), Vector3(ENTRANCE_DOOR_X + 0.45, 1.05, z - 0.1), Materials.plain(Color(0.6, 0.6, 0.58), 0.3))
+	_part(root, Vector3(0.16, 0.24, 0.04), Vector3(ENTRANCE_DOOR_X + 0.85, 1.35, z - 0.02), Materials.plain(Color(0.25, 0.25, 0.27), 0.4))
+	# Табличка подъезда — тёмная пластина под номером.
+	_part(root, Vector3(0.62, 0.66, 0.025), Vector3(-38.75, 2.36, z - 0.02), Materials.plain(Color(0.16, 0.19, 0.24), 0.6))
+	# Объявления между дверью и табличкой.
+	var paper := [Color(0.85, 0.84, 0.78), Color(0.78, 0.82, 0.86), Color(0.86, 0.80, 0.70)]
+	var notes := [[Vector2(-38.95, 1.55), Vector2(0.3, 0.42)], [Vector2(-38.55, 1.62), Vector2(0.26, 0.34)], [Vector2(-38.8, 1.12), Vector2(0.34, 0.3)]]
+	for i in notes.size():
+		var note: Array = notes[i]
+		_part(root, Vector3(note[1].x, note[1].y, 0.01), Vector3(note[0].x, note[0].y, z - 0.03), Materials.plain(paper[i], 0.95))
+	# Круглая лампа над дверью: тёплый светящийся плафон (сам свет — Layout.LAMPS, подъезд).
+	var lamp := Greybox.mesh_sphere(0.14, Color.WHITE)
+	lamp.material_override = Materials.plain(Color(1.0, 0.9, 0.7), 0.3, WARM, 6.0)
+	lamp.position = Vector3(ENTRANCE_DOOR_X, canopy_bottom - 0.3, z - 0.16)
+	root.add_child(lamp)
+	_part(root, Vector3(0.06, 0.06, 0.12), Vector3(ENTRANCE_DOOR_X, canopy_bottom - 0.3, z - 0.05), Materials.plain(Color(0.2, 0.2, 0.2), 0.5))
+	# Опоры козырька — у передних углов, тонкие трубы.
+	var post_material := Materials.plain(Color(0.30, 0.31, 0.33), 0.6)
+	for x in [canopy_center.x - canopy_size.x * 0.5 + 0.1, canopy_center.x + canopy_size.x * 0.5 - 0.1]:
+		var post := Greybox.mesh_cylinder(0.05, 0.05, canopy_bottom, Color.WHITE)
+		post.material_override = post_material
+		post.position = Vector3(x, canopy_bottom * 0.5, canopy_center.z - canopy_size.z * 0.5 + 0.1)
+		root.add_child(post)
+
+func _part(parent: Node3D, size: Vector3, at: Vector3, material: Material) -> void:
+	var mesh := Greybox.mesh_box(size, Color.WHITE)
+	mesh.material_override = material
+	mesh.position = at
+	parent.add_child(mesh)
+
 func _build_surfaces() -> void:
 	var lift := {"yard_road": 0.01, "sidewalk": 0.015, "road": 0.02}
 	for spec in Layout.SURFACES:
@@ -148,13 +201,14 @@ func _lumpy_bank(size: Vector3, material: Material, seed: int) -> Node3D:
 
 ## Округлый сугроб, вписанный в коллизионную коробку (центр коробки — начало координат).
 func _mound(size: Vector3, material: Material) -> MeshInstance3D:
-	var sphere := SphereMesh.new()
-	sphere.radius = 0.5
-	sphere.height = 1.0
-	sphere.radial_segments = 24
-	sphere.rings = 10
+	if _mound_mesh == null:
+		_mound_mesh = SphereMesh.new()
+		_mound_mesh.radius = 0.5
+		_mound_mesh.height = 1.0
+		_mound_mesh.radial_segments = 24
+		_mound_mesh.rings = 10
 	var mesh := MeshInstance3D.new()
-	mesh.mesh = sphere
+	mesh.mesh = _mound_mesh
 	mesh.material_override = material
 	mesh.scale = Vector3(size.x * 1.05, size.y * 2.0, size.z * 1.05)
 	mesh.position.y = -size.y * 0.5
@@ -180,11 +234,12 @@ func _garage_row(body: Node3D, name: String, size: Vector3) -> void:
 		box.material_override = Materials.plain(color, 0.7)
 		box.position = Vector3(0, 0, offset) if long_z else Vector3(offset, 0, 0)
 		body.add_child(box)
-		var door := Greybox.mesh_box(Vector3(0.05, size.y * 0.75, unit * 0.8), color.darkened(0.35))
+		# Ворота на длинной стороне ряда: при ряде вдоль z — на грани x, при ряде вдоль x — на грани z.
+		var door_size := Vector3(0.05, size.y * 0.75, unit * 0.8) if long_z else Vector3(unit * 0.8, size.y * 0.75, 0.05)
+		var door := Greybox.mesh_box(door_size, color.darkened(0.35))
 		door.material_override = Materials.plain(color.darkened(0.35), 0.5)
-		door.position = Vector3(side * (size.x * 0.5 + 0.02), -size.y * 0.1, offset)
-		if long_z:
-			body.add_child(door)
+		door.position = Vector3(side * (size.x * 0.5 + 0.02), -size.y * 0.1, offset) if long_z else Vector3(offset, -size.y * 0.1, side * (size.z * 0.5 + 0.02))
+		body.add_child(door)
 	body.add_child(_slab(size, Vector3(0, size.y * 0.5 + 0.04, 0)))
 
 func _zhiguli(size: Vector3, color: Color) -> Node3D:

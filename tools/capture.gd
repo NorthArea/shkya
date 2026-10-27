@@ -1,5 +1,6 @@
 extends SceneTree
-## Кадры greybox: make capture → builds/screenshots/grey01/. Окно 1920×1080, настоящий рендер.
+## Кадры квартала: make capture → builds/screenshots/art02/ (ART-02). Окно 1920×1080, настоящий рендер.
+## Другая папка: tools/run.command … --script tools/capture.gd -- --out=grey01.
 
 const Layout = preload("res://game/world/layout.gd")
 
@@ -13,9 +14,12 @@ const SHOTS := [
 	["06_kiosk", Vector3(66, 0, -70), 0.9, -0.25],
 ]
 
-var output_dir := "res://builds/screenshots/grey01"
+var output_dir := "res://builds/screenshots/art02"
 
 func _initialize() -> void:
+	for argument in OS.get_cmdline_user_args():
+		if argument.begins_with("--out="):
+			output_dir = "res://builds/screenshots".path_join(argument.trim_prefix("--out="))
 	call_deferred("_capture")
 
 func _capture() -> void:
@@ -37,6 +41,17 @@ func _capture() -> void:
 		for i in 30:
 			await physics_frame
 		await _save(shot[0])
+	# В машине: «Лада» идёт по улице A на восток ~50 км/ч (как в fps_probe), камера преследования — снег должен быть в кадре.
+	world.enter_car()
+	var car: Lada = world.car
+	var drive_yaw := -PI * 0.5
+	var at := Vector3(-20, 0, 34)
+	for i in 90:
+		await process_frame
+		at += Vector3(14.0 / 60.0, 0, 0)
+		car.reset_to(at, drive_yaw)
+		world.camera_rig.yaw = drive_yaw
+	await _save("05_drive")
 	# Вид сверху на весь квартал.
 	var top := Camera3D.new()
 	top.projection = Camera3D.PROJECTION_ORTHOGONAL

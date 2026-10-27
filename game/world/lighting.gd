@@ -5,9 +5,11 @@ extends Node3D
 const Layout = preload("res://game/world/layout.gd")
 
 const WARM := Color(1.0, 0.74, 0.42)
-const SNOW_BOX := Vector3(44.0, 2.0, 44.0)
+const SnowShader = preload("res://game/world/shaders/wet_snow.gdshader")
+const SNOW_BOX := Vector3(32.0, 12.0, 32.0)      # объём хлопьев вокруг камеры
+const SNOW_AMOUNT := 3000
 
-var snow: CPUParticles3D
+var snow: MultiMeshInstance3D
 
 func _ready() -> void:
 	var sky_material := ProceduralSkyMaterial.new()
@@ -55,7 +57,23 @@ func _ready() -> void:
 	for p in Layout.street_lamps():
 		_lamp(Vector3(p.x, Layout.LAMP_HEIGHT - 0.4, p.y), 5.0, index)
 		index += 1
+	# Контрастные пятна тёплого света на земле (раздел 2 канона): стоянка «Лады» под дворовым фонарём и площадка у окна киоска.
+	_pool(Layout.LAMPS[1][0] + Vector3(0.0, -0.3, 0.0), 6.0, 40.0, 12.0)
+	_pool(Layout.LAMPS[2][0] + Vector3(0.6, 0.3, 0.0), 5.0, 55.0, 7.0)
 	_build_snow()
+
+## Конус света вниз: видимое пятно на снегу, без теней (дёшево).
+func _pool(at: Vector3, energy: float, angle: float, reach: float) -> void:
+	var spot := SpotLight3D.new()
+	spot.name = "WarmPool%d" % get_child_count()
+	spot.position = at
+	spot.rotation = Vector3(-PI * 0.5, 0.0, 0.0)
+	spot.light_color = WARM
+	spot.light_energy = energy
+	spot.spot_range = reach
+	spot.spot_angle = angle
+	spot.spot_angle_attenuation = 0.6
+	add_child(spot)
 
 func _lamp(at: Vector3, energy: float, index: int) -> void:
 	var lamp := OmniLight3D.new()
@@ -67,38 +85,28 @@ func _lamp(at: Vector3, energy: float, index: int) -> void:
 	lamp.omni_attenuation = 1.4
 	add_child(lamp)
 
-## Мокрый снег: облако частиц над текущей камерой, слегка косо по ветру.
+## Мокрый снег: MultiMesh из плоских хлопьев, движение и обёртка вокруг камеры — в шейдере wet_snow.
+## Без CPU-работы в кадре и без зависимости от телепортов: объём полон с первого кадра, пешком и в машине.
 func _build_snow() -> void:
-	var flake := SphereMesh.new()
-	flake.radius = 0.03
-	flake.height = 0.06
-	flake.radial_segments = 6
-	flake.rings = 3
-	var flake_material := StandardMaterial3D.new()
-	flake_material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	flake_material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	flake_material.albedo_color = Color(0.92, 0.94, 1.0, 0.7)
-	flake.material = flake_material
-	# CPU-частицы: снегу хватает, а вычислительный шейдер GPU-частиц в этой сцене оставлял утечку при выходе.
-	snow = CPUParticles3D.new()
+	var quad := QuadMesh.new()
+	quad.size = Vector2.ONE
+	var material := ShaderMaterial.new()
+	material.shader = SnowShader
+	material.set_shader_parameter("box", SNOW_BOX)
+	quad.material = material
+	var multimesh := MultiMesh.new()
+	multimesh.transform_format = MultiMesh.TRANSFORM_3D
+	multimesh.mesh = quad
+	multimesh.instance_count = SNOW_AMOUNT
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 2610
+	for i in SNOW_AMOUNT:
+		var seed := Vector3(rng.randf(), rng.randf(), rng.randf()) * SNOW_BOX
+		multimesh.set_instance_transform(i, Transform3D(Basis.IDENTITY, seed))
+	snow = MultiMeshInstance3D.new()
 	snow.name = "WetSnow"
-	snow.amount = 2500
-	snow.lifetime = 4.0
-	snow.preprocess = 4.0
-	snow.mesh = flake
-	snow.local_coords = false
-	snow.emission_shape = CPUParticles3D.EMISSION_SHAPE_BOX
-	snow.emission_box_extents = SNOW_BOX * 0.5
-	snow.direction = Vector3(0.25, -1.0, 0.1)
-	snow.spread = 8.0
-	snow.initial_velocity_min = 3.0
-	snow.initial_velocity_max = 4.5
-	snow.gravity = Vector3(0.6, -1.5, 0.2)
-	snow.scale_amount_min = 0.6
-	snow.scale_amount_max = 1.3
+	snow.multimesh = multimesh
+	snow.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	# Хлопья рисуются вокруг камеры, где бы она ни была: границы — весь квартал с запасом.
+	snow.custom_aabb = AABB(Vector3(-400, -50, -400), Vector3(800, 200, 800))
 	add_child(snow)
-
-func _process(_delta: float) -> void:
-	var camera := get_viewport().get_camera_3d()
-	if camera and snow:
-		snow.global_position = camera.global_position + Vector3(0, 12.0, 0)
