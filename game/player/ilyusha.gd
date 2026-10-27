@@ -18,7 +18,9 @@ var probe: Area3D
 func _ready() -> void:
 	collision_layer = 2       # Player
 	collision_mask = 1 | 4    # World, Car
-	floor_snap_length = 0.3
+	# Без привязки к полу: квартал плоский, ступеней и спусков нет. Привязка 0,3 м при упоре в вертикальное ребро
+	# коробки (угол дома, торец вала снега) проваливала Илюшу в землю на 0,15–0,30 м (POLISH-01, tests/polish01_stuck.gd).
+	floor_snap_length = 0.0
 	var capsule := CapsuleShape3D.new()
 	capsule.radius = 0.35
 	capsule.height = 1.5
