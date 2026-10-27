@@ -3,6 +3,7 @@ extends SceneTree
 ## Вход в машину — DRIVE-01; здесь его имитирует прямой вызов mission.notify_entered_car().
 
 const Layout = preload("res://game/world/layout.gd")
+const Driver = preload("res://tests/quest01_driver.gd")
 
 var failures: Array[String] = []
 var checks := 0
@@ -33,6 +34,7 @@ func _run() -> void:
 	await _step01_spawn()
 	await _step_kiosk_without_quest()
 	await _step02_offer_and_blocking()
+	await _step_esc_with_dialog()
 	await _step_decline()
 	await _step03_accept()
 	await _step_idle_babka()
@@ -42,6 +44,7 @@ func _run() -> void:
 	await _step08_09_bread_and_return()
 	await _step10_complete()
 	await _step_restart()
+	await _real_car_pass()
 	_finish()
 
 func _bind() -> void:
@@ -181,6 +184,7 @@ func _step06_arrive() -> void:
 	await _frames(6)
 	check(mission.state == MissionDirector.BUY_BREAD, "06: arriving in the kiosk zone switches to BUY_BREAD")
 	check(hud.task_label.text == "Поговори с продавщицей", "06: task 'Поговори с продавщицей'")
+	check(world.mission.babka_marker() == "" and flow.marker.text == "" and not flow.marker.visible, "06: no ? (and no !) above Babka in BUY_BREAD")
 	_check_target(Layout.VENDOR_WINDOW, "06")
 
 # --- 07: диалог продавщицы ---
@@ -244,15 +248,17 @@ func _step10_complete() -> void:
 	var mission := world.mission
 	await _press_interact()
 	check(mission.state == MissionDirector.COMPLETE and mission.xp == 50 and not mission.has_bread, "10: turn-in completes, +50 XP, bread consumed")
-	check(flow.is_dialog_open() and flow.dialog.text_label.text == "Спасибо, Илюша", "10: Babka says 'Спасибо, Илюша'")
+	check(flow.is_dialog_open() and flow.thanks_bubble.visible and flow.thanks_bubble.text == "Спасибо, Илюша", "10: Babka says Спасибо, Илюша (bubble above her)")
+	check(not flow.dialog.is_open(), "10: only one panel - no dialog panel next to the completion panel")
+	check(world.ui_blocking and not world.player.input_enabled, "10: input is blocked while the completion panel is open")
 	await _frames(3)
 	check(hud.completion_panel.visible, "10: completion panel is shown")
 	check(_all_text(hud.completion_panel).has("ЗАДАНИЕ ВЫПОЛНЕНО") and _all_text(hud.completion_panel).has("+50 опыта"), "10: panel shows ЗАДАНИЕ ВЫПОЛНЕНО and +50 опыта")
 	check(not flow.marker.visible, "10: no marker after completion")
 	check(hud.strike.visible, "10: task is struck out on the card")
-	check(not hud.diamond_visible and not hud.minimap.has_target, "10: no diamond and no minimap target after completion")
+	check(not hud.diamond_visible and not hud.diamond.visible and not hud.minimap.has_target, "10: no diamond and no minimap target after completion")
 	check(_hands() == hands_before, "10: hands are empty")
-	flow.dialog.buttons[&"close"].pressed.emit()
+	hud.completion_close.pressed.emit()
 	await _frames(3)
 	check(not flow.is_dialog_open() and not hud.completion_panel.visible and not world.ui_blocking, "10: panel is dismissable, dialog closed")
 	check(_mouse_captured(), "10: mouse captured after closing")
@@ -313,7 +319,7 @@ func _check_target(expected: Vector3, label: String) -> void:
 	check(target is Vector3 and target.distance_to(expected) < 0.01, "%s: C6 target_position follows the objective %s" % [label, expected])
 	await_frame_sync()
 	check(hud.minimap.has_target and hud.minimap.target_world.distance_to(Vector2(expected.x, expected.z)) < 0.5, "%s: minimap target follows the objective (%s)" % [label, hud.minimap.target_world])
-	check(hud.diamond_visible, "%s: yellow diamond is shown" % label)
+	check(hud.diamond_visible and hud.diamond.visible, "%s: yellow diamond node is visible" % label)
 
 func await_frame_sync() -> void:
 	# HUD обновляется в _process; достаточно вызвать его вручную для текущего снимка.
@@ -367,3 +373,104 @@ func _finish() -> void:
 		main.queue_free()
 	await process_frame
 	quit(0 if failures.is_empty() else 1)
+
+# --- Esc при открытом диалоге ---
+
+func _step_esc_with_dialog() -> void:
+	var player := world.player
+	check(flow.is_dialog_open(), "esc: the offer dialog is open before Esc")
+	var pause := InputEventAction.new()
+	pause.action = &"pause"
+	pause.pressed = true
+	Input.parse_input_event(pause)
+	await _frames(3)
+	check(paused and main.pause_menu.visible, "esc: Esc over the dialog opens the pause menu")
+	check(flow.is_dialog_open(), "esc: the dialog stays open under the pause menu")
+	main.pause_menu.resume_requested.emit()
+	await _frames(3)
+	check(not paused and flow.is_dialog_open() and world.ui_blocking and not player.input_enabled, "esc: after resume the dialog is still open and input still blocked")
+	check(not flow.wants_mouse_captured, "esc: after resume the mouse is still wanted visible")
+	var click := InputEventMouseButton.new()
+	click.button_index = MOUSE_BUTTON_LEFT
+	click.pressed = true
+	Input.parse_input_event(click)
+	await _frames(3)
+	check(world.ui_blocking and flow.is_dialog_open() and not player.input_enabled, "esc: a click on the world does not unblock input")
+	if DisplayServer.get_name() == "headless":
+		print("NOT_RUN: esc: real Input.mouse_mode stays VISIBLE after resume and click (headless DisplayServer has no mouse mode); checked in tests/quest01_capture.gd")
+	else:
+		check(Input.mouse_mode == Input.MOUSE_MODE_VISIBLE, "esc: Input.mouse_mode stays VISIBLE after resume and click")
+
+# --- полный проход с настоящей машиной ---
+
+func _real_car_pass() -> void:
+	# Новый мир после перезапуска из меню. Вход в машину, езда, выход и повторный вход — только настоящие E и WASD.
+	var mission := world.mission
+	var player := world.player
+	var car: Lada = world.car
+	var driver := Driver.new(self, world)
+	var near_babka := Layout.BABKA + Vector3(0, 0, -2.2)
+	check(mission.state == MissionDirector.NOT_STARTED, "real: fresh world")
+	player.place(near_babka, PI)
+	await _frames(4)
+	await _press_interact()
+	flow.dialog.buttons[&"accept"].pressed.emit()
+	await _frames(3)
+	check(mission.state == MissionDirector.GO_TO_CAR, "real: quest accepted")
+	player.place(car.global_position + Vector3(2.2, 0, 0), 0.0)
+	await _frames(4)
+	check(hud.prompt_label.visible and hud.prompt_label.text == "E — СЕСТЬ В МАШИНУ", "real: E prompt at the car")
+	await _press_interact()
+	await _frames(4)
+	check(world.control_mode == &"in_car" and mission.state == MissionDirector.DRIVE_TO_KIOSK, "real: E enters the Lada, mission DRIVE_TO_KIOSK")
+	check(hud.task_label.text == "Доедь до киоска", "real: task 'Доедь до киоска' in the car")
+	var route: Array = Layout.ROUTE_DRIVE.slice(1)
+	var drove: bool = await driver.drive(route, 12.0, 6.0)
+	check(drove, "real: Lada drove along ROUTE_DRIVE to the kiosk by WASD input")
+	var max_kmh := 0.0
+	check(mission.state == MissionDirector.BUY_BREAD, "real: arrival switched the mission to BUY_BREAD (state %s)" % mission.state)
+	check(await driver.stop(), "real: Lada stopped at the kiosk")
+	check(world.get_hud_state()["speed_kmh"] >= 0.0 and hud.speed_gauge.visible, "real: speed gauge is shown in the car")
+	await _press_interact()
+	await _frames(6)
+	check(world.control_mode == &"on_foot", "real: E exits the Lada at the kiosk")
+	var parked := car.global_transform
+	player.place(Layout.VENDOR_WINDOW, PI * 0.5)
+	await _frames(4)
+	await _press_interact()
+	check(flow.is_dialog_open() and flow.dialog.buttons.has(&"buy") and not flow.dialog.buttons[&"buy"].disabled, "real: vendor dialog with enabled КУПИТЬ ХЛЕБ")
+	flow.dialog.buttons[&"buy"].pressed.emit()
+	await _frames(3)
+	check(mission.state == MissionDirector.RETURN_HOME and mission.has_bread and flow.toast_text() == "ХЛЕБ +1", "real: bread bought, toast shown")
+	# Повторный вход в машину: игрок рядом с дверью.
+	player.place(car.global_position + car.global_basis.x * 2.2, 0.0)
+	await _frames(4)
+	await _press_interact()
+	await _frames(4)
+	check(world.control_mode == &"in_car" and mission.state == MissionDirector.RETURN_HOME, "real: re-entered the Lada, state stays RETURN_HOME")
+	check(flow.marker.text == "?" and flow.marker.visible, "real: ? above Babka while returning")
+	# Разворот: машина стоит у киоска носом на север. Пока курс не станет «на юг» (yaw PI), едем вперёд
+	# с полным рулём вправо по свободной части улицы Б (она 12 м шириной), потом возвращаемся по маршруту
+	# в обратном порядке настоящей ездой. Никаких телепортов машины.
+	var turned: bool = await driver.turn_to(PI, -1.0)
+	check(turned, "real: Lada turned around by steering at the kiosk")
+	var back: Array = Layout.ROUTE_DRIVE.slice(0, Layout.ROUTE_DRIVE.size() - 1)
+	back.reverse()
+	var returned: bool = await driver.drive(back, 12.0, 6.0)
+	check(returned, "real: Lada drove back to the yard along the route in reverse order")
+	check(await driver.stop(), "real: Lada stopped in the yard")
+	await _press_interact()
+	await _frames(6)
+	check(world.control_mode == &"on_foot", "real: E exits the Lada in the yard")
+	player.place(near_babka, PI)
+	await _frames(4)
+	check(hud.prompt_label.text == "E — СДАТЬ ЗАДАНИЕ", "real: prompt 'E — СДАТЬ ЗАДАНИЕ' at Babka")
+	await _press_interact()
+	check(mission.state == MissionDirector.COMPLETE and mission.xp == 50 and hud.completion_panel.visible, "real: turn-in completes, +50 XP, panel shown")
+	hud.completion_close.pressed.emit()
+	await _frames(3)
+	check(not flow.is_dialog_open() and not world.ui_blocking and player.input_enabled, "real: panel closed, input restored")
+	if parked.origin.distance_to(car.global_position) < 1.0:
+		check(false, "real: the car actually left the kiosk")
+	driver.world = null
+	driver.tree = null

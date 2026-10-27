@@ -21,6 +21,8 @@ var world: Node
 var mission: MissionDirector
 var dialog: DialogPanel
 var marker: Label3D
+var thanks_bubble: Label3D
+var hud: Node
 
 ## Что QuestFlow попросил у мыши (в headless Input.mouse_mode не отражает запрос).
 var wants_mouse_captured := true
@@ -39,12 +41,16 @@ func _ready() -> void:
 	world.get_node("Vendor").interactable.interacted.connect(_on_interacted.bind(&"vendor"))
 	mission.bread_received.connect(_on_bread_received)
 	_build_marker()
+	hud = world.get_node_or_null("GameHUD")
+	if hud:
+		hud.completion_closed.connect(_on_completion_closed)
 
 func toast_text() -> String:
 	return TOAST_TEXT if _toast_left > 0.0 else ""
 
+## Открыт диалог или панель сдачи: ввод Илюши остановлен.
 func is_dialog_open() -> bool:
-	return dialog.is_open()
+	return _kind != &""
 
 func _process(delta: float) -> void:
 	_toast_left = maxf(0.0, _toast_left - delta)
@@ -52,7 +58,7 @@ func _process(delta: float) -> void:
 	marker.visible = symbol != ""
 	marker.text = symbol
 	_marker_time += delta
-	marker.position.y = 3.1 + sin(_marker_time * 3.0) * 0.12
+	marker.position.y = 2.75 + sin(_marker_time * 3.0) * 0.08
 
 func _physics_process(_delta: float) -> void:
 	# Прибытие: Илюша или машина на площадке киоска, пока миссия ждёт прибытия.
@@ -62,7 +68,7 @@ func _physics_process(_delta: float) -> void:
 # --- взаимодействие ---
 
 func _on_interacted(_actor: Node, id: StringName) -> void:
-	if dialog.is_open():
+	if _kind != &"":
 		return
 	var result := mission.interact(id)
 	match result:
@@ -79,8 +85,10 @@ func _on_interacted(_actor: Node, id: StringName) -> void:
 				{"id": &"leave", "text": "УЙТИ"},
 			], &"vendor")
 		MissionDirector.R_TURN_IN:
+			# Одна композиция как на кадре 10: реплика над Бабкой + панель финала внизу (HUD), без второй панели.
 			_kind = &"thanks"
-			_open("БАБКА", LINE_THANKS, [{"id": &"close", "text": "ЗАКРЫТЬ", "primary": true}], &"babka")
+			thanks_bubble.visible = true
+			_block()
 		MissionDirector.R_BABKA_IDLE:
 			_kind = &"idle"
 			var line := LINE_IDLE_DONE if mission.state == MissionDirector.COMPLETE else LINE_IDLE
@@ -96,10 +104,7 @@ func _on_choice(id: StringName) -> void:
 			if not mission.buy_bread():
 				return  # покупка недоступна — диалог остаётся открытым
 		&"close":
-			if _kind == &"thanks":
-				var hud := world.get_node_or_null("GameHUD")
-				if hud and hud.has_method("dismiss_completion"):
-					hud.dismiss_completion()
+			pass
 	_close()
 
 func _on_bread_received() -> void:
@@ -109,13 +114,21 @@ func _on_bread_received() -> void:
 
 func _open(speaker: String, text: String, specs: Array, portrait: StringName) -> void:
 	dialog.open(speaker, text, specs, portrait)
+	_block()
+
+func _block() -> void:
 	world.ui_blocking = true
 	world.player.input_enabled = false
 	wants_mouse_captured = false
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 
+func _on_completion_closed() -> void:
+	if _kind == &"thanks":
+		_close()
+
 func _close() -> void:
 	dialog.close()
+	thanks_bubble.visible = false
 	_kind = &""
 	world.ui_blocking = false
 	if world.control_mode == &"on_foot":
@@ -136,6 +149,18 @@ func _build_marker() -> void:
 	marker.outline_size = 24
 	marker.modulate = Color(1.0, 0.85, 0.1)
 	marker.outline_modulate = Color(0.12, 0.10, 0.08)
-	marker.position = Vector3(0, 3.1, 0)
+	marker.position = Vector3(0, 2.75, 0)
 	marker.visible = false
 	world.get_node("Babka").add_child(marker)
+	thanks_bubble = Label3D.new()
+	thanks_bubble.name = "ThanksBubble"
+	thanks_bubble.text = LINE_THANKS
+	thanks_bubble.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+	thanks_bubble.no_depth_test = true
+	thanks_bubble.pixel_size = 0.0035
+	thanks_bubble.font_size = 96
+	thanks_bubble.outline_size = 20
+	thanks_bubble.outline_modulate = Color(0.12, 0.10, 0.08)
+	thanks_bubble.position = Vector3(0, 3.1, 0)
+	thanks_bubble.visible = false
+	world.get_node("Babka").add_child(thanks_bubble)

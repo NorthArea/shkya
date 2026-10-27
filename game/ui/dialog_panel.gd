@@ -40,6 +40,7 @@ func _ready() -> void:
 	portrait = Control.new()
 	portrait.name = "Portrait"
 	portrait.custom_minimum_size = Vector2(150, 150)
+	portrait.clip_contents = true
 	portrait.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	portrait.draw.connect(_draw_portrait)
 	outer.add_child(portrait)
@@ -86,7 +87,7 @@ func open(speaker: String, text: String, specs: Array, portrait_kind: StringName
 		button.disabled = not spec.get("enabled", true)
 		button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		button.custom_minimum_size = Vector2(0, 58)
-		_style_button(button, spec.get("primary", false))
+		style_button(button, spec.get("primary", false))
 		button.pressed.connect(_on_pressed.bind(spec["id"]))
 		_row.add_child(button)
 		buttons[spec["id"]] = button
@@ -123,7 +124,7 @@ static func paper_style() -> StyleBoxFlat:
 	style.shadow_size = 8
 	return style
 
-func _style_button(button: Button, primary: bool) -> void:
+static func style_button(button: Button, primary: bool) -> void:
 	button.add_theme_font_size_override("font_size", 30)
 	for state in ["normal", "hover", "pressed", "focus", "disabled"]:
 		var style := StyleBoxFlat.new()

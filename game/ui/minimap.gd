@@ -66,9 +66,9 @@ func _draw() -> void:
 			continue
 		var size_xz := Vector2(spec[3].x, spec[3].z)
 		_draw_box(spec[2], size_xz, COL_LOW if kind == "panel_low" or kind == "garage" else COL_SOLID, mid)
+	_draw_arrow(mid)
 	if has_target:
 		_draw_diamond(mid + target_marker, 12.0)
-	_draw_arrow(mid)
 	draw_polyline(_close(_translate(_disc, mid)), INK, 4.0, true)
 
 func _draw_box(center_xz: Vector2, size_xz: Vector2, color: Color, mid: Vector2) -> void:
