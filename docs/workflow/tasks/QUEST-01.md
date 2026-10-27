@@ -53,3 +53,9 @@
 - Лог headless-прогона quest01 содержит WARNING «ObjectDB instances were leaked at exit» и ERROR «resources still in use at exit». Разобрано 27.10.2026: утекают только `AudioStreamWAV` и `AudioStreamPlaybackWAV` — по одному на каждый звук, сыгранный хотя бы раз (то же в grey01, drive01 и polish01_audio с момента появления звука в POLISH-01). В `--headless` фиктивный аудиодрайвер не микширует (polish01_audio пишет «playback does not advance»), поэтому AudioServer не освобождает воспроизведения. Окно и настоящий драйвер, без правок кода: polish01_audio 15/15 и quest01 147/147, предупреждений нет (`builds/checks/quest01/leak_windowed*.log`). Дефекта игры нет, закрыто.
 
 Результаты: `tests/quest01_acceptance.gd` 146/146, exit 0; `tests/grey01_acceptance.gd` 101/101, exit 0 (логи в `builds/checks/quest01/`).
+
+## Пересъёмка с персонажами ART-01 (27.10.2026)
+
+`./tools/run.command --fixed-fps 60 --resolution 1920x1080 --script tests/quest01_capture.gd` → `builds/screenshots/quest01/01…10`, MOUSE_CHECK PASS (`builds/checks/quest01/capture-art01-fix.log`). Кадры 09 и 10 по композиции совпадают с концептами: Бабка справа от Илюши у двери, «?» над шапкой, затем «Спасибо, Илюша» и панель финала. В кадре 04 «Лада» игрока — серая заглушка DRIVE-01, облик машины ни одна задача не покрывала; заведена задача ART-03.
+
+Оконная съёмка давала «4 ObjectDB instances leaked» и «2 resources still in use»: `quest_complete.wav` и `yard_ambience_loop.wav`, по `--verbose`. Причина — съёмка выходила через один кадр после освобождения мира, пока звучал финал. Теперь она ждёт 10 кадров, предупреждений 0. Игра здесь ни при чём.

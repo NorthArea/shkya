@@ -102,7 +102,10 @@ func _run() -> void:
 	driver.world = null
 	driver.tree = null
 	main.queue_free()
-	await process_frame
+	# Несколько кадров: AudioServer освобождает остановленные воспроизведения не сразу,
+	# иначе выход сразу после звука финала даёт «resources still in use at exit».
+	for i in 10:
+		await process_frame
 	quit(0 if mouse_ok else 1)
 
 func _place(point: Vector3, facing: float, camera_yaw: float) -> void:
