@@ -8,6 +8,7 @@ extends Node
 const DialogPanelScript = preload("res://game/ui/dialog_panel.gd")
 
 const TOAST_SECONDS := 2.0
+const DIALOG_SHOULDER := 1.3  # м: камера вбок на время диалога, собеседник виден из-за Илюши (кадр 07)
 const TOAST_TEXT := "ХЛЕБ +1"
 
 const LINE_OFFER := "Илюша, сходи за хлебом в киоск"
@@ -114,6 +115,7 @@ func _on_bread_received() -> void:
 
 func _open(speaker: String, text: String, specs: Array, portrait: StringName) -> void:
 	dialog.open(speaker, text, specs, portrait)
+	world.camera_rig.shoulder = DIALOG_SHOULDER
 	_block()
 
 func _block() -> void:
@@ -128,6 +130,7 @@ func _on_completion_closed() -> void:
 
 func _close() -> void:
 	dialog.close()
+	world.camera_rig.shoulder = 0.0
 	thanks_bubble.visible = false
 	_kind = &""
 	world.ui_blocking = false

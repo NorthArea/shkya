@@ -21,6 +21,11 @@ var pitch := -0.30
 var arm: SpringArm3D
 var camera: Camera3D
 var permanent_exclusions: Array[RID] = []
+## Плечевое смещение вправо, м: на время диалога камера уходит вбок, чтобы собеседник
+## за спиной Илюши был виден (кадр 07). Меняется плавно.
+var shoulder := 0.0
+var _shoulder_now := 0.0
+const SHOULDER_SHARPNESS := 5.0
 func _ready() -> void:
 	arm = SpringArm3D.new()
 	arm.name = "Arm"
@@ -70,6 +75,7 @@ func _physics_process(delta: float) -> void:
 		# Камера преследования: плавно встаёт за машиной по её курсу.
 		yaw = lerp_angle(yaw, target.global_rotation.y, 1.0 - exp(-CHASE_SHARPNESS * delta))
 	arm.spring_length = lerpf(arm.spring_length, PROFILES[profile]["distance"], 1.0 - exp(-4.0 * delta))
+	_shoulder_now = lerpf(_shoulder_now, shoulder, 1.0 - exp(-SHOULDER_SHARPNESS * delta))
 	rotation = Vector3(pitch, yaw, 0.0)
 
 func _unhandled_input(event: InputEvent) -> void:
@@ -82,4 +88,5 @@ func apply_mouse(relative: Vector2) -> void:
 	pitch = clampf(pitch - relative.y * mouse_sensitivity, PITCH_MIN, PITCH_MAX)
 
 func _goal() -> Vector3:
-	return target.global_position + Vector3.UP * PROFILES[profile]["height"]
+	var right := Vector3(cos(yaw), 0.0, -sin(yaw))
+	return target.global_position + Vector3.UP * PROFILES[profile]["height"] + right * _shoulder_now
