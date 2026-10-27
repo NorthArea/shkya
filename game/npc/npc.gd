@@ -11,6 +11,7 @@ const InteractableScript = preload("res://game/interaction/interactable.gd")
 @export var facing_yaw := 0.0  # поворот облика относительно узла (зона взаимодействия не поворачивается)
 @export var solid := true
 @export var interact_radius := 2.5
+@export var body_radius := 0.7  # по силуэту облика ART-01: Бабка-«гора» ≈1,5 м в ширину
 @export var interact_offset := Vector3.ZERO
 
 var interactable: Interactable
@@ -27,7 +28,7 @@ func _ready() -> void:
 	add_child(visual)
 	if solid:
 		var shape := CapsuleShape3D.new()
-		shape.radius = 0.45
+		shape.radius = body_radius
 		shape.height = 1.8
 		var collider := CollisionShape3D.new()
 		collider.shape = shape

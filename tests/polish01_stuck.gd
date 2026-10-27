@@ -154,7 +154,7 @@ func _boxes() -> Array:
 	for spec in Layout.all_solids():
 		var size: Vector3 = spec[3]
 		boxes.append({"name": spec[0], "cat": _category(spec[1]), "c": spec[2], "h": Vector2(size.x, size.z) * 0.5})
-	boxes.append({"name": "Babka", "cat": "prop", "c": Vector2(Layout.BABKA.x, Layout.BABKA.z), "h": Vector2(0.45, 0.45)})
+	boxes.append({"name": "Babka", "cat": "prop", "c": Vector2(Layout.BABKA.x, Layout.BABKA.z), "h": Vector2(0.7, 0.7)})  # npc.gd body_radius
 	var b := Layout.BOUNDS
 	var mid := b.get_center()
 	boxes.append({"name": "Bound_West", "cat": "edge", "c": Vector2(b.position.x - 1.0, mid.y), "h": Vector2(1.0, b.size.y * 0.5)})
