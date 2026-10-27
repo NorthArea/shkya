@@ -26,6 +26,7 @@ var engine: AudioStreamPlayer3D
 var skid: AudioStreamPlayer3D
 var door: AudioStreamPlayer3D
 var ui: AudioStreamPlayer
+var chime: AudioStreamPlayer  # хлеб и финал — отдельно от щелчка, иначе щелчок кнопки обрывает звон
 var ambience: AudioStreamPlayer
 var _walked := 0.0
 var _last_position := Vector3.INF
@@ -46,6 +47,9 @@ func _setup() -> void:
 	ui = AudioStreamPlayer.new()
 	ui.volume_db = -6.0
 	add_child(ui)
+	chime = AudioStreamPlayer.new()
+	chime.volume_db = -6.0
+	add_child(chime)
 	ambience = AudioStreamPlayer.new()
 	ambience.stream = AMBIENCE
 	ambience.volume_db = -12.0
@@ -53,8 +57,8 @@ func _setup() -> void:
 	ambience.play()
 	world.car.driver_entered.connect(func(_d): _one_shot(door, DOOR_CLOSE, "door_close"))
 	world.car.driver_exited.connect(func(_d): _one_shot(door, DOOR_OPEN, "door_open"))
-	world.mission.bread_received.connect(func(): _one_shot(ui, BREAD, "bread"))
-	world.mission.quest_completed.connect(func(_xp): _one_shot(ui, COMPLETE, "complete"))
+	world.mission.bread_received.connect(func(): _one_shot(chime, BREAD, "bread"))
+	world.mission.quest_completed.connect(func(_xp): _one_shot(chime, COMPLETE, "complete"))
 	var flow := world.get_node_or_null("QuestFlow")
 	if flow and flow.get("dialog") and flow.dialog.has_signal("choice"):
 		flow.dialog.choice.connect(func(_id): _one_shot(ui, UI_CLICK, "ui"))

@@ -80,9 +80,11 @@ def footstep(rng: random.Random) -> list[float]:
 
 
 def engine_loop() -> list[float]:
-    """Холостой ход «Жигулей»: 4-тактный пульс 25 Гц с гармониками и шумом, 2 с, ровно целое число циклов."""
+    """Холостой ход «Жигулей»: 4-тактный пульс 25 Гц с гармониками и шумом, 2 с, ровно целое число циклов.
+
+    Генерируется 2,1 с: последние 0,1 с вшиваются в начало (фильтр стартует с нуля, без сшивки стык щёлкал)."""
     rng = random.Random(7)
-    n = samples(2.0)
+    n = samples(2.1)
     base = 25.0
     out = []
     for i in range(n):
@@ -91,7 +93,7 @@ def engine_loop() -> list[float]:
         pulse = sum(math.sin(k * phase + k * 0.7) / k ** 1.2 for k in range(1, 9))
         out.append(pulse + rng.uniform(-0.35, 0.35))
     out = lowpass(out, 900)
-    return normalize(out, 0.6)
+    return normalize(loop_crossfade(out, 0.1), 0.6)
 
 
 def slush_loop() -> list[float]:

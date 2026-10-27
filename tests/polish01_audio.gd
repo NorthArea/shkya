@@ -75,9 +75,15 @@ func _run() -> void:
 	var mission := world.mission
 	mission.notify_entered_car()
 	mission.notify_arrived_kiosk()
-	mission.buy_bread()
+	# Покупка через настоящую кнопку диалога продавщицы: щелчок не должен оборвать звон.
+	world.player.place(Layout.VENDOR_WINDOW, 0.0)
+	await _frames(4)
+	await _press(&"interact")
+	if flow.is_dialog_open() and flow.dialog.buttons.has(&"buy"):
+		flow.dialog.buttons[&"buy"].pressed.emit()
 	await _frames(2)
 	check(sound.played["bread"] == 1, "bread chime once on purchase")
+	check(sound.chime.stream == sound.BREAD and sound.ui.stream == sound.UI_CLICK, "button click does not replace bread chime")
 	mission.interact(&"babka")
 	await _frames(2)
 	check(sound.played["complete"] == 1, "quest complete jingle once")
