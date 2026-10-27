@@ -9,6 +9,7 @@ signal driver_exited(driver: Node3D)
 
 const Greybox = preload("res://game/world/greybox.gd")
 const InteractableScript = preload("res://game/interaction/interactable.gd")
+const LadaVisual = preload("res://game/vehicles/lada_visual.gd")
 
 const SIZE := Vector3(1.7, 1.4, 4.1)
 const MAX_SPEED := 22.0         # м/с ≈ 80 км/ч
@@ -40,7 +41,7 @@ func _ready() -> void:
 	collider.shape = shape
 	collider.position.y = SIZE.y * 0.5
 	add_child(collider)
-	add_child(_build_placeholder_visual())
+	add_child(LadaVisual.build())  # облик белой «Лады» — ART-03
 	enter_zone = InteractableScript.new()
 	enter_zone.name = "EnterZone"
 	enter_zone.interaction_id = &"car"
@@ -129,23 +130,3 @@ func reset_to(point: Vector3, facing_yaw: float) -> void:
 	lateral_speed = 0.0
 	exit_requested = false
 	reset_physics_interpolation()
-
-func _build_placeholder_visual() -> Node3D:
-	var root := Node3D.new()
-	root.name = "Visual"
-	var body := Greybox.mesh_box(Vector3(SIZE.x, 0.75, SIZE.z), Color(0.93, 0.93, 0.89))
-	body.position.y = 0.65
-	root.add_child(body)
-	var cabin := Greybox.mesh_box(Vector3(SIZE.x * 0.92, 0.55, SIZE.z * 0.48), Color(0.70, 0.75, 0.80))
-	cabin.position = Vector3(0.0, 1.3, 0.25)
-	root.add_child(cabin)
-	for x in [-0.8, 0.8]:
-		for z in [-1.3, 1.3]:
-			var wheel := Greybox.mesh_cylinder(0.32, 0.32, 0.22, Color(0.08, 0.08, 0.08))
-			wheel.rotation.z = PI * 0.5
-			wheel.position = Vector3(x, 0.32, z)
-			root.add_child(wheel)
-		var headlight := Greybox.mesh_box(Vector3(0.35, 0.18, 0.05), Color(1.0, 0.92, 0.6))
-		headlight.position = Vector3(x * 0.8, 0.75, -SIZE.z * 0.5 - 0.02)
-		root.add_child(headlight)
-	return root
