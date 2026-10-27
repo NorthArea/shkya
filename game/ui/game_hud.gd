@@ -72,7 +72,10 @@ func _process(_delta: float) -> void:
 	speed_gauge.visible = speed >= 0.0
 	if speed >= 0.0:
 		speed_label.text = str(roundi(speed))
-	completion_panel.visible = complete and not completion_dismissed
+	var show_completion: bool = complete and not completion_dismissed
+	if show_completion and not completion_panel.visible:
+		completion_close.grab_focus.call_deferred()  # закрыть можно и E/Enter, не только мышью (QA-01, З2)
+	completion_panel.visible = show_completion
 	_update_map_and_diamond(world, state.get("target_position", null))
 
 func dismiss_completion() -> void:

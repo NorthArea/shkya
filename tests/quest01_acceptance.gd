@@ -258,9 +258,17 @@ func _step10_complete() -> void:
 	check(hud.strike.visible, "10: task is struck out on the card")
 	check(not hud.diamond_visible and not hud.diamond.visible and not hud.minimap.has_target, "10: no diamond and no minimap target after completion")
 	check(_hands() == hands_before, "10: hands are empty")
-	hud.completion_close.pressed.emit()
+	check(hud.completion_close.has_focus(), "10: ЗАКРЫТЬ has keyboard focus (closable without the mouse)")
+	var accept := InputEventAction.new()
+	accept.action = &"ui_accept"
+	accept.pressed = true
+	Input.parse_input_event(accept)
+	await process_frame
+	accept = accept.duplicate()
+	accept.pressed = false
+	Input.parse_input_event(accept)
 	await _frames(3)
-	check(not flow.is_dialog_open() and not hud.completion_panel.visible and not world.ui_blocking, "10: panel is dismissable, dialog closed")
+	check(not flow.is_dialog_open() and not hud.completion_panel.visible and not world.ui_blocking, "10: panel closes from the keyboard (ui_accept), dialog closed")
 	check(_mouse_captured(), "10: mouse captured after closing")
 	for i in 3:
 		await _press_interact()
