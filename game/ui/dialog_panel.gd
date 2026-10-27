@@ -146,17 +146,20 @@ static func style_button(button: Button, primary: bool) -> void:
 	button.add_theme_color_override("font_focus_color", INK)
 	button.add_theme_color_override("font_disabled_color", Color(0.35, 0.33, 0.30))
 
-## Портрет-заглушка: голова в платке. Настоящие портреты — ART-01.
+## Портрет — вырезка головы и плеч из рисунка персонажа ART-01 (тот же облик, что в мире, кадр 07).
+## Область — в единицах холста 400×600 (текстура в 2 раза крупнее).
+const PORTRAIT_REGION := {
+	&"babka": Rect2(90, 22, 220, 220),
+	&"vendor": Rect2(90, 56, 220, 220),
+}
+
 func _draw_portrait() -> void:
 	var rect := Rect2(Vector2.ZERO, portrait.size)
 	portrait.draw_rect(rect, PAPER_DARK)
+	var path := "res://assets/art/characters/%s_front_idle.svg" % _portrait_kind
+	var region: Rect2 = PORTRAIT_REGION.get(_portrait_kind, PORTRAIT_REGION[&"babka"])
+	if ResourceLoader.exists(path):
+		var texture: Texture2D = load(path)
+		var scale := texture.get_width() / 400.0
+		portrait.draw_texture_rect_region(texture, rect, Rect2(region.position * scale, region.size * scale))
 	portrait.draw_rect(rect, INK, false, 3.0)
-	var scarf := Color(0.62, 0.20, 0.22) if _portrait_kind == &"vendor" else Color(0.45, 0.48, 0.20)
-	var skin := Color(0.93, 0.88, 0.62)
-	var c := rect.get_center() + Vector2(0, 8)
-	portrait.draw_circle(c + Vector2(0, 40), 62.0, Color(0.35, 0.30, 0.28))
-	portrait.draw_circle(c, 46.0, scarf)
-	portrait.draw_circle(c + Vector2(0, 8), 36.0, skin)
-	portrait.draw_circle(c + Vector2(-13, 2), 4.0, INK)
-	portrait.draw_circle(c + Vector2(13, 2), 4.0, INK)
-	portrait.draw_line(c + Vector2(-10, 24), c + Vector2(10, 24), INK, 3.0)
