@@ -50,12 +50,8 @@ const SOLIDS := [
 	["H9_NorthEnd", "panel_low", Vector2(65, -118.5), Vector3(70, 15, 13)],
 	["H10_NorthWest", "panel", Vector2(-20, -80), Vector3(60, 27, 14)],
 	["Zhiguli_B", "parked_car", Vector2(74, -30), Vector3(1.7, 1.4, 4.1)],
-	# Столбы фонарей
+	# Столб фонаря во дворе; уличные фонари строит street_lamps()
 	["Lamp_Yard", "lamp", Vector2(-52, 100), Vector3(0.25, 6, 0.25)],
-	["Lamp_A1", "lamp", Vector2(-10, 41), Vector3(0.25, 6, 0.25)],
-	["Lamp_A2", "lamp", Vector2(30, 41), Vector3(0.25, 6, 0.25)],
-	["Lamp_B1", "lamp", Vector2(61, 0), Vector3(0.25, 6, 0.25)],
-	["Lamp_B2", "lamp", Vector2(61, -50), Vector3(0.25, 6, 0.25)],
 ]
 
 # Козырёк подъезда: висит над землёй, поэтому задан отдельно (центр, размер).
@@ -72,16 +68,69 @@ const SURFACES := [
 	["Yard_Drive", "yard_road", Vector2(-20, 78), Vector2(56, 44)],
 ]
 
-# Освещённые точки для greybox: [позиция, энергия].
+# Тёплые точки, кроме уличных фонарей: [позиция, энергия].
 const LAMPS := [
 	[Vector3(-40, 2.9, 106.5), 2.0],   # подъезд
-	[Vector3(-52, 5.8, 100), 3.0],
-	[Vector3(-10, 5.8, 41), 3.0],
-	[Vector3(30, 5.8, 41), 3.0],
-	[Vector3(61, 5.8, 0), 3.0],
-	[Vector3(61, 5.8, -50), 3.0],
+	[Vector3(-52, 5.8, 100), 3.0],     # двор
 	[Vector3(58.5, 3.0, -77), 2.5],    # окно киоска
 ]
+
+# --- Декор с коллизиями (ART-02): фонари, валы снега у обочин, берёзы, указатель. Мини-карта их не рисует. ---
+
+const LAMP_HEIGHT := 6.0
+const BANK := Vector2(1.2, 0.9)        # ширина и высота вала снега
+const TREES: Array[Vector2] = [
+	Vector2(-66, 98), Vector2(-70, 64), Vector2(-56, 66), Vector2(-12, 102), Vector2(4, 96), Vector2(12, 76),
+	Vector2(-80, 17), Vector2(-65, 17), Vector2(-35, 17), Vector2(-20, 17),
+]
+const STREET_SIGN := Vector2(60.5, 22.5)
+
+## Уличные фонари вдоль тротуаров, с пропусками у переходов маршрута. [центр x/z].
+static func street_lamps() -> Array[Vector2]:
+	var points: Array[Vector2] = []
+	for x in range(-90, 100, 24):
+		points.append(Vector2(x, 22.0))                    # улица A, север
+		if absf(x) > 26:
+			points.append(Vector2(x, 42.0))                # улица A, юг (без выезда со двора)
+	for z in range(10, -112, -24):
+		if z > -60 or z < -94:
+			points.append(Vector2(61.0, z))                # улица B, запад (без площадки киоска)
+		points.append(Vector2(79.0, z))                    # улица B, восток
+	return points
+
+## Валы снега вдоль обочин: [центр x/z, размер x/z]. Разрывы — выезд со двора, перекрёсток, площадка киоска.
+static func snow_banks() -> Array:
+	var banks := []
+	var w := BANK.x
+	for span in [[-100.0, 56.0, 24.4], [-100.0, -26.0, 39.6], [24.0, 100.0, 39.6]]:   # улица A: [x от, x до, z]
+		var x: float = span[0]
+		while x < span[1]:
+			var length := minf(26.0, span[1] - x)
+			banks.append([Vector2(x + length * 0.5, span[2]), Vector2(length, w)])
+			x += length + 3.0
+	for span in [[63.4, -110.0, -94.0], [63.4, -60.0, 19.0], [76.6, -110.0, 19.0]]:    # улица B: [x, z от, z до]
+		var z: float = span[1]
+		while z < span[2]:
+			var length := minf(26.0, span[2] - z)
+			banks.append([Vector2(span[0], z + length * 0.5), Vector2(w, length)])
+			z += length + 3.0
+	return banks
+
+## Все декоративные твёрдые коробки в формате SOLIDS.
+static func decor_solids() -> Array:
+	var solids := []
+	for p in street_lamps():
+		solids.append(["StreetLamp", "lamp", p, Vector3(0.25, LAMP_HEIGHT, 0.25)])
+	for bank in snow_banks():
+		solids.append(["SnowBank", "snow_bank", bank[0], Vector3(bank[1].x, BANK.y, bank[1].y)])
+	for p in TREES:
+		solids.append(["Birch", "tree", p, Vector3(0.3, 7.0, 0.3)])
+	solids.append(["StreetSign", "sign_post", STREET_SIGN, Vector3(0.12, 3.2, 0.12)])
+	return solids
+
+## SOLIDS + декор: для геометрии и проверок свободного места.
+static func all_solids() -> Array:
+	return SOLIDS + decor_solids()
 
 static func ground_point(id: StringName) -> Vector3:
 	match id:

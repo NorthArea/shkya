@@ -48,7 +48,8 @@ func _capture() -> void:
 	top.current = true
 	await _save("99_top")
 	main.queue_free()
-	await process_frame
+	for i in 5:
+		await process_frame
 	quit(0)
 
 func _save(name: String) -> void:

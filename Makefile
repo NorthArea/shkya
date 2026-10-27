@@ -1,4 +1,4 @@
-.PHONY: run editor test pack capture
+.PHONY: run editor test pack capture fps
 run:
 	./tools/run.command
 editor:
@@ -13,3 +13,6 @@ capture:
 	./tools/run.command --fixed-fps 60 --resolution 1920x1080 --script tools/capture.gd
 pack:
 	./tools/run.command --headless --script tools/pack.gd
+
+fps:
+	./tools/run.command --resolution 1920x1080 --script tools/fps_probe.gd

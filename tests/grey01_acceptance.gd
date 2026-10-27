@@ -74,7 +74,7 @@ func _check_layout(world: DemoWorld) -> void:
 	check(drive >= 150.0 and drive <= 300.0, "drive yard→kiosk is a trip, not a chore (%.0f m)" % drive)
 
 func _solid_at(p: Vector3, margin: float) -> String:
-	for spec in Layout.SOLIDS:
+	for spec in Layout.all_solids():
 		var xz: Vector2 = spec[2]
 		var size: Vector3 = spec[3]
 		if absf(p.x - xz.x) < size.x * 0.5 + margin and absf(p.z - xz.y) < size.z * 0.5 + margin:
