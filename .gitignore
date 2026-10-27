@@ -1,0 +1,10 @@
+.godot/
+.idea/
+.DS_Store
+builds/
+tools/local/
+.claude/settings.local.json
+*.tmp
+__pycache__/
+*.pyc
+SHKYA_NOVOSIBIRSK_DEMO.zip
