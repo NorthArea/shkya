@@ -22,8 +22,10 @@ const HANDBRAKE_GRIP := 1.2
 const TURN_RATE_LOW := 1.9      # рад/с на малой скорости
 const TURN_RATE_HIGH := 0.75    # рад/с на максимальной
 const TURN_FULL_AT := 5.0       # ниже этой скорости поворот слабеет до нуля
+const EXIT_SPEED_KMH := 3.0     # быстрее этого водитель не выходит, машина сначала тормозит
 
 var driver: Node3D
+var exit_requested := false
 var enter_zone: Interactable
 var lateral_speed := 0.0        # для тестов и звука заноса
 
@@ -49,7 +51,8 @@ func _physics_process(delta: float) -> void:
 	var throttle := 0.0
 	var steer := 0.0
 	var handbrake := false
-	if driver:
+	var stopping := not driver or exit_requested  # пустая машина и машина перед выходом тормозят до остановки
+	if driver and not exit_requested:
 		throttle = Input.get_axis(&"move_back", &"move_forward")
 		steer = Input.get_axis(&"move_right", &"move_left")
 		handbrake = Input.is_action_pressed(&"handbrake")
@@ -64,7 +67,9 @@ func _physics_process(delta: float) -> void:
 	forward = -global_basis.z
 	forward_speed = old_velocity.dot(forward)
 	var lateral := old_velocity - forward * forward_speed
-	if handbrake:
+	if stopping:
+		forward_speed = move_toward(forward_speed, 0.0, BRAKE * delta)
+	elif handbrake:
 		forward_speed = move_toward(forward_speed, 0.0, HANDBRAKE * delta)
 	elif throttle > 0.0:
 		if forward_speed < -0.5:
@@ -89,13 +94,17 @@ func _physics_process(delta: float) -> void:
 	else:
 		velocity.y -= get_gravity().length() * delta
 	move_and_slide()
-
-func _unhandled_input(event: InputEvent) -> void:
-	if driver and event.is_action_pressed(&"interact"):
-		get_viewport().set_input_as_handled()
+	if exit_requested and speed_kmh() < EXIT_SPEED_KMH:
+		exit_requested = false
 		var world := get_parent()
 		if world and world.has_method("exit_car"):
 			world.exit_car()
+
+## E в машине: на месте — выход сразу, на ходу — машина тормозит и водитель выходит после остановки.
+func _unhandled_input(event: InputEvent) -> void:
+	if driver and event.is_action_pressed(&"interact"):
+		get_viewport().set_input_as_handled()
+		exit_requested = true
 
 func enter(new_driver: Node3D) -> void:
 	driver = new_driver
@@ -104,6 +113,7 @@ func enter(new_driver: Node3D) -> void:
 func exit() -> Node3D:
 	var former := driver
 	driver = null
+	exit_requested = false
 	if former:
 		driver_exited.emit(former)
 	return former
@@ -117,6 +127,7 @@ func reset_to(point: Vector3, facing_yaw: float) -> void:
 	rotation = Vector3(0.0, facing_yaw, 0.0)
 	velocity = Vector3.ZERO
 	lateral_speed = 0.0
+	exit_requested = false
 	reset_physics_interpolation()
 
 func _build_placeholder_visual() -> Node3D:

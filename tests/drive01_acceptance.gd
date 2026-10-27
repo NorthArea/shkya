@@ -29,6 +29,7 @@ func _run() -> void:
 	await _check_handbrake()
 	await _check_reset()
 	await _check_repeat()
+	await _check_review_gaps()
 	_finish()
 
 # --- критерий 1: вход и выход по E ---
@@ -302,6 +303,108 @@ func _check_repeat() -> void:
 		await _press(&"interact")
 		consistent = consistent and world.control_mode == &"on_foot" and world.camera_rig.target == world.player and world.player.visible and world.player.input_enabled
 	check(consistent, "six enter/exit cycles keep input, camera and visibility consistent")
+
+# --- пробелы из независимого ревью ---
+
+func _check_review_gaps() -> void:
+	var car := world.car
+	await _ensure_in_car()
+	# Выход на ходу: машина сама тормозит, Илюша выходит после остановки.
+	await _accelerate_east()
+	var speed_before := car.speed_kmh()
+	await _press(&"interact")
+	check(world.control_mode == &"in_car", "E at %.0f km/h does not throw Ilyusha out at speed" % speed_before)
+	var frames := 0
+	while world.control_mode == &"in_car" and frames < 400:
+		await physics_frame
+		frames += 1
+	check(world.control_mode == &"on_foot", "after braking Ilyusha exits (%.1f s)" % (frames / 60.0))
+	check(car.speed_kmh() < Lada.EXIT_SPEED_KMH + 0.5 and world.player.global_position.distance_to(car.global_position) < 5.0, "exit happens next to a stopped car")
+	await _frames(60)
+	check(car.speed_kmh() < 0.5, "car without a driver stays still")
+	# Нет места для выхода: остаёмся в машине и видим подсказку.
+	car.reset_to(Vector3(0, 0, 32), -PI * 0.5)
+	await _ensure_in_car()
+	var walls := []
+	for spec in [[Vector3(0, 1, 34.3), Vector3(9, 2, 2)], [Vector3(0, 1, 29.7), Vector3(9, 2, 2)], [Vector3(3.6, 1, 32), Vector3(1, 2, 3)], [Vector3(-3.6, 1, 32), Vector3(1, 2, 3)]]:
+		var body := StaticBody3D.new()
+		body.collision_layer = 1
+		var shape := CollisionShape3D.new()
+		var box := BoxShape3D.new()
+		box.size = spec[1]
+		shape.shape = box
+		body.add_child(shape)
+		body.position = spec[0]
+		world.add_child(body)
+		walls.append(body)
+	await _frames(3)
+	await _press(&"interact")
+	await _frames(3)
+	check(world.control_mode == &"in_car", "with every exit blocked Ilyusha stays in the car")
+	check(world.get_hud_state()["prompt"] == DemoWorld.HINT_NO_EXIT, "HUD says there is no room to exit: '%s'" % world.get_hud_state()["prompt"])
+	await _frames(150)
+	check(world.get_hud_state()["prompt"] == "", "no-exit hint disappears after 2 s")
+	for body in walls:
+		body.queue_free()
+	await _frames(3)
+	await _press(&"interact")
+	await _frames(3)
+	check(world.control_mode == &"on_foot", "exit works once the way is clear")
+	# Выход у края карты: место за границей не выбирается.
+	car.reset_to(Vector3(-98.9, 0, -20), 0.0)
+	await _ensure_in_car()
+	await _press(&"interact")
+	await _frames(3)
+	var p := world.player.global_position
+	check(world.control_mode == &"on_foot" and Layout.BOUNDS.has_point(Vector2(p.x, p.z)), "exit at the map edge stays inside the map (%s)" % p)
+	# Сброс пешком, когда Илюша стоит на маршруте рядом с машиной.
+	world.player.place(Vector3(0, 0, 32), 0.0)
+	car.reset_to(Vector3(4, 0, 36), 1.0)
+	await _frames(5)
+	main.set_paused(true)
+	main.pause_menu.reset_car_requested.emit()
+	await _frames(5)
+	check(car.global_position.distance_to(world.player.global_position) >= DemoWorld.RESET_CLEARANCE - 0.01, "reset next to Ilyusha keeps clearance (%.1f m)" % car.global_position.distance_to(world.player.global_position))
+	check(_distance_to_route(car.global_position) < 0.5, "reset next to Ilyusha still lands on the route")
+	# Знак руления на заднем ходу: руль влево — нос уходит вправо.
+	car.reset_to(Vector3(0, 0, 32), -PI * 0.5)
+	await _ensure_in_car()
+	Input.action_press(&"move_back")
+	await _frames(70)
+	var yaw := car.global_rotation.y
+	Input.action_press(&"move_left")
+	await _frames(30)
+	_release_all()
+	check(angle_difference(yaw, car.global_rotation.y) < -0.05, "reversing with left steer turns the nose right")
+	# Радиус поворота растёт со скоростью.
+	var slow := await _turn_radius(6.0)
+	var fast := await _turn_radius(19.0)
+	print("INFO: turn radius %.1f m at 6 m/s, %.1f m at 19 m/s" % [slow, fast])
+	check(fast > slow * 1.5, "turn radius grows with speed (%.1f → %.1f m)" % [slow, fast])
+
+## Подготовка сценария: посадить в машину напрямую (путь по E проверен в _check_enter_exit).
+func _ensure_in_car() -> void:
+	await _frames(2)
+	if world.control_mode == &"on_foot":
+		world.enter_car()
+	await _frames(2)
+
+func _turn_radius(speed: float) -> float:
+	var car := world.car
+	car.reset_to(Vector3(-60, 0, 32), -PI * 0.5)
+	await _frames(2)
+	car.velocity = -car.global_basis.z * speed
+	var yaw := car.global_rotation.y
+	Input.action_press(&"move_left")
+	var travelled := 0.0
+	for i in 20:
+		var before := car.global_position
+		await physics_frame
+		travelled += before.distance_to(car.global_position)
+	_release_all()
+	var turned := absf(angle_difference(yaw, car.global_rotation.y))
+	await _frames(60)
+	return travelled / maxf(turned, 0.0001)
 
 # --- служебное ---
 

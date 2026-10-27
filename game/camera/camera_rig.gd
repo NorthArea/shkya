@@ -35,7 +35,8 @@ func _ready() -> void:
 	camera.current = true
 	arm.add_child(camera)
 
-func follow(new_target: Node3D, new_profile: StringName = &"on_foot") -> void:
+## instant = false: камера встаёт за новой целью сразу, а дистанция плавно меняется до профиля.
+func follow(new_target: Node3D, new_profile: StringName = &"on_foot", instant := true) -> void:
 	target = new_target
 	profile = new_profile
 	pitch = PROFILES[profile]["pitch"]
@@ -44,7 +45,7 @@ func follow(new_target: Node3D, new_profile: StringName = &"on_foot") -> void:
 		arm.add_excluded_object(rid)
 	if target is CollisionObject3D:
 		arm.add_excluded_object(target.get_rid())
-	snap()
+	snap(instant)
 
 ## Тела, которые не должны притягивать камеру (NPC рядом с героем).
 func exclude_permanently(rid: RID) -> void:
@@ -52,10 +53,11 @@ func exclude_permanently(rid: RID) -> void:
 	arm.add_excluded_object(rid)
 
 ## Мгновенно поставить камеру за целью, без сглаживания.
-func snap() -> void:
+func snap(with_distance := true) -> void:
 	if target:
 		global_position = _goal()
-		arm.spring_length = PROFILES[profile]["distance"]
+		if with_distance:
+			arm.spring_length = PROFILES[profile]["distance"]
 		rotation = Vector3(pitch, yaw, 0.0)
 		reset_physics_interpolation()
 
