@@ -46,19 +46,21 @@ void fragment() {
 		// Грязь и сырость снизу.
 		color *= mix(0.55, 1.0, smoothstep(0.0, 1.6, v));
 		vec3 emission = vec3(0.0);
-		bool shop = ground_floor_shops > 0.5 && storey < 0.5;
-		float ww = shop ? window_spacing - 0.5 : window_width;
+		// Витрины первого этажа: с простенками, часть ячеек — глухая стена или тёмная витрина
+		// (ревью ART-02: сплошная светящаяся полоса читалась как торговый центр).
+		bool shop = ground_floor_shops > 0.5 && storey < 0.5 && hash(cell + 7.7) > 0.3;
+		float ww = shop ? window_spacing - 1.0 : window_width;
 		float wh = shop ? 2.0 : window_height;
 		float wx0 = (window_spacing - ww) * 0.5;
 		float wy0 = shop ? 0.35 : 0.85;
 		bool in_window = local.x > wx0 && local.x < wx0 + ww && local.y > wy0 && local.y < wy0 + wh && v > 0.3;
 		if (in_window) {
-			bool lit = shop || hash(cell) < lit_ratio;
+			bool lit = shop ? hash(cell + 1.3) < 0.75 : hash(cell) < lit_ratio;
 			float frame_line = step(abs(local.x - (wx0 + ww * 0.5)), 0.04);
 			vec3 glass = lit ? window_lit * (0.75 + 0.5 * hash(cell + 3.1)) : window_dark;
 			color = mix(glass, seam_color * 0.6, frame_line);
 			if (lit) {
-				emission = glass * (shop ? 1.6 : 1.1) * (1.0 - frame_line);
+				emission = glass * (shop ? 1.25 : 1.1) * (1.0 - frame_line);
 			}
 			ROUGHNESS = 0.2;
 		} else {
