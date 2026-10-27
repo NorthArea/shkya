@@ -1,0 +1,369 @@
+extends SceneTree
+## QUEST-01: квест «За хлебом» на настоящем main.tscn: кадры 01–10, диалоги, HUD, блокировка ввода, перезапуск.
+## Вход в машину — DRIVE-01; здесь его имитирует прямой вызов mission.notify_entered_car().
+
+const Layout = preload("res://game/world/layout.gd")
+
+var failures: Array[String] = []
+var checks := 0
+var main: Node
+var world: DemoWorld
+var flow: Node
+var hud: CanvasLayer
+var hands_before: Array = []
+
+func _initialize() -> void:
+	call_deferred("_run")
+
+func _run() -> void:
+	create_timer(600.0, true, false, true).timeout.connect(func():
+		push_error("FAIL: quest01 exceeded 600 simulated seconds")
+		quit(2)
+	)
+	main = load("res://game/main.tscn").instantiate()
+	root.add_child(main)
+	await _frames(2)
+	main.menu.start_button.pressed.emit()
+	await _frames(10)
+	_bind()
+	check(world != null and flow != null and hud != null, "world, QuestFlow and GameHUD exist")
+	if world == null or flow == null:
+		_finish()
+		return
+	await _step01_spawn()
+	await _step_kiosk_without_quest()
+	await _step02_offer_and_blocking()
+	await _step_decline()
+	await _step03_accept()
+	await _step_idle_babka()
+	await _step04_05_car_and_drive()
+	await _step06_arrive()
+	await _step07_vendor_dialog()
+	await _step08_09_bread_and_return()
+	await _step10_complete()
+	await _step_restart()
+	_finish()
+
+func _bind() -> void:
+	world = main.world
+	flow = world.get_node("QuestFlow") if world else null
+	hud = world.get_node("GameHUD") if world else null
+
+# --- 01: появление ---
+
+func _step01_spawn() -> void:
+	var mission := world.mission
+	hands_before = _hands()
+	check(mission.state == MissionDirector.NOT_STARTED, "01: mission starts at NOT_STARTED")
+	check(flow.marker.visible and flow.marker.text == "!", "01: ! above Babka before acceptance")
+	check(flow.marker.get_parent() == world.babka, "01: marker is attached to Babka")
+	check(flow.toast_text() == "" and not flow.is_dialog_open(), "01: no toast, no dialog at start")
+	check(not hud.completion_panel.visible and not hud.speed_gauge.visible, "01: no completion panel, no speed gauge on foot")
+	check(hud.title_label.text == "НОВОСИБИРСК" and hud.task_label.text == "Подойди к Бабке", "01: card shows city title and task")
+	check(hud.minimap != null and hud.minimap.size.x > 200.0, "01: minimap exists")
+	# Ромб: камера смотрит на Бабку (юг) — ромб на экране у центра; камера отвернулась — ромб прижат к краю.
+	world.camera_rig.yaw = PI
+	await _frames(3)
+	var canvas: Vector2 = hud._canvas_size()
+	check(hud.diamond_visible and not hud.diamond_clamped, "01: diamond is on screen when the camera looks at Babka")
+	check(absf(hud.diamond_position.x - canvas.x * 0.5) < canvas.x * 0.1, "01: diamond near the screen centre (%s of %s)" % [hud.diamond_position, canvas])
+	world.camera_rig.yaw = 0.0
+	await _frames(3)
+	check(hud.diamond_visible and hud.diamond_clamped, "01: diamond clamps to the edge when Babka is behind")
+	var rect := Rect2(Vector2.ZERO, canvas)
+	check(rect.has_point(hud.diamond_position), "01: clamped diamond stays inside the screen %s" % hud.diamond_position)
+	_check_target(Layout.BABKA, "01")
+	world.camera_rig.yaw = PI
+	await _frames(2)
+
+func _step_kiosk_without_quest() -> void:
+	var mission := world.mission
+	world.player.place(Layout.VENDOR_WINDOW, 0.0)
+	await _frames(4)
+	await _press_interact()
+	check(not flow.is_dialog_open() and mission.state == MissionDirector.NOT_STARTED and not mission.has_bread, "buying without the quest is blocked at the kiosk")
+	check(mission.money == MissionDirector.START_MONEY and flow.toast_text() == "", "no money spent, no toast without the quest")
+	world.player.place(Layout.SPAWN, 0.0)
+	await _frames(4)
+
+# --- 02: диалог выдачи и блокировка ---
+
+func _step02_offer_and_blocking() -> void:
+	var mission := world.mission
+	var player := world.player
+	player.place(Layout.BABKA + Vector3(0, 0, -2.2), 0.0)
+	await _frames(4)
+	check(hud.prompt_label.visible and hud.prompt_label.text == "E — ПОГОВОРИТЬ", "02: E prompt next to Babka")
+	await _press_interact()
+	check(flow.is_dialog_open() and mission.state == MissionDirector.OFFERED, "02: E opens the offer dialog, mission OFFERED")
+	check(flow.dialog.text_label.text == "Илюша, сходи за хлебом в киоск", "02: Babka offer text '%s'" % flow.dialog.text_label.text)
+	check(flow.dialog.buttons.has(&"accept") and flow.dialog.buttons[&"accept"].text == "ПРИНЯТЬ", "02: button ПРИНЯТЬ")
+	check(flow.dialog.buttons.has(&"decline") and flow.dialog.buttons[&"decline"].text == "ОТКАЗАТЬСЯ", "02: button ОТКАЗАТЬСЯ")
+	check(flow.marker.visible and flow.marker.text == "!", "02: marker is still ! while the offer is open")
+	check(world.ui_blocking and not player.input_enabled, "02: dialog sets ui_blocking and stops Ilyusha input")
+	check(not _mouse_captured(), "02: mouse is visible while the dialog is open")
+	check(player.current_interactable() == null, "02: no interactable is served while the dialog is open")
+	var before := player.global_position
+	Input.action_press(&"move_forward")
+	await _frames(30)
+	Input.action_release(&"move_forward")
+	check(player.global_position.distance_to(before) < 0.05, "02: Ilyusha does not walk while the dialog is open")
+	await _press_interact()
+	check(mission.state == MissionDirector.OFFERED and flow.is_dialog_open(), "02: E during the dialog changes nothing")
+	var visible_texts := [flow.dialog.speaker_label.text, flow.dialog.text_label.text]
+	check(visible_texts == ["БАБКА", "Илюша, сходи за хлебом в киоск"], "02: dialog speaker and text are intact %s" % [visible_texts])
+
+# --- отказ ---
+
+func _step_decline() -> void:
+	var mission := world.mission
+	var player := world.player
+	flow.dialog.buttons[&"decline"].pressed.emit()
+	await _frames(3)
+	check(mission.state == MissionDirector.NOT_STARTED, "decline: back to NOT_STARTED")
+	check(not flow.is_dialog_open() and not world.ui_blocking and player.input_enabled, "decline: dialog closed, input restored")
+	check(_mouse_captured(), "decline: mouse is captured again")
+	check(flow.marker.visible and flow.marker.text == "!", "decline: marker is ! again")
+	check(world.get_hud_state()["task"] == "Подойди к Бабке", "decline: task is back to 'Подойди к Бабке'")
+	await _frames(3)
+	var before := player.global_position
+	world.camera_rig.yaw = 0.0
+	Input.action_press(&"move_back")
+	await _frames(20)
+	Input.action_release(&"move_back")
+	check(player.global_position.distance_to(before) > 0.3, "decline: Ilyusha walks again")
+	player.place(Layout.BABKA + Vector3(0, 0, -2.2), 0.0)
+	await _frames(4)
+
+# --- 03: принять ---
+
+func _step03_accept() -> void:
+	var mission := world.mission
+	await _press_interact()
+	check(flow.is_dialog_open() and mission.state == MissionDirector.OFFERED, "03: E again re-opens the offer")
+	flow.dialog.buttons[&"accept"].pressed.emit()
+	await _frames(3)
+	check(mission.state == MissionDirector.GO_TO_CAR, "03: ПРИНЯТЬ starts the quest (GO_TO_CAR)")
+	check(not flow.is_dialog_open() and not world.ui_blocking and world.player.input_enabled, "03: dialog closed, input restored")
+	check(not flow.marker.visible and flow.marker.text == "", "03: no marker above Babka after acceptance")
+	check(hud.title_label.text == "ЗА ХЛЕБОМ" and hud.task_label.text == "Сядь в машину", "03: card is 'ЗА ХЛЕБОМ' / 'Сядь в машину'")
+	_check_target(world.car.global_position, "03")
+
+func _step_idle_babka() -> void:
+	var mission := world.mission
+	await _press_interact()
+	check(flow.is_dialog_open() and flow.dialog.text_label.text == "Хлеб не забудь, Илюша", "babka_idle: short line '%s'" % flow.dialog.text_label.text)
+	check(flow.dialog.buttons.size() == 1 and flow.dialog.buttons.has(&"close"), "babka_idle: single close button")
+	flow.dialog.buttons[&"close"].pressed.emit()
+	await _frames(3)
+	check(not flow.is_dialog_open() and mission.state == MissionDirector.GO_TO_CAR and mission.xp == 0, "babka_idle: state and XP unchanged")
+
+# --- 04/05: машина и дорога (вход в машину имитируется) ---
+
+func _step04_05_car_and_drive() -> void:
+	var mission := world.mission
+	world.player.place(Layout.SPAWN, 0.0)
+	await _frames(3)
+	check(mission.notify_entered_car(), "04: entered car simulated via notify_entered_car()")
+	await _frames(2)
+	check(mission.state == MissionDirector.DRIVE_TO_KIOSK, "05: state DRIVE_TO_KIOSK")
+	check(hud.task_label.text == "Доедь до киоска", "05: task 'Доедь до киоска'")
+	_check_target(Layout.KIOSK, "05")
+	await _frames(30)
+	check(mission.state == MissionDirector.DRIVE_TO_KIOSK, "05: no arrival away from the kiosk zone")
+	check(not flow.marker.visible, "05: no marker during the drive")
+
+# --- 06: прибытие ---
+
+func _step06_arrive() -> void:
+	var mission := world.mission
+	world.player.place(Layout.ROUTE_DRIVE[-1], 0.0)
+	await _frames(6)
+	check(mission.state == MissionDirector.BUY_BREAD, "06: arriving in the kiosk zone switches to BUY_BREAD")
+	check(hud.task_label.text == "Поговори с продавщицей", "06: task 'Поговори с продавщицей'")
+	_check_target(Layout.VENDOR_WINDOW, "06")
+
+# --- 07: диалог продавщицы ---
+
+func _step07_vendor_dialog() -> void:
+	var mission := world.mission
+	var player := world.player
+	player.place(Layout.VENDOR_WINDOW, 0.0)
+	await _frames(4)
+	check(hud.prompt_label.visible and hud.prompt_label.text == "E — ПОГОВОРИТЬ", "07: E prompt at the kiosk window")
+	mission.money = 10  # условно не хватает денег
+	await _press_interact()
+	check(flow.is_dialog_open() and flow.dialog.text_label.text == "Батон? 35 рублей", "07: vendor dialog 'Батон? 35 рублей'")
+	check(flow.dialog.speaker_label.text == "ПРОДАВЩИЦА", "07: speaker ПРОДАВЩИЦА")
+	var buy: Button = flow.dialog.buttons[&"buy"]
+	check(buy.text == "КУПИТЬ ХЛЕБ" and buy.disabled, "07: КУПИТЬ ХЛЕБ is disabled when can_buy_bread() is false")
+	check(flow.dialog.buttons[&"leave"].text == "УЙТИ", "07: button УЙТИ")
+	buy.pressed.emit()
+	await _frames(3)
+	check(mission.state == MissionDirector.BUY_BREAD and not mission.has_bread and flow.toast_text() == "", "07: forced press on the disabled button buys nothing")
+	check(flow.is_dialog_open(), "07: dialog stays open after a rejected purchase")
+	flow.dialog.buttons[&"leave"].pressed.emit()
+	await _frames(3)
+	check(not flow.is_dialog_open() and mission.state == MissionDirector.BUY_BREAD and player.input_enabled, "07: УЙТИ closes the dialog, state unchanged")
+	mission.money = MissionDirector.START_MONEY
+	await _press_interact()
+	buy = flow.dialog.buttons[&"buy"]
+	check(flow.is_dialog_open() and not buy.disabled, "07: КУПИТЬ ХЛЕБ is enabled when money is enough")
+
+# --- 08/09: хлеб и возвращение ---
+
+func _step08_09_bread_and_return() -> void:
+	var mission := world.mission
+	var player := world.player
+	flow.dialog.buttons[&"buy"].pressed.emit()
+	await _frames(2)
+	check(mission.state == MissionDirector.RETURN_HOME and mission.has_bread, "08: purchase gives bread (RETURN_HOME, has_bread)")
+	check(mission.money == MissionDirector.START_MONEY - MissionDirector.BREAD_PRICE, "08: 35 rubles spent")
+	check(not flow.is_dialog_open() and player.input_enabled and not world.ui_blocking, "08: dialog closed, input restored")
+	check(flow.toast_text() == "ХЛЕБ +1" and hud.toast_label.visible and hud.toast_label.text == "ХЛЕБ +1", "08: toast ХЛЕБ +1 in the HUD")
+	check(world.get_hud_state()["toast"] == "ХЛЕБ +1", "08: toast comes through get_hud_state() (C6)")
+	check(_hands() == hands_before, "08: nothing appears in Ilyusha's hands (hands empty)")
+	await _frames(60)
+	check(flow.toast_text() == "ХЛЕБ +1", "08: toast still visible after ~1 s")
+	await _frames(54)
+	check(flow.toast_text() == "ХЛЕБ +1", "08: toast still visible after ~1.9 s")
+	await _frames(12)
+	check(flow.toast_text() == "" and not hud.toast_label.visible, "08: toast gone after ~2 s")
+	check(flow.marker.visible and flow.marker.text == "?", "09: ? above Babka after the purchase")
+	check(hud.task_label.text == "Вернись к Бабке", "09: task 'Вернись к Бабке'")
+	_check_target(Layout.BABKA, "09")
+	await _press_interact()
+	check(not flow.is_dialog_open() and mission.money == 65, "09: E at the kiosk after buying does nothing, no second purchase")
+	player.place(Layout.BABKA + Vector3(0, 0, -2.2), 0.0)
+	await _frames(4)
+	check(hud.prompt_label.text == "E — СДАТЬ ЗАДАНИЕ", "09: prompt 'E — СДАТЬ ЗАДАНИЕ' at Babka")
+
+# --- 10: сдача ---
+
+func _step10_complete() -> void:
+	var mission := world.mission
+	await _press_interact()
+	check(mission.state == MissionDirector.COMPLETE and mission.xp == 50 and not mission.has_bread, "10: turn-in completes, +50 XP, bread consumed")
+	check(flow.is_dialog_open() and flow.dialog.text_label.text == "Спасибо, Илюша", "10: Babka says 'Спасибо, Илюша'")
+	await _frames(3)
+	check(hud.completion_panel.visible, "10: completion panel is shown")
+	check(_all_text(hud.completion_panel).has("ЗАДАНИЕ ВЫПОЛНЕНО") and _all_text(hud.completion_panel).has("+50 опыта"), "10: panel shows ЗАДАНИЕ ВЫПОЛНЕНО and +50 опыта")
+	check(not flow.marker.visible, "10: no marker after completion")
+	check(hud.strike.visible, "10: task is struck out on the card")
+	check(not hud.diamond_visible and not hud.minimap.has_target, "10: no diamond and no minimap target after completion")
+	check(_hands() == hands_before, "10: hands are empty")
+	flow.dialog.buttons[&"close"].pressed.emit()
+	await _frames(3)
+	check(not flow.is_dialog_open() and not hud.completion_panel.visible and not world.ui_blocking, "10: panel is dismissable, dialog closed")
+	check(_mouse_captured(), "10: mouse captured after closing")
+	for i in 3:
+		await _press_interact()
+		check(flow.is_dialog_open() and flow.dialog.text_label.text == "Иди погрейся, Илюша", "10: repeated talk %d is a plain line" % (i + 1))
+		flow.dialog.buttons[&"close"].pressed.emit()
+		await _frames(3)
+	check(mission.xp == 50 and mission.state == MissionDirector.COMPLETE and not hud.completion_panel.visible, "10: XP is not awarded twice, panel does not return")
+	check(mission.money == 65, "10: money unchanged by repeated talks")
+
+# --- перезапуск ---
+
+func _step_restart() -> void:
+	var old: DemoWorld = world
+	await _press_interact()  # открытый диалог на момент перезапуска
+	check(flow.is_dialog_open() and world.ui_blocking, "restart: a dialog is open before restarting")
+	main.set_paused(true)
+	main.pause_menu.restart_requested.emit()
+	await _frames(6)
+	check(not is_instance_valid(old), "restart: old world freed")
+	_bind()
+	_check_clean_start("restart from pause")
+	var minimap_target: Vector2 = hud.minimap.target_world
+	check(minimap_target.distance_to(Vector2(Layout.BABKA.x, Layout.BABKA.z)) < 0.01, "restart: minimap target is Babka again")
+	# Через главное меню: сначала пройти до OFFERED, чтобы было что чистить.
+	await _press_at_babka_open_offer()
+	main.set_paused(true)
+	main.pause_menu.menu_requested.emit()
+	await _frames(3)
+	check(main.world == null and main.menu.visible, "restart: back to the main menu")
+	main.menu.start_button.pressed.emit()
+	await _frames(6)
+	_bind()
+	_check_clean_start("start from menu")
+
+func _press_at_babka_open_offer() -> void:
+	world.player.place(Layout.BABKA + Vector3(0, 0, -2.2), 0.0)
+	await _frames(4)
+	await _press_interact()
+	check(flow.is_dialog_open() and world.mission.state == MissionDirector.OFFERED, "restart: new world offer dialog opens")
+
+func _check_clean_start(label: String) -> void:
+	var mission := world.mission
+	check(mission.state == MissionDirector.NOT_STARTED and not mission.has_bread and mission.xp == 0 and mission.money == MissionDirector.START_MONEY, "%s: mission at NOT_STARTED, no bread, no XP, full money" % label)
+	check(flow != null and not flow.is_dialog_open() and not world.ui_blocking and world.player.input_enabled, "%s: no dialog, input enabled" % label)
+	check(flow.toast_text() == "" and not hud.toast_label.visible, "%s: no toast left over" % label)
+	check(not hud.completion_panel.visible and not hud.completion_dismissed, "%s: no completion panel left over" % label)
+	check(flow.marker.text == "!" and flow.marker.visible, "%s: marker is ! again" % label)
+	check(_mouse_captured(), "%s: mouse is captured" % label)
+
+# --- служебное ---
+
+## Цель HUD: C6 target_position, ромб и мини-карта следуют за целью цели миссии.
+func _check_target(expected: Vector3, label: String) -> void:
+	var state := world.get_hud_state()
+	var target = state["target_position"]
+	check(target is Vector3 and target.distance_to(expected) < 0.01, "%s: C6 target_position follows the objective %s" % [label, expected])
+	await_frame_sync()
+	check(hud.minimap.has_target and hud.minimap.target_world.distance_to(Vector2(expected.x, expected.z)) < 0.5, "%s: minimap target follows the objective (%s)" % [label, hud.minimap.target_world])
+	check(hud.diamond_visible, "%s: yellow diamond is shown" % label)
+
+func await_frame_sync() -> void:
+	# HUD обновляется в _process; достаточно вызвать его вручную для текущего снимка.
+	hud._process(0.0)
+
+## В headless DisplayServer не хранит режим мыши, поэтому читаем запрос QuestFlow.
+func _mouse_captured() -> bool:
+	if DisplayServer.get_name() == "headless":
+		return flow.wants_mouse_captured
+	return Input.mouse_mode == Input.MOUSE_MODE_CAPTURED
+
+func _hands() -> Array:
+	var names := []
+	for node in world.player.find_children("*", "", true, false):
+		names.append(String(node.name))
+	return names
+
+func _all_text(node: Node) -> Array:
+	var out := []
+	for child in node.find_children("*", "Label", true, false):
+		out.append((child as Label).text)
+	return out
+
+func _press_interact() -> void:
+	var down := InputEventAction.new()
+	down.action = &"interact"
+	down.pressed = true
+	Input.parse_input_event(down)
+	await _frames(2)
+	var up := InputEventAction.new()
+	up.action = &"interact"
+	up.pressed = false
+	Input.parse_input_event(up)
+	await _frames(2)
+
+func _frames(count: int) -> void:
+	for i in count:
+		await physics_frame
+
+func check(condition: bool, label: String) -> void:
+	checks += 1
+	if condition:
+		print("PASS: ", label)
+	else:
+		failures.append(label)
+		push_error("FAIL: " + label)
+
+func _finish() -> void:
+	print("QUEST01: %d checks, %d failures" % [checks, failures.size()])
+	if is_instance_valid(main):
+		main.queue_free()
+	await process_frame
+	quit(0 if failures.is_empty() else 1)

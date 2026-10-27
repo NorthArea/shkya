@@ -149,6 +149,7 @@ func _check_interaction(world: DemoWorld) -> void:
 	check(world.get_hud_state()["prompt"] == "E — ПОГОВОРИТЬ", "E prompt next to Babka: '%s'" % world.get_hud_state()["prompt"])
 	await _press_interact()
 	check(counts["babka"] == 1 and counts["vendor"] == 0, "E next to Babka fires Babka interaction once (%s)" % [counts])
+	await _close_dialog(world, &"decline")
 	player.place(Layout.VENDOR_WINDOW, 0.0)
 	await _frames(4)
 	check(world.get_hud_state()["prompt"] == "", "vendor has no prompt before BUY_BREAD")
@@ -163,11 +164,21 @@ func _check_interaction(world: DemoWorld) -> void:
 	check(world.get_hud_state()["prompt"] == "E — ПОГОВОРИТЬ", "vendor prompt in BUY_BREAD")
 	await _press_interact()
 	check(counts["vendor"] == 1, "E at the kiosk window fires vendor interaction")
+	await _close_dialog(world, &"leave")
 	player.place(Layout.SPAWN, 0.0)
 	await _frames(4)
 	check(world.get_hud_state()["prompt"] == "", "prompt disappears away from interactables")
 	await _press_interact()
 	check(counts["babka"] == 1 and counts["vendor"] == 1, "E far from everyone does nothing")
+
+## E у Бабки и продавщицы открывает диалог QUEST-01; закрыть его кнопкой, как игрок.
+func _close_dialog(world: DemoWorld, button: StringName) -> void:
+	var flow = world.get_node("QuestFlow")
+	check(flow.is_dialog_open() and world.ui_blocking, "E opens a dialog that blocks walking")
+	if flow.is_dialog_open() and flow.dialog.buttons.has(button):
+		flow.dialog.buttons[button].pressed.emit()
+	await _frames(2)
+	check(not flow.is_dialog_open() and not world.ui_blocking and world.player.input_enabled, "dialog closed by '%s', walking restored" % button)
 
 func _press_interact() -> void:
 	var down := InputEventAction.new()
