@@ -50,6 +50,6 @@
 
 Не сделано / ограничения:
 - Композиция кадров 04 и 09 только приблизительно повторяет концепт (greybox-модели, нет окружения ART-02); сверка по сути (HUD, маркеры, панели), не по картинке.
-- Лог headless-прогона quest01 содержит WARNING «ObjectDB instances were leaked at exit» и ERROR «resources still in use at exit» (нестабильно, появилось после прохода с настоящей машиной); причина не найдена, проверки не затрагивает.
+- Лог headless-прогона quest01 содержит WARNING «ObjectDB instances were leaked at exit» и ERROR «resources still in use at exit». Разобрано 27.10.2026: утекают только `AudioStreamWAV` и `AudioStreamPlaybackWAV` — по одному на каждый звук, сыгранный хотя бы раз (то же в grey01, drive01 и polish01_audio с момента появления звука в POLISH-01). В `--headless` фиктивный аудиодрайвер не микширует (polish01_audio пишет «playback does not advance»), поэтому AudioServer не освобождает воспроизведения. Окно и настоящий драйвер, без правок кода: polish01_audio 15/15 и quest01 147/147, предупреждений нет (`builds/checks/quest01/leak_windowed*.log`). Дефекта игры нет, закрыто.
 
 Результаты: `tests/quest01_acceptance.gd` 146/146, exit 0; `tests/grey01_acceptance.gd` 101/101, exit 0 (логи в `builds/checks/quest01/`).
