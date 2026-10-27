@@ -14,14 +14,19 @@
 
 ## Общие контракты
 
-Квест, персонаж, машина и HUD связаны. До параллельной реализации DRIVE-01 и QUEST-01 в карточке GREY-01 фиксируются и проверяются ранним соединением:
+Квест, персонаж, машина и HUD связаны. Контракты ниже — единственный источник для всех задач; первое настоящее соединение участников проверяют GREY-01 и QUEST-01. Изменение контракта согласовывается с затронутыми исполнителями до правок и записывается здесь.
 
-- владелец состояния миссии — `MissionDirector` (FSM раздела 6 канона, `has_bread`, опыт); остальные узлы только читают состояние и отправляют события;
-- единый интерфейс взаимодействия по `E`: зона, текст подсказки, доступность, действие;
-- переключение «пешком / в машине»: кто владеет вводом и камерой, как сообщается вход и выход;
-- данные для HUD: текущая цель, подсказка, позиция цели для ромба и мини-карты, скорость.
+**C1. Раскладка мира.** `game/world/layout.gd` — единственный источник координат: границы карты, коробки геометрии, точки `spawn`, `babka`, `car_spawn`, `vendor`, `kiosk`, зона `kiosk_zone`, маршрут `route_walk` и `route_drive` для тестов. Никто не дублирует координаты в сценах и тестах.
 
-Изменение контракта согласовывается с затронутыми исполнителями до правок.
+**C2. Слои физики.** 1 World — земля, здания, сугробы, NPC; 2 Player — Илюша; 3 Car — «Лада»; 4 Interact — зоны взаимодействия.
+
+**C3. Взаимодействие по `E`.** `Interactable` (`game/interaction/interactable.gd`, `Area3D` на слое Interact): `interaction_id: StringName`, `prompt: String`, `enabled: bool`, `signal interacted(actor)`, `interact(actor)`. Пешком `E` обрабатывает Илюша: ближайший доступный `Interactable` в его зоне — `Ilyusha.current_interactable()`. В машине `E` обрабатывает машина (выход). Тексты подсказок и доступность задаёт `MissionDirector.prompt_for(id)`, мир применяет их к зонам.
+
+**C4. Пешком / в машине.** Режим хранит `DemoWorld.control_mode`: `&"on_foot"` или `&"in_car"`. Машина: `enter(driver)`, `exit()`, `reset_to(transform)`, `speed_kmh()`, сигналы `driver_entered`, `driver_exited`. В машине Илюша скрыт, его ввод и коллизии выключены; при выходе он встаёт рядом с машиной на свободное место в том же зимнем костюме. Камера: `CameraRig.follow(target, profile)`, профили `&"on_foot"` и `&"in_car"`; ходьба читает `CameraRig.yaw`.
+
+**C5. Миссия.** `MissionDirector` (`game/mission/mission_director.gd`) — единственный владелец `state`, `has_bread`, `xp`, `money`. Состояния — раздел 6 канона: `NOT_STARTED`, `OFFERED`, `GO_TO_CAR`, `DRIVE_TO_KIOSK`, `BUY_BREAD`, `RETURN_HOME`, `COMPLETE`. Команды: `interact(id) -> StringName` (что показать: диалог выдачи, диалог продавщицы, сдача, обычная реплика), `accept()`, `decline()`, `buy_bread() -> bool`, `notify_entered_car()`, `notify_arrived_kiosk()`, `reset()`. Запросы: `can_buy_bread()`, `babka_marker()` (`"!"`, `"?"` или `""`), `objective()` (`title`, `task`, `target_id`), `prompt_for(id)`. Сигналы: `state_changed(old, new)`, `bread_received`, `quest_completed(xp)`. Недопустимая команда ничего не меняет и возвращает отказ. Остальные узлы состояние не хранят и не меняют.
+
+**C6. Данные HUD.** `DemoWorld.get_hud_state() -> Dictionary`: `title`, `task`, `prompt`, `target_position` (или `null`), `babka_marker`, `speed_kmh` (`-1` пешком), `toast` («ХЛЕБ +1» на 2 с), `complete` (панель финала). HUD только читает этот снимок каждый кадр.
 
 ## Параллельные сессии
 
