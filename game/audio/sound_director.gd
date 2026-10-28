@@ -116,17 +116,45 @@ func _radio(delta: float) -> void:
 			subtitle_card.visible = false
 
 ## EXT-02 (HIDE_SPOTS.md раздел 11): гэг укрытия строкой субтитра — по две строки на экран, каждая пара seconds,
-## затем плашка гаснет. Управление не блокирует; радио, если звучит, уступает строку. Повторный вызов заменяет
-## текущий гэг. Состояние — твин в метаданных узла (метод добавлен без новых полей).
+## затем плашка гаснет. Управление не блокирует; радио, если звучит, уступает строку. Приёмка P2-1: идущий гэг
+## не перебивается — новый встаёт в очередь (не длиннее GAG_QUEUE_MAX, лишний старейший отбрасывается) и
+## начинается после него. P3-7: гэг — в верхней полосе экрана (GAG_SLOT_TOP), не на укрытии у Илюши.
+const GAG_QUEUE_MAX := 2
+const GAG_SLOT_TOP := 320.0   # ниже тостов (стелс-тост до y 305, «ХЛЕБ +1» до 260) и карточки задачи (до ≈ 190)
+var _gag_tween: Tween
+var _gag_queue: Array = []   # [[lines, seconds], …]
+## Для тестов: сколько гэгов начато показом и сколько выброшено из переполненной очереди.
+var gags_started := 0
+var gags_dropped := 0
+
 func show_gag(lines: Array, seconds := 2.5) -> void:
 	if subtitle_card == null or lines.is_empty():
 		return
-	var old: Variant = get_meta(&"gag_tween") if has_meta(&"gag_tween") else null
-	if old is Tween and (old as Tween).is_valid():
-		(old as Tween).kill()
+	if gag_playing():
+		_gag_queue.append([lines, seconds])
+		while _gag_queue.size() > GAG_QUEUE_MAX:
+			_gag_queue.pop_front()
+			gags_dropped += 1
+		return
+	_play_gag(lines, seconds)
+
+## Гэг на экране (идёт его твин).
+func gag_playing() -> bool:
+	return _gag_tween != null and _gag_tween.is_valid()
+
+func gag_queue_size() -> int:
+	return _gag_queue.size()
+
+## Сбросить непоказанные гэги (новая попытка); идущий дочитывается.
+func clear_gag_queue() -> void:
+	_gag_queue.clear()
+
+func _play_gag(lines: Array, seconds: float) -> void:
 	_subtitle_left = 0.0
+	gags_started += 1
+	_subtitle_slot(true)
 	var tween := create_tween()
-	set_meta(&"gag_tween", tween)
+	_gag_tween = tween
 	for i in range(0, lines.size(), 2):
 		var page := "\n".join(PackedStringArray(lines.slice(i, i + 2)))
 		tween.tween_callback(func():
@@ -134,9 +162,24 @@ func show_gag(lines: Array, seconds := 2.5) -> void:
 			subtitle_card.visible = true
 			DialogPanelScript.pop(subtitle_card, 0.6))
 		tween.tween_interval(seconds)
-	tween.tween_callback(func():
-		subtitle_card.visible = false
-		subtitle_label.text = "")
+	tween.tween_callback(_gag_finished)
+
+func _gag_finished() -> void:
+	_gag_tween = null
+	subtitle_card.visible = false
+	subtitle_label.text = ""
+	_subtitle_slot(false)
+	if not _gag_queue.is_empty():
+		var next: Array = _gag_queue.pop_front()
+		_play_gag(next[0], next[1])
+
+## Место плашки: гэг — сверху по центру (растёт вниз), радио — внизу над подсказкой E (растёт вверх).
+func _subtitle_slot(top: bool) -> void:
+	subtitle_card.anchor_top = 0.0 if top else 1.0
+	subtitle_card.anchor_bottom = subtitle_card.anchor_top
+	subtitle_card.offset_top = GAG_SLOT_TOP if top else -190.0
+	subtitle_card.offset_bottom = GAG_SLOT_TOP + 80.0 if top else -110.0
+	subtitle_card.grow_vertical = Control.GROW_DIRECTION_END if top else Control.GROW_DIRECTION_BEGIN
 
 ## Строка субтитра внизу экрана, над подсказкой: тёмная плашка, светлый текст в одну-две строки.
 func _build_subtitle() -> void:
@@ -293,7 +336,7 @@ const CITY_TRAFFIC_DB := -14.0
 const MUSIC_DB := -12.0
 const CROW_DB := -10.0
 const DOG_DB := -10.0
-const DOOR_SLAM_DB := -8.0
+const DOOR_SLAM_DB := -14.0   # −8 равнялось пику звона квеста (проверка CITY-01, P3)
 const HORN_DB := -10.0
 const HORN_WAIT := 3.0
 const HORN_COOLDOWN := 10.0

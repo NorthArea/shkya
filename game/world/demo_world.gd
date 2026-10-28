@@ -35,6 +35,8 @@ var stealth: StealthDirector
 var _fail_left := 0.0
 ## Текущий провал — «Лада» с Илюшей на площадке киоска (P1): после экрана машина встаёт на парковку, Илюша — пешком.
 var _fail_in_car := false
+## Машину после экрана отгоняют на парковку: провал в машине или она стоит на Layout.KIOSK_SQUARE (fix3: вышел у окна).
+var _fail_tow := false
 var _stealth_toast_left := 0.0
 var _stealth_toast_car := false
 ## EXT-02: подсказка-отказ в укрытии («СНАЧАЛА СНЯТЬ КОРОБКУ», «ВЫХОД ЗАНЯТ»), HUD — get_hud_state()["hide_hint"].
@@ -118,6 +120,11 @@ func exit_car() -> bool:
 	_set_player_active(true)
 	camera_rig.yaw = car.global_rotation.y
 	camera_rig.follow(player, &"on_foot", false)
+	# fix3 (третья приёмка, P1): вышел из «Лады» на площадке киоска или на проезжей части B у окна на глазах у
+	# полицейского — обнаружен сразу (иначе успевал дойти до окна и открыть покупку, пока шкала растёт: диалог её
+	# замораживает); после экрана машину отгоняют на парковку.
+	if _car_on_square() and stealth.car_seen_now():
+		stealth.alert_now()
 	return true
 
 func _set_player_active(active: bool) -> void:
@@ -195,7 +202,7 @@ func _car_spot_free(point: Vector3, yaw: float) -> bool:
 # --- C7: обнаружение и чекпоинт ---
 
 ## Обнаружили: экран провала, ввод Илюши остановлен, шкала заморожена до респавна. В машине видит только сенсор с
-## car_area (полицейский, «Лада» на площадке киоска — P1, stealth.detected_in_car): водитель «выходит» — машина
+## car_area (полицейские, «Лада» почти стоит на площадке киоска — P1, stealth.detected_in_car): водитель «выходит» — машина
 ## тормозит сама, после экрана она на парковке. Иначе в машине ничего не делаем.
 func _on_player_detected() -> void:
 	if _fail_left > 0.0:
@@ -204,6 +211,7 @@ func _on_player_detected() -> void:
 		return
 	_fail_left = FAIL_SECONDS
 	_fail_in_car = control_mode == &"in_car"
+	_fail_tow = _fail_in_car or _car_on_square()
 	stealth.set_frozen(true, &"fail")
 	if _fail_in_car:
 		car.exit()   # без водителя «Лада» тормозит до остановки (lada.gd), E в машине больше не работает
@@ -212,10 +220,11 @@ func _on_player_detected() -> void:
 
 func _finish_fail() -> void:
 	_fail_left = 0.0
-	_stealth_toast_car = _fail_in_car
-	if _fail_in_car:
+	_stealth_toast_car = _fail_tow
+	if _fail_tow:
 		_tow_car_to_parking()
 	_fail_in_car = false
+	_fail_tow = false
 	respawn_at_checkpoint()
 	stealth.notify_respawned()
 	stealth.set_frozen(false, &"fail")
@@ -234,6 +243,10 @@ func _tow_car_to_parking() -> void:
 	control_mode = &"on_foot"
 	_set_player_active(true)
 	camera_rig.follow(player, &"on_foot", false)
+
+## «Лада» стоит на площадке киоска или на проезжей части B у окна (Layout.KIOSK_SQUARE, fix3).
+func _car_on_square() -> bool:
+	return Layout.KIOSK_SQUARE.has_point(Vector2(car.global_position.x, car.global_position.z))
 
 ## Илюша на Layout.STEALTH_CHECKPOINT; машина и миссия не трогаются (C7). В машине не применяется.
 func respawn_at_checkpoint() -> bool:
@@ -257,7 +270,7 @@ func reset_hide() -> void:
 func refuse_in_hide(interaction_id: StringName) -> bool:
 	if player.hide_mode == HideTuning.NONE:
 		return false
-	show_hide_hint(HideTuning.refusal_for(player.hide_mode, interaction_id))
+	HideSpot.leave_refused(self, player, interaction_id)   # P2-2: укрытие снято, отказ в строке подсказки
 	return true
 
 ## EXT-02: показать подсказку-отказ в строке подсказки HUD на seconds (укрытия: «ВЫХОД ЗАНЯТ» и т. п.).

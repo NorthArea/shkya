@@ -98,7 +98,39 @@ func reset() -> void:
 		look.visible = true
 		look.position = Vector3.ZERO
 		look.rotation = Vector3.ZERO
+	var hub := get_parent()
+	if hub and hub.has_method(&"reset_gags"):
+		hub.reset_gags()   # новая попытка: общий счётчик гэгов и их очередь — заново
 	_on_reset()
+
+## Гэг укрытия (раздел 11) — через общий лимит узла HideSpots (не больше HideTuning.GAG_LIMIT за попытку) в очередь
+## SoundDirector.show_gag. true — гэг принят к показу; false — лимит попытки исчерпан (флаг «показан» наследник
+## ставит сам: гэг в этой попытке больше не пробуется). Без узла HideSpots (тестовые укрытия) — прямо в SoundDirector.
+func say_gag(id: StringName, lines: Array, seconds := HideTuning.GAG_PAGE_SECONDS) -> bool:
+	var hub := get_parent()
+	if hub and hub.has_method(&"request_gag"):
+		return hub.request_gag(id, lines, seconds)
+	var w := world()
+	var sound: Node = w.get_node_or_null("SoundDirector") if w else null
+	if sound == null or not sound.has_method(&"show_gag"):
+		return false
+	sound.show_gag(lines, seconds)
+	return true
+
+## EXT-02 P2-2 (вызывает DemoWorld.refuse_in_hide): в укрытии E у квестовой зоны (машина, диалог, покупка) —
+## действие не выполняется, укрытие снимается обычным выходом (сугроб — со своей проверкой точки выхода: занята —
+## «ВЫХОД ЗАНЯТ», Илюша внутри), и строка подсказки объясняет отказ (у окна в коробке — реплика продавщицы).
+## Следующий E — обычное действие. Без своего укрытия (режим выставлен напрямую) — режим &"none".
+static func leave_refused(w: Node, p: Ilyusha, interaction_id: StringName) -> void:
+	var text := HideTuning.refusal_for(p.hide_mode, interaction_id)
+	var own: Node = p.hide_owner
+	var out := false
+	if is_instance_valid(own) and own.has_method(&"exit"):
+		out = own.exit()   # false — выход занят (подсказку уже выставил exit) или запрет перехода
+	else:
+		out = p.set_hide_mode(HideTuning.NONE)
+	if out or not is_instance_valid(own):
+		w.show_hide_hint(text)
 
 # --- переопределяемые наследником ---
 func _build_look() -> Node3D:

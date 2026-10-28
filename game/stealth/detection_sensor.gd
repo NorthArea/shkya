@@ -13,6 +13,10 @@ extends Node3D
 ## машине и машина в этой области (плоскость XZ), цель — центр машины, угол и дальность не важны (мотор слышно), луч
 ## нужен; в машине вне области и у сенсоров без car_area Илюшу не видят. Сектор на земле (P3) строится лучами: каждый
 ## из CONE_RAYS лучей — до первой преграды слоя World, укрытия «вырезают» тень; цвет — cone_color.
+## EXT-01 fix3 (третья приёмка, P1): машину в car_area замечают, только когда она почти стоит (скорость < CAR_STILL_SPEED) —
+## «остановился у киоска»; проезд мимо не наказывается. Брошенную там машину (Илюша вышел) замечают так же, пока Илюша
+## ближе ACTIVE_DISTANCE к сенсору: выйти у окна и дойти пешком — не обход. visibility() — максимум из «видят Илюшу»
+## (геометрия × заметность) и «видят машину»; in_view — только Илюша (в машине — машина).
 
 const POLL_SECONDS := 0.15
 const ACTIVE_DISTANCE := 40.0
@@ -23,6 +27,7 @@ const CONE_COLOR := Color(1.0, 0.85, 0.12, 0.11)
 const CONE_RAYS := 32              # лучей на сектор до 180°
 const CONE_RAYS_FULL := 48         # на круг (учебный автобус)
 const CAR_TARGET_HEIGHT := 0.7     # центр кузова «Лады» над её началом
+const CAR_STILL_SPEED := 2.0       # м/с: медленнее — машина «стоит у киоска» (fix3)
 
 @export var range_m := 9.0
 @export var fov_deg := 75.0
@@ -89,66 +94,82 @@ func distance_to_player() -> float:
 	var p: Vector3 = world.player.global_position
 	return Vector2(p.x - global_position.x, p.z - global_position.z).length()
 
-## Илюша в машине, и машина в car_area этого сенсора (P1).
-func watches_car() -> bool:
+## Машина в car_area этого сенсора и почти стоит (P1, fix3): с Илюшей внутри или брошенная (Илюша пешком не дальше
+## ACTIVE_DISTANCE от сенсора).
+func watches_car(any_speed := false) -> bool:
 	if not car_area.has_area():
 		return false
 	var world := _world()
-	if world == null or world.get("control_mode") != &"in_car":
+	if world == null:
 		return false
 	var car: Node3D = world.get("car")
-	if car == null:
+	if car == null or not car_area.has_point(Vector2(car.global_position.x, car.global_position.z)):
 		return false
-	return car_area.has_point(Vector2(car.global_position.x, car.global_position.z))
+	if world.get("control_mode") != &"in_car" and distance_to_player() > ACTIVE_DISTANCE:
+		return false
+	var v = car.get("velocity")
+	return any_speed or not (v is Vector3) or Vector2(v.x, v.z).length() < CAR_STILL_SPEED
 
 func _compute() -> float:
+	var world := _world()
+	var car_seen := _car_in_sight()
+	if world != null and world.get("control_mode") == &"in_car":
+		in_view = car_seen > 0.0
+		return car_seen   # машина не прячется: заметность 1
 	var seen := _line_of_sight()
 	in_view = seen > 0.0
-	if not in_view:
-		return 0.0
-	# EXT-02: множитель заметности (раздел 5.3); в сугробе 0 независимо от луча.
-	if watches_car():
-		return seen   # машина не прячется: заметность 1
-	var player: Node3D = _world().player
-	if player.has_method("exposure_factor"):
-		return clampf(player.exposure_factor(global_position + Vector3.UP * EYE_HEIGHT), 0.0, 1.0)
-	return seen
+	var player_seen := 0.0
+	if in_view:
+		# EXT-02: множитель заметности (раздел 5.3); в сугробе 0 независимо от луча.
+		var player: Node3D = world.player
+		player_seen = clampf(player.exposure_factor(global_position + Vector3.UP * EYE_HEIGHT), 0.0, 1.0) if player.has_method("exposure_factor") else seen
+	return maxf(player_seen, car_seen)
 
-## Геометрия зрения: 1 — дистанция, угол и луч пропускают, иначе 0; last_blocker — что перекрыло луч.
+## Машина в car_area видна этому сенсору при любой скорости (fix3: Илюша выходит из неё на площадке — DemoWorld).
+func sees_car_now() -> bool:
+	return _car_in_sight(true) > 0.0
+
+## Машина видна (fix3): watches_car() и луч от глаз до центра кузова свободен; угол и дальность не важны (мотор и
+## «чья машина у киоска» — с любого угла). 1 или 0.
+func _car_in_sight(any_speed := false) -> float:
+	if not enabled or not is_inside_tree() or not watches_car(any_speed):
+		return 0.0
+	var car: CollisionObject3D = _world().get("car")
+	var eye := global_position + Vector3.UP * EYE_HEIGHT
+	var target := car.global_position + Vector3.UP * CAR_TARGET_HEIGHT
+	if Vector2(target.x - eye.x, target.z - eye.z).length() > ACTIVE_DISTANCE:
+		return 0.0
+	var exclude := _exclude.duplicate()
+	exclude.append(car.get_rid())
+	var hit := get_world_3d().direct_space_state.intersect_ray(PhysicsRayQueryParameters3D.create(eye, target, WORLD_MASK, exclude))
+	if not hit.is_empty():
+		var collider: Object = hit.get("collider")
+		last_blocker = String(collider.name) if collider is Node else "?"
+		return 0.0
+	return 1.0
+
+## Геометрия зрения на Илюшу пешком: 1 — дистанция, угол и луч пропускают, иначе 0 (в машине — 0); last_blocker —
+## что перекрыло луч.
 func _line_of_sight() -> float:
 	if not enabled or not is_inside_tree():
 		return 0.0
 	var world := _world()
-	if world == null:
+	if world == null or world.get("control_mode") == &"in_car":
 		return 0.0
 	var eye := global_position + Vector3.UP * EYE_HEIGHT
-	var exclude := _exclude
-	var target: Vector3
-	if world.get("control_mode") == &"in_car":
-		# В машине — только сенсор с car_area и только на площадке: цель — центр кузова, угол и дальность не важны.
-		if not watches_car():
+	var player: Node3D = world.player
+	var target := player.global_position + Vector3.UP * TARGET_HEIGHT
+	var flat := Vector2(target.x - eye.x, target.z - eye.z)
+	var distance := flat.length()
+	if distance > ACTIVE_DISTANCE or distance > range_m:
+		return 0.0
+	var forward := -global_basis.z
+	var heading := Vector2(forward.x, forward.z)
+	if distance > 0.01 and heading.length() > 0.001:
+		var angle := rad_to_deg(absf(heading.angle_to(flat)))
+		if angle > fov_deg * 0.5:
 			return 0.0
-		var car: CollisionObject3D = world.get("car")
-		target = car.global_position + Vector3.UP * CAR_TARGET_HEIGHT
-		exclude = _exclude.duplicate()
-		exclude.append(car.get_rid())
-		if Vector2(target.x - eye.x, target.z - eye.z).length() > ACTIVE_DISTANCE:
-			return 0.0
-	else:
-		var player: Node3D = world.player
-		target = player.global_position + Vector3.UP * TARGET_HEIGHT
-		var flat := Vector2(target.x - eye.x, target.z - eye.z)
-		var distance := flat.length()
-		if distance > ACTIVE_DISTANCE or distance > range_m:
-			return 0.0
-		var forward := -global_basis.z
-		var heading := Vector2(forward.x, forward.z)
-		if distance > 0.01 and heading.length() > 0.001:
-			var angle := rad_to_deg(absf(heading.angle_to(flat)))
-			if angle > fov_deg * 0.5:
-				return 0.0
-	var query := PhysicsRayQueryParameters3D.create(eye, target, WORLD_MASK, exclude)
-	var hit := get_world_3d().direct_space_state.intersect_ray(query)
+	var hit := _sight_ray(eye, target)   # EXT-02 P3-1: World и «Лада» (Car) укрывают, жители и собака — нет
 	if not hit.is_empty():
 		var collider: Object = hit.get("collider")
 		last_blocker = String(collider.name) if collider is Node else "?"
@@ -239,3 +260,22 @@ func cone_ray_length(a: float) -> float:
 		return range_m
 	var p: Vector3 = hit["position"]
 	return Vector2(p.x - global_position.x, p.z - global_position.z).length()
+
+## EXT-02 P3-1 (приёмка, HIDE_SPOTS.md 14 B «Лада» перекрывает луч): луч к Илюше пешком — по World и Car (1|4).
+## На слое Car, кроме «Лады», — тела жителей (Resident.BODY_LAYER) и собаки (Ambient.dog_body): они не укрывают —
+## такое попадание исключается и луч повторяется. Укрывает всё, что на слое World, и сама машина мира (world.car).
+const SIGHT_CAR_MASK := 4
+func _sight_ray(eye: Vector3, target: Vector3) -> Dictionary:
+	var world := _world()
+	var car: Object = world.get("car") if world else null
+	var exclude := _exclude.duplicate()
+	var space := get_world_3d().direct_space_state
+	for i in 6:
+		var hit := space.intersect_ray(PhysicsRayQueryParameters3D.create(eye, target, WORLD_MASK | SIGHT_CAR_MASK, exclude))
+		if hit.is_empty():
+			return hit
+		var collider: Object = hit.get("collider")
+		if collider == car or not (collider is CollisionObject3D) or (collider as CollisionObject3D).collision_layer & WORLD_MASK:
+			return hit
+		exclude.append(hit.get("rid"))
+	return {}

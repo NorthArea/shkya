@@ -106,8 +106,10 @@ func _unhandled_input(event: InputEvent) -> void:
 			get_viewport().set_input_as_handled()
 			target.interact(self)
 
-## Ближайшая доступная зона взаимодействия, в которой стоит Илюша. В укрытии, если других зон рядом нет,
-## — зона укрытия hide_owner (снять коробку, вылезти — где угодно).
+## Ближайшая доступная зона взаимодействия, в которой стоит Илюша. В укрытии, если других зон рядом нет или
+## ближайшая — другое укрытие (группа hide_spots), — зона своего укрытия hide_owner (снять коробку, вылезти — где
+## угодно, и у бочки, и у сугроба); у квестовой зоны (Бабка, продавщица, «Лада», наблюдатели) — она сама: E снимает
+## укрытие и показывает отказ (DemoWorld.refuse_in_hide), следующий E — обычное действие (приёмка EXT-02, P2-2).
 func current_interactable() -> Interactable:
 	if not input_enabled:
 		return null
@@ -119,10 +121,12 @@ func current_interactable() -> Interactable:
 			if distance < best_distance:
 				best = area
 				best_distance = distance
-	if best == null and hide_mode != HideTuning.NONE and is_instance_valid(hide_owner) and hide_owner is Interactable:
-		var own: Interactable = hide_owner
-		if own.enabled and own.prompt != "":
-			best = own
+	if hide_mode != HideTuning.NONE and (best == null or (best != hide_owner and best.is_in_group(&"hide_spots"))):
+		best = null
+		if is_instance_valid(hide_owner) and hide_owner is Interactable:
+			var own: Interactable = hide_owner
+			if own.enabled and own.prompt != "":
+				best = own
 	return best
 
 ## Поставить на точку и остановить (появление, перезапуск, выход из машины).

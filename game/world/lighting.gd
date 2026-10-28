@@ -43,7 +43,7 @@ const SNOW_DENSITY_CALM := 0.55        # доля видимых хлопьев 
 const DRIFT_AMOUNT := 700
 const DRIFT_BOX := Vector3(36.0, 0.3, 36.0)   # объём вокруг камеры
 const DRIFT_SPEED := 3.2                      # м/с в затишье; в порыв — в (1 + GUST_WIND) раз
-const DRIFT_ALPHA := 0.11
+const DRIFT_ALPHA := 0.07                      # 0,11 читалось как дождь/царапины (проверка CITY-01, P3)
 const DRIFT_STREAK := Vector2(0.04, 1.0)       # м, ширина и длина штриха
 const DRIFT_NEAR_FADE := 5.0                  # м: ближе к камере позёмка гаснет — не «дождь» в кадре
 const DRIFT_COLOR := Color(0.86, 0.89, 0.96)
@@ -85,8 +85,8 @@ const WINDOW_WARM := Color(1.0, 0.68, 0.32)     # лампа накаливан�
 const WINDOW_AMBER := Color(1.0, 0.56, 0.24)    # абажур, теплее
 const WINDOW_COOL := Color(0.95, 0.91, 0.78)    # люминесцентная, белее
 const WINDOW_COOL_RATIO := 0.12                 # доля горящих окон с холодным светом
-const WINDOW_TV_RATIO := 0.10                   # доля горящих окон, где светит только телевизор
-const WINDOW_TV := Color(0.22, 0.50, 1.0)    # голубой с G > R: без лавандового (сверка ART-04)
+const WINDOW_TV_RATIO := 0.05                   # доля горящих окон, где светит только телевизор
+const WINDOW_TV := Color(0.45, 0.62, 0.95)    # голубой с G > R: без лавандового (сверка ART-04)
 const WINDOW_TV_ENERGY := 0.8
 
 # --- вывески: подсветка; читает level_geometry ---

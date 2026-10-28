@@ -28,6 +28,13 @@ const EXPOSURE_BARREL_STILL := 0.0
 const EXPOSURE_BARREL_STILL_CLOSE := 0.5
 const EXPOSURE_BARREL_MOVING := 1.0
 
+## Гэги C02–C06 (раздел 11, приёмка P2-1): не больше GAG_LIMIT за попытку (между респавнами и reset()) на все укрытия
+## вместе; каждый — не чаще раза за попытку (флаг в укрытии). SoundDirector.show_gag не перебивает идущий гэг:
+## очередь до GAG_QUEUE, лишний старейший отбрасывается; страницы по две строки через GAG_PAGE_SECONDS.
+const GAG_LIMIT := 3
+const GAG_QUEUE := 2
+const GAG_PAGE_SECONDS := 2.5
+
 ## Подсказка-отказ (вход в машину, диалог, покупка в укрытии) держится столько секунд.
 const HINT_SECONDS := 2.0
 const HINT_BOX := "СНАЧАЛА СНЯТЬ КОРОБКУ"

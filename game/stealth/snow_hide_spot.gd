@@ -305,10 +305,8 @@ func _physics_process(_delta: float) -> void:
 		return
 	if officer_looks_at_drift():
 		_gag_done = true
-		gag_count += 1
-		var sound := w.get_node_or_null("SoundDirector")
-		if sound and sound.has_method(&"show_gag"):
-			sound.show_gag(QuestLines.HIDE_SNOW_LOOK, GAG_PAGE_SECONDS)
+		if say_gag(&"C04", QuestLines.HIDE_SNOW_LOOK, GAG_PAGE_SECONDS):   # общий лимит попытки и очередь
+			gag_count += 1
 
 ## Полицейский ближе GAG_RANGE, и корпус (его сенсор) смотрит на сугроб точнее GAG_ANGLE_DEG.
 func officer_looks_at_drift() -> bool:

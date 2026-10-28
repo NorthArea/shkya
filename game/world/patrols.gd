@@ -11,7 +11,9 @@ extends Node3D
 ## «Лада» с Илюшей на площадке Layout.KIOSK_SQUARE для его сенсора — как Илюша (car_area, P1).
 ## Подсказка «E — ПОГОВОРИТЬ» у полицейского — только спереди и сбоку (PatrolNpc.can_talk_to, P3).
 ## Подсказки зон E — из MissionDirector.prompt_for (C3); реплики подключает QuestFlow по id зон
-## (&"officer", &"account_officer"). Узел создаёт LevelGeometry (ребёнок DemoWorld/LevelGeometry/Patrols);
+## (&"officer", &"account_officer"). EXT-01 fix3 (третья приёмка, P1): второй наблюдатель Officer2 (&"officer2", без
+## диалога и подсказки E) — на Layout.OFFICER2_POST у северного угла площадки, углы OFFICER2_FACING, те же 12 м / 100° и
+## 7–9 с, car_area — тот же KIOSK_SQUARE; после покупки не двигается. Узел создаёт LevelGeometry (ребёнок DemoWorld/LevelGeometry/Patrols);
 ## мир ищется вверх по дереву, как в DetectionSensor.
 
 const Layout = preload("res://game/world/layout.gd")
@@ -25,6 +27,7 @@ const OFFICER_FOV := 100.0
 const OFFICER_HOLD := Vector2(7.0, 9.0)   # с на угол: при 3–4 с осторожный честный проход занимал 14–15 с (норма участка 45–90 с)
 
 var officer: Node3D
+var officer2: Node3D
 var account_officer: Node3D
 var van: CityVan
 var _mission: Node
@@ -50,6 +53,23 @@ func _ready() -> void:
 	add_child(officer)
 	officer.sensor.show_cone = true
 	officer.sensor.car_area = Layout.KIOSK_SQUARE
+	officer2 = PatrolNpcScript.new()
+	officer2.name = "Officer2"
+	officer2.interaction_id = &"officer2"   # без диалога: prompt_for даёт "", зона выключена
+	officer2.character = "police"   # «росгвардеец» STEALTH_DESIGN; отдельный арт позже
+	officer2.height_m = officer.height_m
+	officer2.tint = officer.tint
+	officer2.body_radius = officer.body_radius
+	officer2.facings = Layout.OFFICER2_FACING
+	officer2.sensor_range = OFFICER_RANGE
+	officer2.sensor_fov = OFFICER_FOV
+	officer2.turn_every = OFFICER_HOLD
+	officer2.position = Layout.OFFICER2_POST
+	add_child(officer2)
+	officer2.sensor.show_cone = true
+	officer2.sensor.car_area = Layout.KIOSK_SQUARE
+	officer2.interactable.prompt = ""
+	officer2.interactable.enabled = false
 	account_officer = NpcScript.new()
 	account_officer.name = "AccountOfficer"
 	account_officer.interaction_id = &"account_officer"
@@ -73,7 +93,7 @@ func _ready() -> void:
 		_mission.bread_received.connect(_on_bread_received)
 	var rig: Node = world.get_node_or_null("CameraRig") if world else null
 	if rig and rig.has_method("exclude_permanently"):
-		for npc in [officer, account_officer]:
+		for npc in [officer, officer2, account_officer]:
 			var body: CollisionObject3D = npc.get_node_or_null("Body")
 			if body:
 				rig.call_deferred("exclude_permanently", body.get_rid())   # CameraRig готовится позже LevelGeometry
@@ -112,4 +132,5 @@ func _on_bread_received() -> void:
 func reset_positions() -> void:
 	_moved = false
 	officer.place_at(Layout.OFFICER_POST)
+	officer2.place_at(Layout.OFFICER2_POST)
 	van.park(Layout.VAN_PARK, Layout.VAN_PARK_YAW)

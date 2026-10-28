@@ -293,9 +293,26 @@ func _part_car_refusal() -> void:
 	check(world.get_hud_state()["prompt"] == HideTuning.HINT_BARREL, "HUD at the car: '%s'" % world.get_hud_state()["prompt"])
 	await drv.interact()
 	await drv.frames(3)
-	check(world.control_mode == &"on_foot" and player.hide_mode == &"barrel", "E at the car in barrel: no boarding")
+	check(world.control_mode == &"on_foot" and player.hide_mode == &"none", "E at the car in barrel: no boarding, out of the barrel (P2-2)")
 	check(world.get_hud_state()["hide_hint"] == HideTuning.HINT_BARREL, "hint '%s'" % world.get_hud_state()["hide_hint"])
 	await drv.frames(int(HideTuning.HINT_SECONDS * 60) + 5)
+	# В бочке у сугроба: ближайшая чужая зона — другое укрытие, E — выход из бочки, не в сугроб (P2-2).
+	var snow: Node3D = world.get_node("LevelGeometry/HideSpots/Snowdrift")
+	await _place(Layout.HIDE_SNOWDRIFT_EXIT + Vector3(0.0, 0.0, -0.4), PI)
+	check(barrel.enter(), "barrel on next to the snowdrift")
+	await drv.frames(3)
+	var in_drift_zone := false
+	for area in player.probe.get_overlapping_areas():
+		in_drift_zone = in_drift_zone or area == snow
+	check(in_drift_zone, "Ilyusha stands in the snowdrift E zone")
+	check(player.current_interactable() == barrel, "barrel at the snowdrift: E target is the own barrel (%s)" % player.current_interactable())
+	check(world.get_hud_state()["prompt"] == HideTuning.PROMPT_BARREL_EXIT, "barrel at the snowdrift: prompt '%s'" % world.get_hud_state()["prompt"])
+	await drv.interact()
+	await drv.frames(3)
+	check(player.hide_mode == &"none" and not snow.is_occupied(), "barrel at the snowdrift: E gets out of the barrel, not into the drift (%s)" % player.hide_mode)
+	# Дальше — снова в бочке (часть «выход» ждёт Илюшу внутри).
+	check(barrel.enter(), "back into the barrel")
+	await drv.frames(3)
 
 # =====================================================================================
 # 7. Выход: свободная точка рядом, бочка стоит где была, скорость и прыжок вернулись

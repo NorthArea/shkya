@@ -60,11 +60,7 @@ func _physics_process(delta: float) -> void:
 	else:
 		suspicion = maxf(suspicion - delta * DECAY_FACTOR / RISE_SECONDS, 0.0)
 	if suspicion >= 1.0:
-		_alerted = true
-		detections += 1
-		detected_in_car = not _on_foot()
-		_set_state(ALERT)
-		player_detected.emit()
+		_alert()
 	else:
 		_set_state(SUSPICIOUS if suspicion > 0.0 else SAFE)
 
@@ -89,6 +85,28 @@ func notify_respawned() -> void:
 ## она спадает; уже идущая защита не укорачивается.
 func grant_grace(seconds: float) -> void:
 	_protection_left = maxf(_protection_left, seconds)
+
+## Обнаружить сразу (fix3: вышел из машины на площадке киоска на глазах у полицейского): шкала в 1, провал — в
+## ближайшем кадре. Во время заморозки (диалог, защита после респавна) не действует.
+func alert_now() -> void:
+	if frozen or _alerted:
+		return
+	suspicion = 1.0
+	_alert()
+
+func _alert() -> void:
+	_alerted = true
+	detections += 1
+	detected_in_car = not _on_foot()
+	_set_state(ALERT)
+	player_detected.emit()
+
+## Видит ли машину на площадке (car_area) хоть один включённый сенсор — при любой скорости.
+func car_seen_now() -> bool:
+	for sensor in get_tree().get_nodes_in_group(&"detection_sensors"):
+		if sensor.get("enabled") != false and sensor.has_method("sees_car_now") and sensor.sees_car_now():
+			return true
+	return false
 
 ## Видит ли кто-то Илюшу сейчас (по кэшу сенсоров).
 func visible_now() -> bool:

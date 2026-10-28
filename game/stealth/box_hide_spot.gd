@@ -28,7 +28,7 @@ const GAG_MOVING_SUSPICION := 0.3
 const GAG_PAGE_SECONDS := 2.5
 const OFFICER_PATH := "LevelGeometry/Patrols/Officer"
 
-## Сколько раз показан каждый гэг за всё время (для тестов); за попытку — не больше одного.
+## Сколько раз принят к показу каждый гэг за всё время (для тестов); за попытку — не больше одного.
 var gag_counts := {&"C02": 0, &"C03": 0}
 ## Короб на Илюше (в player.hide_visual), пока он внутри; иначе null.
 var worn: Node3D = null
@@ -198,10 +198,8 @@ func _gag(id: StringName, lines: Array) -> void:
 	if _gag_done.has(id):
 		return
 	_gag_done[id] = true
-	gag_counts[id] += 1
-	var sound := world().get_node_or_null("SoundDirector")
-	if sound and sound.has_method(&"show_gag"):
-		sound.show_gag(lines, GAG_PAGE_SECONDS)
+	if say_gag(id, lines, GAG_PAGE_SECONDS):   # общий лимит попытки (HideSpots) и очередь SoundDirector
+		gag_counts[id] += 1
 
 func _officer_sensor() -> DetectionSensor:
 	var officer := world().get_node_or_null(OFFICER_PATH)

@@ -351,8 +351,7 @@ func _bump(speed: float) -> void:
 		var w := world()
 		if w and w.has_method(&"show_hide_hint"):
 			w.show_hide_hint(QuestLines.HIDE_BARREL_BUMP_TOAST, TOAST_SECONDS)
-		if sound and sound.has_method(&"show_gag"):
-			sound.show_gag([QuestLines.HIDE_BARREL_BUMP_ILYUSHA], GAG_PAGE_SECONDS)
+		say_gag(&"C06", [QuestLines.HIDE_BARREL_BUMP_ILYUSHA], GAG_PAGE_SECONDS)   # «Ну всё» — через лимит и очередь
 
 ## C05: катится, полицейский видит (геометрия сенсора, без множителя) — раз за попытку.
 func _check_roll_gag(p: Ilyusha) -> void:
@@ -362,10 +361,8 @@ func _check_roll_gag(p: Ilyusha) -> void:
 	if sensor == null or not sensor.enabled or not sensor.in_view:
 		return
 	_rolled_attempt = true
-	roll_gag_count += 1
-	var sound := _sound()
-	if sound and sound.has_method(&"show_gag"):
-		sound.show_gag(QuestLines.HIDE_BARREL_ROLL, GAG_PAGE_SECONDS)
+	if say_gag(&"C05", QuestLines.HIDE_BARREL_ROLL, GAG_PAGE_SECONDS):   # общий лимит попытки и очередь
+		roll_gag_count += 1
 
 ## Тост «БОЧКА ПРИБЫЛА» сейчас на экране ("" — нет).
 func toast_text() -> String:

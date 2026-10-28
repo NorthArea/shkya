@@ -4,7 +4,9 @@ extends SceneTree
 ## DetectionSensor.visibility() = геометрия × exposure (0…1), in_view; StealthDirector — рост × видимость,
 ## время до обнаружения при 1,0 и 0,75 на 30 и 60 физ. к/с; запреты переходов (машина, диалог, провал, ui_blocking,
 ## укрытие → укрытие); отказ машины и диалога в режиме + hide_hint в HUD; сброс режима при респавне; прыжок в режиме;
-## 20 входов/выходов без утечки узлов и с возвратом WALK_SPEED.
+## 20 входов/выходов без утечки узлов и с возвратом WALK_SPEED. Приёмка с правками: E у квестовой зоны в укрытии
+## снимает укрытие и показывает отказ, следующий E — действие (P2-2); луч сенсора: «Лада» укрывает, житель и собака
+## (тоже слой Car) — нет (P3-1).
 ## Тестовый DetectionSensor ставится в мир; чужие сенсоры (наблюдатели EXT-01) на время прогона выключены.
 ##
 ## Headless: tools/run.command --headless --fixed-fps 60 --script tests/hide_core_test.gd
@@ -59,6 +61,7 @@ func _run() -> void:
 	await _part_speed()
 	await _part_exposure()
 	await _part_sensor()
+	await _part_sight_blockers()
 	await _part_detection_time(60)
 	await _part_detection_time(30)
 	Engine.physics_ticks_per_second = 60
@@ -212,6 +215,79 @@ func _part_sensor() -> void:
 	await _wait_clear()
 
 # =====================================================================================
+# 4а. Луч: «Лада» (слой Car) укрывает, житель и собака (тоже Car) — нет (приёмка P3-1)
+# =====================================================================================
+
+func _part_sight_blockers() -> void:
+	print("--- sight blockers: Lada yes, resident and dog no ---")
+	# Свой сенсор под отдельным узлом: тестовый HideTestSensor — сосед «Лады» (оба дети DemoWorld), а сенсор
+	# исключает из луча тела соседей (своё тело наблюдателя).
+	var main_sensor := sensor
+	main_sensor.enabled = false
+	var holder := Node3D.new()
+	holder.name = "SightTestHolder"
+	world.add_child(holder)
+	sensor = SensorScript.new()
+	sensor.name = "SightTestSensor"
+	sensor.enabled = false
+	holder.add_child(sensor)
+	sensor.range_m = 30.0
+	sensor.fov_deg = 90.0
+	var car: Node3D = world.car
+	var car_pos := car.global_position
+	var car_yaw := car.global_rotation.y
+	var c := yard + Vector3(0, 0, -3.0)
+	car.reset_to(c, PI * 0.5)   # бортом к лучу: 4,1 м вдоль x
+	await drv.frames(10)
+	var behind := c + Vector3(0, 0, -2.0)
+	await _place(behind, 0.0)
+	_aim(c + Vector3(0, 0, 6.0), behind)
+	sensor.enabled = true
+	var v := sensor.poll()
+	check(v == 0.0 and not sensor.in_view and sensor.last_blocker == String(car.name), "Ilyusha behind the Lada → 0, blocker '%s' (%.2f, '%s')" % [car.name, v, sensor.last_blocker])
+	car.reset_to(car_pos, car_yaw)
+	await drv.frames(10)
+	check(sensor.poll() == 1.0 and sensor.in_view, "Lada back at its place → seen again")
+	# Житель (тело AnimatableBody3D на слое Car) между сенсором и Илюшей.
+	var resident: Node3D = world.get_node("LevelGeometry/Residents").residents[0]
+	var resident_saved := resident.global_transform
+	resident.set_physics_process(false)
+	await _place(yard, 0.0)
+	_aim(yard + Vector3(0, 0, 5.0), yard)
+	resident.global_position = yard + Vector3(0, 0, 2.5)
+	await drv.frames(3)
+	var space := world.get_world_3d().direct_space_state
+	var eye := sensor.global_position + Vector3.UP * DetectionSensor.EYE_HEIGHT
+	var tgt := player.global_position + Vector3.UP * DetectionSensor.TARGET_HEIGHT
+	var hit := space.intersect_ray(PhysicsRayQueryParameters3D.create(eye, tgt, 4))
+	check(not hit.is_empty() and (hit["collider"] as Node).get_parent() == resident, "resident body is on the line of sight (%s)" % [hit.get("collider")])
+	v = sensor.poll()
+	check(v == 1.0 and sensor.in_view and sensor.last_blocker == "", "resident between the sensor and Ilyusha → visibility 1 (%.2f, '%s')" % [v, sensor.last_blocker])
+	resident.global_transform = resident_saved
+	resident.set_physics_process(true)
+	# Собака (Ambient.dog_body, слой Car): глаза сенсора ниже (0,3 м), чтобы луч шёл через её тело 0,7 м.
+	var ambient := world.get_node("LevelGeometry/Ambient")
+	ambient.set_physics_process(false)
+	ambient.set_process(false)
+	var dog: Node3D = ambient.dog_body.get_parent()
+	var dog_saved := dog.global_transform
+	dog.global_position = yard + Vector3(0, 0, 2.5)
+	sensor.global_position.y = -1.2
+	await drv.frames(3)
+	eye = sensor.global_position + Vector3.UP * DetectionSensor.EYE_HEIGHT
+	hit = space.intersect_ray(PhysicsRayQueryParameters3D.create(eye, tgt, 4))
+	check(not hit.is_empty() and hit["collider"] == ambient.dog_body, "dog body is on the (low) line of sight (%s)" % [hit.get("collider")])
+	v = sensor.poll()
+	check(v == 1.0 and sensor.in_view, "dog between the sensor and Ilyusha → visibility 1 (%.2f, '%s')" % [v, sensor.last_blocker])
+	dog.global_transform = dog_saved
+	ambient.set_physics_process(true)
+	ambient.set_process(true)
+	sensor.enabled = false
+	holder.queue_free()
+	sensor = main_sensor
+	await _wait_clear()
+
+# =====================================================================================
 # 5. Время до обнаружения: 1,0 → 2,0 с; коробка на ходу 0,75 → 2,67 с (30 и 60 физ. к/с)
 # =====================================================================================
 
@@ -305,19 +381,31 @@ func _part_refusals() -> void:
 		check(world.control_mode == &"on_foot", "%s: E at the Lada → still on foot" % mode)
 		check(world.get_hud_state()["hide_hint"] == hint, "%s: hide_hint «%s» after E at the Lada" % [mode, hint])
 		check(hud.prompt_label.text == hint and hud.prompt_label.is_visible_in_tree(), "%s: HUD prompt line shows «%s» (%s)" % [mode, hint, hud.prompt_label.text])
+		check(player.hide_mode == &"none", "%s: E at the Lada took the hide off (P2-2)" % mode)
+		await drv.interact()
+		await drv.frames(5)
+		check(world.control_mode == &"in_car", "%s: next E at the Lada → boards" % mode)
+		world.exit_car()
+		await drv.frames(5)
+		await _place(_car_stand(), 0.0)
+		player.set_hide_mode(mode)
 		world.enter_car()
-		check(world.control_mode == &"on_foot", "%s: enter_car() refused" % mode)
+		check(world.control_mode == &"on_foot" and player.hide_mode == &"none", "%s: enter_car() refused, hide off" % mode)
 		# Бабка: E — подсказка, диалог не открывается, миссия не меняется.
 		await drv.frames(int(HideTuning.HINT_SECONDS * 60) + 5)
 		check(world.get_hud_state()["hide_hint"] == "", "%s: hide_hint clears after %.0f s" % [mode, HideTuning.HINT_SECONDS])
 		await _place(_babka_stand(), 0.0)
+		player.set_hide_mode(mode)
+		await drv.frames(3)
 		var state_before: StringName = world.mission.state
 		await drv.interact()
 		await drv.frames(5)
 		check(not world.quest_flow.is_dialog_open() and world.mission.state == state_before, "%s: E at Babka opens no dialog (state %s)" % [mode, world.mission.state])
 		check(world.get_hud_state()["hide_hint"] == hint, "%s: hide_hint «%s» after E at Babka" % [mode, hint])
+		check(player.hide_mode == &"none", "%s: E at Babka took the hide off" % mode)
+		player.set_hide_mode(mode)
 		world.quest_flow._on_interacted(player, &"vendor")
-		check(not world.quest_flow.is_dialog_open(), "%s: vendor dialog refused" % mode)
+		check(not world.quest_flow.is_dialog_open() and player.hide_mode == &"none", "%s: vendor dialog refused, hide off" % mode)
 		check(player.set_hide_mode(&"none"), "%s → none" % mode)
 		await drv.frames(3)
 		check(world.get_hud_state()["prompt"] != hint, "%s: none → Babka prompt back to normal (%s)" % [mode, world.get_hud_state()["prompt"]])

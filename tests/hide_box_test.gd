@@ -10,13 +10,15 @@ extends SceneTree
 ##
 ## Headless: tools/run.command --headless --fixed-fps 60 --script tests/hide_box_test.gd
 ## Кадры:    tools/run.command --fixed-fps 60 --resolution 1920x1080 --script tests/hide_box_test.gd -- --capture
-##   → builds/screenshots/EXT-02/c/
+##   → builds/screenshots/EXT-02/c/ (с `--fix` — builds/screenshots/EXT-02/fix/, правки приёмки)
+## Приёмка с правками (P2-1, P2-2): E у квестовой зоны в коробке снимает её и показывает отказ, следующий E — действие;
+## в коробке у бочки E снимает коробку; гэги — не больше трёх за попытку, идущий не перебивается (очередь).
 
 const Layout = preload("res://game/world/layout.gd")
 const Driver = preload("res://tests/playthrough_driver.gd")
 const HideTuning = preload("res://game/stealth/hide_tuning.gd")
 const BoxSpot = preload("res://game/stealth/box_hide_spot.gd")
-const OUT := "res://builds/screenshots/EXT-02/c"
+var OUT := "res://builds/screenshots/EXT-02/c"
 
 var failures: Array[String] = []
 var checks := 0
@@ -31,6 +33,8 @@ var detections := 0
 
 func _initialize() -> void:
 	capture = "--capture" in OS.get_cmdline_user_args()
+	if "--fix" in OS.get_cmdline_user_args():
+		OUT = "res://builds/screenshots/EXT-02/fix"
 	call_deferred("_run")
 
 func _run() -> void:
@@ -53,6 +57,7 @@ func _run() -> void:
 	await _part_fail_reset()
 	await _part_toggles()
 	await _part_gags()
+	await _part_gag_queue_limit()
 	await _part_honest_pass()
 	drv.release_all()
 	_finish()
@@ -182,13 +187,27 @@ func _part_refusals() -> void:
 	await drv.interact()
 	await drv.frames(3)
 	check(world.control_mode == &"on_foot" and world.get_hud_state()["hide_hint"] == HideTuning.HINT_BOX, "E at the Lada → still on foot, hint «%s»" % HideTuning.HINT_BOX)
+	check(player.hide_mode == &"none" and _crates() == 1 and box.look.visible, "E at the Lada took the box off (one crate on the ground)")
+	# Коробка у бочки: ближайшая чужая зона — другое укрытие, E снимает свою коробку, в бочку не лезет.
+	var barrel: Node3D = world.get_node("LevelGeometry/HideSpots/Barrel")
+	await _place(Layout.BARREL + Vector3(-1.4, 0.0, 0.0), 0.0)
+	check(box.enter(), "box on next to the barrel")
+	await drv.frames(3)
+	check(player.current_interactable() == box, "box at the barrel: E target is the own box (%s)" % player.current_interactable())
+	check(world.get_hud_state()["prompt"] == HideTuning.PROMPT_BOX_EXIT, "box at the barrel: prompt «%s» (%s)" % [HideTuning.PROMPT_BOX_EXIT, world.get_hud_state()["prompt"]])
+	await drv.interact()
+	await drv.frames(3)
+	check(player.hide_mode == &"none" and not barrel.is_occupied(), "box at the barrel: E takes the box off, not into the barrel (%s)" % player.hide_mode)
+	check(not barrel.is_occupied() and barrel.global_position.distance_to(Layout.BARREL) < 0.01, "barrel untouched at Layout.BARREL")
 	# Бабка
 	await _place(_babka_stand(), 0.0)
+	check(box.enter(), "box on at Babka")
 	var state_before: StringName = m.state
 	await drv.interact()
 	await drv.frames(5)
 	check(not world.quest_flow.is_dialog_open() and m.state == state_before, "E at Babka in the box → no dialog (%s)" % m.state)
 	check(world.get_hud_state()["hide_hint"] == HideTuning.HINT_BOX, "Babka: hint «%s» (%s)" % [HideTuning.HINT_BOX, world.get_hud_state()["hide_hint"]])
+	check(player.hide_mode == &"none", "E at Babka took the box off")
 	world.reset_hide()
 	# Продавщица: этап покупки, окно.
 	m.interact(&"babka")
@@ -205,6 +224,14 @@ func _part_refusals() -> void:
 	check(not world.quest_flow.is_dialog_open() and m.state == &"BUY_BREAD" and not m.has_bread, "E at the window in the box → no dialog, no purchase")
 	check(world.get_hud_state()["hide_hint"] == QuestLines.HIDE_BOX_VENDOR, "window: hint «%s»" % QuestLines.HIDE_BOX_VENDOR)
 	check(QuestLines.HIDE_BOX_VENDOR.contains("Оптовикам не продаю. Вылезайте"), "vendor line text")
+	check(player.hide_mode == &"none" and _crates() == 1, "E at the window took the box off (one crate)")
+	await _shot("box_window_refusal_box_off")
+	await drv.interact()
+	await drv.frames(5)
+	check(world.quest_flow.is_dialog_open() and not m.has_bread, "next E at the window → vendor dialog opens")
+	world.quest_flow._close()
+	await drv.frames(3)
+	check(not world.quest_flow.is_dialog_open() and m.state == &"BUY_BREAD", "dialog closed without a purchase")
 	world.reset_hide()
 	await drv.frames(int(HideTuning.HINT_SECONDS * 60) + 5)
 
@@ -346,6 +373,109 @@ func _part_gags() -> void:
 	check(box.gag_counts[&"C03"] == c03 + 2, "after reset() C03 shows again (new attempt)")
 	world.reset_hide()
 	officer.sensor.enabled = false
+	await _wait_clear()
+
+# =====================================================================================
+# 7а. Лимит и очередь гэгов (приёмка P2-1): C02 до конца, C03 после него; не больше трёх за попытку
+# =====================================================================================
+
+func _part_gag_queue_limit() -> void:
+	print("--- gag queue and limit ---")
+	_sensors(false)
+	world.reset_hide()
+	await _wait_clear()
+	var sound := world.get_node("SoundDirector")
+	var hub := world.get_node("LevelGeometry/HideSpots")
+	var snow := world.get_node("LevelGeometry/HideSpots/Snowdrift")
+	var barrel := world.get_node("LevelGeometry/HideSpots/Barrel")
+	for i in 600:
+		if not sound.gag_playing():
+			break
+		await drv.frames(1)
+	check(hub.gags_this_attempt == 0 and not sound.gag_playing() and sound.gag_queue_size() == 0, "new attempt: no gags counted, none playing")
+	var started0: int = sound.gags_started
+	var log0: int = hub.gag_log.size()
+	var c02: int = box.gag_counts[&"C02"]
+	var c03: int = box.gag_counts[&"C03"]
+	officer.sensor.enabled = true
+	officer.place_at(Layout.OFFICER_POST)
+	await _place(Layout.OFFICER_POST + Vector3(-5.0, 0, 0), PI * 0.5)
+	box.enter()
+	await drv.frames(int(BoxSpot.GAG_STILL_SECONDS * 60) + 40)
+	check(box.gag_counts[&"C02"] == c02 + 1 and sound.subtitle_label.text.contains("Почему коробка стоит без сопровождения?"), "C02 on screen (%s)" % sound.subtitle_label.text.replace("\n", " / "))
+	await _shot("gag_above_prompt_box_on_ilyusha")
+	var card: Control = sound.subtitle_card
+	var plate: Control = world.get_node("GameHUD").prompt_plate
+	var hud_card: Control = world.get_node("GameHUD").card if world.get_node("GameHUD").get("card") is Control else null
+	var screen_h: float = card.get_viewport_rect().size.y
+	print("INFO: gag plate %s, prompt plate %s (visible %s), screen %s" % [card.get_global_rect(), plate.get_global_rect(), plate.visible, card.get_viewport_rect().size])
+	check(card.get_global_rect().end.y < plate.get_global_rect().position.y, "gag plate above the prompt line (gag bottom %.0f < prompt top %.0f)" % [card.get_global_rect().end.y, plate.get_global_rect().position.y])
+	check(card.get_global_rect().end.y <= screen_h * 0.5, "gag plate in the upper half, off the box on Ilyusha (bottom %.0f of %.0f)" % [card.get_global_rect().end.y, screen_h])
+	if hud_card:
+		check(not card.get_global_rect().intersects(hud_card.get_global_rect()), "gag plate does not overlap the HUD card")
+	# C03 сразу, пока C02 идёт: в очередь, C02 не перебит.
+	var n := 0
+	while box.gag_counts[&"C03"] == c03 and n < 180:
+		drv._walk_axes(Vector3(-1, 0, 0))
+		await drv.frames(1)
+		n += 1
+	drv.release_all()
+	check(box.gag_counts[&"C03"] == c03 + 1, "C03 accepted while C02 is on screen (%.2f s walk)" % (n / 60.0))
+	check(sound.subtitle_label.text.contains("Почему коробка") or sound.subtitle_label.text.contains("К товару вопросов нет"), "C02 not interrupted by C03 («%s»)" % sound.subtitle_label.text.replace("\n", " / "))
+	check(sound.gag_queue_size() == 1 and sound.gags_started == started0 + 1, "C03 waits in the queue (queue %d)" % sound.gag_queue_size())
+	# Третий гэг попытки (сугроб, C04) — принят в очередь; четвёртый и пятый (бочка C05, C06) — сверх лимита.
+	check(snow.say_gag(&"C04", QuestLines.HIDE_SNOW_LOOK), "third gag of the attempt (C04) accepted")
+	var roll0: int = barrel.roll_gag_count
+	check(not barrel.say_gag(&"C05", QuestLines.HIDE_BARREL_ROLL), "fourth gag of the attempt (C05) refused by the limit")
+	var toasts0: int = barrel.toast_count
+	barrel._bump(3.0)
+	check(barrel.toast_count == toasts0 + 1 and barrel.toast_text() == QuestLines.HIDE_BARREL_BUMP_TOAST, "barrel bump toast still shows over the limit")
+	check(hub.gags_this_attempt == HideTuning.GAG_LIMIT and hub.gag_log.size() == log0 + 3 and barrel.roll_gag_count == roll0, "attempt: exactly %d gags accepted (%s)" % [HideTuning.GAG_LIMIT, hub.gag_log.slice(log0)])
+	check(sound.gag_queue_size() == 2, "queue holds C03 and C04 (%d)" % sound.gag_queue_size())
+	# Дождаться: вторая страница C02, затем C03, затем C04 — по очереди.
+	officer.sensor.enabled = false
+	var seen := []
+	for i in 60 * 16:
+		var text: String = sound.subtitle_label.text
+		var tag := ""
+		if text.contains("К товару вопросов нет"):
+			tag = "C02b"
+		elif text.contains("Почему коробка"):
+			tag = "C02a"
+		elif text.contains("Товар пошёл"):
+			tag = "C03"
+		elif text.contains(QuestLines.HIDE_SNOW_LOOK[0]):
+			tag = "C04a"
+		elif text.contains(QuestLines.HIDE_SNOW_LOOK[2]):
+			tag = "C04b"
+		elif text.contains(QuestLines.HIDE_BARREL_BUMP_ILYUSHA) or text.contains(QuestLines.HIDE_BARREL_ROLL[0]):
+			tag = "barrel"
+		if tag != "" and (seen.is_empty() or seen[-1] != tag):
+			seen.append(tag)
+		if not sound.gag_playing() and sound.gag_queue_size() == 0:
+			break
+		await drv.frames(1)
+	print("INFO: subtitle order %s" % [seen])
+	var order := seen.filter(func(t): return t != "C02a")
+	check(order == ["C02b", "C03", "C04a", "C04b"], "C02 shown to the end, then C03, then C04; no barrel lines (%s)" % [seen])
+	check(sound.gags_started == started0 + 3 and not sound.subtitle_card.visible, "three gags played, plate gone (%d)" % (sound.gags_started - started0))
+	# Переполнение очереди: идущий + 2 в очереди, лишний старейший отброшен.
+	var dropped0: int = sound.gags_dropped
+	sound.show_gag(["Т1"], 0.3)
+	sound.show_gag(["Т2"], 0.3)
+	sound.show_gag(["Т3"], 0.3)
+	sound.show_gag(["Т4"], 0.3)
+	check(sound.gag_playing() and sound.gag_queue_size() == 2 and sound.gags_dropped == dropped0 + 1, "queue max 2: oldest queued dropped (%d in queue)" % sound.gag_queue_size())
+	var shown := []
+	for i in 120:
+		var t: String = sound.subtitle_label.text
+		if t != "" and (shown.is_empty() or shown[-1] != t):
+			shown.append(t)
+		await drv.frames(1)
+	check(shown == ["Т1", "Т3", "Т4"], "queue order Т1 → Т3 → Т4 (%s)" % [shown])
+	# Новая попытка — лимит заново.
+	world.reset_hide()
+	check(hub.gags_this_attempt == 0, "reset_hide → gag limit counter 0")
 	await _wait_clear()
 
 # =====================================================================================

@@ -12,7 +12,8 @@ extends Node
 ## Финал — два пузыря над Бабкой подряд с паузой QuestLines.THANKS_PAUSE: второй встаёт на место первого (с хвостиком
 ## к Бабке), первый поднимается над ним без хвостика — читается сверху вниз (EXT-01 fix2, P3).
 ## EXT-01 fix2 (P2-3): по закрытию разговора с полицейским — StealthDirector.grant_grace(OFFICER_GRACE) и
-## PatrolNpc.turn_away_from(Илюша): он сразу отворачивается на угол без Илюши; задержался рядом — провал через ~5 с.
+## PatrolNpc.turn_away_from(Илюша): он сразу отворачивается на угол без Илюши; задержался рядом — провал через ~7 с
+## (fix3, P3: защита 5 с — уйти от поста на юг к парковке через его второй угол успевают без провала).
 
 const DialogPanelScript = preload("res://game/ui/dialog_panel.gd")
 const ACCEPT_SOUND := preload("res://assets/audio/quest_accept.wav")
@@ -27,7 +28,7 @@ const TOAST_TEXT := "ХЛЕБ +1"
 ## Зоны наблюдателей расширения (исполнитель N): подключаются по id, если узлы есть в мире.
 const OBSERVER_IDS: Array[StringName] = [&"officer", &"account_officer"]
 ## Защита после разговора с полицейским, с (этап 5: «может спокойно уйти, если быстро завершит диалог»).
-const OFFICER_GRACE := 3.0
+const OFFICER_GRACE := 5.0
 
 ## Пузырь финала: размер шрифта и пикселя текста, поля и хвостик (в пикселях текста), высота над Бабкой.
 const BUBBLE_FONT := 80

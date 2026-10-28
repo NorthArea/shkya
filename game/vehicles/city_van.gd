@@ -15,6 +15,11 @@ extends AnimatableBody3D
 ## EXT-01 fix2 (P2-4): на полосе кольца (троллейбус — RING, машины — CAR_RING, Layout.ring_lane) автобус стоит не
 ## дольше STALL_SECONDS: дальше поездка завершается постановочно на ближайшей по пути точке вне полос, где кузов
 ## никого не касается (может оказаться и концом пути на площадке) — без толчков; вне полос ждёт, пока освободят.
+## EXT-01 fix3 (третья приёмка, P3): без телепорта. Простоял на полосе STALL_SECONDS — едет по своему пути дальше до
+## ближайшей точки вне полос и завершает поездку там, если кузов проходит туда, никого не касаясь (stall_drives); иначе
+## ждёт ещё. Телепорт на точку вне полос — только крайний случай после STALL_TELEPORT_SECONDS, с push_warning
+## (stall_ends). Вне полос за «Ладой» (обочина улицы A) ждёт не дольше DETOUR_AFTER и объезжает её по полосе машин
+## кольца (Layout.ring_lane(…, true)), если полоса свободна DETOUR_CLEAR м вперёд (detours); иначе стоит.
 ## Учебный круг на стоянке улицы A — PARK_SENSOR_RANGE 6 м и бледнее (TUTORIAL_CONE_COLOR, P3).
 
 const Materials = preload("res://game/world/materials.gd")
@@ -43,7 +48,12 @@ const SCAN_STEP := 1.0
 const STOP_MARGIN := 2.5          # м: встаёт, когда препятствие в 2,5–3,5 м от бампера
 const EMERGENCY_DECEL := 9.0
 const OBSTACLE_MASK := 1 | 2 | 4  # World (транспорт кольца), Player, Car
-const STALL_SECONDS := 12.0       # P2-4: дольше на полосе кольца не стоит
+const STALL_SECONDS := 12.0       # P2-4: дольше на полосе кольца не стоит — съезжает по пути с полосы (fix3)
+const STALL_TELEPORT_SECONDS := 30.0   # fix3: крайний случай — постановочно на точку вне полос, с предупреждением
+const STALL_RETRY := 0.5          # с между попытками съехать с полосы или объехать
+const DETOUR_AFTER := 20.0        # fix3: вне полос за «Ладой» — столько ждёт, потом объезд по полосе машин
+const DETOUR_CLEAR := 15.0        # м свободной полосы машин впереди для объезда
+const DETOUR_MAX_SHIFT := 4.5     # м: полоса машин дальше в сторону — объезда нет
 const LANE_CLEARANCE := 1.95      # м от оси полосы до оси автобуса: полкорпуса 1,05 + полкорпуса машины кольца 0,9
 const STALL_SEARCH_STEP := 0.5    # м: шаг поиска точки пути вне полос
 
@@ -65,6 +75,13 @@ var stall_seconds := 0.0
 var stall_ends := 0
 ## Кто держал автобус перед последним досрочным завершением (имя тела) — для тестов и журнала.
 var last_stall_blocker := ""
+## fix3: сколько раз съехал с полосы своим ходом (досрочный конец поездки) и сколько раз объехал «Ладу».
+var stall_drives := 0
+var detours := 0
+var _end_at := -1.0      # досрочный конец поездки (смещение по пути), −1 — конец пути
+var _retry_left := 0.0
+var _path: Array = []
+var _detour_query := PhysicsShapeQueryParameters3D.new()
 var _lanes: Array = []   # оси полос кольца (Layout.ring_lane): троллейбус и машины
 
 func _ready() -> void:
@@ -111,6 +128,7 @@ func park(point: Vector3, yaw: float) -> void:
 	global_transform = Transform3D(Basis(Vector3.UP, yaw), Vector3(point.x, 0.0, point.z))
 	_driving = false
 	_curve = null
+	_end_at = -1.0
 	_sensor_mode(PARK_SENSOR_RANGE, PARK_SENSOR_FOV, TUTORIAL_CAP)
 	sensor.cone_color = TUTORIAL_CONE_COLOR
 
@@ -118,6 +136,15 @@ func park(point: Vector3, yaw: float) -> void:
 func drive(path: Array, stop_yaw: float) -> void:
 	if path.size() < 2:
 		return
+	stall_seconds = 0.0
+	_route(path, stop_yaw)
+	sensor.enabled = false   # в пути не смотрит; дверной режим — на месте
+
+## Построить кривую по точкам и ехать с её начала (drive и объезд).
+func _route(path: Array, stop_yaw: float) -> void:
+	_path = path.duplicate()
+	_end_at = -1.0
+	_retry_left = 0.0
 	_curve = Curve3D.new()
 	_curve.bake_interval = 0.25
 	for i in path.size():
@@ -141,8 +168,6 @@ func drive(path: Array, stop_yaw: float) -> void:
 	_speed = 0.0
 	_stop_yaw = stop_yaw
 	_driving = true
-	stall_seconds = 0.0
-	sensor.enabled = false   # в пути не смотрит; дверной режим — на месте
 
 ## Режим сенсора двери: дальность, угол, потолок шкалы; включает сенсор.
 func _sensor_mode(range_m: float, fov: float, cap: float) -> void:
@@ -159,24 +184,25 @@ func _physics_process(delta: float) -> void:
 	if not _driving or _curve == null:
 		return
 	var length := _curve.get_baked_length()
-	var left := length - _offset
+	var end := _end_at if _end_at >= 0.0 else length
+	var left := end - _offset
 	# Тормозной путь v²/2a: перед концом сбрасываем, иначе набираем до SPEED.
 	var allowed := sqrt(maxf(2.0 * ACCEL * left, 0.0))
 	var target := minf(SPEED, allowed)
-	var obstacle := _obstacle_limit(length)
+	var obstacle := _obstacle_limit(length, end)
 	if obstacle < target:
 		_speed = maxf(_speed - EMERGENCY_DECEL * delta, obstacle)
 	elif _speed < target:
 		_speed = minf(_speed + ACCEL * delta, target)
 	else:
 		_speed = maxf(_speed - ACCEL * 1.5 * delta, target)
-	var next := minf(_offset + _speed * delta, length)
+	var next := minf(_offset + _speed * delta, end)
 	if next > _offset and not _free_at(next, length):
 		_speed = 0.0   # кузов на новом месте задел бы машину или Илюшу — стоим
 	if _speed < 0.05 and blocked_by != null:
 		stall_seconds += delta
-		if stall_seconds >= STALL_SECONDS and on_lane():
-			_end_trip_off_lane(length)
+		_retry_left -= delta
+		_on_stall(length)
 		return
 	stall_seconds = 0.0
 	_offset = next
@@ -188,17 +214,110 @@ func _physics_process(delta: float) -> void:
 	var yaw := global_rotation.y
 	if dir.length() > 0.01:
 		yaw = atan2(-dir.x, -dir.z)
-	if left < 1.5:
+	if left < 1.5 and _end_at < 0.0:
 		# Последние полтора метра — довернуть к stop_yaw.
 		yaw = lerp_angle(global_rotation.y, _stop_yaw, 1.0 - exp(-4.0 * delta))
 	global_transform = Transform3D(Basis(Vector3.UP, yaw), Vector3(at.x, 0.0, at.z))
 	for wheel in _wheels:
 		wheel.rotate_object_local(Vector3.UP, -_speed * delta / WHEEL_RADIUS)   # ось цилиндра повёрнута на ±90° по Z
-	if _offset >= length - 0.01:
-		global_transform = Transform3D(Basis(Vector3.UP, _stop_yaw), Vector3(at.x, 0.0, at.z))
+	if _offset >= end - 0.01:
+		if _end_at < 0.0:
+			global_transform = Transform3D(Basis(Vector3.UP, _stop_yaw), Vector3(at.x, 0.0, at.z))
 		_driving = false
 		_speed = 0.0
+		_end_at = -1.0
 		_sensor_mode(SENSOR_RANGE, SENSOR_FOV, 1.0)
+
+## Стоит перед телом (fix3): на полосе — после STALL_SECONDS съехать по пути, после STALL_TELEPORT_SECONDS — телепорт;
+## вне полос за «Ладой» — после DETOUR_AFTER объезд по полосе машин. Попытки — раз в STALL_RETRY с.
+func _on_stall(length: float) -> void:
+	if _retry_left > 0.0:
+		return
+	if on_lane():
+		if stall_seconds >= STALL_TELEPORT_SECONDS:
+			push_warning("CityVan: %.0f s on a ring lane behind %s at %s — moved off the lane (last resort)" % [stall_seconds, blocked_by.name if blocked_by is Node else "?", global_position])
+			_end_trip_off_lane(length)
+		elif stall_seconds >= STALL_SECONDS and _end_at < 0.0:
+			var blocker: Object = blocked_by
+			var off := _off_lane_ahead(length)
+			blocked_by = blocker
+			if off >= 0.0:
+				last_stall_blocker = String(blocker.name) if blocker is Node else ""
+				_end_at = off if off < length - STALL_SEARCH_STEP else -1.0
+				stall_drives += 1
+				stall_seconds = 0.0
+	elif stall_seconds >= DETOUR_AFTER and blocked_by is Lada:
+		_try_detour(length)
+	_retry_left = STALL_RETRY
+
+## Ближайшее смещение по пути впереди, где кузов вне полос, и весь путь до него кузов никого не касается; −1 — нет.
+func _off_lane_ahead(length: float) -> float:
+	var o := _offset + STALL_SEARCH_STEP
+	while o <= length + 0.001:
+		if not _free_at(minf(o, length), length):
+			return -1.0
+		if not _xform_on_lane(_transform_at(minf(o, length), length, 0.0)):
+			return minf(o, length)
+		o += STALL_SEARCH_STEP
+	return -1.0
+
+## Объезд «Лады» (fix3): сдвиг на ось полосы машин кольца сбоку, мимо «Лады» с запасом и обратно на путь. Только если
+## полоса рядом (≤ DETOUR_MAX_SHIFT) и свободна DETOUR_CLEAR м вперёд. true — поехал в объезд.
+func _try_detour(length: float) -> bool:
+	var blocker := blocked_by as Node3D
+	var pos := global_position
+	var fwd := -global_basis.z
+	fwd.y = 0.0
+	fwd = fwd.normalized()
+	var right := Vector3(-fwd.z, 0.0, fwd.x)
+	var lane: Array[Vector3] = Layout.ring_lane(6.0, 6, true)
+	var best := Vector2.INF
+	var q := Vector2(pos.x, pos.z)
+	for i in lane.size():
+		var a: Vector3 = lane[i]
+		var b: Vector3 = lane[(i + 1) % lane.size()]
+		var c := Geometry2D.get_closest_point_to_segment(q, Vector2(a.x, a.z), Vector2(b.x, b.z))
+		if c.distance_to(q) < best.distance_to(q):
+			best = c
+	var shift := (Vector3(best.x, 0.0, best.y) - pos).dot(right)
+	if absf(shift) > DETOUR_MAX_SHIFT or absf(shift) < 1.0:
+		return false
+	var side := right * shift
+	var along := (blocker.global_position - pos).dot(fwd)
+	var pass_at := along + Lada.SIZE.z * 0.5 + SIZE.z * 0.5 + 2.0
+	# Полоса свободна: коробка шириной кузова + 0,6 м по оси полосы от бампера на DETOUR_CLEAR (не короче объезда).
+	var reach := maxf(DETOUR_CLEAR, pass_at + SIZE.z * 0.5)
+	var box := BoxShape3D.new()
+	box.size = Vector3(SIZE.x + 0.6, 1.6, reach)
+	_detour_query.shape = box
+	_detour_query.collision_mask = OBSTACLE_MASK
+	_detour_query.exclude = [get_rid()]
+	var center := pos + side + fwd * (SIZE.z * 0.5 + reach * 0.5) + Vector3.UP * 1.1
+	_detour_query.transform = Transform3D(Basis(Vector3.UP, atan2(-fwd.x, -fwd.z)), center)
+	for result in get_world_3d().direct_space_state.intersect_shape(_detour_query, 8):
+		if _is_obstacle(result["collider"]):
+			return false
+	# Возврат на путь — первая точка кривой впереди дальше pass_at + 6 м по ходу; дальше — исходные точки после неё.
+	var rejoin := -1.0
+	var o := _offset
+	while o <= length:
+		if (_curve.sample_baked(o, true) - pos).dot(fwd) >= pass_at + 6.0:
+			rejoin = o
+			break
+		o += STALL_SEARCH_STEP
+	var points: Array = [pos, pos + fwd * 3.0 + side, pos + fwd * pass_at + side]
+	if rejoin >= 0.0:
+		points.append(_curve.sample_baked(rejoin, true))
+		for p in _path:
+			if _curve.get_closest_offset(p) > rejoin + 1.0:
+				points.append(p)
+	else:
+		points.append(_path[-1])
+	detours += 1
+	last_stall_blocker = String(blocker.name)
+	stall_seconds = 0.0
+	_route(points, _stop_yaw)
+	return true
 
 ## Кузов на полосе кольца: ось автобуса (центр и ±2,2 м вдоль) ближе LANE_CLEARANCE к оси любой полосы (C8).
 func on_lane() -> bool:
@@ -223,11 +342,12 @@ func _xform_on_lane(xform: Transform3D) -> bool:
 					return true
 	return false
 
-## P2-4: простоял STALL_SECONDS на полосе — встать на ближайшей по пути точке вне полос, где кузов никого не касается
+## P2-4 (fix3 — только крайний случай после STALL_TELEPORT_SECONDS): встать на ближайшей по пути точке вне полос, где кузов никого не касается
 ## (вперёд или назад; конец пути — обычная остановка носом по stop_yaw), и завершить поездку; дверной сенсор включается.
 ## Такой точки нет — ждать ещё STALL_SECONDS.
 func _end_trip_off_lane(length: float) -> void:
 	stall_seconds = 0.0
+	_end_at = -1.0
 	var blocker: Object = blocked_by   # _free_at ниже перезаписывает blocked_by
 	var best := -1.0
 	var best_d := INF
@@ -253,13 +373,14 @@ func _end_trip_off_lane(length: float) -> void:
 	global_transform = Transform3D(Basis(Vector3.UP, yaw), Vector3(at.x, 0.0, at.z))
 	_sensor_mode(SENSOR_RANGE, SENSOR_FOV, 1.0)
 
-## Предел скорости по датчику впереди: коробки шириной кузова + 0,3 м вдоль пути от бампера на SCAN_AHEAD.
-func _obstacle_limit(length: float) -> float:
+## Предел скорости по датчику впереди: коробки шириной кузова + 0,3 м вдоль пути от бампера на SCAN_AHEAD (не дальше
+## бампера в конце поездки end — досрочный конец, fix3).
+func _obstacle_limit(length: float, end := INF) -> float:
 	var space := get_world_3d().direct_space_state
 	blocked_by = null
 	for k in int(round(SCAN_AHEAD / SCAN_STEP)):
 		var at := _offset + SIZE.z * 0.5 + SCAN_STEP * (k + 0.5)
-		if at > length + SIZE.z * 0.5:
+		if at > minf(length, end) + SIZE.z * 0.5:
 			break
 		_scan_query.transform = _transform_at(at, length, 1.1)
 		for result in space.intersect_shape(_scan_query, 8):
