@@ -157,9 +157,10 @@ func officer() -> Node3D:
 
 ## Дождаться, пока полицейский заново развернётся на угол facings[index] и встанет: если он уже смотрит туда,
 ## сначала дождаться, пока отвернётся (осторожный игрок не знает, сколько ему осталось стоять). false — не дождался.
-func wait_officer_turn(index: int, max_frames := 1500) -> bool:
+func wait_officer_turn(index: int, max_frames := 1500, o: Node3D = null) -> bool:
 	release_all()
-	var o := officer()
+	if o == null:
+		o = officer()
 	var waited := 0
 	while o.facing_index() == index and waited < max_frames:
 		await frames(1)
@@ -172,13 +173,32 @@ func wait_officer_turn(index: int, max_frames := 1500) -> bool:
 		return false
 	return true
 
+## Второй наблюдатель у киоска (LevelGeometry/Patrols/Officer2, EXT-01 fix3) или null.
+func officer2() -> Node3D:
+	var patrols := world().get_node_or_null("LevelGeometry/Patrols")
+	return patrols.officer2 if patrols else null
+
 ## Пройти укрытие → выждать разворот → пройти открытый участок. sneak: [[точки до укрытия], индекс угла, [точки после]].
-func sneak(to_cover: Array, safe_facing: int, after: Array) -> bool:
+## EXT-01 fix4: с safe_facing2 ≥ 0 — в конце after выждать разворот второго поста (Officer2) на этот угол и пройти after2.
+func sneak(to_cover: Array, safe_facing: int, after: Array, safe_facing2 := -1, after2: Array = []) -> bool:
 	if not await walk_path(to_cover):
 		return false
 	if not await wait_officer_turn(safe_facing):
 		return false
-	return await walk_path(after)
+	if safe_facing2 < 0:
+		return await walk_path(after)
+	if not await walk_path(after):
+		return false
+	if not await wait_officer_turn(safe_facing2, 1500, officer2()):
+		return false
+	return await walk_path(after2)
+
+## Честный путь Layout.SNEAK_*: три элемента [до укрытия, угол, после] или пять (SNEAK_WEST, fix4: …, угол второго поста,
+## после).
+func sneak_route(route: Array) -> bool:
+	if route.size() >= 5:
+		return await sneak(route[0], route[1], route[2], route[3], route[4])
+	return await sneak(route[0], route[1], route[2])
 
 # --- езда: руль и газ по курсу на точку маршрута ---
 

@@ -17,6 +17,11 @@ extends Node3D
 ## «остановился у киоска»; проезд мимо не наказывается. Брошенную там машину (Илюша вышел) замечают так же, пока Илюша
 ## ближе ACTIVE_DISTANCE к сенсору: выйти у окна и дойти пешком — не обход. visibility() — максимум из «видят Илюшу»
 ## (геометрия × заметность) и «видят машину»; in_view — только Илюша (в машине — машина).
+## EXT-01 fix4 (четвёртая приёмка): лучи к машине — к центру кузова и к четырём его углам (CAR_CORNER_INSET внутрь),
+## видна, если свободен хотя бы один (в коридоре между гаражами и киоском один луч к центру упирался в киоск). На проезжей
+## части B (x ≥ Layout.KIOSK_ROAD_X) машину замечают только после CAR_ROAD_STILL_SECONDS почти полной остановки
+## (скорость < CAR_ROAD_STILL_SPEED подряд, car_road_still) — «Лада» за троллейбусом на остановке не «у киоска»; на площадке
+## (x < KIOSK_ROAD_X) — сразу. sees_car_now() (вышел из машины на глазах) — без скорости и выдержки, везде в области.
 
 const POLL_SECONDS := 0.15
 const ACTIVE_DISTANCE := 40.0
@@ -28,6 +33,10 @@ const CONE_RAYS := 32              # лучей на сектор до 180°
 const CONE_RAYS_FULL := 48         # на круг (учебный автобус)
 const CAR_TARGET_HEIGHT := 0.7     # центр кузова «Лады» над её началом
 const CAR_STILL_SPEED := 2.0       # м/с: медленнее — машина «стоит у киоска» (fix3)
+const CAR_ROAD_STILL_SECONDS := 8.0   # fix4: на проезжей части B — столько подряд медленнее CAR_ROAD_STILL_SPEED
+const CAR_ROAD_STILL_SPEED := 0.5  # м/с: «почти полная остановка» для выдержки на дороге (торможение и разгон не в счёт)
+const CAR_CORNER_INSET := 0.1      # м: углы кузова для лучей — внутрь от габарита Lada.SIZE
+const Layout = preload("res://game/world/layout.gd")
 
 @export var range_m := 9.0
 @export var fov_deg := 75.0
@@ -54,6 +63,8 @@ var _cone: MeshInstance3D
 var _cone_mesh: ImmediateMesh
 var _cone_material: StandardMaterial3D
 var _exclude: Array[RID] = []
+## Сколько секунд подряд машина почти стоит на проезжей части B в car_area (fix4); 0 — едет, не на дороге или вне области.
+var car_road_still := 0.0
 
 func _ready() -> void:
 	add_to_group(&"detection_sensors")
@@ -69,6 +80,7 @@ func _ready() -> void:
 				_exclude.append((sibling as CollisionObject3D).get_rid())
 
 func _physics_process(delta: float) -> void:
+	_update_road_still(delta)
 	_poll_left -= delta
 	if _poll_left <= 0.0:
 		_poll_left += POLL_SECONDS
@@ -107,8 +119,28 @@ func watches_car(any_speed := false) -> bool:
 		return false
 	if world.get("control_mode") != &"in_car" and distance_to_player() > ACTIVE_DISTANCE:
 		return false
+	if any_speed:
+		return true
+	if car.global_position.x >= Layout.KIOSK_ROAD_X and car_road_still < CAR_ROAD_STILL_SECONDS:
+		return false   # fix4: на проезжей части B — только после выдержки
+	return _car_speed(car) < CAR_STILL_SPEED
+
+func _car_speed(car: Node3D) -> float:
 	var v = car.get("velocity")
-	return any_speed or not (v is Vector3) or Vector2(v.x, v.z).length() < CAR_STILL_SPEED
+	return Vector2(v.x, v.z).length() if v is Vector3 else 0.0
+
+## Выдержка «почти стоит на проезжей части B» (fix4): растёт, пока машина в car_area, x ≥ KIOSK_ROAD_X и медленнее
+## CAR_ROAD_STILL_SPEED; иначе 0.
+func _update_road_still(delta: float) -> void:
+	if not car_area.has_area():
+		return
+	var world := _world()
+	var car: Node3D = world.get("car") if world else null
+	if car == null or car.global_position.x < Layout.KIOSK_ROAD_X \
+			or not car_area.has_point(Vector2(car.global_position.x, car.global_position.z)) or _car_speed(car) >= CAR_ROAD_STILL_SPEED:
+		car_road_still = 0.0
+	else:
+		car_road_still += delta
 
 func _compute() -> float:
 	var world := _world()
@@ -129,24 +161,46 @@ func _compute() -> float:
 func sees_car_now() -> bool:
 	return _car_in_sight(true) > 0.0
 
-## Машина видна (fix3): watches_car() и луч от глаз до центра кузова свободен; угол и дальность не важны (мотор и
-## «чья машина у киоска» — с любого угла). 1 или 0.
+## Машина видна (fix3, fix4): watches_car() и свободен хотя бы один луч от глаз — к центру кузова или к одному из четырёх
+## углов (car_targets); угол и дальность не важны (мотор и «чья машина у киоска» — с любого угла). 1 или 0.
 func _car_in_sight(any_speed := false) -> float:
 	if not enabled or not is_inside_tree() or not watches_car(any_speed):
 		return 0.0
 	var car: CollisionObject3D = _world().get("car")
 	var eye := global_position + Vector3.UP * EYE_HEIGHT
-	var target := car.global_position + Vector3.UP * CAR_TARGET_HEIGHT
-	if Vector2(target.x - eye.x, target.z - eye.z).length() > ACTIVE_DISTANCE:
+	var center := car.global_position + Vector3.UP * CAR_TARGET_HEIGHT
+	if Vector2(center.x - eye.x, center.z - eye.z).length() > ACTIVE_DISTANCE:
 		return 0.0
 	var exclude := _exclude.duplicate()
 	exclude.append(car.get_rid())
-	var hit := get_world_3d().direct_space_state.intersect_ray(PhysicsRayQueryParameters3D.create(eye, target, WORLD_MASK, exclude))
-	if not hit.is_empty():
-		var collider: Object = hit.get("collider")
-		last_blocker = String(collider.name) if collider is Node else "?"
-		return 0.0
-	return 1.0
+	var space := get_world_3d().direct_space_state
+	var blocker := ""
+	for target in car_targets(car):
+		var hit := space.intersect_ray(PhysicsRayQueryParameters3D.create(eye, target, WORLD_MASK, exclude))
+		if hit.is_empty():
+			return 1.0
+		if blocker == "":
+			var collider: Object = hit.get("collider")
+			blocker = String(collider.name) if collider is Node else "?"
+	last_blocker = blocker
+	return 0.0
+
+## Точки кузова для лучей (fix4): центр и четыре угла габарита Lada.SIZE (внутрь на CAR_CORNER_INSET) на высоте
+## CAR_TARGET_HEIGHT.
+static func car_targets(car: Node3D) -> Array[Vector3]:
+	var half := Vector2(Lada.SIZE.x * 0.5 - CAR_CORNER_INSET, Lada.SIZE.z * 0.5 - CAR_CORNER_INSET)
+	var base := car.global_position + Vector3.UP * CAR_TARGET_HEIGHT
+	var right := car.global_basis.x
+	right.y = 0.0
+	right = right.normalized()
+	var back := car.global_basis.z
+	back.y = 0.0
+	back = back.normalized()
+	var out: Array[Vector3] = [base]
+	for sx in [-1.0, 1.0]:
+		for sz in [-1.0, 1.0]:
+			out.append(base + right * half.x * sx + back * half.y * sz)
+	return out
 
 ## Геометрия зрения на Илюшу пешком: 1 — дистанция, угол и луч пропускают, иначе 0 (в машине — 0); last_blocker —
 ## что перекрыло луч.

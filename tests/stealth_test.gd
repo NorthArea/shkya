@@ -26,6 +26,14 @@ extends SceneTree
 ## диалога, честные пути SNEAK_* и окно вне его конусов, «Лада» встаёт на проезжей части B у окна — провал ≤ 3 с (вышел
 ## и пошёл к окну — сразу) и машина на парковке, обход пешком по дороге x = 74,6 — провал в угол «юго-восток», проход
 ## с ожиданием угла «север»; честные пути с двумя постами 15–30 с; после покупки второй пост на месте.
+## EXT-01 fix4 (четвёртая приёмка): второй пост на (59, −87), 14 м, углы [запад, восток-юго-восток], разворот через север
+## (avoid_yaw); коридор x = 51,3 — в угле 0, у западной стены киоска не видно ни одному посту; «Лада» в коридоре (51,2; −77)
+## видна по лучам к углам — провал, выход из машины в коридоре — провал сразу; пешком с улицы C через коридор сразу после
+## поворота на запад — провал / шкала ≥ 0,6, после поворота на восток-юго-восток — проход; «Лада» за троллейбусом на
+## остановке B — шкала 0 (выдержка 8 с на проезжей части), стоит у окна на дороге — провал через 8…11 с; обход по дороге
+## без ожидания — в 12 фазах, число «провал или ≥ 0,6» в логе; SNEAK_WEST ждёт оба поста, ≤ 40 с; после диалога патруль
+## отворачивается от парковки; подсказка индикатора после alert_now и респавна не висит; автобус при «Ладе» на полосе —
+## крайний случай после 60 с и только вперёд.
 ##
 ## Headless: tools/run.command --headless --fixed-fps 60 --script tests/stealth_test.gd
 ## Кадры: tools/run.command --fixed-fps 60 --resolution 1920x1080 --script tests/stealth_test.gd -- --capture
@@ -36,6 +44,7 @@ const Layout = preload("res://game/world/layout.gd")
 const Driver = preload("res://tests/playthrough_driver.gd")
 const SensorScript = preload("res://game/stealth/detection_sensor.gd")
 const QuestFlowScript = preload("res://game/mission/quest_flow.gd")
+const PatrolsScript = preload("res://game/world/patrols.gd")
 const OUT := "res://builds/screenshots/ext01/s"
 const FAIL_TEXT := "ВАШ МАРШРУТ УТОЧНЁН"
 const TOAST_TEXT := "МАРШРУТ УТОЧНЁН: ВЫ ВСЁ ЕЩЁ ЗА ХЛЕБОМ"   # до покупки; после — «ВЫ ОСТАЛИСЬ ПЕШЕХОДОМ. ХЛЕБ ПРИ ВАС»
@@ -585,6 +594,11 @@ func _part_kiosk_section() -> void:
 		ok = ok and await drv.wait_officer_turn(route[1])
 		var t_wait := _track_frames / 60.0 - t_cover
 		ok = ok and await drv.walk_path(route[2])
+		if route.size() >= 5:   # fix4: SNEAK_WEST — у западной стены киоска выждать угол второго поста
+			var t_hold := _track_frames
+			ok = ok and await drv.wait_officer_turn(route[3], 1500, drv.officer2())
+			t_wait += (_track_frames - t_hold) / 60.0
+			ok = ok and await drv.walk_path(route[4])
 		var seconds := _track_frames / 60.0
 		print("INFO: honest %s path parking → window %.1f s (to cover %.1f, wait %.1f, open part %.1f), max suspicion %.2f" % [route_name, seconds, t_cover, t_wait, seconds - t_cover - t_wait, _track_max])
 		check(ok and _kiosk_detections == before and not world.is_stealth_failing(), "honest %s path: parking → window without a fail (%s)" % [route_name, drv.last_error])
@@ -598,7 +612,7 @@ func _part_kiosk_section() -> void:
 	_reset_track()
 	var west_wrong := 1 - int(Layout.SNEAK_WEST[1])
 	if await drv.walk_path(Layout.SNEAK_WEST[0]) and await drv.wait_officer_turn(west_wrong):
-		await _walk_path_until_fail(Layout.SNEAK_WEST[2], 900)
+		await _walk_path_until_fail(Layout.SNEAK_WEST[2] + Layout.SNEAK_WEST[4], 900)
 	# Сугроб (54; −66,5) и коробка «БАТОНЫ» (54,5; −73,2) EXT-02 затеняют проход у гаражей: открыто ~7 м (1,8 с) —
 	# шкала почти полная, но провала может не быть (расчёт fix2). Провал или шкала ≥ 0,6.
 	print("INFO: west path while the officer looks west-south-west: max suspicion %.2f, fail frame %d" % [_track_max, _track_fail])
@@ -761,7 +775,8 @@ func _part_fix2() -> void:
 		await drv.frames(2)
 		var o_seen_after := o_sensor.poll()
 		check(not world.quest_flow.is_dialog_open() and world.stealth.protection_left() > QuestFlowScript.OFFICER_GRACE - 0.5 and QuestFlowScript.OFFICER_GRACE >= 5.0, "%s: dialog closed, grace %.1f s (OFFICER_GRACE %.0f)" % [variant, world.stealth.protection_left(), QuestFlowScript.OFFICER_GRACE])
-		check(officer.facing_index() == 1, "%s: officer turns to the facing without Ilyusha (%d)" % [variant, officer.facing_index()])
+		# fix4 (P3): оба угла без Илюши — из них дальше от парковки (запад-юго-запад, [0]), а не юг, куда уходят.
+		check(officer.facing_index() == 0 and officer.away_facing(world.player.global_position) == 0, "%s: officer turns to the facing without Ilyusha, away from the parking (%d)" % [variant, officer.facing_index()])
 		var closed_at := _track_frames
 		if variant == "stand":
 			var failed: int = await _wait_until(func(): return world.is_stealth_failing(), 600)
@@ -839,7 +854,7 @@ func _part_fix2() -> void:
 	drv.on_frame = Callable()
 
 ## fix3 (третья приёмка, P3): автобус ГСУМ без телепорта. (A) «Лада» на полосе машин B впереди — стоит; после 12 с
-## съехать некуда (путь занят) — ждёт; телепорт вне полос — только после 30 с (крайний случай, push_warning).
+## съехать некуда (путь занят) — ждёт; перенос вне полос — только после 60 с и только вперёд по пути (fix4, push_warning).
 ## (B) Илюша на месте стоянки — автобус встаёт на повороте на полосе кольца; после 12 с своим ходом доезжает до
 ## ближайшей точки пути вне полос. (C) «Лада» на обочине A (не полоса) — ждёт 20 с и объезжает по полосе машин.
 ## Везде: «Ладу» не сдвигает, скачков за кадр нет (кроме крайнего случая A).
@@ -866,10 +881,12 @@ func _part_van_stall(patrols: Node, van: CityVan) -> void:
 	var lada_before: Vector3 = world.car.global_position
 	van.drive(tail, Layout.VAN_STOP_YAW)
 	var blocked: int = await _wait_until(func(): return van.blocked_by == world.car and van.stall_seconds > 0.0, 3000)
-	var w: Array = await _van_watch(van, 2400, func(): return not van.is_driving())
+	var w: Array = await _van_watch(van, 4200, func(): return not van.is_driving())
 	await drv.frames(10)
 	print("INFO: van blocked by the Lada on the B lane at %s: stood %.1f s, largest jump before the end %.2f m, ended at %s (stall_drives %d, stall_ends %d, on lane %s)" % [block_at, w[0], w[1], van.global_position, van.stall_drives, van.stall_ends, van.on_lane()])
-	check(blocked >= 0 and w[0] >= CityVan.STALL_TELEPORT_SECONDS - 0.5 and w[0] <= CityVan.STALL_TELEPORT_SECONDS + 1.5 and van.stall_drives == 0 and van.stall_ends == 1, "(A) van blocked on the lane with no way off: waits past 12 s, last-resort move only after 30 s (%.1f s)" % w[0])
+	check(blocked >= 0 and w[0] >= CityVan.STALL_TELEPORT_SECONDS - 0.5 and w[0] <= CityVan.STALL_TELEPORT_SECONDS + 1.5 and van.stall_drives == 0 and van.stall_ends == 1, "(A) van blocked on the lane with no way off: waits past 12 s, last-resort move only after 60 s (%.1f s)" % w[0])
+	# fix4 (P3): крайний случай — только вперёд по пути (на север за «Ладу», к площадке), не назад на улицу A.
+	check(van.global_position.z < block_at.z - 3.0 and van.global_position.x > 55.0, "(A) the last-resort move goes forward past the Lada, not back to street A (%s)" % van.global_position)
 	check(w[1] <= 0.3, "(A) no jump while waiting (%.2f m per frame)" % w[1])
 	check(not van.on_lane() and _van_clear(van), "(A) after the last resort the van is off the ring lanes, touching nothing (%s)" % van.global_position)
 	check(world.car.global_position.distance_to(lada_before) <= 0.2, "(A) van does not push the Lada (moved %.2f m)" % world.car.global_position.distance_to(lada_before))
@@ -956,7 +973,7 @@ func _part_fix3() -> void:
 
 	# Пост, настройки, без диалога.
 	check(officer2 != null and officer2.name == "Officer2" and officer2.interaction_id == &"officer2" and officer2.character == "police", "Officer2: second police NPC (id officer2, police art)")
-	check(s2.is_in_group(&"detection_sensors") and s2.show_cone and is_equal_approx(s2.range_m, s1.range_m) and is_equal_approx(s2.fov_deg, s1.fov_deg) and officer2.turn_every == officer.turn_every, "Officer2 sensor: in the group, cone, %.0f m / %.0f°, hold %s s like the first" % [s2.range_m, s2.fov_deg, officer2.turn_every])
+	check(s2.is_in_group(&"detection_sensors") and s2.show_cone and is_equal_approx(s2.range_m, PatrolsScript.OFFICER2_RANGE) and is_equal_approx(s2.range_m, 14.0) and is_equal_approx(s2.fov_deg, s1.fov_deg) and officer2.turn_every == officer.turn_every, "Officer2 sensor: in the group, cone, %.0f m / %.0f°, hold %s s like the first" % [s2.range_m, s2.fov_deg, officer2.turn_every])
 	check(_near2(officer2.global_position, Layout.OFFICER2_POST, 0.05) and Layout.OFFICER2_FACING.size() == 2, "Officer2 at OFFICER2_POST %s, two facings" % Layout.OFFICER2_POST)
 	check(s1.car_area == Layout.KIOSK_SQUARE and s2.car_area == Layout.KIOSK_SQUARE and Layout.KIOSK_SQUARE == Rect2(50, -94, 26, 34), "both officers watch cars on KIOSK_SQUARE x 50…76, z −94…−60")
 	var road_stop := Vector3(66.9, 0, -75.8)
@@ -967,7 +984,9 @@ func _part_fix3() -> void:
 	check(world.get_hud_state()["prompt"] != "E — ПОГОВОРИТЬ" and not officer2.interactable.enabled and officer2.interactable.prompt == "", "Officer2: no dialog and no E prompt (%s)" % world.get_hud_state()["prompt"])
 	await _place_player(Layout.KIOSK_STAGING, 0.0)
 
-	# Геометрия: окно и все честные пути вне обоих конусов второго поста; дорога у окна и обход по ней — в угле 0.
+	# Геометрия (fix4): окно и честные пути вне обоих конусов второго поста; SNEAK_WEST до западной стены киоска — вне
+	# обоих, остаток — вне угла SNEAK_WEST[3] и в конусе другого угла (поэтому ждать); коридор x = 51,3 — в угле 0
+	# (запад); дорога у окна и обход по ней — в угле 1.
 	var honest := {}
 	var routes := {"SNEAK_EAST": Layout.SNEAK_EAST, "SNEAK_WEST": Layout.SNEAK_WEST, "SNEAK_BACK": Layout.SNEAK_BACK, "SNEAK_AGAIN": Layout.SNEAK_AGAIN}
 	for route_name in routes:
@@ -990,7 +1009,43 @@ func _part_fix3() -> void:
 				for f in 2:
 					if _in_cone(Layout.OFFICER2_POST, Layout.OFFICER2_FACING[f], q, s2.fov_deg, s2.range_m):
 						hits.append("%s %s f%d" % [route_name, q, f])
-	check(hits.is_empty(), "all honest paths SNEAK_* are outside both Officer2 cones (%s)" % [hits.slice(0, 4)])
+	check(hits.is_empty(), "all honest paths SNEAK_* (SNEAK_WEST up to the kiosk west wall) are outside both Officer2 cones (%s)" % [hits.slice(0, 4)])
+	var west_tail: Array = [Layout.SNEAK_WEST[2][-1]]
+	west_tail.append_array(Layout.SNEAK_WEST[4])
+	var tail_safe := 0
+	var tail_seen := 0
+	for i in west_tail.size() - 1:
+		var a: Vector3 = west_tail[i]
+		var b: Vector3 = west_tail[i + 1]
+		var n := maxi(1, int(a.distance_to(b) / 0.25))
+		for k in n + 1:
+			var q := a.lerp(b, float(k) / n)
+			tail_safe += 1 if _in_cone(Layout.OFFICER2_POST, Layout.OFFICER2_FACING[Layout.SNEAK_WEST[3]], q, s2.fov_deg, s2.range_m) else 0
+			tail_seen += 1 if _in_cone(Layout.OFFICER2_POST, Layout.OFFICER2_FACING[1 - Layout.SNEAK_WEST[3]], q, s2.fov_deg, s2.range_m) else 0
+	check(tail_safe == 0 and tail_seen > 8, "SNEAK_WEST past the kiosk: outside Officer2 facing %d, in facing %d for %d points (wait needed)" % [Layout.SNEAK_WEST[3], 1 - Layout.SNEAK_WEST[3], tail_seen])
+	var corridor := []
+	for k in 13:
+		corridor.append(Vector3(51.3, 0, -92.0 + k))
+	check(corridor.all(func(q): return _in_cone(Layout.OFFICER2_POST, Layout.OFFICER2_FACING[0], q, s2.fov_deg, s2.range_m)) and not corridor.any(func(q): return _in_cone(Layout.OFFICER2_POST, Layout.OFFICER2_FACING[1], q, s2.fov_deg, s2.range_m)), "facing 0 (west) covers the corridor x = 51.3, z −92…−80; facing 1 leaves it")
+	# Настоящим опросом: Илюша в коридоре — видят при угле 0 (луч свободен), у западной стены киоска — киоск закрывает.
+	var corridor_seen := []
+	for q in [Vector3(51.3, 0, -91), Vector3(51.3, 0, -86), Vector3(51.3, 0, -81)]:
+		await _place_player(q, 0.0)
+		s2.rotation.y = Layout.OFFICER2_FACING[0]
+		corridor_seen.append(s2.poll())
+	await _place_player(Layout.SNEAK_WEST[2][-1], 0.0)
+	var hold_seen := []
+	for f in 2:
+		s2.rotation.y = Layout.OFFICER2_FACING[f]
+		hold_seen.append(s2.poll())
+	for f in 2:
+		s1.rotation.y = Layout.OFFICER_FACING[f]
+		hold_seen.append(s1.poll())
+	s1.rotation.y = officer.body_yaw()
+	s2.rotation.y = officer2.body_yaw()
+	print("INFO: corridor x = 51.3 seen by Officer2 facing 0: %s; kiosk west wall %s seen by Officer2 f0/f1, Officer f0/f1: %s (blocker %s)" % [corridor_seen, Layout.SNEAK_WEST[2][-1], hold_seen, s1.last_blocker])
+	check(corridor_seen.all(func(v): return v > 0.0), "Officer2 at facing 0 really sees the corridor (%s)" % [corridor_seen])
+	check(hold_seen.all(func(v): return v == 0.0), "the kiosk west wall (SNEAK_WEST hold) is hidden from both posts in all facings (%s)" % [hold_seen])
 	await _place_player(_vendor_stand(), 0.0)
 	var window_seen := []
 	for f in 2:
@@ -998,21 +1053,30 @@ func _part_fix3() -> void:
 		if s2.poll() > 0.0 or _in_cone(Layout.OFFICER2_POST, Layout.OFFICER2_FACING[f], _vendor_stand(), s2.fov_deg, s2.range_m):
 			window_seen.append(f)
 	check(window_seen.is_empty(), "kiosk window is outside both Officer2 cones %s" % [window_seen])
-	var leg := [Vector3(74.6, 0, -84), Vector3(70, 0, -84), Vector3(66, 0, -84)]
-	check(_in_cone(Layout.OFFICER2_POST, Layout.OFFICER2_FACING[0], road_stop, s2.fov_deg, s2.range_m) and leg.all(func(q): return _in_cone(Layout.OFFICER2_POST, Layout.OFFICER2_FACING[0], q, s2.fov_deg, s2.range_m)), "facing 0 covers the road stop by the window and the road bypass leg z = −84")
-	check(not leg.any(func(q): return _in_cone(Layout.OFFICER2_POST, Layout.OFFICER2_FACING[1], q, s2.fov_deg, s2.range_m)), "facing 1 leaves the road bypass leg open")
+	var leg := [Vector3(72, 0, -84), Vector3(69, 0, -84), Vector3(66, 0, -84)]
+	check(_in_cone(Layout.OFFICER2_POST, Layout.OFFICER2_FACING[1], road_stop, s2.fov_deg, s2.range_m) and leg.all(func(q): return _in_cone(Layout.OFFICER2_POST, Layout.OFFICER2_FACING[1], q, s2.fov_deg, s2.range_m)), "facing 1 covers the road stop by the window and the road bypass leg z = −84")
+	check(not leg.any(func(q): return _in_cone(Layout.OFFICER2_POST, Layout.OFFICER2_FACING[0], q, s2.fov_deg, s2.range_m)), "facing 0 leaves the road bypass leg open")
 	await drv.frames(10)
 
 	# Кадры: второй полицейский с парковки и с дороги, конусы обоих.
 	await _place_player(Layout.KIOSK_STAGING, _yaw_to(Layout.KIOSK_STAGING, Layout.OFFICER2_POST))
 	await _shot("x3_officer2_from_parking")
-	var road_eye := Vector3(74.6, 0, -66)
+	var road_eye := Vector3(70.5, 0, -70)   # fix4: ближе 25 м к обоим постам (второй — на (59, −87))
 	await _place_player(road_eye, _yaw_to(road_eye, (Layout.OFFICER_POST + Layout.OFFICER2_POST) * 0.5))
 	await drv.frames(30)
 	check(_cone_visible(s1) and _cone_visible(s2), "from the road both officer cones are drawn")
 	await _shot("x3_cones_both_from_road")
+	var corridor_eye := Vector3(51.3, 0, -84)
+	await _place_player(corridor_eye, _yaw_to(corridor_eye, Layout.OFFICER2_POST))
+	await drv.frames(30)
+	await _shot("x4_officer2_from_corridor")
 
-	# «Лада» встаёт на проезжей части B у окна: в машине — провал; вышел и пошёл к окну — провал (машину видят брошенной).
+	await _part_fix4_corridor(officer, officer2)
+	await _part_fix4_trolley()
+
+	# «Лада» встаёт на проезжей части B у окна: вышел и пошёл к окну — провал сразу (машину видят при выходе); в машине —
+	# fix4: на проезжей части замечают после CAR_ROAD_STILL_SECONDS (8 с) стоянки, провал через ~10 с, на 6 с шкала 0.
+	var susp_at_6 := [0.0]
 	for variant in ["exit_and_walk", "stay_in_car"]:
 		await _place_player(Layout.STEALTH_CHECKPOINT, 0.0)
 		world.car.reset_to(Vector3(70, 0, -36), 0.0)
@@ -1041,16 +1105,27 @@ func _part_fix3() -> void:
 			await drv.frames(2)
 			await _walk_path_until_fail([_vendor_stand()], 600)
 		else:
-			await _wait_until(func(): return world.is_stealth_failing(), 300)
+			var t_stop := _track_frames
+			susp_at_6[0] = -1.0
+			while not world.is_stealth_failing() and _track_frames - t_stop < 900:
+				await drv.frames(1)
+				if susp_at_6[0] < 0.0 and _track_frames - slow_at >= 360:
+					susp_at_6[0] = _track_max
 		var t_fail := (_track_fail - slow_at) / 60.0 if _track_fail >= 0 and slow_at >= 0 else -1.0
-		print("INFO: Lada stopped on road B by the window (%s): at %s, %.1f m from the window, fail %.1f s after < 2 m/s, on foot %s at %s" % [variant, stop_pos, _flat_d(stop_pos, Layout.VENDOR_WINDOW), t_fail, world.control_mode == &"on_foot", world.player.global_position])
-		check(ok and slow_at >= 0 and Layout.KIOSK_SQUARE.has_point(Vector2(stop_pos.x, stop_pos.z)) and t_fail >= 0.0 and t_fail <= 3.0 and _kiosk_detections == before + 1, "%s: Lada stopped on road B by the window — fail within 3 s (%.1f s)" % [variant, t_fail])
+		print("INFO: Lada stopped on road B by the window (%s): at %s, %.1f m from the window, fail %.1f s after < 2 m/s, max suspicion at 6 s %.2f, on foot %s at %s" % [variant, stop_pos, _flat_d(stop_pos, Layout.VENDOR_WINDOW), t_fail, susp_at_6[0], world.control_mode == &"on_foot", world.player.global_position])
+		var on_road := stop_pos.x >= Layout.KIOSK_ROAD_X
+		if variant == "exit_and_walk":
+			check(ok and slow_at >= 0 and Layout.KIOSK_SQUARE.has_point(Vector2(stop_pos.x, stop_pos.z)) and t_fail >= 0.0 and t_fail <= 3.0 and _kiosk_detections == before + 1, "%s: Lada stopped on road B by the window — fail within 3 s (%.1f s)" % [variant, t_fail])
+		else:
+			check(ok and slow_at >= 0 and on_road and t_fail >= DetectionSensor.CAR_ROAD_STILL_SECONDS and t_fail <= DetectionSensor.CAR_ROAD_STILL_SECONDS + 3.0 and susp_at_6[0] == 0.0 and _kiosk_detections == before + 1, "%s: Lada standing on road B by the window — meter 0 for 6 s, fail after 8…11 s (%.1f s)" % [variant, t_fail])
 		if variant == "exit_and_walk":
 			check(not _near2(world.player.global_position, _vendor_stand(), 0.8), "exit_and_walk: the fail comes before the window (%s)" % world.player.global_position)
 			await drv.frames(25)
 			await _shot("x3_fail_window_from_road")
 		await _wait_until(func(): return not world.is_stealth_failing(), 300)
 		await drv.frames(3)
+		if variant == "exit_and_walk":   # fix4 (P3): после alert_now подсказка индикатора после респавна не висит
+			check(not world.get_node("GameHUD").suspicion_meter.is_hint_showing() and not _hud_has(HINT_TEXT), "exit_and_walk: after the respawn the «%s» hint is not shown" % HINT_TEXT)
 		check(world.control_mode == &"on_foot" and _near2(world.player.global_position, Layout.STEALTH_CHECKPOINT, 0.5) and _near2(world.car.global_position, park, 0.3) and _hud_has(CAR_TOAST), "%s: after the fail on foot at the checkpoint, car towed to the parking, toast «%s»" % [variant, CAR_TOAST])
 		if variant == "exit_and_walk":
 			await drv.frames(10)
@@ -1061,10 +1136,11 @@ func _part_fix3() -> void:
 	# Обход пешком по дороге x = 74,6 и к окну с севера (как в третьей приёмке).
 	var road_a := [Vector3(62, 0, -51), Vector3(74.6, 0, -51), Vector3(74.6, 0, -78)]
 	var road_b := [Vector3(74.6, 0, -84), Vector3(64, 0, -84), Vector3(60.5, 0, -79.5), _vendor_stand()]
-	# Без ожидания: от парковки сразу, в 4 фазах разворота второго поста.
+	# Без ожидания: от парковки сразу, в 12 фазах разворота второго поста (0…16,5 с после поворота на угол 0).
 	var road_fails := 0
+	var road_seen := 0
 	var road_results := []
-	for phase in [0.0, 3.0, 6.0, 9.0, 12.0, 15.0]:
+	for phase in [0.0, 1.5, 3.0, 4.5, 6.0, 7.5, 9.0, 10.5, 12.0, 13.5, 15.0, 16.5]:
 		await _place_player(Vector3(62, 0, -51), PI * 0.5)
 		await drv.frames(250)
 		await _sync_npc(officer2, 0)
@@ -1076,13 +1152,14 @@ func _part_fix3() -> void:
 		await _walk_path_until_fail(path, 1800)
 		var failed := _kiosk_detections > before
 		road_fails += 1 if failed else 0
+		road_seen += 1 if failed or _track_max >= 0.6 else 0
 		road_results.append("%.1f s: %s (max %.2f, at %s)" % [phase, "fail" if failed else ("window" if _near2(world.player.global_position, _vendor_stand(), 0.8) else "stopped"), _track_max, world.player.global_position])
 		if failed:
 			await _wait_until(func(): return not world.is_stealth_failing(), 300)
 		await drv.frames(200)
 	# Сводка для отчёта: удача без ожидания зависит от фазы разворота (как у честных путей), проверки — ниже.
-	print("INFO: road bypass x = 74.6 without waiting from the parking, by Officer2 phase after facing 0: fails %d of %d: %s" % [road_fails, road_results.size(), road_results])
-	# В неудобный угол: дойти до (74,6; −78), дождаться, пока второй пост только что встал в угол 0, и идти — провал.
+	print("INFO: road bypass x = 74.6 without waiting from the parking, by Officer2 phase after facing 0: fails %d of %d, fail or max ≥ 0.6 in %d of %d: %s" % [road_fails, road_results.size(), road_seen, road_results.size(), road_results])
+	# В неудобный угол: дойти до (74,6; −78), дождаться, пока второй пост только что встал в угол 1, и идти — провал.
 	await _place_player(Vector3(62, 0, -51), PI * 0.5)
 	await drv.frames(250)
 	_reset_track()
@@ -1092,17 +1169,17 @@ func _part_fix3() -> void:
 		print("INFO: road bypass (wrong phase): %s, retry" % drv.last_error)
 		await drv.frames(120)
 		got = await drv.walk_path([road_a[-1]])
-	await _sync_npc(officer2, 0)
+	await _sync_npc(officer2, 1)
 	_reset_track()
 	var seen_wrong := _watch_frames
 	await _walk_path_until_fail(road_b, 900)
-	print("INFO: road bypass right after Officer2 turned to facing 0: fail %s, max %.2f, Officer2 saw %.1f s" % [_kiosk_detections > before_wrong, _track_max, (_watch_frames - seen_wrong) / 60.0])
+	print("INFO: road bypass right after Officer2 turned to facing 1 (east-south-east): fail %s, max %.2f, Officer2 saw %.1f s" % [_kiosk_detections > before_wrong, _track_max, (_watch_frames - seen_wrong) / 60.0])
 	# Луч на отрезке z = −84 идёт почти вдоль полос: машины и троллейбус кольца иногда его перекрывают — провал или
 	# шкала ≥ 0,6 (как путь у гаражей в части 10).
-	check(got and _watch_frames > seen_wrong and (_kiosk_detections == before_wrong + 1 or _track_max >= 0.6), "road bypass while Officer2 looks south-east: seen (fail %s, max %.2f)" % [_kiosk_detections > before_wrong, _track_max])
+	check(got and _watch_frames > seen_wrong and (_kiosk_detections == before_wrong + 1 or _track_max >= 0.6), "road bypass while Officer2 looks east-south-east: seen (fail %s, max %.2f)" % [_kiosk_detections > before_wrong, _track_max])
 	await _wait_until(func(): return not world.is_stealth_failing(), 300)
 	await drv.frames(250)
-	# С ожиданием: у (74,6; −78) вне конусов дождаться угла 1 (север) — проходит к окну.
+	# С ожиданием: у (74,6; −78) вне конусов дождаться угла 0 (запад) — проходит к окну.
 	await _place_player(Vector3(62, 0, -51), PI * 0.5)
 	await drv.frames(250)
 	_reset_track()
@@ -1114,12 +1191,12 @@ func _part_fix3() -> void:
 		await drv.frames(120)
 		road_ok = await drv.walk_path([road_a[-1]])
 	var t_cover := (_track_frames - t0) / 60.0
-	await _sync_npc(officer2, 1)
+	await _sync_npc(officer2, 0)
 	var t_wait := (_track_frames - t0) / 60.0 - t_cover
 	road_ok = road_ok and await drv.walk_path(road_b)
 	var t_road := (_track_frames - t0) / 60.0
-	print("INFO: road bypass with a wait for Officer2 facing 1: %.1f s (to the wait spot %.1f, wait %.1f), max suspicion %.2f" % [t_road, t_cover, t_wait, _track_max])
-	check(road_ok and _kiosk_detections == before_ok and _near2(world.player.global_position, _vendor_stand(), 0.6), "road bypass with a wait for Officer2 facing north: window without a fail (%.1f s)" % t_road)
+	print("INFO: road bypass with a wait for Officer2 facing 0: %.1f s (to the wait spot %.1f, wait %.1f), max suspicion %.2f" % [t_road, t_cover, t_wait, _track_max])
+	check(road_ok and _kiosk_detections == before_ok and _near2(world.player.global_position, _vendor_stand(), 0.6), "road bypass with a wait for Officer2 facing west: window without a fail (%.1f s)" % t_road)
 	await _shot("x3_road_bypass_window")
 
 	# Честные пути с двумя постами — прежние: от чекпоинта, с ожиданием разворота первого, 15–30 с, второй не видит.
@@ -1130,10 +1207,11 @@ func _part_fix3() -> void:
 		var before := _kiosk_detections
 		_reset_track()
 		var seen_before := _watch_frames
-		var ok: bool = await drv.sneak(route[0], route[1], route[2])
+		var ok: bool = await drv.sneak_route(route)
 		var seconds := _track_frames / 60.0
-		print("INFO: fix3 honest %s path checkpoint → window %.1f s, max suspicion %.2f, Officer2 saw %d frames" % [route_name, seconds, _track_max, _watch_frames - seen_before])
-		check(ok and _kiosk_detections == before and seconds >= 12.0 and seconds <= 30.0 and _watch_frames == seen_before, "fix3 honest %s path with both posts: no fail, %.1f s (12…30), Officer2 never sees" % [route_name, seconds])
+		var limit := 40.0 if route.size() >= 5 else 30.0   # fix4: SNEAK_WEST ждёт оба поста
+		print("INFO: fix4 honest %s path checkpoint → window %.1f s, max suspicion %.2f, Officer2 saw %d frames" % [route_name, seconds, _track_max, _watch_frames - seen_before])
+		check(ok and _kiosk_detections == before and seconds >= 12.0 and seconds <= limit and _watch_frames == seen_before, "fix4 honest %s path with both posts: no fail, %.1f s (12…%.0f), Officer2 never sees" % [route_name, seconds, limit])
 
 	# После покупки второй пост стоит на месте; обратный путь SNEAK_BACK — без провала, второй не видит.
 	m.notify_entered_car()
@@ -1150,9 +1228,170 @@ func _part_fix3() -> void:
 	var seen_back := _watch_frames
 	var before_back := _kiosk_detections
 	var back_ok: bool = await drv.sneak(Layout.SNEAK_BACK[0], Layout.SNEAK_BACK[1], Layout.SNEAK_BACK[2])
+	print("INFO: fix4 way back SNEAK_BACK: ok %s (%s), detections %d, Officer2 saw %d frames, max %.2f, at %s" % [back_ok, drv.last_error, _kiosk_detections - before_back, _watch_frames - seen_back, _track_max, world.player.global_position])
 	check(back_ok and _kiosk_detections == before_back and _watch_frames == seen_back, "fix3: way back SNEAK_BACK without a fail, Officer2 never sees (%.1f s)" % (_track_frames / 60.0))
 	_watch_sensor = null
 	drv.on_frame = Callable()
+
+## EXT-01 fix4 (четвёртая приёмка P1): коридор между гаражами (x ≤ 50) и киоском (x ≥ 52,5). (1) «Лада» с Илюшей у
+## западной стены киоска (51,2; −77): луч к центру кузова закрыт киоском, к углам — свободен: провал, машину отгоняют.
+## (2) Вышел из машины в северной части коридора — провал сразу. (3) Пешком с улицы C через вырез вала и коридор к окну:
+## сразу после поворота второго поста на запад — провал или шкала ≥ 0,6; сразу после поворота на восток-юго-восток —
+## проходит.
+func _part_fix4_corridor(officer: Node3D, officer2: Node3D) -> void:
+	var m := world.mission
+	var s1: DetectionSensor = officer.sensor
+	var s2: DetectionSensor = officer2.sensor
+	var park: Vector3 = Layout.ROUTE_DRIVE[-1]
+	var corridor_car := Vector3(51.2, 0, -77)
+	await _place_player(Layout.STEALTH_CHECKPOINT, 0.0)
+	await drv.frames(250)
+	world.car.reset_to(corridor_car, 0.0)
+	await drv.frames(3)
+	world.enter_car()
+	await drv.frames(2)
+	var rays := []
+	for s in [s1, s2]:
+		var eye: Vector3 = s.global_position + Vector3.UP * DetectionSensor.EYE_HEIGHT
+		var free := []
+		for t in DetectionSensor.car_targets(world.car):
+			var ex: Array[RID] = s._exclude.duplicate()
+			ex.append(world.car.get_rid())
+			free.append(world.get_world_3d().direct_space_state.intersect_ray(PhysicsRayQueryParameters3D.create(eye, t, 1, ex)).is_empty())
+		rays.append(free)
+	print("INFO: Lada in the corridor %s: rays free [center, 4 corners] Officer %s, Officer2 %s" % [world.car.global_position, rays[0], rays[1]])
+	check(not rays[0][0] and not rays[1][0] and (rays[0].slice(1).has(true) or rays[1].slice(1).has(true)), "Lada in the corridor: the ray to the body centre is blocked for both posts, a corner ray is free")
+	var before := _kiosk_detections
+	_reset_track()
+	var fail_at: int = await _wait_until(func(): return world.is_stealth_failing(), 360)
+	print("INFO: Lada with Ilyusha in the corridor: fail after %.1f s, in car %s" % [fail_at / 60.0, world.stealth.detected_in_car])
+	check(fail_at >= 0 and fail_at <= 200 and world.stealth.detected_in_car and _kiosk_detections == before + 1, "Lada with Ilyusha standing in the corridor (51.2, −77): detected (%.1f s)" % [fail_at / 60.0])
+	await drv.frames(25)
+	await _shot("x4_car_corridor_fail")
+	await _wait_until(func(): return not world.is_stealth_failing(), 300)
+	await drv.frames(3)
+	check(world.control_mode == &"on_foot" and _near2(world.player.global_position, Layout.STEALTH_CHECKPOINT, 0.5) and _near2(world.car.global_position, park, 0.3) and _hud_has(CAR_TOAST), "corridor: after the fail on foot at the checkpoint, car towed to the parking")
+	# Сетка площадки (x 50…64, z −94…−61 — край z = −60 уже парковка, Rect2 его не включает; шаг 1 м, носом на север и на восток): где кузов помещается, видит ли «Ладу»
+	# хоть один пост (лучи к центру и углам, без скорости — как при выходе из машины).
+	world.enter_car()
+	var box := BoxShape3D.new()
+	box.size = Lada.SIZE - Vector3(0.1, 0.3, 0.1)
+	var q := PhysicsShapeQueryParameters3D.new()
+	q.shape = box
+	q.collision_mask = 1
+	var total := 0
+	var hidden := []
+	for yaw in [0.0, PI * 0.5]:
+		for xi in 15:
+			for zi in 34:
+				var p := Vector3(50.0 + xi, 0, -94.0 + zi)
+				q.transform = Transform3D(Basis(Vector3.UP, yaw), p + Vector3.UP * (Lada.SIZE.y * 0.5 + 0.15))
+				if not world.get_world_3d().direct_space_state.intersect_shape(q, 1).is_empty():
+					continue
+				world.car.reset_to(p, yaw)
+				total += 1
+				if not (s1.sees_car_now() or s2.sees_car_now()):
+					hidden.append("(%.0f, %.0f, yaw %.2f)" % [p.x, p.z, yaw])
+	print("INFO: Lada on the square x 50…64, z −94…−61 (grid 1 m, yaw 0 and π/2): %d positions fit, %d not seen by any post: %s" % [total, hidden.size(), hidden])
+	check(total > 300 and hidden.size() * 50 <= total, "Lada on the square: seen by a post at ≥ 98 %% of grid positions (%d hidden of %d)" % [hidden.size(), total])
+	world.car.reset_to(park, 0.0)
+	world.exit_car()
+	await drv.frames(2)
+	await _place_player(Layout.STEALTH_CHECKPOINT, 0.0)
+	await drv.frames(250)
+	# (2) Выйти из машины в северной части коридора (там выйти есть куда) — провал сразу.
+	world.car.reset_to(Vector3(51.2, 0, -85), 0.0)
+	await drv.frames(3)
+	world.enter_car()
+	await drv.frames(2)
+	before = _kiosk_detections
+	var exited := world.exit_car()
+	await drv.frames(2)
+	print("INFO: exit from the Lada in the corridor at %s: exited %s, failing %s" % [world.car.global_position, exited, world.is_stealth_failing()])
+	check(exited and world.is_stealth_failing() and _kiosk_detections == before + 1, "corridor: getting out of the Lada in sight — fail at once")
+	await _wait_until(func(): return not world.is_stealth_failing(), 300)
+	await drv.frames(250)
+	check(_near2(world.car.global_position, park, 0.3) and not m.has_bread, "corridor: car towed, mission untouched")
+	# (3) Пешком с улицы C через вырез вала (x 40…52) и коридор к окну.
+	var c_start := Vector3(46, 0, -93.5)
+	var c_path := [Vector3(51.3, 0, -93.5), Vector3(51.3, 0, -80), Vector3(58.5, 0, -80.5), _vendor_stand()]
+	for variant in ["no_wait", "wait"]:
+		await _place_player(c_start, PI)
+		await drv.frames(250)
+		await _sync_npc(officer2, 0 if variant == "no_wait" else 1)
+		check(s2.poll() == 0.0 and s1.poll() == 0.0, "street C start %s is not seen (%s)" % [c_start, variant])
+		before = _kiosk_detections
+		_reset_track()
+		var seen0 := _watch_frames
+		await _walk_path_until_fail(c_path, 1200)
+		var failed := _kiosk_detections > before
+		var at_window := _near2(world.player.global_position, _vendor_stand(), 0.8)
+		print("INFO: on foot from street C through the corridor (%s): fail %s at %.1f s, at the window %s in %.1f s, max suspicion %.2f, Officer2 saw %.1f s" % [variant, failed, _track_fail / 60.0 if _track_fail >= 0 else -1.0, at_window, _track_frames / 60.0, _track_max, (_watch_frames - seen0) / 60.0])
+		if variant == "no_wait":
+			check(failed or _track_max >= 0.6, "street C → corridor right after Officer2 turned west: seen (fail %s, max %.2f)" % [failed, _track_max])
+			if failed:
+				await _wait_until(func(): return not world.is_stealth_failing(), 300)
+		else:
+			check(not failed and at_window, "street C → corridor right after Officer2 turned east-south-east: at the window without a fail (%.1f s, max %.2f)" % [_track_frames / 60.0, _track_max])
+		await drv.frames(200)
+
+## EXT-01 fix4 (четвёртая приёмка P2): «Лада» едет по B на юг за троллейбусом и стоит за ним на остановке (67, −62)
+## внутри KIOSK_SQUARE на проезжей части — не «у киоска»: шкала 0 (CAR_ROAD_STILL_SECONDS 8 с). Как в приёмке (X).
+func _part_fix4_trolley() -> void:
+	var tb: Node3D = world.get_node("LevelGeometry/Traffic").trolleybus
+	var n := 0
+	while not (absf(tb.global_position.x - 67.0) < 0.5 and tb.global_position.z > -90.0 and tb.global_position.z < -84.0) and n < 30000:
+		await drv.frames(1)
+		n += 1
+	print("INFO: trolleybus on B heading south at %s after %.1f s" % [tb.global_position, n / 60.0])
+	await _place_player(Layout.STEALTH_CHECKPOINT, 0.0)
+	world.car.reset_to(tb.global_position + Vector3(0, 0, -15.0), PI)
+	await drv.frames(2)
+	world.enter_car()
+	await drv.frames(2)
+	var before := _kiosk_detections
+	_reset_track()
+	var still := 0
+	var still_max := 0
+	var halt := 0
+	var halt_max := 0
+	var where := Vector3.ZERO
+	var shot := false
+	for i in 3600:
+		var tp: Vector3 = tb.global_position
+		var cp: Vector3 = world.car.global_position
+		var gap := _flat_d(tp, cp) - 5.95 - 2.05
+		var v: float = drv.forward_speed()
+		drv._steer_and_throttle(Vector3(67.0, 0, cp.z + 12.0), clampf((gap - 3.0) * 1.2, 0.0, 9.0))
+		if gap < 4.0 and v > 0.3:
+			drv._axis(&"move_forward", &"move_back", -1.0)
+		await drv.frames(1)
+		if Layout.KIOSK_SQUARE.has_point(Vector2(cp.x, cp.z)) and absf(v) < DetectionSensor.CAR_STILL_SPEED:
+			still += 1
+			if still > still_max:
+				still_max = still
+				where = cp
+			if not shot and still == 240:
+				shot = true
+				await _shot("x4_lada_behind_trolley")
+		else:
+			still = 0
+		if Layout.KIOSK_SQUARE.has_point(Vector2(cp.x, cp.z)) and cp.x >= Layout.KIOSK_ROAD_X and absf(v) < DetectionSensor.CAR_ROAD_STILL_SPEED:
+			halt += 1
+			halt_max = maxi(halt_max, halt)
+		else:
+			halt = 0
+		if world.is_stealth_failing() or tp.z > -40.0:
+			break
+	drv.release_all()
+	await drv.brake()
+	print("INFO: Lada following the trolleybus south on B: longest < %.0f m/s on KIOSK_SQUARE %.1f s at %s, longest < %.1f m/s on the road (x ≥ %.0f) %.1f s (limit %.0f s), max suspicion %.2f, fail %s" % [DetectionSensor.CAR_STILL_SPEED, still_max / 60.0, where, DetectionSensor.CAR_ROAD_STILL_SPEED, Layout.KIOSK_ROAD_X, halt_max / 60.0, DetectionSensor.CAR_ROAD_STILL_SECONDS, _track_max, _kiosk_detections > before])
+	check(halt_max >= 300 and halt_max < int(DetectionSensor.CAR_ROAD_STILL_SECONDS * 60.0) and where.x >= Layout.KIOSK_ROAD_X and _track_max == 0.0 and _kiosk_detections == before, "Lada standing behind the trolleybus at the stop on road B (%.1f s stopped): meter 0, no fail" % [halt_max / 60.0])
+	if world.is_stealth_failing():
+		await _wait_until(func(): return not world.is_stealth_failing(), 300)
+	if world.control_mode == &"in_car":
+		world.exit_car()
+	await drv.frames(10)
 
 ## Ждать, пока наблюдатель o только что встал в угол index (после разворота).
 func _sync_npc(o: Node3D, index: int) -> void:

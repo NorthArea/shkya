@@ -13,7 +13,8 @@ extends Node3D
 ## Подсказки зон E — из MissionDirector.prompt_for (C3); реплики подключает QuestFlow по id зон
 ## (&"officer", &"account_officer"). EXT-01 fix3 (третья приёмка, P1): второй наблюдатель Officer2 (&"officer2", без
 ## диалога и подсказки E) — на Layout.OFFICER2_POST у северного угла площадки, углы OFFICER2_FACING, те же 12 м / 100° и
-## 7–9 с, car_area — тот же KIOSK_SQUARE; после покупки не двигается. Узел создаёт LevelGeometry (ребёнок DemoWorld/LevelGeometry/Patrols);
+## 7–9 с, car_area — тот же KIOSK_SQUARE; после покупки не двигается. EXT-01 fix4: второй пост к северу от окна,
+## OFFICER2_RANGE 14 м; первый после диалога отворачивается от Илюши и от парковки (PatrolNpc.away_point). Узел создаёт LevelGeometry (ребёнок DemoWorld/LevelGeometry/Patrols);
 ## мир ищется вверх по дереву, как в DetectionSensor.
 
 const Layout = preload("res://game/world/layout.gd")
@@ -24,6 +25,7 @@ const CityVanScript = preload("res://game/vehicles/city_van.gd")
 const PROMPT_TALK := "E — ПОГОВОРИТЬ"
 const OFFICER_RANGE := 12.0
 const OFFICER_FOV := 100.0
+const OFFICER2_RANGE := 14.0             # fix4: с (59, −87) до входа с улицы C и до обхода по дороге z = −84
 const OFFICER_HOLD := Vector2(7.0, 9.0)   # с на угол: при 3–4 с осторожный честный проход занимал 14–15 с (норма участка 45–90 с)
 
 var officer: Node3D
@@ -50,6 +52,7 @@ func _ready() -> void:
 	officer.sensor_fov = OFFICER_FOV
 	officer.turn_every = OFFICER_HOLD
 	officer.position = Layout.OFFICER_POST
+	officer.away_point = Layout.ROUTE_DRIVE[-1]   # fix4: после диалога не смотреть туда, куда уходят, — к парковке
 	add_child(officer)
 	officer.sensor.show_cone = true
 	officer.sensor.car_area = Layout.KIOSK_SQUARE
@@ -61,10 +64,13 @@ func _ready() -> void:
 	officer2.tint = officer.tint
 	officer2.body_radius = officer.body_radius
 	officer2.facings = Layout.OFFICER2_FACING
-	officer2.sensor_range = OFFICER_RANGE
+	officer2.sensor_range = OFFICER2_RANGE
 	officer2.sensor_fov = OFFICER_FOV
 	officer2.turn_every = OFFICER_HOLD
 	officer2.position = Layout.OFFICER2_POST
+	# fix4: разворот запад ↔ восток-юго-восток — через север, не через окно киоска на юге.
+	var to_window := Layout.VENDOR_WINDOW - Layout.OFFICER2_POST
+	officer2.avoid_yaw = atan2(-to_window.x, -to_window.z)
 	add_child(officer2)
 	officer2.sensor.show_cone = true
 	officer2.sensor.car_area = Layout.KIOSK_SQUARE

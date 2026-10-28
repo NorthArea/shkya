@@ -115,9 +115,14 @@ func current_interactable() -> Interactable:
 		return null
 	var best: Interactable = null
 	var best_distance := INF
+	# Квестовая зона (Бабка, продавщица, «Лада», наблюдатели) важнее зоны укрытия, даже если укрытие ближе:
+	# иначе брошенные у двери коробка/бочка по E надевались снова (приёмка EXT-02, P2).
 	for area in probe.get_overlapping_areas():
 		if area is Interactable and area.enabled and area.prompt != "":
+			var is_hide := area.is_in_group(&"hide_spots")
 			var distance := global_position.distance_squared_to(area.global_position)
+			if is_hide:
+				distance += 1000.0   # укрытия — после всех квестовых зон
 			if distance < best_distance:
 				best = area
 				best_distance = distance

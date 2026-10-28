@@ -6,6 +6,9 @@ extends Control
 ## Экран провала: затемнение и «ВАШ МАРШРУТ УТОЧНЁН» (Tween), пока мир держит stealth_fail;
 ## затем тост stealth_toast («ВЫ ОСТАЛИСЬ ПЕШЕХОДОМ. ХЛЕБ ПРИ ВАС») из снимка HUD (C6/C7).
 ## Только читает снимок через update_from(); состояния стелса не хранит.
+## EXT-01 fix4 (четвёртая приёмка P3): подсказка «Тебя заметили…» гаснет, как только открыт экран провала, и не
+## загорается, если индикатор впервые появился сразу тревогой (alert_now: вышел из машины на глазах) — тогда она
+## остаётся на первое настоящее «насторожились»; после респавна не висит.
 
 const DialogPanelScript = preload("res://game/ui/dialog_panel.gd")
 
@@ -57,8 +60,9 @@ func update_from(state: Dictionary, delta: float) -> void:
 	_suspicion = clampf(float(state.get("suspicion", 0.0)), 0.0, 1.0)
 	var stealth_state: StringName = state.get("stealth_state", &"safe")
 	var wanted := 1.0 if (_suspicion > 0.0 or stealth_state != &"safe") else 0.0
+	var failing: bool = state.get("stealth_fail", false)
 	if wanted > _alpha:
-		if _alpha <= 0.0 and not hint_used:
+		if _alpha <= 0.0 and not hint_used and not failing and stealth_state != &"alert":
 			hint_used = true
 			_hint_left = HINT_SECONDS
 			DialogPanelScript.pop(hint_plate, 0.6)
@@ -70,9 +74,8 @@ func update_from(state: Dictionary, delta: float) -> void:
 	plate.modulate.a = _alpha
 	plate.visible = _alpha > 0.0
 	badge.queue_redraw()
-	_hint_left = maxf(_hint_left - delta, 0.0)
+	_hint_left = 0.0 if failing else maxf(_hint_left - delta, 0.0)
 	hint_plate.visible = _hint_left > 0.0
-	var failing: bool = state.get("stealth_fail", false)
 	if failing != fail_shown:
 		fail_shown = failing
 		_animate_fail(failing)

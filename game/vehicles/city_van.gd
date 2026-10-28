@@ -21,6 +21,9 @@ extends AnimatableBody3D
 ## (stall_ends). Вне полос за «Ладой» (обочина улицы A) ждёт не дольше DETOUR_AFTER и объезжает её по полосе машин
 ## кольца (Layout.ring_lane(…, true)), если полоса свободна DETOUR_CLEAR м вперёд (detours); иначе стоит.
 ## Учебный круг на стоянке улицы A — PARK_SENSOR_RANGE 6 м и бледнее (TUTORIAL_CONE_COLOR, P3).
+## EXT-01 fix4 (четвёртая приёмка P3: при брошенной на полосе «Ладе» автобус переносился назад, на улицу A): крайний
+## случай — после STALL_TELEPORT_SECONDS 60 с ожидания и только ВПЕРЁД по пути, на ближайшую точку вне полос, где кузов
+## никого не касается; до того ждёт, пока путь освободят.
 
 const Materials = preload("res://game/world/materials.gd")
 const PAINT := preload("res://game/vehicles/lada_paint.gdshader")
@@ -49,7 +52,7 @@ const STOP_MARGIN := 2.5          # м: встаёт, когда препятс�
 const EMERGENCY_DECEL := 9.0
 const OBSTACLE_MASK := 1 | 2 | 4  # World (транспорт кольца), Player, Car
 const STALL_SECONDS := 12.0       # P2-4: дольше на полосе кольца не стоит — съезжает по пути с полосы (fix3)
-const STALL_TELEPORT_SECONDS := 30.0   # fix3: крайний случай — постановочно на точку вне полос, с предупреждением
+const STALL_TELEPORT_SECONDS := 60.0   # fix4: крайний случай — постановочно на точку вне полос впереди, с предупреждением
 const STALL_RETRY := 0.5          # с между попытками съехать с полосы или объехать
 const DETOUR_AFTER := 20.0        # fix3: вне полос за «Ладой» — столько ждёт, потом объезд по полосе машин
 const DETOUR_CLEAR := 15.0        # м свободной полосы машин впереди для объезда
@@ -342,24 +345,23 @@ func _xform_on_lane(xform: Transform3D) -> bool:
 					return true
 	return false
 
-## P2-4 (fix3 — только крайний случай после STALL_TELEPORT_SECONDS): встать на ближайшей по пути точке вне полос, где кузов никого не касается
-## (вперёд или назад; конец пути — обычная остановка носом по stop_yaw), и завершить поездку; дверной сенсор включается.
-## Такой точки нет — ждать ещё STALL_SECONDS.
+## P2-4 (fix3, fix4 — только крайний случай после STALL_TELEPORT_SECONDS): встать на ближайшей точке пути ВПЕРЕДИ вне
+## полос, где кузов никого не касается (конец пути — обычная остановка носом по stop_yaw), и завершить поездку; дверной
+## сенсор включается. Назад (на улицу A) не переносится. Такой точки нет — ждать ещё STALL_TELEPORT_SECONDS.
 func _end_trip_off_lane(length: float) -> void:
 	stall_seconds = 0.0
 	_end_at = -1.0
 	var blocker: Object = blocked_by   # _free_at ниже перезаписывает blocked_by
 	var best := -1.0
-	var best_d := INF
-	var o := 0.0
+	var o := _offset + STALL_SEARCH_STEP
 	while o <= length + 0.001:
-		var d := absf(o - _offset)
-		if d < best_d:
-			var xform := _transform_at(o, length, 0.0)
-			if not _xform_on_lane(xform) and _free_at(o, length):
-				best = o
-				best_d = d
+		var xform := _transform_at(o, length, 0.0)
+		if not _xform_on_lane(xform) and _free_at(o, length):
+			best = o
+			break
 		o += STALL_SEARCH_STEP
+	if best < 0.0 and not _xform_on_lane(_transform_at(length, length, 0.0)) and _free_at(length, length):
+		best = length
 	if best < 0.0:
 		blocked_by = blocker
 		return
