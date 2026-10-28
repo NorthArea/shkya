@@ -65,6 +65,8 @@ func _ready() -> void:
 	_build_kiosk_sign()
 	_build_wires()
 	_build_trails()
+	_build_house_plates()
+	_build_bus_stop()
 	_build_skyline()
 	_build_instances()
 
@@ -102,6 +104,8 @@ func _build_solid(index: int, spec: Array) -> void:
 				body.add_child(_bench(size))
 			else:
 				mesh.material_override = Materials.snow(0.1) if spec[0] == "Playground" else Materials.plain(Color(0.35, 0.25, 0.18))
+				if spec[0] == "Playground":
+					_playground_fence(body, size)
 		"parked_car":
 			mesh.queue_free()
 			body.add_child(_zhiguli(size, CAR_COLORS[index % CAR_COLORS.size()]))
@@ -554,10 +558,50 @@ func _build_skyline() -> void:
 	spire.material_override = Materials.plain(Color(0.45, 0.42, 0.38), 0.6)
 	spire.position = Vector3(70, 67, -205)
 	add_child(spire)
+	# Буквы-короб на крыше башни, как в концепте 05 (сверка ART-04, P3 14): каркас и светящиеся буквы над парапетом.
+	var frame := Greybox.mesh_box(Vector3(22, 0.3, 0.3), Color.WHITE)
+	frame.material_override = Materials.plain(Color(0.15, 0.15, 0.16), 0.6)
+	frame.position = Vector3(70, 58.4, -194.3)
+	add_child(frame)
 	var hotel := _label("ГОСТИНИЦА", 260, Color(1.0, 0.92, 0.75))
-	hotel.pixel_size = 0.02
-	hotel.position = Vector3(70, 50, -193.9)
+	hotel.pixel_size = 0.016
+	hotel.position = Vector3(70, 60.6, -194.2)
 	add_child(hotel)
+	# Высокие башни 16–25 этажей и башенные краны на горизонте (черта 20).
+	for spec in [[Vector3(-150, 0, -40), Vector3(20, 52, 20), 201], [Vector3(160, 0, 70), Vector3(20, 64, 20), 202],
+			[Vector3(-60, 0, 175), Vector3(22, 48, 22), 203], [Vector3(150, 0, -150), Vector3(20, 70, 20), 204]]:
+		_backdrop(spec[0], spec[1], spec[2])
+	_crane(Vector3(-130, 0, -170), 62.0, 0.6)
+	_crane(Vector3(175, 0, 10), 55.0, 2.4)
+
+## Башенный кран силуэтом: решётчатая мачта, стрела и противовес, красный огонь наверху.
+func _crane(at: Vector3, height: float, yaw: float) -> void:
+	var root := Node3D.new()
+	root.name = "Crane"
+	root.position = at
+	root.rotation.y = yaw
+	add_child(root)
+	var steel := Materials.plain(Color(0.55, 0.45, 0.18), 0.7)
+	var mast := Greybox.mesh_box(Vector3(1.6, height, 1.6), Color.WHITE)
+	mast.material_override = steel
+	mast.position.y = height * 0.5
+	root.add_child(mast)
+	var jib := Greybox.mesh_box(Vector3(38, 1.2, 1.2), Color.WHITE)
+	jib.material_override = steel
+	jib.position = Vector3(14, height + 0.6, 0)
+	root.add_child(jib)
+	var weight := Greybox.mesh_box(Vector3(4, 2.2, 2), Color.WHITE)
+	weight.material_override = Materials.plain(Color(0.35, 0.35, 0.36), 0.8)
+	weight.position = Vector3(-8, height + 0.2, 0)
+	root.add_child(weight)
+	var cab := Greybox.mesh_box(Vector3(2.4, 2.4, 2.4), Color.WHITE)
+	cab.material_override = steel
+	cab.position = Vector3(1.5, height - 1.6, 0)
+	root.add_child(cab)
+	var light := Greybox.mesh_sphere(0.5, Color.WHITE)
+	light.material_override = Materials.plain(Color(1.0, 0.1, 0.05), 0.4, Color(1.0, 0.1, 0.05), 6.0)
+	light.position = Vector3(0, height + 3.0, 0)
+	root.add_child(light)
 
 func _backdrop(at: Vector3, size: Vector3, seed: int) -> void:
 	var mesh := Greybox.mesh_box(size, Color.WHITE)
@@ -847,3 +891,59 @@ func _multimesh(name: String, mesh: Mesh, transforms: Array[Transform3D], colors
 	instance.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON if shadows else GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	add_child(instance)
 
+
+
+## Низкая трубная оградка, крашенная в красный и синий, по краю площадки — по её коллизии (черта 19, P3 15).
+func _playground_fence(body: Node3D, size: Vector3) -> void:
+	var colors := [Materials.plain(Color(0.62, 0.14, 0.10), 0.5), Materials.plain(Color(0.18, 0.30, 0.55), 0.5)]
+	var top := -size.y * 0.5 + 0.75
+	var i := 0
+	for edge in [[Vector3(size.x, 0, 0), Vector3(0, 0, size.z * 0.5)], [Vector3(size.x, 0, 0), Vector3(0, 0, -size.z * 0.5)],
+			[Vector3(0, 0, size.z), Vector3(size.x * 0.5, 0, 0)], [Vector3(0, 0, size.z), Vector3(-size.x * 0.5, 0, 0)]]:
+		var along: Vector3 = edge[0]
+		var at: Vector3 = edge[1]
+		var material: Material = colors[i % 2]
+		var rail := Greybox.mesh_box(Vector3(maxf(along.x, 0.05), 0.05, maxf(along.z, 0.05)), Color.WHITE)
+		rail.material_override = material
+		rail.position = at + Vector3(0, top, 0)
+		body.add_child(rail)
+		var n := int(along.length() / 1.5)
+		for k in n + 1:
+			var post := Greybox.mesh_box(Vector3(0.05, 0.75, 0.05), Color.WHITE)
+			post.material_override = material
+			post.position = at - along * 0.5 + along * (float(k) / n) + Vector3(0, top - 0.375, 0)
+			body.add_child(post)
+		i += 1
+
+## Синие таблички с номером дома на углах (черта 16, P3 16).
+func _build_house_plates() -> void:
+	for spec in [["ул. Ленина, 12", Vector3(-88.5, 3.0, 107.95), PI], ["ул. Ленина, 14", Vector3(41.5, 3.0, 59.95), PI],
+			["ул. Ленина, 9", Vector3(56.05, 3.0, 8.0), PI * 0.5], ["ул. Ленина, 11", Vector3(81.95, 3.0, 10.0), -PI * 0.5]]:
+		var plate := Greybox.mesh_box(Vector3(1.6, 0.42, 0.04), Color.WHITE)
+		plate.material_override = Materials.plain(Color(0.10, 0.22, 0.50), 0.5)
+		plate.position = spec[1]
+		plate.rotation.y = spec[2]
+		add_child(plate)
+		var label := _label(spec[0], 44, Color(0.95, 0.95, 0.95))
+		label.position = spec[1] + Basis(Vector3.UP, spec[2]) * Vector3(0, 0, 0.03)
+		label.rotation.y = spec[2]
+		add_child(label)
+
+## Знак остановки у площадки киоска: синий квадрат с белым автобусом на опоре контактной сети (черта 18, P3 17).
+func _build_bus_stop() -> void:
+	var pole: Vector2 = Layout.TROLLEY_POLES[2]
+	var root := Node3D.new()
+	root.name = "BusStopSign"
+	root.position = Vector3(pole.x + 0.16, 2.7, pole.y)
+	root.rotation.y = PI * 0.5   # к улице, на восток
+	add_child(root)
+	var board := Greybox.mesh_box(Vector3(0.6, 0.6, 0.03), Color.WHITE)
+	board.material_override = Materials.plain(Color(0.08, 0.30, 0.62), 0.5)
+	root.add_child(board)
+	var white := Materials.plain(Color(0.95, 0.95, 0.95), 0.6)
+	for part in [[Vector3(0.4, 0.2, 0.01), Vector3(0, 0.04, 0.02)], [Vector3(0.08, 0.08, 0.01), Vector3(-0.12, -0.1, 0.02)],
+			[Vector3(0.08, 0.08, 0.01), Vector3(0.12, -0.1, 0.02)]]:
+		var piece := Greybox.mesh_box(part[0], Color.WHITE)
+		piece.material_override = white
+		piece.position = part[1]
+		root.add_child(piece)
