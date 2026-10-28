@@ -10,6 +10,7 @@ signal driver_exited(driver: Node3D)
 const Greybox = preload("res://game/world/greybox.gd")
 const InteractableScript = preload("res://game/interaction/interactable.gd")
 const LadaVisual = preload("res://game/vehicles/lada_visual.gd")
+const SlushSpray = preload("res://game/vehicles/slush_spray.gd")
 
 const SIZE := Vector3(1.7, 1.4, 4.1)
 ## Темп по замеру эталона PLAY-01 (G02, G03): потолок 28 м/с ≈ 100 км/ч, разгон спадает к максимуму
@@ -49,6 +50,9 @@ func _ready() -> void:
 	collider.position.y = SIZE.y * 0.5
 	add_child(collider)
 	add_child(LadaVisual.build())  # облик белой «Лады» — ART-03
+	var spray := SlushSpray.new()  # брызги каши из-под колёс — PLAY-03
+	spray.name = "SlushSpray"
+	add_child(spray)
 	enter_zone = InteractableScript.new()
 	enter_zone.name = "EnterZone"
 	enter_zone.interaction_id = &"car"
@@ -113,10 +117,11 @@ func _physics_process(delta: float) -> void:
 			world.exit_car()
 
 ## E в машине: на месте — выход сразу, на ходу — машина тормозит и водитель выходит после остановки.
+## Второе E во время торможения отменяет выход (итоговая сверка PLAY-02).
 func _unhandled_input(event: InputEvent) -> void:
 	if driver and event.is_action_pressed(&"interact"):
 		get_viewport().set_input_as_handled()
-		exit_requested = true
+		exit_requested = not exit_requested
 
 func enter(new_driver: Node3D) -> void:
 	driver = new_driver

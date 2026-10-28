@@ -7,7 +7,7 @@ extends Node3D
 ## в машине FOV растёт со скоростью (до +6°), пешком камера сама доворачивает за Илюшей (PLAY-02).
 const PROFILES := {
 	&"on_foot": {"distance": 4.3, "height": 1.9, "pitch": -0.17, "fov": 55.0},
-	&"in_car": {"distance": 6.7, "height": 1.5, "pitch": -0.18, "fov": 55.0},
+	&"in_car": {"distance": 5.2, "height": 1.5, "pitch": -0.18, "fov": 55.0},   # «Лада» крупнее, к концепту 05 (итоговая сверка PLAY-02)
 }
 const FOV_PER_SPEED := 0.16     # градусов на м/с в машине
 const FOV_SPEED_MAX := 6.0
