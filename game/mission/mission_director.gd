@@ -11,6 +11,7 @@ extends Node
 ##   &"babka_idle"    — Бабка: обычная реплика, без изменений
 ##   &"vendor_dialog" — продавщица: диалог «Батон? 35 рублей» (только в BUY_BREAD); покупка — buy_bread()
 ##   &"none"          — взаимодействие недоступно или id не обрабатывается директором
+##                      (полицейский и «военком» расширения — диалоги QuestFlow, миссию не меняют)
 
 signal state_changed(old: StringName, new: StringName)
 signal bread_received
@@ -41,6 +42,7 @@ const PROMPT_CAR := "E — СЕСТЬ В МАШИНУ"
 const TITLE_CITY := "ГОРОД Н."   # решение владельца 28.10.2026: город Н., Новосибирск — прототип
 const TITLE_QUEST := "ЗА ХЛЕБОМ"
 const TASK_DONE := "Сдай хлеб Бабке"  # COMPLETE: выполненная задача, на карточке зачёркнута
+const TASK_RETURN := "Вернись к Бабке (самостоятельно)"  # RETURN_HOME вдали от Бабки (EXT-01)
 
 var state: StringName = NOT_STARTED
 var has_bread := false
@@ -108,6 +110,11 @@ func can_buy_bread() -> bool:
 	return state == BUY_BREAD and money >= BREAD_PRICE
 
 
+## Сдача доступна: Илюша возвращается с хлебом. Только запрос — сдаёт interact(&"babka").
+func can_turn_in() -> bool:
+	return state == RETURN_HOME and has_bread
+
+
 func buy_bread() -> bool:
 	if not can_buy_bread():
 		return false
@@ -154,7 +161,8 @@ func objective() -> Dictionary:
 			var task := "Купи хлеб" if nearby == &"vendor" else "Поговори с продавщицей"
 			return {"title": TITLE_QUEST, "task": task, "target_id": &"vendor"}
 		RETURN_HOME:
-			var task := "Сдай хлеб Бабке" if nearby == &"babka" else "Вернись к Бабке"
+			# EXT-01: «самостоятельно» — вторым слоем про микроавтобус «БЕСПЛАТНЫЙ ПРОЕЗД» (MISSION_EXTENSION.md).
+			var task := "Сдай хлеб Бабке" if nearby == &"babka" else TASK_RETURN
 			return {"title": TITLE_QUEST, "task": task, "target_id": &"babka"}
 		_:
 			return {"title": TITLE_QUEST, "task": TASK_DONE, "target_id": &""}
@@ -166,16 +174,19 @@ func set_nearby(id: StringName) -> void:
 
 
 ## Подсказка зоны; "" — взаимодействие сейчас недоступно (зона отключается).
+## Полицейский и «военком» (EXT-01) — разговор доступен всегда, миссию не меняет.
 func prompt_for(id: StringName) -> String:
 	match id:
 		&"babka":
-			if state == RETURN_HOME and has_bread:
+			if can_turn_in():
 				return PROMPT_TURN_IN
 			return PROMPT_TALK
 		&"vendor":
 			return PROMPT_TALK if state == BUY_BREAD else ""
 		&"car":
 			return PROMPT_CAR
+		&"officer", &"account_officer":
+			return PROMPT_TALK
 	return ""
 
 

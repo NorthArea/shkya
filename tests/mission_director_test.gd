@@ -244,7 +244,7 @@ func test_objective_and_prompts() -> void:
 		[&"GO_TO_CAR", "ЗА ХЛЕБОМ", "Сядь в машину", &"car"],
 		[&"DRIVE_TO_KIOSK", "ЗА ХЛЕБОМ", "Доедь до киоска", &"kiosk"],
 		[&"BUY_BREAD", "ЗА ХЛЕБОМ", "Поговори с продавщицей", &"vendor"],
-		[&"RETURN_HOME", "ЗА ХЛЕБОМ", "Вернись к Бабке", &"babka"],
+		[&"RETURN_HOME", "ЗА ХЛЕБОМ", "Вернись к Бабке (самостоятельно)", &"babka"],
 	]
 	for row in expected:
 		var d := make()
@@ -260,7 +260,7 @@ func test_objective_and_prompts() -> void:
 		[&"BUY_BREAD", &"vendor", "Купи хлеб"],
 		[&"BUY_BREAD", &"babka", "Поговори с продавщицей"],
 		[&"RETURN_HOME", &"babka", "Сдай хлеб Бабке"],
-		[&"RETURN_HOME", &"vendor", "Вернись к Бабке"],
+		[&"RETURN_HOME", &"vendor", "Вернись к Бабке (самостоятельно)"],
 	]
 	for row in near:
 		var d := make()
@@ -289,6 +289,18 @@ func test_objective_and_prompts() -> void:
 	advance_to(d, &"COMPLETE")
 	check(d.prompt_for(&"babka") != "E — СДАТЬ ЗАДАНИЕ", "prompt: no turn-in after COMPLETE")
 	check(d.prompt_for(&"nobody") == "", "prompt: unknown id empty")
+	# EXT-01: полицейский и «военком» — разговор доступен в любом состоянии, миссию не меняет
+	for s in ORDER:
+		var e := make()
+		advance_to(e, s)
+		var before := snap(e)
+		check(e.prompt_for(&"officer") == "E — ПОГОВОРИТЬ" and e.prompt_for(&"account_officer") == "E — ПОГОВОРИТЬ", "prompt: observers talkable in %s" % s)
+		check(e.interact(&"officer") == &"none" and e.interact(&"account_officer") == &"none" and snap(e) == before, "observers: interact changes nothing in %s" % s)
+		check(e.can_turn_in() == (s == &"RETURN_HOME"), "can_turn_in only in RETURN_HOME (%s)" % s)
+	var t := make()
+	advance_to(t, &"RETURN_HOME")
+	t.has_bread = false
+	check(not t.can_turn_in() and t.prompt_for(&"babka") == "E — ПОГОВОРИТЬ", "can_turn_in needs bread")
 
 
 func test_signals() -> void:

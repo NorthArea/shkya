@@ -6,8 +6,13 @@ extends CanvasLayer
 ## POLISH-02: панель «выпрыгивает», реплика печатается ≈40 знаков/с под «бормотание» персонажа;
 ## E, пробел или щелчок во время печати дописывают реплику сразу, дальше всё как раньше (кнопки).
 ## text_label.text всегда целиком — печать только открывает знаки (visible_characters).
+## EXT-01 (L): цепочка реплик open_chain() — говорящий меняется (Бабка, продавщица, полицейский, «военком»,
+## Илюша со своим портретом); «ДАЛЬШЕ» или E после допечатки показывает следующую, варианты ответа —
+## только на последней. Тексты — только из QuestLines (game/mission/lines.gd).
 
 signal choice(id: StringName)
+## Переключение на следующую реплику цепочки (для щелчка интерфейса).
+signal advanced(index: int)
 
 const PAPER := Color(0.93, 0.87, 0.72)
 const PAPER_DARK := Color(0.84, 0.76, 0.58)
@@ -19,8 +24,12 @@ const POP_SECONDS := 0.15
 const VOICES := {
 	&"babka": preload("res://assets/audio/voice_babka.wav"),
 	&"vendor": preload("res://assets/audio/voice_vendor.wav"),
+	&"ilyusha": preload("res://assets/audio/voice_ilyusha.wav"),
+	&"officer": preload("res://assets/audio/voice_officer.wav"),
+	&"account_officer": preload("res://assets/audio/voice_account_officer.wav"),
 }
 const VOICE_DB := -6.0
+const NEXT_ID := &"next"
 
 var panel: PanelContainer
 var speaker_label: Label
@@ -31,6 +40,10 @@ var _row: HBoxContainer
 var _portrait_kind := &"babka"
 var _typed := 0.0
 var voice: AudioStreamPlayer
+## Цепочка: строки {speaker, text, portrait}, номер текущей и кнопки последней.
+var _lines: Array = []
+var _line_index := 0
+var _final_specs: Array = []
 
 func _ready() -> void:
 	layer = 8
@@ -86,17 +99,32 @@ func _ready() -> void:
 	voice.volume_db = VOICE_DB
 	add_child(voice)
 
-## specs: [{id, text, enabled (по умолчанию true), primary (по умолчанию false)}].
+## Одна реплика. specs: [{id, text, enabled (по умолчанию true), primary (по умолчанию false)}].
 func open(speaker: String, text: String, specs: Array, portrait_kind: StringName = &"babka") -> void:
+	open_chain([{"speaker": speaker, "text": text, "portrait": portrait_kind}], specs)
+
+## Цепочка реплик (QuestLines.*_CHAIN): до последней — одна кнопка «ДАЛЬШЕ», на последней — specs.
+func open_chain(lines: Array, specs: Array) -> void:
+	assert(not lines.is_empty())
+	_lines = lines
+	_final_specs = specs
+	_line_index = 0
+	_show_line()
+	visible = true
+	pop(panel)
+
+func _show_line() -> void:
+	var line: Dictionary = _lines[_line_index]
+	var specs: Array = _final_specs if is_last_line() else [{"id": NEXT_ID, "text": QuestLines.BUTTON_NEXT, "primary": true}]
 	for child in _row.get_children():
 		_row.remove_child(child)
 		child.queue_free()
 	buttons.clear()
-	speaker_label.text = speaker
-	text_label.text = text
+	speaker_label.text = line["speaker"]
+	text_label.text = line["text"]
 	text_label.visible_characters = 0
 	_typed = 0.0
-	_portrait_kind = portrait_kind
+	_portrait_kind = line.get("portrait", &"babka")
 	portrait.queue_redraw()
 	var first_enabled: Button = null
 	for spec in specs:
@@ -112,11 +140,9 @@ func open(speaker: String, text: String, specs: Array, portrait_kind: StringName
 		buttons[spec["id"]] = button
 		if first_enabled == null and not button.disabled:
 			first_enabled = button
-	visible = true
 	if first_enabled:
 		first_enabled.grab_focus()
-	play_voice(portrait_kind)
-	pop(panel)
+	play_voice(_portrait_kind)
 
 func close() -> void:
 	visible = false
@@ -125,9 +151,36 @@ func close() -> void:
 		_row.remove_child(child)
 		child.queue_free()
 	buttons.clear()
+	_lines = []
+	_final_specs = []
+	_line_index = 0
 
 func is_open() -> bool:
 	return visible
+
+## Номер текущей реплики цепочки (с нуля) и их число.
+func line_index() -> int:
+	return _line_index
+
+func line_count() -> int:
+	return _lines.size()
+
+func is_last_line() -> bool:
+	return _line_index >= _lines.size() - 1
+
+## Следующая реплика цепочки. Во время печати — только дописать текущую. На последней ничего не делает.
+func advance() -> bool:
+	if not visible:
+		return false
+	if is_typing():
+		finish_typing()
+		return false
+	if is_last_line():
+		return false
+	_line_index += 1
+	_show_line()
+	advanced.emit(_line_index)
+	return true
 
 ## Реплика ещё печатается.
 func is_typing() -> bool:
@@ -152,8 +205,14 @@ func _process(delta: float) -> void:
 		finish_typing()
 
 ## Во время печати E, пробел или щелчок только дописывают реплику; кнопки сработают со следующего нажатия.
+## После допечатки E переключает реплику цепочки (пробел и Enter нажимают кнопку «ДАЛЬШЕ» в фокусе).
 func _input(event: InputEvent) -> void:
+	if not visible:
+		return
 	if not is_typing():
+		if event.is_action_pressed(&"interact") and not is_last_line():
+			advance()
+			get_viewport().set_input_as_handled()
 		return
 	var skip := event.is_action_pressed(&"interact")
 	if event is InputEventKey and event.pressed and not event.echo and (event as InputEventKey).physical_keycode == KEY_SPACE:
@@ -233,6 +292,9 @@ const CONTROLS := [
 ]
 
 func _on_pressed(id: StringName) -> void:
+	if id == NEXT_ID:
+		advance()
+		return
 	choice.emit(id)
 
 static func paper_style() -> StyleBoxFlat:
@@ -273,9 +335,14 @@ static func style_button(button: Button, primary: bool) -> void:
 
 ## Портрет — вырезка головы и плеч из рисунка персонажа ART-01 (тот же облик, что в мире, кадр 07).
 ## Область — в единицах холста 400×600 (текстура в 2 раза крупнее).
+## Илюша — голова с хохолком (HEAD_FRONT 86…302 по высоте, хохолок на 44 в tools/generate_characters.py).
+## Полицейский и «военком» — рисунки исполнителя N (EXT-01); пока их нет, рисуется подложка без портрета.
 const PORTRAIT_REGION := {
 	&"babka": Rect2(85, 50, 230, 230),
 	&"vendor": Rect2(90, 56, 220, 220),
+	&"ilyusha": Rect2(80, 36, 240, 240),
+	&"officer": Rect2(85, 50, 230, 230),
+	&"account_officer": Rect2(85, 50, 230, 230),
 }
 
 func _draw_portrait() -> void:

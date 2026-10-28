@@ -79,11 +79,15 @@ func _run() -> void:
 	await _place(Layout.VENDOR_WINDOW + Vector3(3.0, 0, 1.5), PI * 0.5, PI * 0.5)
 	await _shot("06_arrive_kiosk")
 
-	# 07: диалог продавщицы
+	# 07: диалог продавщицы — цепочка (EXT-01): кадр первой реплики, потом долистать до покупки
 	await _place(Layout.VENDOR_WINDOW + Vector3(0.6, 0, 0), PI * 0.5, PI * 0.5)
 	await _press_interact()
 	await _frames(60)  # реплика печатается ≈40 знаков/с (POLISH-02) — снимать допечатанной
 	await _shot("07_vendor_dialog")
+	while flow.is_dialog_open() and not flow.dialog.is_last_line():
+		flow.dialog.finish_typing()
+		flow.dialog.advance()
+	await _frames(40)
 
 	# 08: хлеб куплен — карточка «ХЛЕБ +1» справа сверху
 	flow.dialog.buttons[&"buy"].pressed.emit()
@@ -95,9 +99,17 @@ func _run() -> void:
 	await _place(near_babka, PI, PI)
 	await _shot("09_return_babka")
 
-	# 10: сдача — реплика над Бабкой и панель финала внизу
+	# 10: сдача — цепочка при возврате (EXT-01), затем СДАТЬ ХЛЕБ: реплика над Бабкой и панель финала внизу
 	await _press_interact()
-	await _frames(20)
+	await _frames(40)
+	await _shot("09b_return_chain")
+	while flow.is_dialog_open() and not flow.dialog.is_last_line():
+		flow.dialog.finish_typing()
+		flow.dialog.advance()
+	await _frames(10)
+	if flow.dialog.buttons.has(&"turn_in"):
+		flow.dialog.buttons[&"turn_in"].pressed.emit()
+	await _frames(70)  # второй пузырь — через 0,8 с
 	await _shot("10_complete")
 	print("CAPTURE done: ", mission.state, " xp=", mission.xp)
 	driver.world = null

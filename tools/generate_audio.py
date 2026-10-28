@@ -227,6 +227,29 @@ def voice(seed: int, pitch: float, seconds: float, rate: float, wobble: float) -
     return to_rms(out, -17.0)
 
 
+def radio_mumble(seed: int, seconds: float) -> list[float]:
+    """Радио в «Жигулях» (EXT-01, этап 2): тот же голос-бормотание диктора, но через узкую полосу
+    приёмника (≈400…2500 Гц) с шорохом эфира и лёгким дрожанием громкости. Не речь и не слова."""
+    rng = random.Random(seed)
+    speech = voice(seed, 112.0, seconds, 6.0, 0.05)
+    # Узкая полоса: верх срезан дважды, низ один раз — «коробочный» тембр динамика.
+    narrow = highpass(lowpass(speech, 2500, stages=2), 400)
+    n = len(narrow)
+    hiss = highpass(lowpass([rng.uniform(-1, 1) for _ in range(n)], 4000), 1200)
+    flutter = lowpass([rng.uniform(-1, 1) for _ in range(n)], 1.5)
+    out = []
+    for i in range(n):
+        t = i / RATE
+        crackle = 1.0 + (1.8 if rng.random() < 0.0004 else 0.0)
+        gain = 0.75 + 1.2 * abs(flutter[i])
+        out.append(narrow[i] * gain * crackle + hiss[i] * 0.05)
+    fade = samples(0.15)
+    for i in range(fade):
+        out[i] *= i / fade
+        out[-1 - i] *= i / fade
+    return to_rms(out, -21.0)
+
+
 def main() -> None:
     rng = random.Random(1)
     for k in range(1, 5):
@@ -243,6 +266,12 @@ def main() -> None:
     write("voice_babka.wav", voice(31, 165.0, 1.2, 7.0, 0.12))
     write("voice_vendor.wav", voice(37, 245.0, 1.2, 8.5, 0.15))
     write("quest_accept.wav", to_rms(chime([659.3, 987.8], 0.07, 0.3), -17.0))
+    # EXT-01 (L): Илюша — между Бабкой и продавщицей, ровнее; полицейский ниже и размереннее;
+    # «военком» ещё ниже и почти без интонации. Радио — бубнёж диктора через узкую полосу приёмника, 4,5 с.
+    write("voice_ilyusha.wav", voice(41, 205.0, 1.2, 7.5, 0.08))
+    write("voice_officer.wav", voice(43, 125.0, 1.2, 5.5, 0.06))
+    write("voice_account_officer.wav", voice(47, 108.0, 1.2, 5.0, 0.03))
+    write("radio_mumble.wav", radio_mumble(53, 4.5))
 
 
 if __name__ == "__main__":

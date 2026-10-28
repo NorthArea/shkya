@@ -172,9 +172,13 @@ func _check_interaction(world: DemoWorld) -> void:
 	check(counts["babka"] == 1 and counts["vendor"] == 1, "E far from everyone does nothing")
 
 ## E у Бабки и продавщицы открывает диалог QUEST-01; закрыть его кнопкой, как игрок.
+## EXT-01: первая реплика продавщицы — цепочка, кнопки выбора на последней; долистать «ДАЛЬШЕ».
 func _close_dialog(world: DemoWorld, button: StringName) -> void:
 	var flow = world.get_node("QuestFlow")
 	check(flow.is_dialog_open() and world.ui_blocking, "E opens a dialog that blocks walking")
+	while flow.is_dialog_open() and not flow.dialog.is_last_line():
+		flow.dialog.finish_typing()
+		flow.dialog.advance()
 	if flow.is_dialog_open() and flow.dialog.buttons.has(button):
 		flow.dialog.buttons[button].pressed.emit()
 	await _frames(2)

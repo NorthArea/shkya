@@ -43,12 +43,17 @@ func _run() -> void:
 	await _frames(5)
 	check(sound.played["door_close"] == 1, "door sound when getting in")
 	check(sound.engine.playing, "engine runs with a driver")
+	check(sound.played["radio"] == 0 and sound.radio_text() == "", "radio waits a moment after the door (EXT-01)")
 	var idle_pitch: float = sound.engine.pitch_scale
 	Input.action_press(&"move_forward")
 	await _frames(150)
 	var fast_pitch: float = sound.engine.pitch_scale
 	check(fast_pitch > idle_pitch + 0.5, "engine pitch rises with speed (%.2f → %.2f)" % [idle_pitch, fast_pitch])
 	check(not sound.skid.playing, "no skid sound driving straight")
+	check(sound.played["radio"] == 1 and sound.radio.stream == sound.RADIO, "radio mumble once after getting in (EXT-01, stage 2)")
+	check(sound.radio_text() == QuestLines.RADIO and sound.subtitle_card.visible, "radio subtitle line on screen: '%s'" % sound.radio_text())
+	check(sound.radio.volume_db < sound.engine.volume_db, "radio is quieter than the engine (muffled)")
+	check(world.player.input_enabled == false and world.control_mode == &"in_car" and world.car.speed_kmh() > 5.0, "radio does not block driving")
 	Input.action_press(&"handbrake")
 	Input.action_press(&"move_left")
 	var skid_heard := false
@@ -64,6 +69,19 @@ func _run() -> void:
 		frames += 1
 	await _frames(3)
 	check(sound.played["door_open"] == 1 and not sound.engine.playing, "door sound and engine off after exit")
+	await _frames(400)
+	check(sound.radio_text() == "" and not sound.subtitle_card.visible, "radio subtitle gone after %.0f s" % QuestLines.RADIO_SECONDS)
+	world.player.place(world.car.global_position + world.car.global_basis.x * 2.2, 0.0)
+	await _frames(4)
+	await _press(&"interact")
+	await _frames(60)
+	check(world.control_mode == &"in_car" and sound.played["radio"] == 1 and sound.radio_text() == "", "re-entering the car plays no second radio line")
+	await _press(&"interact")
+	frames = 0
+	while world.control_mode == &"in_car" and frames < 400:
+		await physics_frame
+		frames += 1
+	await _frames(3)
 	# Интерфейс, хлеб, финал.
 	world.player.place(Layout.BABKA + Vector3(0, 0, -2.2), 0.0)
 	await _frames(4)
@@ -77,9 +95,15 @@ func _run() -> void:
 	mission.notify_entered_car()
 	mission.notify_arrived_kiosk()
 	# Покупка через настоящую кнопку диалога продавщицы: щелчок не должен оборвать звон.
+	# EXT-01: первый подход — цепочка реплик, «ДАЛЬШЕ» тоже щёлкает; кнопка покупки на последней.
 	world.player.place(Layout.VENDOR_WINDOW, 0.0)
 	await _frames(4)
 	await _press(&"interact")
+	var clicks_before: int = sound.played["ui"]
+	while flow.is_dialog_open() and not flow.dialog.is_last_line():
+		flow.dialog.finish_typing()
+		flow.dialog.buttons[&"next"].pressed.emit()
+	check(sound.played["ui"] == clicks_before + 4, "ДАЛЬШЕ clicks four times through the vendor chain (%d)" % (sound.played["ui"] - clicks_before))
 	if flow.is_dialog_open() and flow.dialog.buttons.has(&"buy"):
 		flow.dialog.buttons[&"buy"].pressed.emit()
 	await _frames(2)

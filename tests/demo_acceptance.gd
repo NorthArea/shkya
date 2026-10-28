@@ -114,14 +114,14 @@ func _pass_one() -> bool:
 	await drv.interact()
 	await drv.frames(5)
 	check(1, m.state == &"OFFERED", "03: E at Babka → OFFERED (got %s)" % m.state)
-	check(1, _hud_has(w, "Илюша, сходи за хлебом в киоск"), "03: offer line from the canon")
+	check(1, _hud_has(w, QuestLines.OFFER), "03: offer line from the extension canon (stage 1)")
 	check(1, _hud_has(w, "ПРИНЯТЬ") and _hud_has(w, "ОТКАЗАТЬСЯ"), "03: buttons ПРИНЯТЬ and ОТКАЗАТЬСЯ")
 	check(2, _babka_symbol(w) == "!", "03: ! stays while the offer is open")
 	if not check(1, await drv.press_button("ОТКАЗАТЬСЯ"), "03: ОТКАЗАТЬСЯ pressed (%s)" % drv.last_error):
 		return false
 	await drv.frames(3)
 	check(1, m.state == &"NOT_STARTED", "decline: ОТКАЗАТЬСЯ → NOT_STARTED (got %s)" % m.state)
-	check(1, not _hud_has(w, "Илюша, сходи за хлебом в киоск"), "decline: dialog closed")
+	check(1, not _hud_has(w, QuestLines.OFFER), "decline: dialog closed")
 	check(2, _babka_symbol(w) == "!", "decline: ! is back above Babka")
 	check(1, await _can_walk(w), "decline: Ilyusha can move after the dialog")
 	await drv.walk_to(_babka_stand())
@@ -221,20 +221,31 @@ func _pass_one() -> bool:
 	check(4, w.player.visible, "06: Ilyusha visible after exit")
 	await _shot("06_arrive_kiosk", true)
 
-	# 07 — продавщица: сначала УЙТИ, потом КУПИТЬ ХЛЕБ
+	# 07 — продавщица: цепочка реплик (EXT-01, этап 6) с «ДАЛЬШЕ», сначала УЙТИ, потом КУПИТЬ ХЛЕБ
 	if not check(1, await drv.walk_to(_vendor_stand()), "07: walked to the kiosk window (%s)" % drv.last_error):
 		return false
 	check(1, _hud_has(w, "E — ПОГОВОРИТЬ"), "07: prompt at the vendor")
 	await drv.interact()
 	await drv.frames(5)
-	check(1, _hud_has(w, "Батон? 35 рублей"), "07: vendor line «Батон? 35 рублей»")
-	check(1, _hud_has(w, "КУПИТЬ ХЛЕБ") and _hud_has(w, "УЙТИ"), "07: buttons КУПИТЬ ХЛЕБ and УЙТИ")
+	check(1, _hud_has(w, "Батон один?") and _hud_has(w, "ДАЛЬШЕ"), "07: vendor chain starts «Батон один?» with ДАЛЬШЕ")
+	check(1, not _hud_has(w, "КУПИТЬ ХЛЕБ"), "07: no purchase button before the chain ends")
+	var chain := ["Один", "А вас сколько?", "Тоже один", "Пока что"]
+	for line in chain:
+		await drv.frames(40)  # дождаться допечатки: первое нажатие во время печати лишь дописывает
+		if not check(1, await drv.press_button("ДАЛЬШЕ"), "07: ДАЛЬШЕ pressed before «%s» (%s)" % [line, drv.last_error]):
+			return false
+		await drv.frames(3)
+		check(1, _hud_has(w, line), "07: chain line «%s»" % line)
+		check(3, m.state == &"BUY_BREAD" and not m.has_bread, "07: chain line «%s» changes nothing" % line)
+	await _shot("07_vendor_chain", false)
+	check(1, _hud_has(w, "КУПИТЬ ХЛЕБ") and _hud_has(w, "УЙТИ") and not _hud_has(w, "ДАЛЬШЕ"), "07: buttons КУПИТЬ ХЛЕБ and УЙТИ on the last line")
 	if not check(1, await drv.press_button("УЙТИ"), "07: УЙТИ pressed (%s)" % drv.last_error):
 		return false
 	await drv.frames(3)
 	check(3, m.state == &"BUY_BREAD" and not m.has_bread and m.money == 100, "07: УЙТИ buys nothing (state %s, money %d)" % [m.state, m.money])
 	await drv.interact()
 	await drv.frames(5)
+	check(1, _hud_has(w, "Батон? 35 рублей") and not _hud_has(w, "Батон один?"), "07: second approach is the short line, chain not repeated")
 	await _shot("07_vendor_dialog", false)
 	var money_before: int = m.money
 	if not check(1, await drv.press_button("КУПИТЬ ХЛЕБ", &"ui_left"), "07: КУПИТЬ ХЛЕБ pressed (%s)" % drv.last_error):
@@ -247,6 +258,7 @@ func _pass_one() -> bool:
 	check(3, money_before - m.money == 35, "08: 35 рублей paid (%d → %d)" % [money_before, m.money])
 	check(3, _hud_has(w, "ХЛЕБ +1"), "08: toast «ХЛЕБ +1» shown")
 	check(2, _babka_symbol(w) == "?", "08: ? above Babka once the bread is bought")
+	check(1, _hud_has(w, "Вернись к Бабке (самостоятельно)"), "08: HUD task «Вернись к Бабке (самостоятельно)» (EXT-01)")
 	await _shot("08_bread_toast", true)
 	await drv.frames(150)
 	check(3, toast_frames >= 108 and toast_frames <= 132, "08: toast shown ≈2 s (%d frames at 60)" % toast_frames)
@@ -283,15 +295,29 @@ func _pass_one() -> bool:
 	check(1, _hud_has(w, "E — СДАТЬ ЗАДАНИЕ"), "09: prompt «E — СДАТЬ ЗАДАНИЕ»")
 	await _shot("09_return_babka", true)
 
-	# 10 — сдача
+	# 10 — возвращение (EXT-01, этап 9: цепочка «Ты где был?»), сдача кнопкой СДАТЬ ХЛЕБ
 	await drv.interact()
 	await drv.frames(10)
-	check(1, m.state == &"COMPLETE", "10: E → COMPLETE (got %s)" % m.state)
+	check(1, m.state == &"RETURN_HOME" and m.has_bread and _hud_has(w, "Ты где был?"), "09: E at Babka opens the return chain, no turn-in yet (got %s)" % m.state)
+	for line in ["За хлебом", "А почему такой уставший?", "Там предложили отдохнуть"]:
+		await drv.frames(40)
+		if not check(1, await drv.press_button("ДАЛЬШЕ"), "09: ДАЛЬШЕ pressed before «%s» (%s)" % [line, drv.last_error]):
+			return false
+		await drv.frames(3)
+		check(1, _hud_has(w, line), "09: return line «%s»" % line)
+	await _shot("09b_return_chain", false)
+	await drv.frames(40)
+	if not check(1, await drv.press_button("СДАТЬ ХЛЕБ"), "10: СДАТЬ ХЛЕБ pressed (%s)" % drv.last_error):
+		return false
+	await drv.frames(10)
+	check(1, m.state == &"COMPLETE", "10: СДАТЬ ХЛЕБ → COMPLETE (got %s)" % m.state)
 	check(1, m.xp == 50 and completed_signals == 1, "10: +50 XP once (xp %d)" % m.xp)
 	check(3, not m.has_bread, "10: has_bread cleared on turn-in")
-	check(1, _hud_has(w, "Спасибо, Илюша"), "10: line «Спасибо, Илюша»")
+	check(1, _hud_has(w, QuestLines.THANKS), "10: line «%s»" % QuestLines.THANKS)
 	check(1, _hud_has(w, "ЗАДАНИЕ ВЫПОЛНЕНО") and _hud_has(w, "+50 опыта"), "10: «ЗАДАНИЕ ВЫПОЛНЕНО» and «+50 опыта»")
 	check(2, _babka_symbol(w) == "", "10: no marker above Babka after completion")
+	await drv.frames(50)
+	check(1, _hud_has(w, QuestLines.THANKS_AFTER) and _hud_has(w, QuestLines.THANKS), "10: second bubble «%s» after the pause" % QuestLines.THANKS_AFTER)
 	await _shot("10_complete", false)
 	await _front_shot("10_complete")
 	pass_frames[1] = sim_frames - start_frame
