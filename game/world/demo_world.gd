@@ -4,6 +4,7 @@ extends Node3D
 ## и отдаёт снимок HUD (C6). Состояние миссии хранит только MissionDirector; диалоги и маркеры — QuestFlow.
 
 const Layout = preload("res://game/world/layout.gd")
+const SnowTracks = preload("res://game/world/snow_tracks.gd")
 
 const EXIT_OFFSETS: Array[Vector3] = [   # куда встаёт Илюша при выходе, в осях машины (−x — сторона водителя)
 	Vector3(-1.7, 0, 0), Vector3(1.7, 0, 0), Vector3(0, 0, 3.4), Vector3(0, 0, -3.4),
@@ -42,6 +43,9 @@ func _ready() -> void:
 	camera_rig.yaw = Layout.SPAWN_YAW
 	camera_rig.follow(player, &"on_foot")
 	camera_rig.exclude_permanently(babka.get_node("Body").get_rid())
+	var tracks := SnowTracks.new()   # следы колёс и шагов на снегу — PLAY-03
+	tracks.name = "SnowTracks"
+	add_child(tracks)
 	_sync_prompts()
 
 func _physics_process(delta: float) -> void:
