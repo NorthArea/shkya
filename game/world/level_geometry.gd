@@ -28,6 +28,9 @@ const PARAPET_COLORS := [Color(0.55, 0.56, 0.57), Color(0.66, 0.64, 0.58), Color
 const FRAME_WHITE := Color(0.86, 0.87, 0.86)
 const GLASS_DARK := Color(0.08, 0.10, 0.13)
 const BARK := Color(0.16, 0.15, 0.14)
+# Куржак — толстая изморозь на ветках (ART-06, Н8: крона #b9b5b2, `Trees, Novosibirsk 1.jpg`). Канон говорит
+# «мокрый снег»; куржак добавлен решением владельца 28.10.2026.
+const FROST := Color(0.88, 0.88, 0.90)   # светлее замера (#b9b5b2 днём): ночью в слабом свете иначе не читается
 const ENTRANCE_WALL_Z := 107.98   # северный фасад H1 (центр 115, глубина 14) — z = 108
 const ENTRANCE_DOOR_X := -40.0    # дверь по центру козырька
 
@@ -41,6 +44,7 @@ var _glass: Array = []            # [Transform3D, Color]; альфа 1 — ок�
 var _frames: Array[Transform3D] = []
 var _branches: Array[Transform3D] = []
 var _wires: Array[Transform3D] = []
+var _frost: Array[Transform3D] = []   # ветки в куржаке (ART-06, Н8; решение владельца 28.10.2026)
 
 # Надписи: [текст, позиция, поворот y, размер шрифта, цвет].
 const SIGNS := [
@@ -439,7 +443,7 @@ func _birch(height: float, seed: float) -> Node3D:
 	var trunk := Greybox.mesh_cylinder(0.1, 0.16, height, Color.WHITE)
 	trunk.material_override = Materials.plain(Color(0.85, 0.84, 0.80), 0.9)
 	root.add_child(trunk)
-	var bark := Materials.plain(Color(0.10, 0.09, 0.08), 0.9)
+	var bark := Materials.plain(FROST, 0.95)   # ветки берёзы в куржаке (Н8)
 	for i in 6:
 		var branch := Greybox.mesh_cylinder(0.02, 0.05, 2.2, Color.WHITE)
 		branch.material_override = bark
@@ -851,11 +855,12 @@ func _poplar(base: Vector3, seed: int) -> void:
 			var blen := 1.6 + 2.4 * _rand(seed * 97, 300 + i * 10 + j) * (1.0 - t * 0.5)
 			var bend := from + bdir * blen
 			_branches.append(_segment(from, bend, 0.14))
+			_frost.append(_segment(from.lerp(bend, 0.35), bend, 0.34))   # куржак: ветка «вдвое толще» и белёсая
 			for q in 3:
 				var tw := from.lerp(bend, 0.4 + 0.3 * q)
 				var tyaw := byaw + (_rand(seed * 97, 400 + i * 30 + j * 3 + q) - 0.5) * 3.0
 				var tdir := Vector3(cos(tyaw) * 0.6, 0.8, sin(tyaw) * 0.6).normalized()
-				_branches.append(_segment(tw, tw + tdir * (0.9 + 0.8 * _rand(seed * 97, 500 + q + j)), 0.05))
+				_frost.append(_segment(tw, tw + tdir * (0.9 + 0.8 * _rand(seed * 97, 500 + q + j)), 0.26))   # с расстояния камеры тоньше не видно
 
 ## Натоптанные тропинки в рыхлом снегу (черта 12): от подъезда к проезду, через двор по пути Илюши,
 ## от тротуара к окну киоска, по газонам улицы A.
@@ -901,6 +906,7 @@ func _build_instances() -> void:
 	limb.radial_segments = 6
 	limb.rings = 1
 	_multimesh("PoplarBranches", limb, _branches, [], Materials.plain(BARK, 0.95), true)
+	_multimesh("PoplarFrost", limb, _frost, [], Materials.plain(FROST, 0.95), false)
 	var wire := CylinderMesh.new()
 	wire.top_radius = 0.02
 	wire.bottom_radius = 0.02
