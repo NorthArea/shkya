@@ -117,6 +117,17 @@ static func road(along_x: bool, center: Vector2, width: float) -> ShaderMaterial
 	m.set_shader_parameter("width", width)
 	return m
 
+## Угол кольца (ARENA-01): колеи по дуге вокруг внутреннего угла corner; signs — знаки направления от угла к осям
+## улицы вдоль x (по z) и улицы вдоль z (по x); width — ширина улиц (обе одинаковые).
+static func road_corner(corner: Vector2, signs: Vector2, width: float) -> ShaderMaterial:
+	var m := ShaderMaterial.new()
+	m.shader = RoadShader
+	m.set_shader_parameter("corner", 1.0)
+	m.set_shader_parameter("corner_point", corner)
+	m.set_shader_parameter("corner_sign", signs)
+	m.set_shader_parameter("width", width)
+	return m
+
 static func snow(trodden: float) -> ShaderMaterial:
 	var key := "snow_%s" % trodden
 	if not _cache.has(key):

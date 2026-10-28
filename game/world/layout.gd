@@ -18,9 +18,11 @@ const VENDOR_WINDOW := Vector3(59.0, 0.0, -77.0)   # где стоит поку�
 const KIOSK_ZONE := AABB(Vector3(56.0, 0.0, -87.0), Vector3(16.0, 3.0, 20.0))
 
 # Маршруты для тестов: пешком от появления до окна киоска, на машине от стоянки до площадки.
+# Пешком по улице B — по западному тротуару (x = 59,5), не по проезжей части: полоса кольца x = 67 и остановка
+# троллейбуса (67, −62) заняты транспортом (ARENA-01, интегратор 28.10). Вход на тротуар — в разрыве вала (z > 19).
 const ROUTE_WALK: Array[Vector3] = [
 	Vector3(-36.5, 0, 97.5), Vector3(-20, 0, 85), Vector3(-5, 0, 62), Vector3(0, 0, 32),
-	Vector3(66, 0, 32), Vector3(66, 0, -70), Vector3(59, 0, -77),
+	Vector3(59.5, 0, 32), Vector3(59.5, 0, 20), Vector3(59.5, 0, -70), Vector3(59, 0, -77),
 ]
 const ROUTE_DRIVE: Array[Vector3] = [
 	Vector3(-48, 0, 100), Vector3(-30, 0, 80), Vector3(-5, 0, 60), Vector3(0, 0, 32),
@@ -40,33 +42,54 @@ const SOLIDS := [
 	["Snow_YardWest", "snow", Vector2(-75, 80), Vector3(3, 0.8, 30)],
 	# Вдоль улицы A
 	["H4_SouthEast", "panel", Vector2(65, 66), Vector3(50, 27, 12)],
-	["H5_North", "panel", Vector2(-50, 7), Vector3(80, 27, 14)],
+	# H5 (x −90…−10) разделён проездом улицы D (ARENA-01): западная часть — здесь, на прежнем месте в SOLIDS
+	# (тот же номер — та же окраска фасада), восточная H5_East — в конце списка.
+	["H5_West", "panel", Vector2(-79, 7), Vector3(22, 27, 14)],
 	["H7_Middle", "panel_low", Vector2(10, -15), Vector3(30, 15, 40)],
-	["Snow_StreetA", "snow", Vector2(-50, 22), Vector3(60, 0.8, 2)],
-	["Zhiguli_A", "parked_car", Vector2(40, 37), Vector3(4.1, 1.4, 1.7)],
+	["Snow_StreetA", "snow", Vector2(-35, 22), Vector3(30, 0.8, 2)],   # x −50…−20; западный кусок за улицей D — Snow_StreetA_West
+	# У северного бордюра: южная обочина — путь автобуса ГСУМ (EXT-01). z 27 → 25,8: прижата к валу, до полосы кольца
+	# z = 29 (C8) — 1,5 м, а не 0,3 (ARENA-01).
+	["Zhiguli_A", "parked_car", Vector2(40, 25.8), Vector3(4.1, 1.4, 1.7)],
 	# Вдоль улицы B
 	["H6_West", "panel", Vector2(43, -14), Vector3(26, 27, 52)],
-	["Garages_Kiosk", "garage", Vector2(46, -81), Vector3(8, 3, 38)],
+	["Garages_Kiosk", "garage", Vector2(46, -77), Vector3(8, 3, 30)],   # z −92…−62: северный торец — у тротуара улицы C (ARENA-01)
 	["Kiosk", "kiosk", Vector2(55, -77), Vector3(5, 3.2, 4)],
 	["H8_East", "panel", Vector2(89, -47.5), Vector3(14, 27, 125)],
 	["H9_NorthEnd", "panel_low", Vector2(65, -118.5), Vector3(70, 15, 13)],
-	["H10_NorthWest", "panel", Vector2(-20, -80), Vector3(60, 27, 14)],
-	["Zhiguli_B", "parked_car", Vector2(74, -30), Vector3(1.7, 1.4, 4.1)],
+	# Западный торец H10 — x −45, а не −50: между валом улицы D и стеной 7,8 м, а не 2,8 (щель для машины; ARENA-01).
+	["H10_NorthWest", "panel", Vector2(-17.5, -80), Vector3(55, 27, 14)],
+	# «Жигули» улицы B — южнее площадки киоска, у восточного бордюра: на x = 74 севернее z −71 едет микроавтобус ГСУМ
+	# (VAN_PATH, x = 73,5), прежняя точка (74, −30) стояла у него на пути (ARENA-01).
+	["Zhiguli_B", "parked_car", Vector2(74, -84), Vector3(1.7, 1.4, 4.1)],
 	# Столб фонаря во дворе; уличные фонари строит street_lamps()
 	["Lamp_Yard", "lamp", Vector2(-52, 100), Vector3(0.25, 6, 0.25)],
+	# Кольцо арены (ARENA-01): новые коробки — в конце, чтобы номера (и окраска) прежних домов не сдвинулись.
+	["H5_East", "panel", Vector2(-31, 7), Vector3(42, 27, 14)],          # x −52…−10: восточнее проезда D
+	["Snow_StreetA_West", "snow", Vector2(-81, 22), Vector3(10, 0.8, 2)],   # x −86…−76: запад улицы A за улицей D
+	["H11_West", "panel", Vector2(-93, -62.5), Vector3(14, 27, 65)],     # x −100…−86, z −95…−30: закрывает пустой угол за улицей D
+	["Garages_C", "garage", Vector2(-12, -117), Vector3(54, 3, 6)],      # x −39…15, z −120…−114: гаражный ряд за улицей C, воротами к ней
 ]
 
 # Козырёк подъезда: висит над землёй, поэтому задан отдельно (центр, размер).
 const CANOPY := [Vector3(-40, 3.1, 106.5), Vector3(4, 0.25, 3)]
 
 # Плоские покрытия без коллизий: [имя, вид, центр по x/z, размер по x/z].
+# Кольцо (ARENA-01): улицы B и D кончаются у северного края A (z = 25) — улица A идёт сквозь, как раньше у B; на
+# севере B и D заходят под C (z −106…−94) — там углы кольца, их рисует level_geometry отдельной плиткой с колеями
+# по дуге (без шва). C — от западного края D до восточного края B.
 const SURFACES := [
 	["Street_A", "road", Vector2(0, 32), Vector2(200, 14)],
-	["Street_B", "road", Vector2(70, -42.5), Vector2(12, 135)],
+	["Street_B", "road", Vector2(70, -40.5), Vector2(12, 131)],          # z −106…25
+	["Street_C", "road", Vector2(5, -100), Vector2(142, 12)],            # x −66…76
+	["Street_D", "road", Vector2(-60, -40.5), Vector2(12, 131)],         # z −106…25
 	["Walk_A_North", "sidewalk", Vector2(0, 22.5), Vector2(200, 5)],
 	["Walk_A_South", "sidewalk", Vector2(0, 41.5), Vector2(200, 5)],
-	["Walk_B_West", "sidewalk", Vector2(61, -45), Vector2(6, 130)],
-	["Walk_B_East", "sidewalk", Vector2(78.5, -45), Vector2(5, 130)],
+	["Walk_B_West", "sidewalk", Vector2(61, -37), Vector2(6, 114)],      # z −94…20
+	["Walk_B_East", "sidewalk", Vector2(78.5, -45.5), Vector2(5, 131)],  # z −111…20
+	["Walk_C_North", "sidewalk", Vector2(5, -108.5), Vector2(152, 5)],   # x −71…81
+	["Walk_C_South", "sidewalk", Vector2(5, -91.5), Vector2(118, 5)],    # x −54…64
+	["Walk_D_West", "sidewalk", Vector2(-68.5, -45.5), Vector2(5, 131)], # z −111…20
+	["Walk_D_East", "sidewalk", Vector2(-51.5, -34.5), Vector2(5, 109)], # z −89…20
 	["Yard_Drive", "yard_road", Vector2(-20, 78), Vector2(56, 44)],
 ]
 
@@ -75,6 +98,7 @@ const LAMPS := [
 	[Vector3(-40, 2.9, 106.5), 2.0],   # подъезд
 	[Vector3(-52, 5.8, 100), 3.0],     # двор
 	[Vector3(58.5, 3.0, -77), 2.5],    # окно киоска
+	[Vector3(-48.2, 2.2, -40), 1.4],   # витрина павильона «ПРОДУКТЫ 24» у улицы D (ARENA-01)
 ]
 
 # --- Декор с коллизиями (ART-02, ART-05): фонари, валы снега у обочин, берёзы, тополя, машины, указатель. Мини-карта их не рисует. ---
@@ -87,32 +111,46 @@ const LAMP_B_EAST := 77.0
 const BANK := Vector2(1.2, 0.9)        # ширина и высота вала снега
 const TREES: Array[Vector2] = [
 	Vector2(-66, 98), Vector2(-70, 64), Vector2(-56, 66), Vector2(-12, 102), Vector2(4, 96), Vector2(12, 76),
-	Vector2(-80, 17), Vector2(-65, 17), Vector2(-35, 17), Vector2(-20, 17),
+	Vector2(-80, 17), Vector2(-74, 17), Vector2(-35, 17), Vector2(-20, 17),   # (−65, 17) стояла на улице D → (−74, 17)
+	Vector2(-78, -20), Vector2(-76, -88), Vector2(-40, -64),                  # ARENA-01: у H11 и за H10
 ]
 const STREET_SIGN := Vector2(60.5, 22.5)
+# Указатели улиц на внутренних углах кольца (ART-04, ART-06 Н14): [точка, улица вдоль x, улица вдоль z].
+# Названия улиц C и D — из списка спальных улиц Новосибирска по OSM (ART-06, Н14).
+const STREET_SIGNS := [
+	[STREET_SIGN, "УЛ. ЛЕНИНА", "УЛ. ТРОЛЛЕЙНАЯ"],
+	[Vector2(-51.5, 22.5), "УЛ. ЛЕНИНА", "УЛ. Б. БОГАТКОВА"],
+	[Vector2(-51.5, -91.5), "УЛ. ВЫБОРНАЯ", "УЛ. Б. БОГАТКОВА"],
+	[Vector2(61.0, -91.5), "УЛ. ВЫБОРНАЯ", "УЛ. ТРОЛЛЕЙНАЯ"],
+]
 # Тополя (ART-05, сверка ART-04: крупные тополя во дворах и вдоль улиц, кроны выше 4-этажек).
 const POPLARS: Array[Vector2] = [
 	Vector2(-95, 17), Vector2(-50, 17), Vector2(-5, 17), Vector2(20, 17), Vector2(40, 17), Vector2(90, 18),
 	Vector2(34, 50), Vector2(52, 51), Vector2(72, 50), Vector2(92, 51),
 	Vector2(-70, 102), Vector2(-64, 61), Vector2(-40, 62), Vector2(6, 104), Vector2(16, 90), Vector2(-28, 101),
-	Vector2(53, -46), Vector2(53, -54), Vector2(36, -68), Vector2(36, -82), Vector2(36, -96),   # улица B (И3)
+	Vector2(53, -46), Vector2(53, -54), Vector2(36, -68), Vector2(36, -82), Vector2(24, -85),   # улица B (И3); (36, −96) была на улице C
+	Vector2(-80, -45), Vector2(-79, -75), Vector2(-25, -66), Vector2(24, -121), Vector2(-88, -112), Vector2(-58, -119),   # ARENA-01: вдоль D, за H10, за гаражами C, внешний угол C∩D
 ]
 const POPLAR_TRUNK := Vector3(0.8, 10.0, 0.8)
 # Опоры контактной сети без фонаря там, где фонари пропущены (выезд со двора, площадка киоска):
 # поперечины висят на парах опор через каждые 24 м (сверка ART-04, черта 13).
 const TROLLEY_POLES: Array[Vector2] = [Vector2(-18, 42), Vector2(6, 42), Vector2(61, -62), Vector2(61, -86)]
-# Приметы Новосибирска (ART-06): неподвижный бело-зелёный троллейбус под проводами улицы A и павильон
-# остановки напротив. Маршруты пешком и на машине проходят восточнее x = −5, оба объекта — западнее.
-const TROLLEYBUS := [Vector2(-30, 27.8), Vector3(11.9, 3.35, 2.5)]   # ЗиУ-9: 11 888 × 2500 × 3347 мм   # у северного бордюра: полоса z = 32 свободна для разгона
+# Приметы Новосибирска (ART-06): павильон остановки на южном тротуаре улицы A. Статичный ЗиУ-9 снят (ARENA-01):
+# троллейбус ездит по кольцу (часть T), остановки — TROLLEY_STOPS.
 const BUS_PAVILION := [Vector2(-30, 42.6), Vector3(4.0, 2.6, 1.6)]
 const POLE_HEIGHT := 8.0        # видимая высота столба фонаря и опоры; коллизия — LAMP_HEIGHT
 # Припаркованные машины со снегом на крыше (ART-05, сверка ART-04): статичный декор, без поведения.
 # [центр x/z, вдоль x — true]. От валов у бордюра — больше 1 м: ближе тест застреваний считает это щелью.
 const PARKED: Array = [
 	[Vector2(-56.5, 100), false], [Vector2(-60.5, 100.5), false], [Vector2(17, 80), false], [Vector2(17, 71.5), false],
-	[Vector2(-2, 103), false], [Vector2(-46, 72), false], [Vector2(-46, 66), false], [Vector2(5, 66), false], [Vector2(-60, 27.0), true], [Vector2(-45, 27.0), true],
+	[Vector2(-2, 103), false], [Vector2(-46, 72), false], [Vector2(-46, 66), false], [Vector2(5, 66), false],
+	# Северная обочина A — полоса кольца z = 29 (C8: ≥ 0,8 м от припаркованных): машины прижаты к валу (z 25,8, край
+	# 24,95 — в валу, щели нет). (−60, 27) стояла на улице D → (−15).
+	[Vector2(-15, 25.8), true], [Vector2(-45, 25.8), true],
 	[Vector2(-75, 37.1), true], [Vector2(-50, 37.1), true],
-	[Vector2(73.9, -55), false], [Vector2(73.9, -100), false],   # сразу за углом A→B машин нет: туда выносит из поворота
+	# Улицы C и D (ARENA-01): у внешней обочины, прижаты к валу; (73,9; −55) стояла на пути автобуса ГСУМ
+	# (VAN_PATH, x = 73,5), (73,9; −100) — посреди угла C∩B.
+	[Vector2(-65.2, -45), false], [Vector2(-65.2, -70), false], [Vector2(-30, -105.2), true], [Vector2(18, -105.2), true],
 ]
 
 # Двор (POLISH-02, п. 15). Горка и качели стоят внутри коллизии Playground, за оградкой.
@@ -124,58 +162,172 @@ const PLAYGROUND_SWINGS := Vector2(-62.5, 81.5)  # центр качелей
 const CARPET_BAR: Array[Vector2] = [Vector2(-68, 90), Vector2(-68, 93)]
 const CARPET_POST := Vector3(0.12, 2.3, 0.12)
 const BINS := [Vector2(-33, 65.5), Vector3(4.2, 1.3, 1.2)]   # три контейнера по 1,3 м вдоль x
+# ARENA-01: контейнеры у южной стены H10 — вплотную к стене (без щели), крышками во двор.
+const H10_BINS := [Vector2(-30, -72.45), Vector3(4.2, 1.3, 1.2)]
+# Павильон «ПРОДУКТЫ 24» у улицы D, витриной на запад; без интерактива. Вне тротуара (D East кончается на x = −49).
+const SHOP24 := [Vector2(-44, -40), Vector3(6.0, 3.0, 4.0)]
+# Рекламный щит с пустым полотном на одной опоре, за внешним углом C∩D; полотно смотрит на перекрёсток.
+const BILLBOARD := Vector2(-78, -117)
 
 # Расширение «Ничего необычного» (docs/extension/, EXT-01). Все точки стелса — только здесь (C1).
-# Микроавтобус ГСУМ «БЕСПЛАТНЫЙ ПРОЕЗД» стоит на обочине улицы A у южного бордюра, патруль рядом (этап 3);
-# после покупки хлеба подъезжает по VAN_PATH к остановке у выезда с улицы B и ждёт (этапы 7–8).
-const VAN_PARK := Vector3(30.0, 0.0, 37.5)       # обочина улицы A, перед — на запад
-const VAN_PARK_YAW := PI * 0.5
-const VAN_PATH: Array[Vector3] = [Vector3(30, 0, 37.5), Vector3(66, 0, 37.5), Vector3(66, 0, -20), Vector3(66, 0, -60)]
+# Микроавтобус ГСУМ «БЕСПЛАТНЫЙ ПРОЕЗД» стоит на обочине улицы A у южного бордюра носом на восток — дверь (правый
+# борт) к тротуару, рядом «военком» (этап 3); после покупки хлеба едет по VAN_PATH вдоль обочины, поворачивает на
+# улицу B и встаёт у остановки киоска носом на юг — дверью к павильону (этапы 7–8). Полосу z = 32 не занимает.
+# Исполнитель N 28.10.2026: нос на восток вместо запада (дверь иначе смотрела в проезд, а путь начинался с разворота);
+# припаркованные «Жигули» улицы A перенесены с южного бордюра на северный — иначе автобус проезжал сквозь них.
+const VAN_PARK := Vector3(30.0, 0.0, 37.2)       # обочина улицы A, перед — на восток
+const VAN_PARK_YAW := -PI * 0.5
+# По улице B идёт на юг по своей (восточной) полосе x = 73,5 — «Лада» возвращается по оси x = 70 (ROUTE_DRIVE),
+# и автобус шириной 2,1 м на x = 71 шёл ей в лоб (QUEST01 «drove back», интегратор 28.10). У площадки киоска
+# разворачивается через проезжую часть и подъезжает к остановке с севера — встаёт у западного бордюра носом на юг,
+# дверью к павильону.
+const VAN_PATH: Array[Vector3] = [
+	Vector3(30, 0, 37.2), Vector3(60, 0, 37.2), Vector3(69.5, 0, 34), Vector3(73.5, 0, 26), Vector3(73.5, 0, -64),
+	Vector3(69, 0, -70), Vector3(64, 0, -71), Vector3(61.5, 0, -68),
+]
+# Конечная стоянка — на площадке у павильона, южнее него, не на проезжей части: прежняя точка (66, −60) лежала на полосе
+# кольца x = 67 (ARENA-01, C8), и транспорт улицы B вставал за автобусом навсегда (интегратор 28.10).
 const VAN_STOP_YAW := PI                          # у остановки улицы B, носом на юг
-const ACCOUNT_OFFICER := Vector3(27.0, 0.0, 40.0)  # «военком» у открытой двери микроавтобуса; смотрит на север
+# «Военком» — на тротуаре у открытой двери (за валом снега), под фонарём (30, 42); смотрит на север, к двери.
+# Исполнитель N: прежняя точка (27, 40) стояла в валу снега улицы A.
+const ACCOUNT_OFFICER := Vector3(33.0, 0.0, 42.0)
+const ACCOUNT_OFFICER_YAW := 0.0
 # Полицейский у киоска: между площадкой KIOSK_ZONE и окном, разворачивается на месте (STEALTH_DESIGN: 9 м, 75°).
 const OFFICER_POST := Vector3(62.0, 0.0, -70.0)
 const OFFICER_POST_AFTER := Vector3(64.0, 0.0, -84.0)  # после покупки — ближе к выходу на площадку
-const OFFICER_FACING := [PI * 0.5, -PI * 0.5]     # поворот корпуса по таймеру: на восток и на запад
+const OFFICER_FACING := [PI * 0.5, -PI * 0.5]     # поворот корпуса по таймеру: на запад и на восток
 # Укрытия у киоска — два честных пути: за павильоном остановки улицы B и через проход у гаражей.
-const KIOSK_PAVILION := [Vector2(62.5, -62), Vector3(1.6, 2.6, 4.0)]   # на тротуаре Walk_B_West, севернее KIOSK_ZONE; ROUTE_WALK (x = 66) свободен
+# Павильон — на тротуаре Walk_B_West (x 58…64), севернее KIOSK_ZONE, у знака остановки (TROLLEY_POLES[2]); спиной
+# к домам, открытой стороной к дороге. ROUTE_WALK (x = 66) свободен (интегратор 28.10; облик вдоль z — EXT-01 N).
+const KIOSK_PAVILION := [Vector2(62.5, -62), Vector3(1.6, 2.6, 4.0)]
 const KIOSK_BINS := [Vector2(52, -62), Vector3(1.2, 1.3, 3.0)]
-# Чекпоинт стелса: у парковки на площадке; после провала Илюша встаёт сюда, машина не трогается.
-const STEALTH_CHECKPOINT := Vector3(66.0, 0.0, -88.0)
-const STEALTH_CHECKPOINT_YAW := PI
+# Чекпоинт стелса: юго-западный угол площадки у торца гаражей — «высадили за углом»; после провала Илюша встаёт сюда,
+# машина не трогается. Вне любого конуса: от OFFICER_POST_AFTER (64, −84) 13,4 м > 9 м с учётом хода патруля лицом
+# на юг; от стоянки автобуса ГСУМ > 20 м; от полосы кольца 15 м. (Прежние (66, −88) и (66, −95) — конус патруля
+# и полоса кольца; STEALTH, интегратор 28.10.)
+const STEALTH_CHECKPOINT := Vector3(52.0, 0.0, -90.0)   # ARENA-01: (66, −95) оказалась на дуге полосы кольца у угла C∩B
+const STEALTH_CHECKPOINT_YAW := 0.0                        # лицом на север, к киоску
+
+# Кольцо арены (ARENA-01, контракт C8): по часовой стрелке при взгляде с севера, все повороты правые,
+# движение правостороннее. A на запад → D (новая, x = −60) на север → C (новая, z = −100) на восток → B на юг.
+# Транспорт едет по правой полосе: смещение RING_LANE от оси улицы, скругление углов — у транспорта.
+const RING: Array[Vector3] = [Vector3(70, 0, 32), Vector3(-60, 0, 32), Vector3(-60, 0, -100), Vector3(70, 0, -100)]
+const RING_LANE := 3.0
+# Остановки троллейбуса (13-й): улица A, северная сторона, x = −30; улица B у павильона киоска (KIOSK_PAVILION).
+const TROLLEY_STOPS: Array[Vector3] = [Vector3(-30, 0, 29), Vector3(67, 0, -62)]
+const TRAFFIC_CARS := 3
+
+## Ось правой полосы кольца (C8): RING со смещением RING_LANE вправо по ходу, углы скруглены радиусом radius.
+## Замкнутая ломаная — только дуги углов, прямые между ними подразумеваются; начинается с угла RING[0] (A∩B).
+## Для проверок геометрии кольца (GREY01, STUCK); транспорт строит свой путь сам (часть T).
+static func ring_lane(radius := 6.0, arc_steps := 6) -> Array[Vector3]:
+	var out: Array[Vector3] = []
+	var n := RING.size()
+	for i in n:
+		var c := RING[i]
+		var d_in := (c - RING[(i - 1 + n) % n]).normalized()
+		var d_out := (RING[(i + 1) % n] - c).normalized()
+		var right_in := Vector3(-d_in.z, 0, d_in.x)      # вправо по ходу: x — восток, z — юг
+		var right_out := Vector3(-d_out.z, 0, d_out.x)
+		var corner := c + (right_in + right_out) * RING_LANE
+		var center := corner - d_in * radius + right_in * radius
+		for k in arc_steps + 1:
+			var a := PI * 0.5 * k / arc_steps
+			out.append(center - right_in * radius * cos(a) + d_in * radius * sin(a))
+	return out
+
+# Опоры контактной сети через 24 м (сверка ART-04, черта 13). Улица A: x = −66 стоял бы на краю улицы D — сдвинут на −72.
+static func a_spans() -> Array[float]:
+	var out: Array[float] = []
+	for x in range(-90, 100, 24):
+		out.append(-72.0 if x == -66 else float(x))
+	return out
+const B_SPANS: Array[float] = [10.0, -14.0, -38.0, -62.0, -86.0]
+# Улицы D и C (ARENA-01): фонарь на консоли — у внешней обочины кольца (D — запад, C — север), во внутренней — опора
+# без фонаря; поперечина между ними. Столбы — у бордюра, в валу, как восточные фонари B.
+const D_SPANS: Array[float] = [18.0, -10.0, -34.0, -58.0, -82.0]
+const C_SPANS: Array[float] = [-42.0, -18.0, 6.0, 30.0, 54.0]
+const LAMP_D_WEST := -67.0
+const POLE_D_EAST := -53.0
+const LAMP_C_NORTH := -107.0
+const POLE_C_SOUTH := -93.0
+# Внешние углы кольца C∩D и C∩B: опоры, на которые оттянут поворот контактных проводов.
+const CORNER_POLES: Array[Vector2] = [Vector2(-69, -109), Vector2(79, -109)]
+
+## Опоры контактной сети без фонаря: TROLLEY_POLES и внутренняя сторона улиц C и D.
+static func trolley_poles() -> Array[Vector2]:
+	var out: Array[Vector2] = TROLLEY_POLES.duplicate()
+	for z in D_SPANS:
+		out.append(Vector2(POLE_D_EAST, z))
+	for x in C_SPANS:
+		out.append(Vector2(x, POLE_C_SOUTH))
+	out.append_array(CORNER_POLES)
+	return out
 
 ## Уличные фонари вдоль тротуаров, с пропусками у переходов маршрута. [центр x/z].
 static func street_lamps() -> Array[Vector2]:
 	var points: Array[Vector2] = []
-	for x in range(-90, 100, 24):
+	for x in a_spans():
 		points.append(Vector2(x, 22.0))                    # улица A, север
 		if absf(x) > 26:
 			points.append(Vector2(x, 42.0))                # улица A, юг (без выезда со двора)
-	for z in range(10, -112, -24):
+	for z in B_SPANS:
 		if z > -60 or z < -94:
 			points.append(Vector2(LAMP_B_WEST, z))         # улица B, запад (без площадки киоска)
 		points.append(Vector2(LAMP_B_EAST, z))             # улица B, восток, у бордюра
+	for z in D_SPANS:
+		points.append(Vector2(LAMP_D_WEST, z))             # улица D, запад, у бордюра
+	for x in C_SPANS:
+		points.append(Vector2(x, LAMP_C_NORTH))            # улица C, север, у бордюра
 	return points
+
+## Отрезки валов: от `from` до `to` кусками по 26 м с разрывом 3 м, затем без участков из cuts ([от, до]).
+## Куски короче 2 м отбрасываются.
+static func _bank_runs(from: float, to: float, cuts: Array = []) -> Array:
+	var runs := []
+	var a := from
+	while a < to:
+		var length := minf(26.0, to - a)
+		var pieces := [[a, a + length]]
+		for cut in cuts:
+			var next := []
+			for p in pieces:
+				if p[1] <= cut[0] or p[0] >= cut[1]:
+					next.append(p)
+					continue
+				if p[0] < cut[0]:
+					next.append([p[0], cut[0]])
+				if p[1] > cut[1]:
+					next.append([cut[1], p[1]])
+			pieces = next
+		for p in pieces:
+			if p[1] - p[0] >= 2.0:
+				runs.append(p)
+		a += length + 3.0
+	return runs
 
 ## Валы снега вдоль обочин: [центр x/z, размер x/z]. Разрывы — выезд со двора, перекрёсток, площадка киоска.
 static func snow_banks() -> Array:
 	var banks := []
 	var w := BANK.x
-	# Улица A: [x от, x до, z]. С x = −97, а не −100: щель 0 м между валом и краем карты — тупик для машины (ART-06).
-	for span in [[-97.0, 56.0, 24.4], [-97.0, -26.0, 39.6], [24.0, 100.0, 39.6]]:
-		var x: float = span[0]
-		while x < span[1]:
-			var length := minf(26.0, span[1] - x)
-			banks.append([Vector2(x + length * 0.5, span[2]), Vector2(length, w)])
-			x += length + 3.0
-	# Восточный вал улицы B кончается у торца H8 (z = 15), а не на 19: между концом вала и углом H8 «Лада»
-	# зажималась поперёк и не выруливала (STUCK, SnowBank@(79.3,13.4); POLISH-02).
-	for span in [[63.4, -110.0, -94.0], [63.4, -60.0, 19.0], [76.6, -110.0, 15.0]]:    # улица B: [x, z от, z до]
-		var z: float = span[1]
-		while z < span[2]:
-			var length := minf(26.0, span[2] - z)
-			banks.append([Vector2(span[0], z + length * 0.5), Vector2(w, length)])
-			z += length + 3.0
+	# Улица A: [x от, x до, z, вырезы]. С x = −97, а не −100: щель 0 м между валом и краем карты — тупик для машины (ART-06).
+	# Северный вал разорван улицей D (x −66…−54) с запасом под тротуары (ARENA-01).
+	# Улица C (ARENA-01): северный вал — внешний угол кольца, от западного края вала D до восточного края вала B;
+	# южный — между углами, с вырезом у торца гаражей киоска (иначе щель 0,8 м между валом и стеной).
+	for span in [[-97.0, 56.0, 24.4, [[-70.0, -52.0]]], [-97.0, -26.0, 39.6, []], [24.0, 100.0, 39.6, []],
+			[-67.2, 77.2, -106.6, []], [-53.0, 60.0, -93.4, [[40.0, 52.0]]]]:
+		for run in _bank_runs(span[0], span[1], span[3]):
+			banks.append([Vector2((run[0] + run[1]) * 0.5, span[2]), Vector2(run[1] - run[0], w)])
+	# Улица B: [x, z от, z до, вырезы]. Восточный вал кончается у торца H8 (z = 15), а не на 19: между концом вала
+	# и углом H8 «Лада» зажималась поперёк и не выруливала (STUCK, SnowBank@(79.3,13.4); POLISH-02).
+	# Западный кусок z −110…−94 снят — там теперь улица C; восточный начинается у внешнего угла C∩B (z −107,2).
+	# Улица D (ARENA-01): вдоль H5 (z 0…14) валов нет — между валом и стеной осталась бы щель 0,8 м.
+	# Начала внутренних валов C (x −53) и D (z −88) подобраны так, чтобы опоры D_SPANS/C_SPANS стояли в валу, а не
+	# в разрыве: столб посреди разрыва зажимал «Ладу» (STUCK, TrolleyPole@(4.8,−91.1)).
+	for span in [[63.4, -60.0, 19.0, []], [76.6, -110.0, 15.0, [[-120.0, -107.2]]],
+			[-66.6, -107.2, 21.0, [[-2.0, 16.0]]], [-53.4, -88.0, 21.0, [[-2.0, 16.0]]]]:
+		for run in _bank_runs(span[1], span[2], span[3]):
+			banks.append([Vector2(span[0], (run[0] + run[1]) * 0.5), Vector2(w, run[1] - run[0])])
 	return banks
 
 ## Консоль уличного фонаря: смещение светильника от столба к проезжей части (сверка ART-04, черта 14).
@@ -187,6 +339,10 @@ static func lamp_arm(p: Vector2) -> Vector2:
 		return Vector2(0, -LAMP_ARM)      # улица A, юг — к северу
 	if absf(p.x - LAMP_B_WEST) < 0.1:
 		return Vector2(LAMP_ARM, 0)       # улица B, запад — к востоку
+	if absf(p.x - LAMP_D_WEST) < 0.1:
+		return Vector2(LAMP_ARM, 0)       # улица D, запад — к востоку
+	if absf(p.y - LAMP_C_NORTH) < 0.1:
+		return Vector2(0, LAMP_ARM)       # улица C, север — к югу
 	return Vector2(-LAMP_ARM, 0)          # улица B, восток — к западу
 
 ## Все декоративные твёрдые коробки в формате SOLIDS.
@@ -198,12 +354,12 @@ static func decor_solids() -> Array:
 		solids.append(["SnowBank", "snow_bank", bank[0], Vector3(bank[1].x, BANK.y, bank[1].y)])
 	for p in TREES:
 		solids.append(["Birch", "tree", p, Vector3(0.3, 7.0, 0.3)])
-	solids.append(["StreetSign", "sign_post", STREET_SIGN, Vector3(0.12, 3.2, 0.12)])
-	solids.append(["Trolleybus", "trolleybus", TROLLEYBUS[0], TROLLEYBUS[1]])
+	for sign in STREET_SIGNS:
+		solids.append(["StreetSign", "sign_post", sign[0], Vector3(0.12, 3.2, 0.12)])
 	solids.append(["BusPavilion", "pavilion", BUS_PAVILION[0], BUS_PAVILION[1]])
 	solids.append(["KioskPavilion", "pavilion", KIOSK_PAVILION[0], KIOSK_PAVILION[1]])   # EXT: укрытие у киоска
 	solids.append(["KioskBins", "bins", KIOSK_BINS[0], KIOSK_BINS[1]])
-	for p in TROLLEY_POLES:
+	for p in trolley_poles():
 		solids.append(["TrolleyPole", "lamp", p, Vector3(0.25, LAMP_HEIGHT, 0.25)])
 	for p in POPLARS:
 		solids.append(["Poplar", "poplar", p, POPLAR_TRUNK])
@@ -212,6 +368,9 @@ static func decor_solids() -> Array:
 	for p in CARPET_BAR:
 		solids.append(["CarpetBar", "carpet_bar", p, CARPET_POST])
 	solids.append(["TrashBins", "bins", BINS[0], BINS[1]])
+	solids.append(["TrashBinsH10", "bins", H10_BINS[0], H10_BINS[1]])
+	solids.append(["Shop24", "shop24", SHOP24[0], SHOP24[1]])
+	solids.append(["Billboard", "billboard", BILLBOARD, Vector3(0.5, 6.0, 0.5)])
 	return solids
 
 ## SOLIDS + декор: для геометрии и проверок свободного места.

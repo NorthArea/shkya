@@ -5,6 +5,12 @@ extends RefCounted
 ## (docs/extension/DIALOGUES_AND_JOKES.md, «Редакторский контроль»). Слова «мобилизация» и «бусификация»
 ## здесь не звучат — смысл считывается вторым слоем (docs/extension/README.md).
 ##
+## Голоса (решение редактора 28.10.2026): Бабка — ворчливая и конкретная, думает о быте и о том, чтобы внук
+## не влип; Илюша — односложный, упрямо буквальный, у него на всё один ответ «за хлебом»; продавщица —
+## усталая, считает; полицейский — вежливый канцелярит из протокола; сотрудник ГСУМ — доброжелателен до жути,
+## всё «бесплатно» и «добровольно»; радио — бодрый диктор. Юмор — из столкновения бытовой просьбы
+## с бюрократической логикой; панчлайн — в последней реплике цепочки, ничего не объясняется в лоб.
+##
 ## Цепочка — массив строк {speaker, text, portrait}: DialogPanel.open_chain() показывает их по одной,
 ## «ДАЛЬШЕ» (или E после допечатки) переключает, варианты ответа — только на последней.
 ## Портрет — id персонажа для DialogPanel.PORTRAIT_REGION (рисунок assets/art/characters/<id>_front_idle.svg).
@@ -20,32 +26,35 @@ const OFFICER := "ПОЛИЦЕЙСКИЙ"
 const ACCOUNT_OFFICER := "СОТРУДНИК ГСУМ"
 
 # --- этап 1: выдача (ПРИНЯТЬ / ОТКАЗАТЬСЯ) ---
-const OFFER := "Илюша, за хлебом сходи. И никуда не записывайся, у нас ручка дома"
+## Канон DEMO.md «Илюша, сходи за хлебом в киоск» + мысль расширения «никуда не записывайся».
+## Бабкина логика: ты за хлебом — значит, подписывать нечего. Илюша примет это буквально (см. RETURN_CHAIN).
+const OFFER := "Илюша, сходи за хлебом. Ничего не подписывай, ты за хлебом"
 const BUTTON_ACCEPT := "ПРИНЯТЬ"
 const BUTTON_DECLINE := "ОТКАЗАТЬСЯ"
 
 # --- Бабка без дела: до покупки — напоминание, после сдачи — прощание ---
-const IDLE := "Хлеб не забудь, Илюша"
-const IDLE_DONE := "Иди погрейся, Илюша"
+const IDLE := "Батон. Белый. Больше ни на что не соглашайся"
+const IDLE_DONE := "Иди погрейся. И от окна отойди"
 const BUTTON_CLOSE := "ЗАКРЫТЬ"
 
 # --- этап 2: радио при посадке в машину (субтитр, не блокирует управление) ---
-const RADIO := "Радио: уважаемые жители, добровольные поездки стали ещё доступнее. Теперь даже без вашего обращения"
+const RADIO := "Радио: минус двенадцать, пробок нет. Бесплатный проезд теперь заезжает и во дворы, ждать не надо"
 const RADIO_SECONDS := 6.0
 
 # --- этап 5: полицейский у киоска (по E до обнаружения), выход свободный ---
 const OFFICER_CHAIN := [
-	{"speaker": OFFICER, "text": "Вы по какому вопросу?", "portrait": &"officer"},
+	{"speaker": OFFICER, "text": "Гражданин, цель вашего нахождения у киоска?", "portrait": &"officer"},
 	{"speaker": ILYUSHA, "text": "За хлебом", "portrait": &"ilyusha"},
-	{"speaker": OFFICER, "text": "У нас тоже вопрос", "portrait": &"officer"},
+	{"speaker": OFFICER, "text": "Так и запишем: без определённой цели", "portrait": &"officer"},
 ]
 const BUTTON_OFFICER_LEAVE := "ПОЙДУ Я"
 
 # --- «военком» у автобуса (e01): два варианта ответа, итог один ---
-const ACCOUNT_OFFICER_ASK := {"speaker": ACCOUNT_OFFICER, "text": "Вас подвезти?", "portrait": &"account_officer"}
+## Один ответ на оба варианта — намеренно: что бы ни сказал Илюша, служба слышит отказ и зовёт оформить его внутри.
+const ACCOUNT_OFFICER_ASK := {"speaker": ACCOUNT_OFFICER, "text": "Вас подвезти? Бесплатно. И совершенно добровольно", "portrait": &"account_officer"}
 const BUTTON_RIDE_NO := "НЕТ, СПАСИБО"
 const BUTTON_RIDE_NEAR := "Я УЖЕ РЯДОМ"
-const ACCOUNT_OFFICER_REPLY := {"speaker": ACCOUNT_OFFICER, "text": "Тем более надо подвезти", "portrait": &"account_officer"}
+const ACCOUNT_OFFICER_REPLY := {"speaker": ACCOUNT_OFFICER, "text": "Понимаю. Отказы мы оформляем в салоне", "portrait": &"account_officer"}
 const BUTTON_RIDE_LEAVE := "Я ПЕШКОМ"
 
 # --- этап 6: продавщица, первый подход — цепочка, покупка в конце ---
@@ -54,7 +63,7 @@ const VENDOR_CHAIN := [
 	{"speaker": ILYUSHA, "text": "Один", "portrait": &"ilyusha"},
 	{"speaker": VENDOR, "text": "А вас сколько?", "portrait": &"vendor"},
 	{"speaker": ILYUSHA, "text": "Тоже один", "portrait": &"ilyusha"},
-	{"speaker": VENDOR, "text": "Пока что", "portrait": &"vendor"},
+	{"speaker": VENDOR, "text": "Пока что. 35 рублей", "portrait": &"vendor"},
 ]
 ## Повторный подход без покупки: короткая реплика, цепочка не повторяется (канон DEMO.md, раздел 5).
 const VENDOR_AGAIN := "Батон? 35 рублей"
@@ -63,15 +72,16 @@ const BUTTON_LEAVE := "УЙТИ"
 
 # --- этап 9: Бабка при возврате с хлебом, затем сдача ---
 const RETURN_CHAIN := [
-	{"speaker": BABKA, "text": "Ты где был?", "portrait": &"babka"},
+	{"speaker": BABKA, "text": "Ты где был? Я уже в окно глядела", "portrait": &"babka"},
 	{"speaker": ILYUSHA, "text": "За хлебом", "portrait": &"ilyusha"},
-	{"speaker": BABKA, "text": "А почему такой уставший?", "portrait": &"babka"},
-	{"speaker": ILYUSHA, "text": "Там предложили отдохнуть", "portrait": &"ilyusha"},
+	{"speaker": BABKA, "text": "Подписывал что-нибудь?", "portrait": &"babka"},
+	{"speaker": ILYUSHA, "text": "Нет. Я же за хлебом", "portrait": &"ilyusha"},
 ]
 const BUTTON_TURN_IN := "СДАТЬ ХЛЕБ"
 
 # --- этап 10: сдача — два пузыря над Бабкой подряд, пауза между ними ---
-const THANKS := "Ну всё, молодец. Завтра за молоком сходишь"
+## Канон DEMO.md «Спасибо, Илюша» + этап 10 расширения; второй пузырь — после взгляда на улицу.
+const THANKS := "Спасибо, Илюша. Завтра за молоком сходишь"
 const THANKS_AFTER := "Или не сходишь"
 const THANKS_PAUSE := 0.8
 

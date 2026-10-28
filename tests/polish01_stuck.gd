@@ -6,10 +6,13 @@ extends SceneTree
 ##   киоск, столбы и берёзы, мелкие препятствия. Илюша идёт в препятствие под разными углами и должен отойти от него;
 ##   машина упирается носом или задом и должна выехать прямо и с рулём.
 ## Часть 3 — упор в каждый угол коробок и валов под 7 углами: Илюша не проваливается в землю (найдено 27.10).
+## Часть 4 (ARENA-01, C8) — полный круг по кольцу на «Ладе» по правой полосе: A на запад, D на север, C на восток,
+##   B на юг, углы скруглены (Layout.ring_lane), задним ходом не ездим. Без упоров в стены, без схода с полосы.
 ## Опрокидывание не проверяется: машина вращается только вокруг вертикали (lada.gd, rotate_y и reset_to),
 ##   вместо этого — «на земле, не в коробке, сдвигается с места».
 
 const Layout = preload("res://game/world/layout.gd")
+const Driver = preload("res://tests/quest01_driver.gd")
 const WALK_POINTS := 60
 const CAR_POINTS := 30
 const CATS := ["building_corner", "building_face", "junction", "snow", "edge", "garage", "kiosk", "post", "prop"]
@@ -34,6 +37,10 @@ const CAR_ESCAPE := 90          # кадров выезда (1,5 с)
 const CAR_ESCAPE_MIN := 1.5     # м за CAR_ESCAPE
 const CAR_TURN_MIN := 0.2       # рад поворота за манёвр с рулём
 const CAR_MANEUVER_MIN := 3.0   # м отъезда за манёвр с рулём
+const RING_SPEED := 8.0         # м/с: медленнее машин кольца (9 м/с, C8) — не догоняет транспорт
+const RING_TOL := 3.0           # м до точки, после которых водитель берёт следующую
+const RING_STRAY := 1.5         # м от оси полосы: дальше — съехал с полосы
+const RING_FRAMES := 60 * 150   # кадров на круг (≈ 520 м)
 
 var failures: Array[String] = []
 var checks := 0
@@ -47,7 +54,7 @@ func _initialize() -> void:
 
 func _run() -> void:
 	# Сторож от зависания, не критерий. Время растёт с числом твёрдых коробок (обход углов): ART-05/06
-	# добавили тополя, машины, троллейбус и павильон, 3000 с перестало хватать.
+	# добавили тополя, машины и павильоны, 3000 с перестало хватать; ARENA-01 — улицы C и D и круг по кольцу.
 	create_timer(4500.0, true, false, true).timeout.connect(func():
 		push_error("FAIL: stuck sweep exceeded 4500 simulated seconds")
 		quit(2)
@@ -60,6 +67,10 @@ func _run() -> void:
 	main.start_game()
 	await _frames(10)
 	world = main.world
+	# Застревания — про неподвижную геометрию; движущийся транспорт кольца (ARENA-01, часть T) проверяет свой набор.
+	var traffic := world.get_node_or_null("LevelGeometry/Traffic")
+	if traffic:
+		traffic.free()
 	_park_car_away(true)  # машина вне карты, чтобы не мешала пешеходу ни в одном сценарии
 	await _sweep_walk()
 	var scenarios := _scenarios()
@@ -68,6 +79,7 @@ func _run() -> void:
 	_park_car_away(false)
 	await _sweep_car()
 	await _geometry_car(scenarios)
+	await _ring_lap()
 	print("INFO: stuck test wall time %.1f s" % ((Time.get_ticks_msec() - started) / 1000.0))
 	_finish()
 
@@ -428,6 +440,69 @@ func _geometry_car(by_cat: Dictionary) -> void:
 		check(no_turn.is_empty(), "Lada steers out from '%s': >= %.0f m and >= %.1f rad (%s)" % [cat, CAR_MANEUVER_MIN, CAR_TURN_MIN, no_turn.slice(0, 3)])
 		check(broken.is_empty(), "Lada stays on the ground, outside solids and in the map at '%s' (%s)" % [cat, broken.slice(0, 3)])
 	print("INFO: car geometry %d scenarios" % total)
+
+# --- часть 4: круг по кольцу (ARENA-01) ---
+
+## Водитель тестов (quest01_driver.gd) ведёт «Ладу» вводом по точкам оси правой полосы: прямые между дугами углов
+## подразумеваются, на дугах точки через 15°. Старт — на улице A за углом A∩B, финиш — там же после полного круга.
+func _ring_lap() -> void:
+	var car := world.car
+	if world.control_mode != &"in_car":
+		world.enter_car()
+	var lane := Layout.ring_lane()
+	var corner := 6 + 1   # точек на дугу
+	# Точки круга: от конца дуги A∩B — дуги A∩D, C∩D, C∩B, A∩B — и снова до старта.
+	var start: Vector3 = lane[corner - 1] + Vector3(-12, 0, 0)
+	var points: Array[Vector3] = []
+	for i in range(corner, lane.size()):
+		points.append(lane[i])
+	for i in corner:
+		points.append(lane[i])
+	points.append(start)
+	car.reset_to(start, PI * 0.5)   # на запад по улице A
+	await _frames(3)
+	var drv = Driver.new(self, world)
+	var frames := 0
+	var hits := []
+	var worst := 0.0
+	var worst_at := Vector3.ZERO
+	var stuck := 0
+	var done := true
+	for p in points:
+		while drv.steer_to(p, RING_SPEED) > RING_TOL:
+			await physics_frame
+			frames += 1
+			var here := car.global_position
+			if car.is_on_wall() and hits.size() < 5:
+				hits.append("(%.1f,%.1f)" % [here.x, here.z])
+			var stray := _lane_distance(here, lane)
+			if stray > worst:
+				worst = stray
+				worst_at = here
+			stuck = stuck + 1 if absf(drv.speed()) < 0.3 else 0
+			if stuck > 120 or frames > RING_FRAMES:
+				done = false
+				break
+		if not done:
+			break
+	drv.release_all()
+	await drv.stop()
+	print("INFO: ring lap %.1f s, worst lane offset %.2f m at (%.1f,%.1f), wall contacts %s" % [frames / 60.0, worst, worst_at.x, worst_at.z, hits])
+	check(done, "Lada drives a full lap of the ring on the right lane without getting stuck (stopped at %s after %.1f s)" % [car.global_position, frames / 60.0])
+	check(hits.is_empty(), "ring lap: no wall contact (banks, lamps, parked cars) %s" % [hits])
+	check(worst <= RING_STRAY, "ring lap: Lada stays within %.1f m of the lane axis, corners included (%.2f m)" % [RING_STRAY, worst])
+	check(_car_issue() == "", "ring lap: Lada ends on the ground, outside solids%s" % _car_issue())
+
+## Расстояние в плане от точки до замкнутой оси полосы (дуги углов и прямые между ними).
+func _lane_distance(p: Vector3, lane: Array[Vector3]) -> float:
+	var best := INF
+	var flat := Vector2(p.x, p.z)
+	for i in lane.size():
+		var a: Vector3 = lane[i]
+		var b: Vector3 = lane[(i + 1) % lane.size()]
+		var q := Geometry2D.get_closest_point_to_segment(flat, Vector2(a.x, a.z), Vector2(b.x, b.z))
+		best = minf(best, q.distance_to(flat))
+	return best
 
 # --- помощники ---
 

@@ -16,8 +16,8 @@ const Driver = preload("res://tests/playthrough_driver.gd")
 const SensorScript = preload("res://game/stealth/detection_sensor.gd")
 const OUT := "res://builds/screenshots/ext01/s"
 const FAIL_TEXT := "ВАШ МАРШРУТ УТОЧНЁН"
-const TOAST_TEXT := "МАРШРУТ УТОЧНЁН. ПОПРОБУЙТЕ ЕЩЁ РАЗ"
-const HINT_TEXT := "Тебя заметили? Уйди из вида"
+const TOAST_TEXT := "ВЫ ОСТАЛИСЬ ПЕШЕХОДОМ. ХЛЕБ ПРИ ВАС"
+const HINT_TEXT := "Тебя заметили. Отойди, пока только смотрят"
 
 var failures: Array[String] = []
 var checks := 0

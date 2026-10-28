@@ -87,9 +87,15 @@ func snap(with_distance := true) -> void:
 		reset_physics_interpolation()
 
 ## Камера движется в физическом кадре вместе с целью; плавность между кадрами даёт интерполяция физики.
+const STICK_LOOK_SPEED := 2.6   # рад/с при полном отклонении правого стика
+
 func _physics_process(delta: float) -> void:
 	if not target:
 		return
+	# Правый стик геймпада — как мышь (решение владельца 28.10.2026, вечер).
+	var stick := Input.get_vector(&"look_left", &"look_right", &"look_up", &"look_down")
+	if stick.length_squared() > 0.04 and profile != &"in_car":
+		apply_mouse(stick * STICK_LOOK_SPEED * delta / mouse_sensitivity)
 	global_position = global_position.lerp(_goal(), 1.0 - exp(-FOLLOW_SHARPNESS * delta))
 	if profile == &"in_car":
 		# Камера преследования: плавно встаёт за машиной по её курсу.

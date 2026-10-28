@@ -29,6 +29,7 @@ func _run() -> void:
 	for name in ["LevelGeometry", "LightingAndWeather", "Ilyusha", "Car", "Babka", "Vendor", "KioskZone", "CameraRig", "MissionDirector", "GameHUD"]:
 		check(world.has_node(name), "DemoWorld has %s (canon §7)" % name)
 	_check_layout(world)
+	_check_ring()
 	await _check_spawn_and_hud(world)
 	await _check_camera_relative(world)
 	await _check_walls(world)
@@ -72,6 +73,61 @@ func _check_layout(world: DemoWorld) -> void:
 		drive += Layout.ROUTE_DRIVE[i].distance_to(Layout.ROUTE_DRIVE[i - 1])
 	print("INFO: drive route length %.1f m" % drive)
 	check(drive >= 150.0 and drive <= 300.0, "drive yard→kiosk is a trip, not a chore (%.0f m)" % drive)
+
+# --- ARENA-01 (C8): кольцо дорог ---
+
+const RING_ROAD_MARGIN := 1.5    # м от оси полосы до края проезжей части: половина троллейбуса 1,25 + запас
+const RING_CLEARANCE := 2.05     # м от оси полосы до коробок: половина троллейбуса 1,25 + 0,8 (C8: от припаркованных)
+
+## Ось правой полосы кольца со скруглёнными углами идёт по проезжей части (не по тротуару) и держит зазор от всех
+## коробок — домов, валов, фонарей, машин, павильонов. Шаг 0,5 м по всей замкнутой ломаной.
+func _check_ring() -> void:
+	var lane := Layout.ring_lane()
+	var roads := Layout.SURFACES.filter(func(spec): return spec[1] == "road")
+	var off_road := []
+	var blocked := []
+	var seen := {}
+	var length := 0.0
+	for i in lane.size():
+		var a: Vector3 = lane[i]
+		var b: Vector3 = lane[(i + 1) % lane.size()]
+		length += a.distance_to(b)
+		var steps := maxi(1, int(a.distance_to(b) / 0.5))
+		for s in steps:
+			var p := a.lerp(b, float(s) / steps)
+			# На проезжей части и точки в RING_ROAD_MARGIN вокруг — тоже (улицы примыкают друг к другу без зазора).
+			var inside := true
+			for k in 9:
+				var q := p + (Vector3.ZERO if k == 8 else Vector3(RING_ROAD_MARGIN, 0, 0).rotated(Vector3.UP, k * PI / 4.0))
+				var on_road := false
+				for spec in roads:
+					var c: Vector2 = spec[2]
+					var size: Vector2 = spec[3]
+					if absf(q.x - c.x) <= size.x * 0.5 and absf(q.z - c.y) <= size.y * 0.5:
+						on_road = true
+						break
+				inside = inside and on_road
+			if not inside and off_road.size() < 5:
+				off_road.append(Vector2(p.x, p.z))
+			var hit := _solid_near(p, RING_CLEARANCE)
+			if hit != "" and not seen.has(hit):
+				seen[hit] = true
+				blocked.append("%s@(%.0f,%.0f)" % [hit, p.x, p.z])
+	print("INFO: ring lane length %.0f m, %d corner points" % [length, lane.size()])
+	check(length > 450.0, "ring lane closes around the block (%.0f m)" % length)
+	check(off_road.is_empty(), "ring lane stays on the carriageway, %.1f m inside the road edge %s" % [RING_ROAD_MARGIN, off_road])
+	check(blocked.is_empty(), "ring lane keeps %.2f m from solids (parked cars, banks, lamps, houses) %s" % [RING_CLEARANCE, blocked.slice(0, 6)])
+
+## Первая коробка ближе margin к точке в плане — по настоящему расстоянию до прямоугольника (у углов — по дуге),
+## а не по коробке, раздутой на margin: ось полосы на повороте обходит угол вала по кругу.
+func _solid_near(p: Vector3, margin: float) -> String:
+	for spec in Layout.all_solids():
+		var xz: Vector2 = spec[2]
+		var size: Vector3 = spec[3]
+		var d := (Vector2(p.x, p.z) - xz).abs() - Vector2(size.x, size.z) * 0.5
+		if Vector2(maxf(d.x, 0.0), maxf(d.y, 0.0)).length() < margin:
+			return spec[0]
+	return ""
 
 func _solid_at(p: Vector3, margin: float) -> String:
 	for spec in Layout.all_solids():

@@ -10,6 +10,7 @@ const ACCELERATION := 30.0
 const DECELERATION := 11.0      # остановка за ~0,4 с, как у эталона (PLAY-01)
 const TURN_RATE := 12.0
 const PROBE_RADIUS := 0.5
+const JUMP_VELOCITY := 6.0        # подскок ≈1,8 м: на крышу «Лады» (1,4 м) с запасом — решение владельца 28.10.2026
 
 var input_enabled := true
 var camera_rig: CameraRig
@@ -62,7 +63,7 @@ func _physics_process(delta: float) -> void:
 	velocity.x = horizontal.x
 	velocity.z = horizontal.z
 	if is_on_floor():
-		velocity.y = 0.0
+		velocity.y = JUMP_VELOCITY if input_enabled and Input.is_action_just_pressed(&"jump") else 0.0
 	else:
 		velocity.y -= get_gravity().length() * delta
 	move_and_slide()

@@ -6,12 +6,13 @@ extends Node3D
 const Layout = preload("res://game/world/layout.gd")
 const Greybox = preload("res://game/world/greybox.gd")
 const Materials = preload("res://game/world/materials.gd")
+const Patrols = preload("res://game/world/patrols.gd")   # EXT-01 N: полицейский, «военком», микроавтобус ГСУМ
 
 const WALL_HEIGHT := 12.0
 const WALL_THICKNESS := 2.0
-const SHOP_FRONTS := ["H5_North", "H6_West", "H8_East"]
+const SHOP_FRONTS := ["H5_West", "H5_East", "H6_West", "H8_East"]
 const SERIES_97 := ["H2_West", "H10_NorthWest", "H4_SouthEast"]   # голубые и серые полосы панелей (ART-06, Н10)
-const GARAGE_DOOR_SIDE := {"Garages_Yard": -1.0, "Garages_Kiosk": 1.0}   # дверями к двору / к улице
+const GARAGE_DOOR_SIDE := {"Garages_Yard": -1.0, "Garages_Kiosk": 1.0, "Garages_C": 1.0}   # дверями к двору / к улице
 # Ворота гаражей: синие, жёлтые, бурые, ржавые, розовые, зелёные (сверка ART-04, черта 17).
 # Насыщеннее, чтобы в холодном сумеречном свете бурые и ржавые не уходили в серое (повторная сверка ART-05, Н2).
 const GARAGE_COLORS := [Color(0.18, 0.32, 0.58), Color(0.78, 0.58, 0.12), Color(0.50, 0.22, 0.10), Color(0.60, 0.20, 0.07),
@@ -49,7 +50,7 @@ const SIGNS := [
 	# Номер подъезда — слева от двери (если смотреть со двора), Бабка — справа у двери (кадры 01, 02, 09).
 	["3", Vector3(-38.75, 2.5, 107.93), PI, 90, Color(0.92, 0.92, 0.9)],
 	["кв. 36–60", Vector3(-38.75, 2.18, 107.93), PI, 36, Color(0.92, 0.92, 0.9)],
-	["АПТЕКА", Vector3(-70, 3.3, 14.05), 0.0, 120, Color(0.35, 1.0, 0.55)],
+	["АПТЕКА", Vector3(-79, 3.3, 14.05), 0.0, 120, Color(0.35, 1.0, 0.55)],   # H5_West (ARENA-01: H5 разделён улицей D)
 	["ПРОДУКТЫ", Vector3(-40, 3.3, 14.05), 0.0, 120, Color(1.0, 0.35, 0.3)],
 	["ПРОДУКТЫ 24", Vector3(56.05, 3.3, -20), PI * 0.5, 110, Color(1.0, 0.8, 0.35)],
 	["ГАСТРОНОМ", Vector3(81.95, 3.3, -10), -PI * 0.5, 110, Color(1.0, 0.8, 0.35)],
@@ -75,6 +76,8 @@ func _ready() -> void:
 	_build_skyline()
 	_build_chimneys()
 	_build_instances()
+	add_child(Patrols.new())   # EXT-01 N: наблюдатели и автобус (точки — Layout, C1)
+	add_child(preload("res://game/world/traffic.gd").new())   # ARENA-01: транспорт кольца (C8)
 
 func _exit_tree() -> void:
 	Materials.clear_cache()
@@ -143,15 +146,26 @@ func _build_solid(index: int, spec: Array) -> void:
 		"poplar":
 			mesh.queue_free()
 			_poplar(Vector3(xz.x, 0, xz.y), index)
-		"trolleybus":
-			mesh.queue_free()
-			body.add_child(_trolleybus(size))
 		"pavilion":
 			mesh.queue_free()
-			body.add_child(_pavilion(size))
+			# Павильон вдоль z (остановка улицы B, EXT-01): строится как «вдоль x» и поворачивается спиной на запад.
+			body.add_child(_turned(_pavilion(_along_x(size)), -PI * 0.5) if size.z > size.x else _pavilion(size))
 		"sign_post":
 			mesh.material_override = Materials.plain(Color(0.15, 0.15, 0.16), 0.6)
-			body.add_child(_street_sign(size.y))
+			for sign in Layout.STREET_SIGNS:
+				if (sign[0] as Vector2).is_equal_approx(xz):
+					var corner := Vector2.INF   # ближайший угол кольца: таблички висят в его сторону
+					for c in Layout.RING:
+						if xz.distance_to(Vector2(c.x, c.z)) < xz.distance_to(corner):
+							corner = Vector2(c.x, c.z)
+					body.add_child(_street_sign(size.y, sign[1], sign[2], (corner - xz).sign()))
+		"shop24":
+			mesh.queue_free()
+			body.add_child(_shop24(size))
+		"billboard":
+			mesh.queue_free()
+			var to := Vector2(Layout.RING[2].x, Layout.RING[2].z) - xz   # полотном к углу C∩D
+			body.add_child(_turned(_billboard(size), atan2(to.x, to.y)))
 		"fence":
 			mesh.material_override = Materials.plain(Color(0.16, 0.24, 0.18), 0.7)
 		"carpet_bar":
@@ -159,8 +173,17 @@ func _build_solid(index: int, spec: Array) -> void:
 			body.add_child(_carpet_post(size, xz == Layout.CARPET_BAR[0]))
 		"bins":
 			mesh.queue_free()
-			body.add_child(_trash_bins(size))
+			# Контейнеры вдоль z (у гаражей киоска, EXT-01): крышки к площадке (восток), сугроб — к гаражам.
+			body.add_child(_turned(_trash_bins(_along_x(size)), PI * 0.5) if size.z > size.x else _trash_bins(size))
 	add_child(body)
+
+## Размер коробки вдоль z, пересчитанный «как вдоль x» — для сборок, нарисованных вдоль x (павильон, контейнеры).
+static func _along_x(size: Vector3) -> Vector3:
+	return Vector3(size.z, size.y, size.x)
+
+static func _turned(node: Node3D, yaw: float) -> Node3D:
+	node.rotation.y = yaw
+	return node
 
 func _build_canopy() -> void:
 	var canopy := Greybox.solid_box("Canopy", Layout.CANOPY[0], Layout.CANOPY[1], Greybox.COLORS["canopy"])
@@ -251,6 +274,39 @@ func _build_surfaces() -> void:
 			"yard_road":
 				mesh.material_override = Materials.snow(0.9)
 		add_child(mesh)
+	_build_corners()
+
+## Углы кольца (ARENA-01): где улица вдоль x и улица вдоль z обе кончаются (L-образный стык), поверх их общего
+## квадрата — плитка с колеями по дуге вокруг внутреннего угла. На краях плитки колеи и каша совпадают с прямыми
+## улицами (road.gdshader, corner) — без шва. Т-образные стыки (A с B и D) не перекрываются и плитки не получают.
+func _build_corners() -> void:
+	var roads := Layout.SURFACES.filter(func(spec): return spec[1] == "road")
+	for a in roads:
+		var a_size: Vector2 = a[3]
+		if a_size.x <= a_size.y:
+			continue
+		var xr := Rect2(a[2] - a_size * 0.5, a_size)
+		for b in roads:
+			var b_size: Vector2 = b[3]
+			if b_size.x >= b_size.y:
+				continue
+			var zr := Rect2(b[2] - b_size * 0.5, b_size)
+			var sq := xr.intersection(zr)
+			if sq.get_area() < 1.0:
+				continue
+			var west := sq.position.x > xr.position.x + 0.01    # улица вдоль x продолжается на запад
+			var east := sq.end.x < xr.end.x - 0.01
+			var north := sq.position.y > zr.position.y + 0.01  # улица вдоль z продолжается на север
+			var south := sq.end.y < zr.end.y - 0.01
+			if west == east or north == south:
+				continue   # не L-образный угол
+			var corner := Vector2(sq.position.x if west else sq.end.x, sq.position.y if north else sq.end.y)
+			var signs := Vector2(signf(a[2].y - corner.y), signf(b[2].x - corner.x))
+			var mesh := Greybox.mesh_box(Vector3(sq.size.x, 0.01, sq.size.y), Greybox.COLORS["road"])
+			mesh.name = "Corner_%s_%s" % [a[0], b[0]]
+			mesh.position = Vector3(sq.get_center().x, 0.025, sq.get_center().y)
+			mesh.material_override = Materials.road_corner(corner, signs, a_size.y)
+			add_child(mesh)
 
 func _build_bounds() -> void:
 	var b := Layout.BOUNDS
@@ -361,6 +417,32 @@ func _garage_row(body: Node3D, name: String, size: Vector3) -> void:
 		number.rotation.y = (PI * 0.5 if side > 0.0 else -PI * 0.5) if long_z else (0.0 if side > 0.0 else PI)
 		body.add_child(number)
 	body.add_child(_slab(size, Vector3(0, size.y * 0.5 + 0.125, 0), 0.25))
+	if name == "Garages_C" and not long_z:
+		_graffiti(body, size, count, unit, side)
+
+## Граффити на воротах гаражного ряда улицы C (ARENA-01): мазки баллончиком под углом и короткие надписи,
+## не на каждом боксе. Только вид, ряд вдоль x.
+const SPRAY := [Color(0.92, 0.30, 0.62), Color(0.55, 0.85, 0.20), Color(0.20, 0.70, 0.85), Color(0.95, 0.55, 0.12), Color(0.92, 0.92, 0.90)]
+const TAGS := ["НСК", "ЗИМА", "54", "ДИМА + ЛЕНА", "ШКЯ"]
+func _graffiti(body: Node3D, size: Vector3, count: int, unit: float, side: float) -> void:
+	var face := side * (size.z * 0.5 + 0.07)
+	for i in count:
+		if _rand(i * 13, 3) > 0.6:
+			continue
+		var offset := -size.x * 0.5 + unit * (i + 0.5)
+		for j in 1 + int(_rand(i * 13, 4) * 3.0):
+			var color: Color = SPRAY[int(_rand(i * 13 + j, 5) * SPRAY.size()) % SPRAY.size()]
+			var strip := Greybox.mesh_box(Vector3(unit * (0.35 + 0.5 * _rand(i + j, 6)), 0.07 + 0.12 * _rand(i * 3 + j, 7), 0.02), Color.WHITE)
+			strip.material_override = Materials.plain(color, 0.7)
+			strip.position = Vector3(offset + (_rand(i * 5 + j, 8) - 0.5) * unit * 0.5, -size.y * 0.5 + 0.5 + 1.6 * _rand(i * 7 + j, 9), face)
+			strip.rotation.z = (_rand(i * 11 + j, 10) - 0.5) * 0.7
+			body.add_child(strip)
+		if _rand(i * 13, 11) < 0.45:
+			var tag := _label(TAGS[i % TAGS.size()], 90, SPRAY[(i + 2) % SPRAY.size()])
+			tag.pixel_size = 0.005
+			tag.position = Vector3(offset, -size.y * 0.5 + 1.3 + 0.6 * _rand(i, 12), face + side * 0.01)
+			tag.rotation = Vector3(0, 0.0 if side > 0.0 else PI, (_rand(i, 13) - 0.5) * 0.3)
+			body.add_child(tag)
 
 const LadaVisual = preload("res://game/vehicles/lada_visual.gd")
 ## Припаркованные «Жигули» (POLISH-02, п. 7): облик LadaVisual в цветах советских «Жигулей» —
@@ -453,27 +535,34 @@ func _birch(height: float, seed: float) -> Node3D:
 		root.add_child(branch)
 	return root
 
-func _street_sign(height: float) -> Node3D:
+## Указатель на углу: табличка улицы вдоль x и поперёк неё — улицы вдоль z (Layout.STREET_SIGNS). Таблички висят
+## сбоку от столба, к перекрёстку (side: знаки направления по x и z), и шириной по надписи: столб не закрывает
+## буквы, надпись не вылезает за табличку (ARENA-01; раньше «УЛ. ЛЕНИНА» пересекал столб).
+const SIGN_PIXEL := 0.0045
+const SIGN_CHAR := 0.6 * SIGN_PIXEL   # ширина буквы на единицу кегля
+func _street_sign(height: float, x_name: String, z_name: String, side: Vector2) -> Node3D:
 	var root := Node3D.new()
-	var plate := Greybox.mesh_box(Vector3(1.9, 0.5, 0.05), Color.WHITE)
-	plate.material_override = Materials.plain(Color(0.10, 0.20, 0.42), 0.5)
-	plate.position = Vector3(0, height * 0.5 - 0.3, 0)
-	root.add_child(plate)
-	for side in [1.0, -1.0]:
-		var label := _label("УЛ. ЛЕНИНА", 64, Color(0.95, 0.95, 0.95))
-		label.position = Vector3(0, height * 0.5 - 0.3, 0.035 * side)
-		label.rotation.y = 0.0 if side > 0.0 else PI
-		root.add_child(label)
-	# Вторая табличка — улица B, поперёк первой (ART-06, Н14).
-	var cross := Greybox.mesh_box(Vector3(0.05, 0.5, 2.3), Color.WHITE)
-	cross.material_override = Materials.plain(Color(0.10, 0.20, 0.42), 0.5)
-	cross.position = Vector3(0, height * 0.5 - 0.9, 0)
-	root.add_child(cross)
-	for side in [1.0, -1.0]:
-		var label := _label("УЛ. ТРОЛЛЕЙНАЯ", 60, Color(0.95, 0.95, 0.95))
-		label.position = Vector3(0.035 * side, height * 0.5 - 0.9, 0)
-		label.rotation.y = PI * 0.5 if side > 0.0 else -PI * 0.5
-		root.add_child(label)
+	var blue := Materials.plain(Color(0.10, 0.20, 0.42), 0.5)
+	for spec in [[x_name, height * 0.5 - 0.3, true], [z_name, height * 0.5 - 0.9, false]]:
+		var text: String = spec[0]
+		var font := mini(64, 12 * 64 / text.length())
+		var w := text.length() * font * SIGN_CHAR + 0.3
+		var along_x: bool = spec[2]
+		var shift := (side.x if along_x else side.y) * (w * 0.5 + 0.08)
+		var at := Vector3(shift, spec[1], 0) if along_x else Vector3(0, spec[1], shift)
+		var plate := Greybox.mesh_box(Vector3(w, 0.5, 0.05) if along_x else Vector3(0.05, 0.5, w), Color.WHITE)
+		plate.material_override = blue
+		plate.position = at
+		root.add_child(plate)
+		for face: float in [1.0, -1.0]:
+			var label := _label(text, font, Color(0.95, 0.95, 0.95))
+			label.pixel_size = SIGN_PIXEL
+			label.position = at + (Vector3(0, 0, 0.035 * face) if along_x else Vector3(0.035 * face, 0, 0))
+			if along_x:
+				label.rotation.y = 0.0 if face > 0.0 else PI
+			else:
+				label.rotation.y = PI * 0.5 if face > 0.0 else -PI * 0.5
+			root.add_child(label)
 	return root
 
 func _label(text: String, font_size: int, color: Color) -> Label3D:
@@ -518,39 +607,71 @@ func _build_kiosk_sign() -> void:
 ## два контактных провода с провисом; во двор — бытовые провода от дворового фонаря к домам.
 const SPAN_Y := 7.85
 const CONTACT_Y := 7.0
+const WIRE_PAIR := 1.5   # контактные провода — ±1,5 м от оси улицы
 func _build_wires() -> void:
 	var wire := Materials.plain(Color(0.05, 0.05, 0.05), 0.5)
-	var spans_a: Array[float] = []
-	for x in range(-90, 100, 24):
-		spans_a.append(float(x))
+	var spans_a := Layout.a_spans()
+	for x in spans_a:
 		_sag_wire(Vector3(x, SPAN_Y, 22.0), Vector3(x, SPAN_Y, 42.0), 0.35, wire)
-	var spans_b: Array[float] = []
-	for z in range(10, -112, -24):
-		spans_b.append(float(z))
+	for z in Layout.B_SPANS:
 		_sag_wire(Vector3(Layout.LAMP_B_WEST, SPAN_Y, z), Vector3(Layout.LAMP_B_EAST, SPAN_Y, z), 0.3, wire)
-	for z in [30.5, 33.5]:
-		var points: Array[float] = [-100.0]
-		points.append_array(spans_a)
-		points.append(100.0)
-		for i in range(1, points.size()):
-			_sag_wire(Vector3(points[i - 1], CONTACT_Y, z), Vector3(points[i], CONTACT_Y, z), 0.22, wire)
-	for x in [68.5, 71.5]:
-		var points: Array[float] = [25.0]
-		points.append_array(spans_b)
-		points.append(-118.0)
-		for i in range(1, points.size()):
-			_sag_wire(Vector3(x, CONTACT_Y, points[i - 1]), Vector3(x, CONTACT_Y, points[i]), 0.22, wire)
+	for z in Layout.D_SPANS:
+		_sag_wire(Vector3(Layout.LAMP_D_WEST, SPAN_Y, z), Vector3(Layout.POLE_D_EAST, SPAN_Y, z), 0.3, wire)
+	for x in Layout.C_SPANS:
+		_sag_wire(Vector3(x, SPAN_Y, Layout.LAMP_C_NORTH), Vector3(x, SPAN_Y, Layout.POLE_C_SOUTH), 0.3, wire)
+	# Улица A — насквозь; B, C и D — кольцом (ARENA-01): внутренний провод пары поворачивает во внутреннем углу,
+	# внешний — во внешнем, на углах C∩D и C∩B провода оттянуты к угловым опорам. D примыкает к северному проводу A.
+	var a0 := Layout.RING[0]   # A∩B
+	var d0 := Layout.RING[1]   # A∩D
+	var d1 := Layout.RING[2]   # C∩D
+	var b1 := Layout.RING[3]   # C∩B
+	for z in [a0.z - WIRE_PAIR, a0.z + WIRE_PAIR]:
+		var run: Array[Vector2] = [Vector2(-100, z)]
+		for x in spans_a:
+			run.append(Vector2(x, z))
+		run.append(Vector2(100, z))
+		_wire_run(run, wire)
+	for k: float in [-1.0, 1.0]:   # −1 — внутренний провод кольца, +1 — внешний
+		var off := k * WIRE_PAIR
+		var b_x := b1.x + off
+		var c_z := b1.z - off
+		var d_x := d1.x - off
+		var run: Array[Vector2] = [Vector2(b_x, 25.0)]
+		for z in Layout.B_SPANS:
+			run.append(Vector2(b_x, z))
+		run.append(Vector2(b_x, c_z))
+		for i in range(Layout.C_SPANS.size() - 1, -1, -1):
+			run.append(Vector2(Layout.C_SPANS[i], c_z))
+		run.append(Vector2(d_x, c_z))
+		for i in range(Layout.D_SPANS.size() - 1, -1, -1):
+			run.append(Vector2(d_x, Layout.D_SPANS[i]))
+		run.append(Vector2(d_x, d0.z - WIRE_PAIR))
+		_wire_run(run, wire)
+		for pole in Layout.CORNER_POLES:
+			var corner := Vector3(b_x if pole.x > 0.0 else d_x, CONTACT_Y, c_z)
+			_wire(Vector3(pole.x, Layout.POLE_HEIGHT - 0.4, pole.y), corner, wire)
 	# Подвесы контактных проводов к поперечинам.
 	for x in spans_a:
-		for z in [30.5, 33.5]:
+		for z in [a0.z - WIRE_PAIR, a0.z + WIRE_PAIR]:
 			_wire(Vector3(x, CONTACT_Y, z), Vector3(x, SPAN_Y - 0.33, z), wire)
-	for z in spans_b:
-		for x in [68.5, 71.5]:
+	for z in Layout.B_SPANS:
+		for x in [b1.x - WIRE_PAIR, b1.x + WIRE_PAIR]:
+			_wire(Vector3(x, CONTACT_Y, z), Vector3(x, SPAN_Y - 0.28, z), wire)
+	for z in Layout.D_SPANS:
+		for x in [d1.x - WIRE_PAIR, d1.x + WIRE_PAIR]:
+			_wire(Vector3(x, CONTACT_Y, z), Vector3(x, SPAN_Y - 0.28, z), wire)
+	for x in Layout.C_SPANS:
+		for z in [b1.z - WIRE_PAIR, b1.z + WIRE_PAIR]:
 			_wire(Vector3(x, CONTACT_Y, z), Vector3(x, SPAN_Y - 0.28, z), wire)
 	# Бытовые провода во дворе: от дворового фонаря к H1 и H2.
 	var yard_top := Vector3(-52.0, 5.9, 100.0)
 	for target in [Vector3(-52.0, 7.5, 108.0), Vector3(-78.0, 7.5, 92.0), Vector3(-78.0, 7.2, 93.0)]:
 		_sag_wire(yard_top, target, 0.5, wire)
+
+## Контактный провод по точкам (x, z) на высоте CONTACT_Y с провисом между соседними.
+func _wire_run(points: Array[Vector2], material: Material) -> void:
+	for i in range(1, points.size()):
+		_sag_wire(Vector3(points[i - 1].x, CONTACT_Y, points[i - 1].y), Vector3(points[i].x, CONTACT_Y, points[i].y), 0.22, material)
 
 ## Провод с провисом: ломаная из 8 отрезков по параболе.
 func _sag_wire(from: Vector3, to: Vector3, sag: float, material: Material) -> void:
@@ -968,7 +1089,10 @@ func _playground_fence(body: Node3D, size: Vector3) -> void:
 ## номера придуманные. Улица A по концепту 05 — «Ленина».
 func _build_house_plates() -> void:
 	for spec in [["Татьяны Снежиной", "12", Vector3(-88.5, 3.0, 107.95), PI], ["Ленина", "14", Vector3(41.5, 3.0, 59.95), PI],
-			["Троллейная", "9", Vector3(56.05, 3.0, 8.0), PI * 0.5], ["Троллейная", "11", Vector3(81.95, 3.0, 10.0), -PI * 0.5]]:
+			["Троллейная", "9", Vector3(56.05, 3.0, 8.0), PI * 0.5], ["Троллейная", "11", Vector3(81.95, 3.0, 10.0), -PI * 0.5],
+			# Улицы кольца (ARENA-01): D — Бориса Богаткова, C — Выборная (Н14).
+			["Бориса Богаткова", "2", Vector3(-52.05, 3.0, 5.0), -PI * 0.5], ["Бориса Богаткова", "7", Vector3(-85.95, 3.0, -40.0), PI * 0.5],
+			["Выборная", "3", Vector3(-38.0, 3.0, -87.05), PI], ["Выборная", "4", Vector3(36.0, 3.0, -111.95), 0.0]]:
 		var yaw: float = spec[3]
 		var face := Basis(Vector3.UP, yaw)
 		var frame := Greybox.mesh_box(Vector3(1.24, 0.84, 0.03), Color.WHITE)
@@ -1006,15 +1130,30 @@ func _build_bus_stop() -> void:
 		piece.material_override = white
 		piece.position = part[1]
 		root.add_child(piece)
+	# EXT-01 (DIALOGUES_AND_JOKES «Надписи»): табличка под знаком остановки у киоска — «ОСТАНОВКА ПО ТРЕБОВАНИЮ»,
+	# мелко «НЕ ОБЯЗАТЕЛЬНО ВАШЕМУ». Это остановка, у которой встаёт микроавтобус ГСУМ (Layout.VAN_PATH[-1]).
+	var plate := Greybox.mesh_box(Vector3(1.3, 0.42, 0.03), Color.WHITE)
+	plate.material_override = Materials.plain(Color(0.90, 0.90, 0.86), 0.6)
+	plate.position = Vector3(0.35, 0.62, 0)   # над знаком: ниже табличку закрывал бы павильон KioskPavilion
+	root.add_child(plate)
+	var big := _label("ОСТАНОВКА ПО ТРЕБОВАНИЮ", 34, Color(0.12, 0.12, 0.14))
+	big.pixel_size = 0.0032
+	big.position = plate.position + Vector3(0, 0.07, 0.02)
+	root.add_child(big)
+	var small := _label("НЕ ОБЯЗАТЕЛЬНО ВАШЕМУ", 22, Color(0.30, 0.30, 0.32))
+	small.pixel_size = 0.0032
+	small.position = plate.position + Vector3(0, -0.1, 0.02)
+	root.add_child(small)
 
 # --- ART-06: приметы именно Новосибирска ---
 
-## Неподвижный троллейбус ЗиУ-9 (ЗиУ-682) маршрута № 13 у северного бордюра улицы A (ART-06; модель и маршрут —
+## Облик троллейбуса ЗиУ-9 (ЗиУ-682) маршрута № 13 (ART-06; модель и маршрут —
 ## слово владельца 28.10.2026). Размеры — по статье «ЗиУ-9»: 11 888 × 2500 × 3347 мм, база 6200 мм, три двери
 ## (узкая передняя, широкие средняя и задняя). Цвет и оформление — по фото владельца
 ## `Novosibirsk_KrasnyProspekt_trolley_07-2016_img1.jpg`: кузов целиком зелёный #01a148, тёмный бампер #1e232e,
 ## светлая решётка #bbbec3, белое табло маршрута, бортовой номер жёлтым и белым. Перед — −x, двери — к тротуару (−z).
-## Без поведения — декор с коллизией.
+## Статичный троллейбус на улице A снят (ARENA-01); облик — для ездящего по кольцу (часть T). Начало координат — центр
+## кузова; штанги — к паре проводов над осью улицы, троллейбус идёт по полосе Layout.RING_LANE правее оси.
 func _trolleybus(size: Vector3) -> Node3D:
 	var root := Node3D.new()
 	var hx := size.x * 0.5
@@ -1105,13 +1244,12 @@ func _trolleybus(size: Vector3) -> Node3D:
 			disc.rotation.x = PI * 0.5
 			disc.position = wheel.position
 			root.add_child(disc)
-	# Крыша: короб оборудования, снег; штанги назад к контактным проводам (z 30,5 и 33,5).
+	# Крыша: короб оборудования, снег; штанги назад-влево к контактным проводам (ось улицы ± WIRE_PAIR).
 	_part(root, Vector3(3.6, 0.32, 1.6), Vector3(0.8, base + size.y + 0.16, 0), light_grey)
 	_part(root, Vector3(size.x - 4.6, 0.1, size.z - 0.4), Vector3(-2.6, base + size.y + 0.05, 0), Materials.snow(0.0))
-	var center_z: float = Layout.TROLLEYBUS[0].y
-	for wire_z in [30.5, 33.5]:
-		var from := Vector3(1.6, base + size.y + 0.35, (wire_z - center_z) * 0.15)
-		var to := Vector3(7.4, CONTACT_Y - 0.05 - size.y * 0.5, wire_z - center_z)
+	for wire_off in [Layout.RING_LANE - WIRE_PAIR, Layout.RING_LANE + WIRE_PAIR]:
+		var from := Vector3(1.6, base + size.y + 0.35, wire_off * 0.15)
+		var to := Vector3(7.4, CONTACT_Y - 0.05 - size.y * 0.5, wire_off)
 		var boom := Greybox.mesh_cylinder(0.035, 0.05, from.distance_to(to), Color.BLACK)
 		boom.material_override = Materials.plain(Color(0.30, 0.30, 0.28), 0.6)
 		boom.position = (from + to) * 0.5
@@ -1503,3 +1641,66 @@ func _kiosk_walls(root: Node3D, size: Vector3) -> void:
 				bar.position = note.position + Vector3(0, n[4] * 0.25 - line * n[4] * 0.22, n[0] * 0.007)
 				bar.rotation.z = n[5]
 				root.add_child(bar)
+
+# --- ARENA-01: детали вдоль улиц C и D ---
+
+## Павильон «ПРОДУКТЫ 24» у улицы D (ART-04: ночной магазинчик у дороги): сэндвич-панели, витрина в решётке и дверь
+## на запад, к улице, светящийся короб вывески, снег на крыше. Без интерактива; коллизия — коробка Layout.SHOP24.
+func _shop24(size: Vector3) -> Node3D:
+	var root := Node3D.new()
+	var hx := size.x * 0.5
+	var hz := size.z * 0.5
+	var base := -size.y * 0.5
+	var wall_h := size.y - 0.15
+	var panel := Materials.plain(Color(0.80, 0.82, 0.80), 0.7)
+	var trim := Materials.plain(Color(0.20, 0.36, 0.30), 0.6)
+	var iron := Materials.plain(Color(0.15, 0.15, 0.16), 0.5)
+	_part(root, Vector3(size.x, wall_h, size.z), Vector3(0, base + wall_h * 0.5, 0), panel)
+	_part(root, Vector3(size.x + 0.1, 0.3, size.z + 0.1), Vector3(0, base + 0.15, 0), trim)   # цоколь
+	var glass_w := size.z - 1.7
+	var glass_z := hz - 0.3 - glass_w * 0.5
+	_part(root, Vector3(0.05, 1.4, glass_w), Vector3(-hx - 0.03, base + 1.5, glass_z), Materials.plain(Color(1.0, 0.86, 0.62), 0.3, WARM, 1.4))
+	for k in 5:
+		_part(root, Vector3(0.04, 1.4, 0.04), Vector3(-hx - 0.08, base + 1.5, glass_z - glass_w * 0.5 + glass_w * k / 4.0), iron)
+	_part(root, Vector3(0.04, 0.04, glass_w), Vector3(-hx - 0.08, base + 1.5, glass_z), iron)
+	_part(root, Vector3(0.06, 2.05, 0.9), Vector3(-hx - 0.03, base + 1.03, -hz + 0.65), Materials.plain(Color(0.30, 0.22, 0.16), 0.6))   # дверь
+	_part(root, Vector3(0.9, 0.12, 1.4), Vector3(-hx - 0.45, base + 0.06, -hz + 0.65), Materials.plain(Color(0.46, 0.46, 0.45), 0.9))   # крыльцо
+	var red := Color(0.50, 0.07, 0.05)
+	_part(root, Vector3(0.22, 0.62, size.z + 0.2), Vector3(-hx - 0.11, base + wall_h + 0.2, 0), Materials.plain(red, 0.5, red, 0.5))
+	var sign := _label("ПРОДУКТЫ 24", 90, Color(1.0, 0.85, 0.35))
+	sign.pixel_size = 0.0042
+	sign.position = Vector3(-hx - 0.23, base + wall_h + 0.2, 0)
+	sign.rotation.y = -PI * 0.5
+	root.add_child(sign)
+	var paper := [Color(0.86, 0.85, 0.80), Color(0.80, 0.84, 0.88), Color(0.90, 0.86, 0.72)]
+	for i in 3:   # объявления на южной стене
+		_part(root, Vector3(0.24, 0.32, 0.01), Vector3(-hx + 0.8 + i * 0.45, base + 1.3 + (i % 2) * 0.3, hz + 0.01), Materials.plain(paper[i], 0.95))
+	_part(root, Vector3(size.x + 0.3, 0.06, size.z + 0.3), Vector3(0, base + wall_h + 0.03, 0), trim)
+	root.add_child(_slab(Vector3(size.x + 0.2, 0, size.z + 0.2), Vector3(0, base + wall_h + 0.15, 0), 0.18))
+	var heap := _lumpy_bank(Vector3(0.9, 0.6, size.z * 0.8), Materials.snow(0.15), 91)
+	heap.position = Vector3(hx + 0.45, base + 0.3, 0)
+	root.add_child(heap)
+	return root
+
+## Рекламный щит 6 × 3 м на одной опоре с пустым полотном: серо-белое полотно с обрывками старых плакатов, стальная
+## рама, мостик расклейщика, снег на верхней кромке. Коллизия — только опора (Layout.BILLBOARD). Полотно лицом к +z.
+func _billboard(size: Vector3) -> Node3D:
+	var root := Node3D.new()
+	var base := -size.y * 0.5
+	var steel := Materials.plain(Color(0.30, 0.31, 0.33), 0.5)
+	var leg := Greybox.mesh_cylinder(0.22, 0.28, 7.2, Color.WHITE)
+	leg.material_override = steel
+	leg.position = Vector3(0, base + 3.6, 0)
+	root.add_child(leg)
+	var mid := base + 8.7
+	_part(root, Vector3(6.3, 3.3, 0.35), Vector3(0, mid, 0), steel)
+	var canvas := Materials.plain(Color(0.86, 0.86, 0.83), 0.9)
+	var scrap := Materials.plain(Color(0.66, 0.64, 0.58), 0.95)
+	for side: float in [-1.0, 1.0]:
+		_part(root, Vector3(6.0, 3.0, 0.02), Vector3(0, mid, side * 0.19), canvas)
+		for i in 4:
+			var r := _rand(i * 7 + int(side + 1.0), 5)
+			_part(root, Vector3(0.25 + 0.6 * r, 0.12 + 0.5 * _rand(i, 9), 0.01), Vector3(-2.4 + i * 1.5 + r * 0.5, mid - 1.0 + 1.8 * _rand(i * 3, 2), side * 0.205), scrap)
+	_part(root, Vector3(6.3, 0.06, 0.9), Vector3(0, mid - 1.75, 0.45), steel)
+	root.add_child(_slab(Vector3(6.3, 0, 0.35), Vector3(0, mid + 1.72, 0), 0.14))
+	return root

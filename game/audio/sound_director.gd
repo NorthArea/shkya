@@ -96,6 +96,7 @@ func _physics_process(delta: float) -> void:
 	_footsteps()
 	_car_sounds(delta)
 	_radio(delta)
+	_traffic_sounds()
 
 ## Радио один раз за мир: бубнёж из машины и субтитр, пока звучит (плюс хвост на дочитать).
 func _radio(delta: float) -> void:
@@ -150,6 +151,9 @@ func _build_subtitle() -> void:
 	subtitle_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	subtitle_card.add_child(subtitle_label)
 
+## Звук шагов выключен по решению владельца 28.10.2026 (вечер): счётчик шагов остаётся для тестов, звук не играет.
+const FOOTSTEP_SOUND := false
+
 func _footsteps() -> void:
 	var player: CharacterBody3D = world.player
 	var position := player.global_position
@@ -162,10 +166,11 @@ func _footsteps() -> void:
 	_last_position = position
 	if _walked >= STEP_DISTANCE:
 		_walked = 0.0
-		step_player.stream = STEPS[_rng.randi() % STEPS.size()]
-		step_player.pitch_scale = _rng.randf_range(0.9, 1.1)
-		step_player.play()
 		played["step"] += 1
+		if FOOTSTEP_SOUND:
+			step_player.stream = STEPS[_rng.randi() % STEPS.size()]
+			step_player.pitch_scale = _rng.randf_range(0.9, 1.1)
+			step_player.play()
 
 func _car_sounds(_delta: float) -> void:
 	var car = world.car
@@ -197,3 +202,46 @@ func _one_shot(player: Node, stream: AudioStream, key: String) -> void:
 	player.stream = stream
 	player.play()
 	played[key] += 1
+
+# --- ARENA-01 (T): транспорт кольца ---
+## Мотор машин и тихий гул троллейбуса — AudioStreamPlayer3D на корпусе, затухание по удалению, как у «Лады»;
+## высота и громкость — от скорости. Двери троллейбуса на остановках — сигналы doors_opened / doors_closed.
+## Транспорт находится по группе PathVehicle.GROUP и подключается при первом появлении (Traffic может прийти
+## позже _setup). Звуки синтезированы tools/generate_audio.py.
+const TROLLEY_HUM := preload("res://assets/audio/trolley_hum_loop.wav")
+const TROLLEY_DOORS := preload("res://assets/audio/trolley_doors.wav")
+const TRAFFIC_MAX_DISTANCE := 70.0
+
+var _traffic_engines := {}   # PathVehicle → AudioStreamPlayer3D
+
+func _traffic_sounds() -> void:
+	for vehicle in get_tree().get_nodes_in_group(&"traffic_vehicles"):
+		var player: AudioStreamPlayer3D = _traffic_engines.get(vehicle)
+		if player == null:
+			player = _attach_traffic(vehicle)
+		var moving := clampf(float(vehicle.speed) / 9.0, 0.0, 1.0)
+		if vehicle is Trolleybus:
+			player.pitch_scale = 0.85 + 0.35 * moving
+			player.volume_db = lerpf(-22.0, -15.0, moving)
+		else:
+			player.pitch_scale = 0.75 + 0.9 * moving
+			player.volume_db = lerpf(-16.0, -9.0, moving)
+
+func _attach_traffic(vehicle: Node3D) -> AudioStreamPlayer3D:
+	var trolley := vehicle is Trolleybus
+	var player := _player_3d(vehicle, -14.0, TROLLEY_HUM if trolley else ENGINE)
+	player.name = "TrafficEngine"
+	player.max_distance = TRAFFIC_MAX_DISTANCE
+	player.play()
+	_traffic_engines[vehicle] = player
+	vehicle.tree_exiting.connect(func(): _traffic_engines.erase(vehicle), CONNECT_ONE_SHOT)
+	if trolley:
+		if not played.has("trolley_doors"):
+			played["trolley_doors"] = 0
+		var doors := _player_3d(vehicle, -6.0)
+		doors.name = "TrolleyDoors"
+		doors.max_distance = TRAFFIC_MAX_DISTANCE
+		doors.position = Vector3(1.3, 1.5, 0.0)   # правый борт, к тротуару
+		vehicle.doors_opened.connect(func(_i): _one_shot(doors, TROLLEY_DOORS, "trolley_doors"))
+		vehicle.doors_closed.connect(func(_i): _one_shot(doors, TROLLEY_DOORS, "trolley_doors"))
+	return player

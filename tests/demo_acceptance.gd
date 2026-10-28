@@ -229,7 +229,7 @@ func _pass_one() -> bool:
 	await drv.frames(5)
 	check(1, _hud_has(w, "Батон один?") and _hud_has(w, "ДАЛЬШЕ"), "07: vendor chain starts «Батон один?» with ДАЛЬШЕ")
 	check(1, not _hud_has(w, "КУПИТЬ ХЛЕБ"), "07: no purchase button before the chain ends")
-	var chain := ["Один", "А вас сколько?", "Тоже один", "Пока что"]
+	var chain := ["Один", "А вас сколько?", "Тоже один", "Пока что. 35 рублей"]
 	for line in chain:
 		await drv.frames(40)  # дождаться допечатки: первое нажатие во время печати лишь дописывает
 		if not check(1, await drv.press_button("ДАЛЬШЕ"), "07: ДАЛЬШЕ pressed before «%s» (%s)" % [line, drv.last_error]):
@@ -298,8 +298,8 @@ func _pass_one() -> bool:
 	# 10 — возвращение (EXT-01, этап 9: цепочка «Ты где был?»), сдача кнопкой СДАТЬ ХЛЕБ
 	await drv.interact()
 	await drv.frames(10)
-	check(1, m.state == &"RETURN_HOME" and m.has_bread and _hud_has(w, "Ты где был?"), "09: E at Babka opens the return chain, no turn-in yet (got %s)" % m.state)
-	for line in ["За хлебом", "А почему такой уставший?", "Там предложили отдохнуть"]:
+	check(1, m.state == &"RETURN_HOME" and m.has_bread and _hud_has(w, "Ты где был? Я уже в окно глядела"), "09: E at Babka opens the return chain, no turn-in yet (got %s)" % m.state)
+	for line in ["За хлебом", "Подписывал что-нибудь?", "Нет. Я же за хлебом"]:
 		await drv.frames(40)
 		if not check(1, await drv.press_button("ДАЛЬШЕ"), "09: ДАЛЬШЕ pressed before «%s» (%s)" % [line, drv.last_error]):
 			return false

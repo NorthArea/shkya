@@ -19,7 +19,7 @@ const HINT_NO_EXIT := "НЕТ МЕСТА, ЧТОБЫ ВЫЙТИ"
 const HINT_SECONDS := 2.0
 ## Стелс (C7, EXT-01): экран «ВАШ МАРШРУТ УТОЧНЁН» держится FAIL_SECONDS, затем респавн на чекпоинт и тост.
 const FAIL_SECONDS := 2.0
-const STEALTH_TOAST := "МАРШРУТ УТОЧНЁН. ПОПРОБУЙТЕ ЕЩЁ РАЗ"
+const STEALTH_TOAST := "ВЫ ОСТАЛИСЬ ПЕШЕХОДОМ. ХЛЕБ ПРИ ВАС"
 const STEALTH_TOAST_SECONDS := 2.0
 
 var control_mode: StringName = &"on_foot"

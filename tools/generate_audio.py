@@ -250,6 +250,36 @@ def radio_mumble(seed: int, seconds: float) -> list[float]:
     return to_rms(out, -21.0)
 
 
+def trolley_hum_loop() -> list[float]:
+    """Троллейбус (ARENA-01): тихий гул тягового двигателя и преобразователя — 100 Гц с гармониками,
+    призвук 400 Гц и мягкий шум, 2 с ровно целым числом периодов. Генерируется 2,1 с, хвост вшивается в начало."""
+    rng = random.Random(61)
+    n = samples(2.1)
+    out = []
+    for i in range(n):
+        t = i / RATE
+        hum = sum(math.sin(2 * math.pi * 100.0 * k * t + k * 0.4) / k ** 1.5 for k in range(1, 6))
+        whine = 0.12 * math.sin(2 * math.pi * 400.0 * t) * (0.8 + 0.2 * math.sin(2 * math.pi * 0.5 * t))
+        out.append(hum + whine + rng.uniform(-0.25, 0.25))
+    out = lowpass(out, 1200, stages=2)
+    return normalize(loop_crossfade(out, 0.1), 0.5)
+
+
+def trolley_doors(seed: int) -> list[float]:
+    """Двери троллейбуса (ARENA-01): пневматический выдох и глухой удар створок — door() с шипением впереди, 0,9 с."""
+    rng = random.Random(seed)
+    hiss_n = samples(0.45)
+    hiss = highpass(lowpass([rng.uniform(-1, 1) for _ in range(hiss_n)], 3000), 600)
+    hiss = [x * math.sin(math.pi * i / hiss_n) ** 0.5 * 0.5 for i, x in enumerate(hiss)]
+    thump = door(True)
+    out = hiss + [0.0] * (samples(0.9) - hiss_n)
+    start = samples(0.35)
+    for i, x in enumerate(thump):
+        if start + i < len(out):
+            out[start + i] += x * 0.8
+    return normalize(out, 0.7)
+
+
 def main() -> None:
     rng = random.Random(1)
     for k in range(1, 5):
@@ -272,6 +302,9 @@ def main() -> None:
     write("voice_officer.wav", voice(43, 125.0, 1.2, 5.5, 0.06))
     write("voice_account_officer.wav", voice(47, 108.0, 1.2, 5.0, 0.03))
     write("radio_mumble.wav", radio_mumble(53, 4.5))
+    # ARENA-01 (T): троллейбус на кольце — тихий гул (цикл) и пневматические двери на остановках.
+    write("trolley_hum_loop.wav", trolley_hum_loop())
+    write("trolley_doors.wav", trolley_doors(67))
 
 
 if __name__ == "__main__":

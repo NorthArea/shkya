@@ -6,6 +6,12 @@ uniform vec2 center = vec2(0.0);
 uniform float width = 14.0;
 uniform vec3 asphalt : source_color = vec3(0.045, 0.047, 0.055);
 uniform vec3 slush : source_color = vec3(0.58, 0.56, 0.51);   // бежево-серая каша (сверка ART-04: #a7a18e)
+// Угол кольца (ARENA-01): колеи идут по дуге вокруг внутреннего угла corner_point; на краях плитки поперечная
+// координата и координата вдоль совпадают с прямыми улицами, поэтому шва нет. corner_sign — знак направления от угла
+// к оси улицы вдоль x (по z) и к оси улицы вдоль z (по x).
+uniform float corner = 0.0;
+uniform vec2 corner_point = vec2(0.0);
+uniform vec2 corner_sign = vec2(1.0);
 
 varying vec3 world_pos;
 
@@ -21,10 +27,8 @@ void vertex() {
 	world_pos = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
 }
 
-void fragment() {
-	float across = along_x > 0.5 ? world_pos.z - center.y : world_pos.x - center.x;
-	float along = along_x > 0.5 ? world_pos.x : world_pos.z;
-	float half_w = width * 0.5;
+// Доля каши (0 — чёрная колея, 1 — каша) в точке с поперечной координатой across и продольной along.
+float slushiness_at(float across, float along, float half_w) {
 	// Колеи: по две на каждую полосу, слегка виляют. Между ними — серая каша, чтобы пары следов
 	// читались издалека (ревью ART-02: раньше колеи сливались в тёмные пятна).
 	float lane = abs(across) - half_w * 0.5;
@@ -39,8 +43,26 @@ void fragment() {
 	float mid = 1.0 - smoothstep(0.3, 1.2, abs(across));
 	// ART-05 по сверке ART-04 (черта 11): зимой проезд светлый — укатанная каша, тёмные только колеи.
 	float between = (1.0 - track) * mix(0.62, 0.92, noise(vec2(along * 0.6, across * 1.7)));
-	float slushiness = clamp(max(max(edge, mid * 0.8), between) - track * 0.9, 0.0, 1.0);
-	slushiness *= mix(0.75, 1.0, wobble);
+	float s = clamp(max(max(edge, mid * 0.8), between) - track * 0.9, 0.0, 1.0);
+	return s * mix(0.75, 1.0, wobble);
+}
+
+void fragment() {
+	float half_w = width * 0.5;
+	float slushiness;
+	if (corner > 0.5) {
+		vec2 d = world_pos.xz - corner_point;
+		float r = length(d);
+		// 0 — у края, которым плитка примыкает к улице вдоль x; 1 — к улице вдоль z.
+		float t = atan(abs(d.x), abs(d.y) + 1e-4) / (PI * 0.5);
+		float s_x = slushiness_at(corner_sign.x * (r - half_w), world_pos.x, half_w);
+		float s_z = slushiness_at(corner_sign.y * (r - half_w), world_pos.z, half_w);
+		slushiness = mix(s_x, s_z, smoothstep(0.0, 1.0, t));
+	} else {
+		float across = along_x > 0.5 ? world_pos.z - center.y : world_pos.x - center.x;
+		float along = along_x > 0.5 ? world_pos.x : world_pos.z;
+		slushiness = slushiness_at(across, along, half_w);
+	}
 	vec3 color = mix(asphalt, slush, slushiness);
 	ALBEDO = color;
 	ROUGHNESS = mix(0.08, 0.88, slushiness);   // мокрые колеи отражают фонари, каша — матовая

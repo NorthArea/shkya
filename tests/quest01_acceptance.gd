@@ -126,7 +126,7 @@ func _step02_offer_and_blocking() -> void:
 	await _frames(120)
 	check(not flow.dialog.is_typing(), "02: offer line (%d chars) typed out within ~2 s" % QuestLines.OFFER.length())
 	check(flow.is_dialog_open() and mission.state == MissionDirector.OFFERED, "02: E opens the offer dialog, mission OFFERED")
-	check(flow.dialog.text_label.text == QuestLines.OFFER and QuestLines.OFFER.contains("у нас ручка дома"), "02: Babka offer text '%s'" % flow.dialog.text_label.text)
+	check(flow.dialog.text_label.text == QuestLines.OFFER and QuestLines.OFFER.contains("Ничего не подписывай"), "02: Babka offer text '%s'" % flow.dialog.text_label.text)
 	check(flow.dialog.line_count() == 1 and flow.dialog.is_last_line(), "02: offer is a single line with choices")
 	check(flow.dialog.buttons.has(&"accept") and flow.dialog.buttons[&"accept"].text == "ПРИНЯТЬ", "02: button ПРИНЯТЬ")
 	check(flow.dialog.buttons.has(&"decline") and flow.dialog.buttons[&"decline"].text == "ОТКАЗАТЬСЯ", "02: button ОТКАЗАТЬСЯ")
@@ -183,7 +183,7 @@ func _step03_accept() -> void:
 func _step_idle_babka() -> void:
 	var mission := world.mission
 	await _press_interact()
-	check(flow.is_dialog_open() and flow.dialog.text_label.text == "Хлеб не забудь, Илюша", "babka_idle: short line '%s'" % flow.dialog.text_label.text)
+	check(flow.is_dialog_open() and flow.dialog.text_label.text == QuestLines.IDLE, "babka_idle: short line '%s'" % flow.dialog.text_label.text)
 	check(flow.dialog.buttons.size() == 1 and flow.dialog.buttons.has(&"close"), "babka_idle: single close button")
 	flow.dialog.buttons[&"close"].pressed.emit()
 	await _frames(3)
@@ -201,7 +201,7 @@ func _step_observers() -> void:
 	await _frames(2)
 	check(flow.is_dialog_open() and world.ui_blocking and not player.input_enabled, "ext officer: dialog opens and blocks input")
 	check(flow.dialog.line_count() == 3 and flow.dialog.line_index() == 0, "ext officer: chain of 3 lines")
-	check(flow.dialog.speaker_label.text == "ПОЛИЦЕЙСКИЙ" and flow.dialog.text_label.text == "Вы по какому вопросу?", "ext officer: first line '%s'" % flow.dialog.text_label.text)
+	check(flow.dialog.speaker_label.text == "ПОЛИЦЕЙСКИЙ" and flow.dialog.text_label.text == "Гражданин, цель вашего нахождения у киоска?", "ext officer: first line '%s'" % flow.dialog.text_label.text)
 	check(flow.dialog.buttons.size() == 1 and flow.dialog.buttons.has(&"next") and flow.dialog.buttons[&"next"].text == "ДАЛЬШЕ", "ext officer: only ДАЛЬШЕ before the last line")
 	check(flow.dialog.is_typing(), "ext officer: line is being typed")
 	await _press_interact()
@@ -212,7 +212,7 @@ func _step_observers() -> void:
 	flow.dialog.finish_typing()
 	flow.dialog.buttons[&"next"].pressed.emit()
 	await _frames(2)
-	check(flow.dialog.line_index() == 2 and flow.dialog.is_last_line() and flow.dialog.text_label.text == "У нас тоже вопрос", "ext officer: ДАЛЬШЕ shows the last line")
+	check(flow.dialog.line_index() == 2 and flow.dialog.is_last_line() and flow.dialog.text_label.text == "Так и запишем: без определённой цели", "ext officer: ДАЛЬШЕ shows the last line")
 	check(flow.dialog.buttons.size() == 1 and flow.dialog.buttons[&"close"].text == "ПОЙДУ Я", "ext officer: exit button ПОЙДУ Я")
 	flow.dialog.finish_typing()
 	await _press_interact()
@@ -224,12 +224,12 @@ func _step_observers() -> void:
 	for variant in [&"ride_no", &"ride_near"]:
 		flow._on_interacted(player, &"account_officer")
 		await _frames(2)
-		check(flow.is_dialog_open() and flow.dialog.text_label.text == "Вас подвезти?" and flow.dialog.speaker_label.text == "СОТРУДНИК ГСУМ", "ext ride (%s): question" % variant)
+		check(flow.is_dialog_open() and flow.dialog.text_label.text == "Вас подвезти? Бесплатно. И совершенно добровольно" and flow.dialog.speaker_label.text == "СОТРУДНИК ГСУМ", "ext ride (%s): question" % variant)
 		check(flow.dialog.buttons.size() == 2 and flow.dialog.buttons[&"ride_no"].text == "НЕТ, СПАСИБО" and flow.dialog.buttons[&"ride_near"].text == "Я УЖЕ РЯДОМ", "ext ride (%s): two answers" % variant)
 		flow.dialog.finish_typing()
 		flow.dialog.buttons[variant].pressed.emit()
 		await _frames(2)
-		check(flow.is_dialog_open() and flow.dialog.text_label.text == "Тем более надо подвезти", "ext ride (%s): same reply to either answer" % variant)
+		check(flow.is_dialog_open() and flow.dialog.text_label.text == "Понимаю. Отказы мы оформляем в салоне", "ext ride (%s): same reply to either answer" % variant)
 		check(flow.dialog.buttons.size() == 1 and flow.dialog.buttons.has(&"close"), "ext ride (%s): one exit button" % variant)
 		flow.dialog.buttons[&"close"].pressed.emit()
 		await _frames(3)
@@ -238,7 +238,13 @@ func _step_observers() -> void:
 	# Редакторский контроль: реплик наблюдателей и радио за миссию не больше 7.
 	var observer_lines: int = QuestLines.OFFICER_CHAIN.size() + 2 + 1
 	check(observer_lines <= 7, "ext: observers + radio lines per mission = %d (<= 7)" % observer_lines)
-	for text in [QuestLines.OFFER, QuestLines.RADIO, QuestLines.THANKS, QuestLines.THANKS_AFTER]:
+	var all_texts: Array = [QuestLines.OFFER, QuestLines.IDLE, QuestLines.IDLE_DONE, QuestLines.RADIO,
+		QuestLines.ACCOUNT_OFFICER_ASK["text"], QuestLines.ACCOUNT_OFFICER_REPLY["text"], QuestLines.VENDOR_AGAIN,
+		QuestLines.THANKS, QuestLines.THANKS_AFTER]
+	for chain in [QuestLines.OFFICER_CHAIN, QuestLines.VENDOR_CHAIN, QuestLines.RETURN_CHAIN]:
+		for line in chain:
+			all_texts.append(line["text"])
+	for text in all_texts:
 		check(not text.to_lower().contains("мобилизац") and not text.to_lower().contains("бусификац"), "ext: forbidden words absent in '%s'" % text)
 
 # --- 04/05: машина и дорога (вход в машину имитируется) ---
@@ -284,7 +290,7 @@ func _step07_vendor_dialog() -> void:
 	await _press_interact()
 	check(not flow.dialog.is_typing() and flow.is_dialog_open() and flow.dialog.line_index() == 0, "07: E while typing completes the line and keeps the dialog")
 	check(flow.dialog.speaker_label.text == "ПРОДАВЩИЦА", "07: speaker ПРОДАВЩИЦА")
-	var expected_chain := [["ИЛЮША", "Один"], ["ПРОДАВЩИЦА", "А вас сколько?"], ["ИЛЮША", "Тоже один"], ["ПРОДАВЩИЦА", "Пока что"]]
+	var expected_chain := [["ИЛЮША", "Один"], ["ПРОДАВЩИЦА", "А вас сколько?"], ["ИЛЮША", "Тоже один"], ["ПРОДАВЩИЦА", "Пока что. 35 рублей"]]
 	for i in expected_chain.size():
 		flow.dialog.finish_typing()
 		await _press_interact()  # E после допечатки — следующая реплика
@@ -343,9 +349,9 @@ func _step10_complete() -> void:
 	var mission := world.mission
 	await _press_interact()
 	# EXT-01, этап 9: сначала цепочка при возврате, сдача — кнопкой на последней реплике.
-	check(flow.is_dialog_open() and flow.dialog.line_count() == 4 and flow.dialog.text_label.text == "Ты где был?", "09: return chain opens with 'Ты где был?' ('%s')" % flow.dialog.text_label.text)
+	check(flow.is_dialog_open() and flow.dialog.line_count() == 4 and flow.dialog.text_label.text == "Ты где был? Я уже в окно глядела", "09: return chain opens with 'Ты где был?' ('%s')" % flow.dialog.text_label.text)
 	check(mission.state == MissionDirector.RETURN_HOME and mission.has_bread and flow.marker.text == "?", "09: no turn-in before the chain ends")
-	var expected_chain := [["ИЛЮША", "За хлебом"], ["БАБКА", "А почему такой уставший?"], ["ИЛЮША", "Там предложили отдохнуть"]]
+	var expected_chain := [["ИЛЮША", "За хлебом"], ["БАБКА", "Подписывал что-нибудь?"], ["ИЛЮША", "Нет. Я же за хлебом"]]
 	for i in expected_chain.size():
 		flow.dialog.finish_typing()
 		flow.dialog.buttons[&"next"].pressed.emit()
@@ -391,7 +397,7 @@ func _step10_complete() -> void:
 	check(_mouse_captured(), "10: mouse captured after closing")
 	for i in 3:
 		await _press_interact()
-		check(flow.is_dialog_open() and flow.dialog.text_label.text == "Иди погрейся, Илюша", "10: repeated talk %d is a plain line" % (i + 1))
+		check(flow.is_dialog_open() and flow.dialog.text_label.text == QuestLines.IDLE_DONE, "10: repeated talk %d is a plain line" % (i + 1))
 		flow.dialog.buttons[&"close"].pressed.emit()
 		await _frames(3)
 	check(mission.xp == 50 and mission.state == MissionDirector.COMPLETE and not hud.completion_panel.visible, "10: XP is not awarded twice, panel does not return")
