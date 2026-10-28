@@ -46,8 +46,10 @@ func _initialize() -> void:
 	call_deferred("_run")
 
 func _run() -> void:
-	create_timer(3000.0, true, false, true).timeout.connect(func():
-		push_error("FAIL: stuck sweep exceeded 3000 simulated seconds")
+	# Сторож от зависания, не критерий. Время растёт с числом твёрдых коробок (обход углов): ART-05/06
+	# добавили тополя, машины, троллейбус и павильон, 3000 с перестало хватать.
+	create_timer(4500.0, true, false, true).timeout.connect(func():
+		push_error("FAIL: stuck sweep exceeded 4500 simulated seconds")
 		quit(2)
 	)
 	var started := Time.get_ticks_msec()

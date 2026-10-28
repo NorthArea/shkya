@@ -30,7 +30,7 @@ const SOLIDS := [
 	# Двор
 	["H1_South", "panel", Vector2(-40, 115), Vector3(100, 27, 14)],
 	["H2_West", "panel", Vector2(-85, 76), Vector3(14, 27, 64)],
-	["H3_North", "panel_low", Vector2(-51, 52), Vector3(54, 15, 12)],
+	["H3_North", "panel_low", Vector2(-51, 53.5), Vector3(54, 15, 12)],   # z 52 → 53,5: тротуар между домом и валом 7,3 м, а не 5,8 (ART-06, тест застреваний)
 	["Garages_Yard", "garage", Vector2(26, 85), Vector3(8, 3, 38)],
 	["Fence_Yard", "fence", Vector2(16, 108), Vector3(12, 1.5, 0.3)],
 	["Bench", "prop", Vector2(-34, 105), Vector3(3, 0.5, 0.8)],
@@ -99,6 +99,10 @@ const POPLAR_TRUNK := Vector3(0.8, 10.0, 0.8)
 # Опоры контактной сети без фонаря там, где фонари пропущены (выезд со двора, площадка киоска):
 # поперечины висят на парах опор через каждые 24 м (сверка ART-04, черта 13).
 const TROLLEY_POLES: Array[Vector2] = [Vector2(-18, 42), Vector2(6, 42), Vector2(61, -62), Vector2(61, -86)]
+# Приметы Новосибирска (ART-06): неподвижный бело-зелёный троллейбус под проводами улицы A и павильон
+# остановки напротив. Маршруты пешком и на машине проходят восточнее x = −5, оба объекта — западнее.
+const TROLLEYBUS := [Vector2(-30, 27.8), Vector3(12.0, 3.2, 2.5)]   # у северного бордюра: полоса z = 32 свободна для разгона
+const BUS_PAVILION := [Vector2(-30, 42.6), Vector3(4.0, 2.6, 1.6)]
 const POLE_HEIGHT := 8.0        # видимая высота столба фонаря и опоры; коллизия — LAMP_HEIGHT
 # Припаркованные машины со снегом на крыше (ART-05, сверка ART-04): статичный декор, без поведения.
 # [центр x/z, вдоль x — true]. От валов у бордюра — больше 1 м: ближе тест застреваний считает это щелью.
@@ -126,7 +130,8 @@ static func street_lamps() -> Array[Vector2]:
 static func snow_banks() -> Array:
 	var banks := []
 	var w := BANK.x
-	for span in [[-100.0, 56.0, 24.4], [-100.0, -26.0, 39.6], [24.0, 100.0, 39.6]]:   # улица A: [x от, x до, z]
+	# Улица A: [x от, x до, z]. С x = −97, а не −100: щель 0 м между валом и краем карты — тупик для машины (ART-06).
+	for span in [[-97.0, 56.0, 24.4], [-97.0, -26.0, 39.6], [24.0, 100.0, 39.6]]:
 		var x: float = span[0]
 		while x < span[1]:
 			var length := minf(26.0, span[1] - x)
@@ -161,6 +166,8 @@ static func decor_solids() -> Array:
 	for p in TREES:
 		solids.append(["Birch", "tree", p, Vector3(0.3, 7.0, 0.3)])
 	solids.append(["StreetSign", "sign_post", STREET_SIGN, Vector3(0.12, 3.2, 0.12)])
+	solids.append(["Trolleybus", "trolleybus", TROLLEYBUS[0], TROLLEYBUS[1]])
+	solids.append(["BusPavilion", "pavilion", BUS_PAVILION[0], BUS_PAVILION[1]])
 	for p in TROLLEY_POLES:
 		solids.append(["TrolleyPole", "lamp", p, Vector3(0.25, LAMP_HEIGHT, 0.25)])
 	for p in POPLARS:

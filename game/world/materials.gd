@@ -84,6 +84,16 @@ static func balcony_glass() -> ShaderMaterial:
 		_cache["balcony_glass"] = m
 	return _cache["balcony_glass"]
 
+## Пар (ART-06, Н4, Н9): полупрозрачный белёсый — шлейфы ТЭЦ и вытяжек на крышах.
+static func steam() -> StandardMaterial3D:
+	if not _cache.has("steam"):
+		var m := StandardMaterial3D.new()
+		m.albedo_color = Color(0.86, 0.87, 0.89, 0.45)
+		m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+		m.roughness = 1.0
+		_cache["steam"] = m
+	return _cache["steam"]
+
 static func road(along_x: bool, center: Vector2, width: float) -> ShaderMaterial:
 	var m := ShaderMaterial.new()
 	m.shader = RoadShader

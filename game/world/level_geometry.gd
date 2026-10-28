@@ -10,6 +10,7 @@ const Materials = preload("res://game/world/materials.gd")
 const WALL_HEIGHT := 12.0
 const WALL_THICKNESS := 2.0
 const SHOP_FRONTS := ["H5_North", "H6_West", "H8_East"]
+const SERIES_97 := ["H2_West", "H10_NorthWest"]   # голубые и серые полосы панелей (ART-06, Н10)
 const GARAGE_DOOR_SIDE := {"Garages_Yard": -1.0, "Garages_Kiosk": 1.0}   # дверями к двору / к улице
 # Ворота гаражей: синие, жёлтые, бурые, ржавые, розовые, зелёные (сверка ART-04, черта 17).
 # Насыщеннее, чтобы в холодном сумеречном свете бурые и ржавые не уходили в серое (повторная сверка ART-05, Н2).
@@ -70,6 +71,7 @@ func _ready() -> void:
 	_build_house_plates()
 	_build_bus_stop()
 	_build_skyline()
+	_build_chimneys()
 	_build_instances()
 
 func _exit_tree() -> void:
@@ -93,6 +95,8 @@ func _build_solid(index: int, spec: Array) -> void:
 	match kind:
 		"panel", "panel_low":
 			mesh.material_override = Materials.facade(float(index), kind == "panel_low", spec[0] in SHOP_FRONTS)
+			if spec[0] in SERIES_97:
+				(mesh.material_override as ShaderMaterial).set_shader_parameter("stripes", 1.0)
 			_dress_house(spec[0], kind == "panel_low", xz, size, index, body)
 		"garage":
 			mesh.queue_free()
@@ -128,6 +132,12 @@ func _build_solid(index: int, spec: Array) -> void:
 		"poplar":
 			mesh.queue_free()
 			_poplar(Vector3(xz.x, 0, xz.y), index)
+		"trolleybus":
+			mesh.queue_free()
+			body.add_child(_trolleybus(size))
+		"pavilion":
+			mesh.queue_free()
+			body.add_child(_pavilion(size))
 		"sign_post":
 			mesh.material_override = Materials.plain(Color(0.15, 0.15, 0.16), 0.6)
 			body.add_child(_street_sign(size.y))
@@ -168,6 +178,12 @@ func _build_entrance() -> void:
 	for i in notes.size():
 		var note: Array = notes[i]
 		_part(root, Vector3(note[1].x, note[1].y, 0.01), Vector3(note[0].x, note[0].y, z - 0.03), Materials.plain(paper[i], 0.95))
+	# Сибирская записка у двери (ART-06, P2.7).
+	var warn := _label("Закрывайте двери!\nТрубы замёрзнут!", 28, Color(0.12, 0.12, 0.14))
+	warn.pixel_size = 0.0011
+	warn.position = Vector3(-38.8, 1.12, z - 0.045)
+	warn.rotation.y = PI
+	root.add_child(warn)
 	# Круглая лампа над дверью: тёплый светящийся плафон (сам свет — Layout.LAMPS, подъезд).
 	var lamp := Greybox.mesh_sphere(0.14, Color.WHITE)
 	lamp.material_override = Materials.plain(Color(1.0, 0.9, 0.7), 0.3, WARM, 6.0)
@@ -444,6 +460,16 @@ func _street_sign(height: float) -> Node3D:
 		label.position = Vector3(0, height * 0.5 - 0.3, 0.035 * side)
 		label.rotation.y = 0.0 if side > 0.0 else PI
 		root.add_child(label)
+	# Вторая табличка — улица B, поперёк первой (ART-06, Н14).
+	var cross := Greybox.mesh_box(Vector3(0.05, 0.5, 2.3), Color.WHITE)
+	cross.material_override = Materials.plain(Color(0.10, 0.20, 0.42), 0.5)
+	cross.position = Vector3(0, height * 0.5 - 0.9, 0)
+	root.add_child(cross)
+	for side in [1.0, -1.0]:
+		var label := _label("УЛ. ТРОЛЛЕЙНАЯ", 60, Color(0.95, 0.95, 0.95))
+		label.position = Vector3(0.035 * side, height * 0.5 - 0.9, 0)
+		label.rotation.y = PI * 0.5 if side > 0.0 else -PI * 0.5
+		root.add_child(label)
 	return root
 
 func _label(text: String, font_size: int, color: Color) -> Label3D:
@@ -666,6 +692,8 @@ func _dress_house(name: String, low: bool, xz: Vector2, size: Vector3, index: in
 			stack.material_override = vent
 			stack.position = Vector3(a, size.y * 0.5 + 2.2, depth * 0.18) if long_x else Vector3(depth * 0.18, size.y * 0.5 + 2.2, a)
 			body.add_child(stack)
+			if (i + index) % 2 == 0:
+				_steam_puff(body, stack.position + Vector3.UP * 0.8, index + i)
 	else:
 		# Машинные отделения лифтов над каждой секцией и телеантенны.
 		var room := Materials.plain(CONCRETE, 0.9)
@@ -678,6 +706,8 @@ func _dress_house(name: String, low: bool, xz: Vector2, size: Vector3, index: in
 			box.position = Vector3(a, size.y * 0.5 + 1.2, 0) if long_x else Vector3(0, size.y * 0.5 + 1.2, a)
 			body.add_child(box)
 			body.add_child(_slab(Vector3(4.2, 0, 3.2) if long_x else Vector3(3.2, 0, 4.2), box.position + Vector3.UP * 1.24, 0.12))
+			if (i + index) % 2 == 1:
+				_steam_puff(body, box.position + Vector3.UP * 1.5, index + i)
 			for j in 2:
 				var off := (j - 0.5) * 6.0 + a + 4.0
 				if absf(off) > length * 0.5 - 1.0:
@@ -922,19 +952,30 @@ func _playground_fence(body: Node3D, size: Vector3) -> void:
 			body.add_child(post)
 		i += 1
 
-## Синие таблички с номером дома на углах (черта 16, P3 16).
+## Таблички с номером дома: тёмно-синие в белой рамке, сверху мелко «улица», под ним название, ниже крупный
+## номер (ART-06, Н13: `Pisarev Street 53`). Названия — улицы спального Новосибирска по OSM (Н14),
+## номера придуманные. Улица A по концепту 05 — «Ленина».
 func _build_house_plates() -> void:
-	for spec in [["ул. Ленина, 12", Vector3(-88.5, 3.0, 107.95), PI], ["ул. Ленина, 14", Vector3(41.5, 3.0, 59.95), PI],
-			["ул. Ленина, 9", Vector3(56.05, 3.0, 8.0), PI * 0.5], ["ул. Ленина, 11", Vector3(81.95, 3.0, 10.0), -PI * 0.5]]:
-		var plate := Greybox.mesh_box(Vector3(1.6, 0.42, 0.04), Color.WHITE)
-		plate.material_override = Materials.plain(Color(0.10, 0.22, 0.50), 0.5)
-		plate.position = spec[1]
-		plate.rotation.y = spec[2]
+	for spec in [["Татьяны Снежиной", "12", Vector3(-88.5, 3.0, 107.95), PI], ["Ленина", "14", Vector3(41.5, 3.0, 59.95), PI],
+			["Троллейная", "9", Vector3(56.05, 3.0, 8.0), PI * 0.5], ["Троллейная", "11", Vector3(81.95, 3.0, 10.0), -PI * 0.5]]:
+		var yaw: float = spec[3]
+		var face := Basis(Vector3.UP, yaw)
+		var frame := Greybox.mesh_box(Vector3(1.24, 0.84, 0.03), Color.WHITE)
+		frame.material_override = Materials.plain(Color(0.92, 0.92, 0.90), 0.6)
+		frame.position = spec[2]
+		frame.rotation.y = yaw
+		add_child(frame)
+		var plate := Greybox.mesh_box(Vector3(1.16, 0.76, 0.04), Color.WHITE)
+		plate.material_override = Materials.plain(Color(0.16, 0.20, 0.36), 0.5)   # #2a335c
+		plate.position = spec[2] + face * Vector3(0, 0, 0.005)
+		plate.rotation.y = yaw
 		add_child(plate)
-		var label := _label(spec[0], 44, Color(0.95, 0.95, 0.95))
-		label.position = spec[1] + Basis(Vector3.UP, spec[2]) * Vector3(0, 0, 0.03)
-		label.rotation.y = spec[2]
-		add_child(label)
+		for line in [["улица", 26, 0.27], [spec[0], 34, 0.14], [spec[1], 110, -0.14]]:
+			var label := _label(line[0], line[1], Color(0.95, 0.95, 0.95))
+			label.pixel_size = 0.0045
+			label.position = spec[2] + face * Vector3(0, line[2], 0.03)
+			label.rotation.y = yaw
+			add_child(label)
 
 ## Знак остановки у площадки киоска: синий квадрат с белым автобусом на опоре контактной сети (черта 18, P3 17).
 func _build_bus_stop() -> void:
@@ -954,3 +995,143 @@ func _build_bus_stop() -> void:
 		piece.material_override = white
 		piece.position = part[1]
 		root.add_child(piece)
+
+# --- ART-06: приметы именно Новосибирска ---
+
+## Неподвижный бело-зелёный троллейбус «Тролза» с крупным бортовым номером (ART-06, Н1, Н2): штанги
+## на контактных проводах улицы A. Без поведения — декор с коллизией.
+func _trolleybus(size: Vector3) -> Node3D:
+	var root := Node3D.new()
+	var hx := size.x * 0.5
+	var hz := size.z * 0.5
+	var base := -size.y * 0.5
+	var white := Materials.plain(Color(0.80, 0.82, 0.80), 0.4)
+	var green := Materials.plain(Color(0.02, 0.36, 0.22), 0.4)   # #035a3a
+	var glass := Materials.plain(Color(0.06, 0.08, 0.10), 0.1)
+	_part(root, Vector3(size.x, size.y - 0.55, size.z), Vector3(0, base + 0.35 + (size.y - 0.55) * 0.5, 0), white)
+	_part(root, Vector3(size.x + 0.02, 0.55, size.z + 0.02), Vector3(0, base + 0.85, 0), green)      # полоса внизу
+	_part(root, Vector3(size.x - 1.2, 1.05, size.z + 0.03), Vector3(0.3, base + 1.95, 0), glass)    # окна салона
+	_part(root, Vector3(0.04, 1.4, size.z - 0.3), Vector3(-hx - 0.01, base + 1.8, 0), glass)       # лобовое (перед — −x)
+	_part(root, Vector3(3.0, 0.4, 1.4), Vector3(1.5, base + size.y + 0.2, 0), white)               # оборудование на крыше
+	_part(root, Vector3(size.x - 0.4, 0.12, size.z - 0.3), Vector3(0, base + size.y + 0.06, 0), Materials.snow(0.0))
+	var tyre := Materials.plain(Color(0.05, 0.05, 0.05), 0.9)
+	for wx in [-hx + 2.4, hx - 3.0]:
+		for wz in [-hz + 0.1, hz - 0.1]:
+			var wheel := Greybox.mesh_cylinder(0.5, 0.5, 0.3, Color.BLACK)
+			wheel.material_override = tyre
+			wheel.rotation.x = PI * 0.5
+			wheel.position = Vector3(wx, base + 0.5, wz)
+			root.add_child(wheel)
+	for side in [1.0, -1.0]:
+		var number := _label("3127", 140, Color(0.05, 0.25, 0.15))
+		number.pixel_size = 0.006
+		number.position = Vector3(hx - 2.0, base + 1.0, side * (hz + 0.03))
+		number.rotation.y = 0.0 if side > 0.0 else PI
+		root.add_child(number)
+	var route := _label("13", 160, Color(1.0, 0.75, 0.25))   # маршрут 13 — слово владельца 28.10.2026
+	route.pixel_size = 0.006
+	route.position = Vector3(-hx - 0.04, base + 2.6, 0)
+	route.rotation.y = -PI * 0.5
+	root.add_child(route)
+	# Номер маршрута и на корме, и на бортах у передней двери: видно с любой стороны улицы.
+	var rear := _label("13", 140, Color(1.0, 0.75, 0.25))
+	rear.pixel_size = 0.006
+	rear.position = Vector3(hx + 0.04, base + 2.5, 0)
+	rear.rotation.y = PI * 0.5
+	root.add_child(rear)
+	for side in [1.0, -1.0]:
+		var board := _label("13", 90, Color(1.0, 0.75, 0.25))
+		board.pixel_size = 0.006
+		board.position = Vector3(-hx + 1.2, base + 2.5, side * (hz + 0.04))
+		board.rotation.y = 0.0 if side > 0.0 else PI
+		root.add_child(board)
+	# Штанги к двум контактным проводам (z 30,5 и 33,5).
+	var center_z: float = Layout.TROLLEYBUS[0].y
+	for wire_z in [30.5, 33.5]:
+		var from := Vector3(hx - 1.0, base + size.y + 0.4, 0)
+		var to := Vector3(hx - 7.0, CONTACT_Y - 0.05 - size.y * 0.5, wire_z - center_z)
+		var boom := Greybox.mesh_cylinder(0.04, 0.04, from.distance_to(to), Color.BLACK)
+		boom.material_override = Materials.plain(Color(0.12, 0.12, 0.12), 0.5)
+		boom.position = (from + to) * 0.5
+		var axis := (to - from).normalized()
+		var s := axis.cross(Vector3.UP).normalized()
+		boom.basis = Basis(s, axis, s.cross(axis))
+		root.add_child(boom)
+	return root
+
+## Павильон остановки из профлиста: три стенки, крыша, лавка, объявления, табличка маршрутов (ART-06, Н6).
+## Открыт к улице (на север).
+func _pavilion(size: Vector3) -> Node3D:
+	var root := Node3D.new()
+	var hx := size.x * 0.5
+	var hz := size.z * 0.5
+	var base := -size.y * 0.5
+	var sheet := Materials.plain(Color(0.62, 0.65, 0.70), 0.5)   # профлист #9ea5b2
+	_part(root, Vector3(size.x, size.y - 0.2, 0.05), Vector3(0, base + (size.y - 0.2) * 0.5, hz - 0.03), sheet)
+	for x in [-hx + 0.03, hx - 0.03]:
+		_part(root, Vector3(0.05, size.y - 0.2, size.z), Vector3(x, base + (size.y - 0.2) * 0.5, 0), sheet)
+	_part(root, Vector3(size.x + 0.3, 0.1, size.z + 0.4), Vector3(0, base + size.y - 0.05, -0.1), sheet)
+	_part(root, Vector3(size.x + 0.3, 0.16, size.z + 0.4), Vector3(0, base + size.y + 0.08, -0.1), Materials.snow(0.0))
+	_part(root, Vector3(size.x - 0.4, 0.06, 0.4), Vector3(0, base + 0.5, hz - 0.3), Materials.plain(Color(0.36, 0.24, 0.15), 0.85))
+	var paper := [Color(0.86, 0.85, 0.80), Color(0.80, 0.84, 0.88), Color(0.90, 0.86, 0.72), Color(0.84, 0.78, 0.80)]
+	for i in 7:
+		var note := Greybox.mesh_box(Vector3(0.22, 0.3, 0.01), Color.WHITE)
+		note.material_override = Materials.plain(paper[i % paper.size()], 0.95)
+		note.position = Vector3(-hx + 0.4 + i * 0.5, base + 1.1 + (i % 3) * 0.32, hz - 0.06)
+		root.add_child(note)
+	# Табличка маршрутов по видам транспорта.
+	var board := Greybox.mesh_box(Vector3(1.0, 0.55, 0.03), Color.WHITE)
+	board.material_override = Materials.plain(Color(0.92, 0.92, 0.88), 0.6)
+	board.position = Vector3(hx - 0.7, base + size.y + 0.45, -hz + 0.1)
+	root.add_child(board)
+	var routes := _label("Тб 13\nАвт. 31, 68\nМ.т. 1219", 30, Color(0.08, 0.10, 0.20))
+	routes.pixel_size = 0.004
+	routes.position = board.position + Vector3(0, 0, -0.025)
+	routes.rotation.y = PI
+	root.add_child(routes)
+	return root
+
+## Трубы ТЭЦ: красно-белые, с неподвижным шлейфом пара, на горизонте к северу (ART-06, Н4: снимает «не подтверждено»
+## из ART-04). Только вид.
+func _build_chimneys() -> void:
+	var red := Materials.plain(Color(0.62, 0.14, 0.10), 0.7)
+	var white := Materials.plain(Color(0.82, 0.82, 0.80), 0.7)
+	var steam := Materials.steam()
+	# В перспективе улицы B, левее башни «ГОСТИНИЦА» (x 57–83): самый длинный вид квартала.
+	for spec in [[Vector3(15, 0, -185), 110.0], [Vector3(35, 0, -200), 125.0]]:
+		var at: Vector3 = spec[0]
+		var height: float = spec[1]
+		var bands := 10
+		for i in bands:
+			var y0 := height * i / bands
+			var r_low := lerpf(4.0, 2.4, float(i) / bands)
+			var r_high := lerpf(4.0, 2.4, float(i + 1) / bands)
+			var band := Greybox.mesh_cylinder(r_high, r_low, height / bands, Color.WHITE)
+			band.material_override = red if i % 2 == 0 else white
+			band.position = at + Vector3(0, y0 + height / bands * 0.5, 0)
+			add_child(band)
+		var light := Greybox.mesh_sphere(0.8, Color.WHITE)
+		light.material_override = Materials.plain(Color(1.0, 0.1, 0.05), 0.4, Color(1.0, 0.1, 0.05), 8.0)
+		light.position = at + Vector3(0, height + 0.8, 0)
+		add_child(light)
+		for k in 7:
+			var puff := Greybox.mesh_sphere(1.0, Color.WHITE)
+			puff.material_override = steam
+			var r := 4.0 + k * 2.2
+			puff.scale = Vector3(r, r * 0.8, r)
+			puff.position = at + Vector3(-k * 6.0, height + 4.0 + k * 3.5, -k * 1.5)   # ветер на запад, от башни
+			puff.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+			add_child(puff)
+
+## Пар из вытяжки на крыше: несколько полупрозрачных клубов, сносимых ветром (ART-06, Н9: `minus-28`).
+func _steam_puff(parent: Node3D, at: Vector3, seed: int) -> void:
+	var drift := Vector3(cos(seed * 1.7), 0, sin(seed * 1.7))
+	for k in 4:
+		var puff := Greybox.mesh_sphere(1.0, Color.WHITE)
+		puff.material_override = Materials.steam()
+		var r := 0.6 + k * 0.45
+		puff.scale = Vector3(r, r * 0.8, r)
+		puff.position = at + Vector3.UP * (k * 0.9) + drift * (k * 0.7)
+		puff.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		parent.add_child(puff)
+
