@@ -87,6 +87,9 @@ func _process(delta: float) -> void:
 	strike.visible = complete
 	strike.offset_right = minf(task_label.size.x, task_label.get_theme_font("font").get_string_size(task_label.text, HORIZONTAL_ALIGNMENT_LEFT, -1, 32).x)
 	var prompt: String = state["prompt"]
+	var hide_hint: String = state.get("hide_hint", "")
+	if hide_hint != "":
+		prompt = hide_hint   # EXT-02: подсказка-отказ в укрытии — в той же строке, вместо обычной
 	if prompt != prompt_label.text:
 		prompt_label.text = prompt
 		_center_plate()

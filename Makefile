@@ -28,6 +28,7 @@ test:
 	$(call godot_test,stealth_test,60,STEALTH)
 	$(call godot_test,traffic_test,60,TRAFFIC)
 	$(call godot_test,residents_test,60,RESIDENTS)
+	$(call godot_test,hide_core_test,60,HIDE_CORE)
 capture:
 	./tools/run.command --fixed-fps 60 --resolution 1920x1080 --script tools/capture.gd
 pack:

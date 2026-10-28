@@ -6,6 +6,7 @@ extends Node3D
 const Layout = preload("res://game/world/layout.gd")
 const SnowTracks = preload("res://game/world/snow_tracks.gd")
 const StealthDirectorScript = preload("res://game/stealth/stealth_director.gd")
+const HideTuning = preload("res://game/stealth/hide_tuning.gd")
 
 const EXIT_OFFSETS: Array[Vector3] = [   # куда встаёт Илюша при выходе, в осях машины (−x — сторона водителя)
 	Vector3(-1.7, 0, 0), Vector3(1.7, 0, 0), Vector3(0, 0, 3.4), Vector3(0, 0, -3.4),
@@ -32,6 +33,9 @@ var _hint_left := 0.0
 var stealth: StealthDirector
 var _fail_left := 0.0
 var _stealth_toast_left := 0.0
+## EXT-02: подсказка-отказ в укрытии («СНАЧАЛА СНЯТЬ КОРОБКУ», «ВЫХОД ЗАНЯТ»), HUD — get_hud_state()["hide_hint"].
+var _hide_hint := ""
+var _hide_hint_left := 0.0
 
 @onready var player: Ilyusha = $Ilyusha
 @onready var camera_rig: CameraRig = $CameraRig
@@ -67,6 +71,7 @@ func _physics_process(delta: float) -> void:
 	_sync_prompts()
 	_hint_left = maxf(_hint_left - delta, 0.0)
 	_stealth_toast_left = maxf(_stealth_toast_left - delta, 0.0)
+	_hide_hint_left = maxf(_hide_hint_left - delta, 0.0)
 	# Заморозка шкалы на время диалога (C7); пауза — через process_mode, директор на ней не тикает.
 	stealth.set_frozen(quest_flow.is_dialog_open(), &"dialog")
 	if _fail_left > 0.0:
@@ -85,6 +90,8 @@ func _sync_prompts() -> void:
 func enter_car() -> void:
 	if control_mode == &"in_car":
 		return
+	if refuse_in_hide(&"car"):
+		return  # EXT-02: в укрытии в машину не садятся — подсказка вместо посадки
 	control_mode = &"in_car"
 	_set_player_active(false)
 	car.enter(player)
@@ -143,6 +150,7 @@ func _free_exit_spot() -> Vector3:
 ## «Сбросить автомобиль»: ближайшая к машине свободная точка маршрута, носом по ходу маршрута,
 ## без скорости и не ближе RESET_CLEARANCE к Илюше (приёмка 5).
 func reset_car() -> void:
+	reset_hide()
 	var position_now := Vector3(car.global_position.x, 0.0, car.global_position.z)
 	var candidates := []
 	for i in range(1, Layout.ROUTE_DRIVE.size()):
@@ -205,10 +213,31 @@ func _finish_fail() -> void:
 func respawn_at_checkpoint() -> bool:
 	if control_mode != &"on_foot":
 		return false
+	reset_hide()
 	player.place(Layout.STEALTH_CHECKPOINT, Layout.STEALTH_CHECKPOINT_YAW)
 	camera_rig.yaw = Layout.STEALTH_CHECKPOINT_YAW
 	camera_rig.snap()
 	return true
+
+## EXT-02: Илюша вне укрытия, укрытия на своих местах (группа `hide_spots`, метод reset()). Без запретов.
+func reset_hide() -> void:
+	player.force_hide_mode(HideTuning.NONE)
+	for spot in get_tree().get_nodes_in_group(&"hide_spots"):
+		if spot.has_method(&"reset"):
+			spot.reset()
+
+## EXT-02: в укрытии действие зоны interaction_id (машина, диалог, покупка) не выполняется — подсказка-отказ.
+## true — отказано, вызывающий ничего не делает.
+func refuse_in_hide(interaction_id: StringName) -> bool:
+	if player.hide_mode == HideTuning.NONE:
+		return false
+	show_hide_hint(HideTuning.refusal_for(player.hide_mode, interaction_id))
+	return true
+
+## EXT-02: показать подсказку-отказ в строке подсказки HUD на seconds (укрытия: «ВЫХОД ЗАНЯТ» и т. п.).
+func show_hide_hint(text: String, seconds := HideTuning.HINT_SECONDS) -> void:
+	_hide_hint = text
+	_hide_hint_left = seconds if text != "" else 0.0
 
 ## Экран провала открыт (для HUD и тестов).
 func is_stealth_failing() -> bool:
@@ -230,6 +259,9 @@ func get_hud_state() -> Dictionary:
 		var zone := player.current_interactable()
 		if zone:
 			prompt = zone.prompt
+			# EXT-02: в укрытии чужие зоны (Бабка, продавщица, «Лада», наблюдатели) подсказывают отказ.
+			if player.hide_mode != HideTuning.NONE and not zone.is_in_group(&"hide_spots"):
+				prompt = HideTuning.refusal_for(player.hide_mode, zone.interaction_id)
 	elif _hint_left > 0.0:
 		prompt = _hint
 	var target_id: StringName = objective.get("target_id", &"")
@@ -247,4 +279,7 @@ func get_hud_state() -> Dictionary:
 		"stealth_state": stealth.state,
 		"stealth_fail": _fail_left > 0.0,
 		"stealth_toast": (STEALTH_TOAST if mission.has_bread else STEALTH_TOAST_NO_BREAD) if _stealth_toast_left > 0.0 else "",
+		# EXT-02: режим укрытия и подсказка-отказ (HUD показывает её вместо prompt, пока не пуста).
+		"hide_mode": player.hide_mode,
+		"hide_hint": _hide_hint if _hide_hint_left > 0.0 else "",
 	}

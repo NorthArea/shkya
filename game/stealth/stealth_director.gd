@@ -1,7 +1,8 @@
 class_name StealthDirector
 extends Node
 ## C7 (EXT-01 S): единственный владелец suspicion 0…1, state (safe / suspicious / alert) и frozen.
-## Каждые POLL_SECONDS берёт max visibility() по группе `detection_sensors`; рост до 1 за RISE_SECONDS,
+## Каждые POLL_SECONDS берёт max visibility() 0…1 по группе `detection_sensors`; рост до 1 за RISE_SECONDS × 1/видимость
+## (EXT-02: коробка на ходу 0,75 → 2,67 с), «видят» — видимость > 0;
 ## спад в DECAY_FACTOR раза быстрее. Рост — не выше suspicion_cap видящих сенсоров (учебный автобус на улице A
 ## доводит шкалу до SUSPICIOUS, но не до провала); выше потолка шкала стоит, пока видят.
 ## Секторы видимости (show_cone) включаются, пока Илюша пешком ближе CONE_DISTANCE к сенсору (STEALTH_DESIGN). suspicion ≥ 1 — alert и сигнал player_detected один раз; дальше мир
@@ -49,9 +50,9 @@ func _physics_process(delta: float) -> void:
 		_visible_now = _max_visibility()
 	if _alerted:
 		return  # обнаружен: ждём респавна, шкала стоит на 1
-	if _visible_now > 0.5 and not frozen:
+	if _visible_now > 0.0 and not frozen:
 		if suspicion < _cap_now:
-			suspicion = minf(suspicion + delta / RISE_SECONDS, _cap_now)
+			suspicion = minf(suspicion + delta / RISE_SECONDS * _visible_now, _cap_now)
 	else:
 		suspicion = maxf(suspicion - delta * DECAY_FACTOR / RISE_SECONDS, 0.0)
 	if suspicion >= 1.0:
@@ -80,7 +81,7 @@ func notify_respawned() -> void:
 
 ## Видит ли кто-то Илюшу сейчас (по кэшу сенсоров).
 func visible_now() -> bool:
-	return _visible_now > 0.5
+	return _visible_now > 0.0
 
 func protection_left() -> float:
 	return _protection_left
@@ -93,7 +94,8 @@ func snap() -> Dictionary:
 		"frozen": frozen,
 		"reasons": _reasons.keys(),
 		"protection_left": _protection_left,
-		"visible": _visible_now > 0.5,
+		"visible": _visible_now > 0.0,
+		"visibility": _visible_now,
 		"detections": detections,
 	}
 
@@ -105,11 +107,11 @@ func _max_visibility() -> float:
 		if sensor.get("enabled") == false:
 			continue
 		var seen: float = sensor.visibility()
-		if seen > 0.5:
+		if seen > 0.0:
 			cap = maxf(cap, float(sensor.get("suspicion_cap")) if sensor.get("suspicion_cap") != null else 1.0)
 		best = maxf(best, seen)
 		sensor.set("cone_wanted", on_foot and sensor.has_method("distance_to_player") and sensor.distance_to_player() < CONE_DISTANCE)
-	_cap_now = cap if best > 0.5 else 1.0
+	_cap_now = cap if best > 0.0 else 1.0
 	return best
 
 func _on_foot() -> bool:

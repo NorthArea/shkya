@@ -7,6 +7,8 @@ extends Node3D
 ## их опрашивает StealthDirector. Сектор видимости на земле — по show_cone (полицейский, автобус ГСУМ), виден, пока
 ## StealthDirector держит cone_wanted (Илюша пешком ближе CONE_DISTANCE). suspicion_cap — потолок шкалы от этого
 ## сенсора: «учебный» наблюдатель (автобус на улице A, этап 3) зажигает индикатор, но не доводит до провала.
+## EXT-02: visibility() = геометрия (0|1) × Ilyusha.exposure_factor(глаза) — 0…1 непрерывно (коробка, сугроб, бочка);
+## in_view — геометрия без множителя (для гэгов «в конусе»).
 
 const POLL_SECONDS := 0.15
 const ACTIVE_DISTANCE := 40.0
@@ -30,6 +32,8 @@ var _visible := 0.0
 var _poll_left := 0.0
 ## Что перекрыло луч в последнем опросе (имя тела) — для тестов и настройки укрытий; "" — ничего.
 var last_blocker := ""
+## Геометрия последнего опроса без множителя заметности: дистанция, угол и луч пропускают (в машине — false).
+var in_view := false
 var _cone: MeshInstance3D
 var _cone_shape := Vector2.ZERO   # (range_m, fov_deg), под которые построен сектор
 var _exclude: Array[RID] = []
@@ -55,7 +59,7 @@ func _physics_process(delta: float) -> void:
 	if _cone or (show_cone and cone_wanted):
 		_update_cone()
 
-## Кэшированная видимость: 0 или 1.
+## Кэшированная видимость 0…1: геометрия (0 или 1) × заметность Илюши (EXT-02).
 func visibility() -> float:
 	return _visible
 
@@ -74,6 +78,18 @@ func distance_to_player() -> float:
 	return Vector2(p.x - global_position.x, p.z - global_position.z).length()
 
 func _compute() -> float:
+	var seen := _line_of_sight()
+	in_view = seen > 0.0
+	if not in_view:
+		return 0.0
+	# EXT-02: множитель заметности (раздел 5.3); в сугробе 0 независимо от луча.
+	var player: Node3D = _world().player
+	if player.has_method("exposure_factor"):
+		return clampf(player.exposure_factor(global_position + Vector3.UP * EYE_HEIGHT), 0.0, 1.0)
+	return seen
+
+## Геометрия зрения: 1 — дистанция, угол и луч пропускают, иначе 0; last_blocker — что перекрыло луч.
+func _line_of_sight() -> float:
 	if not enabled or not is_inside_tree():
 		return 0.0
 	var world := _world()

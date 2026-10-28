@@ -150,6 +150,8 @@ func _nearby() -> StringName:
 func _on_interacted(_actor: Node, id: StringName) -> void:
 	if _kind != &"":
 		return
+	if world.has_method(&"refuse_in_hide") and world.refuse_in_hide(id):
+		return  # EXT-02: в укрытии диалог и покупка не открываются — подсказка-отказ (DemoWorld)
 	match id:
 		&"officer":
 			# Этап 5 расширения: короткий разговор, выход свободный; миссию не трогает.
