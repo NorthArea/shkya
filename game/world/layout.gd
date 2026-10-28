@@ -75,15 +75,38 @@ const LAMPS := [
 	[Vector3(58.5, 3.0, -77), 2.5],    # окно киоска
 ]
 
-# --- Декор с коллизиями (ART-02): фонари, валы снега у обочин, берёзы, указатель. Мини-карта их не рисует. ---
+# --- Декор с коллизиями (ART-02, ART-05): фонари, валы снега у обочин, берёзы, тополя, машины, указатель. Мини-карта их не рисует. ---
 
 const LAMP_HEIGHT := 6.0
+# Восточные фонари улицы B стоят у бордюра, в валу снега: между столбом и стеной H8 остаётся ~4,9 м,
+# машина не зажимается в щели (ART-05, тест застреваний).
+const LAMP_B_WEST := 61.0
+const LAMP_B_EAST := 77.0
 const BANK := Vector2(1.2, 0.9)        # ширина и высота вала снега
 const TREES: Array[Vector2] = [
 	Vector2(-66, 98), Vector2(-70, 64), Vector2(-56, 66), Vector2(-12, 102), Vector2(4, 96), Vector2(12, 76),
 	Vector2(-80, 17), Vector2(-65, 17), Vector2(-35, 17), Vector2(-20, 17),
 ]
 const STREET_SIGN := Vector2(60.5, 22.5)
+# Тополя (ART-05, сверка ART-04: крупные тополя во дворах и вдоль улиц, кроны выше 4-этажек).
+const POPLARS: Array[Vector2] = [
+	Vector2(-95, 17), Vector2(-50, 17), Vector2(-5, 17), Vector2(20, 17), Vector2(40, 17), Vector2(90, 18),
+	Vector2(34, 50), Vector2(52, 51), Vector2(72, 50), Vector2(92, 51),
+	Vector2(-70, 102), Vector2(-64, 61), Vector2(-40, 62), Vector2(6, 104), Vector2(16, 90),
+]
+const POPLAR_TRUNK := Vector3(0.8, 10.0, 0.8)
+# Опоры контактной сети без фонаря там, где фонари пропущены (выезд со двора, площадка киоска):
+# поперечины висят на парах опор через каждые 24 м (сверка ART-04, черта 13).
+const TROLLEY_POLES: Array[Vector2] = [Vector2(-18, 42), Vector2(6, 42), Vector2(61, -62), Vector2(61, -86)]
+const POLE_HEIGHT := 8.0        # видимая высота столба фонаря и опоры; коллизия — LAMP_HEIGHT
+# Припаркованные машины со снегом на крыше (ART-05, сверка ART-04): статичный декор, без поведения.
+# [центр x/z, вдоль x — true]. От валов у бордюра — больше 1 м: ближе тест застреваний считает это щелью.
+const PARKED: Array = [
+	[Vector2(-56.5, 100), false], [Vector2(-60.5, 100.5), false], [Vector2(17, 80), false], [Vector2(17, 71.5), false],
+	[Vector2(-2, 103), false], [Vector2(-60, 27.0), true], [Vector2(-45, 27.0), true],
+	[Vector2(-75, 37.1), true], [Vector2(-50, 37.1), true],
+	[Vector2(73.9, -5), false], [Vector2(73.9, -55), false], [Vector2(73.9, -100), false],
+]
 
 ## Уличные фонари вдоль тротуаров, с пропусками у переходов маршрута. [центр x/z].
 static func street_lamps() -> Array[Vector2]:
@@ -94,8 +117,8 @@ static func street_lamps() -> Array[Vector2]:
 			points.append(Vector2(x, 42.0))                # улица A, юг (без выезда со двора)
 	for z in range(10, -112, -24):
 		if z > -60 or z < -94:
-			points.append(Vector2(61.0, z))                # улица B, запад (без площадки киоска)
-		points.append(Vector2(79.0, z))                    # улица B, восток
+			points.append(Vector2(LAMP_B_WEST, z))         # улица B, запад (без площадки киоска)
+		points.append(Vector2(LAMP_B_EAST, z))             # улица B, восток, у бордюра
 	return points
 
 ## Валы снега вдоль обочин: [центр x/z, размер x/z]. Разрывы — выезд со двора, перекрёсток, площадка киоска.
@@ -116,6 +139,17 @@ static func snow_banks() -> Array:
 			z += length + 3.0
 	return banks
 
+## Консоль уличного фонаря: смещение светильника от столба к проезжей части (сверка ART-04, черта 14).
+const LAMP_ARM := 1.8
+static func lamp_arm(p: Vector2) -> Vector2:
+	if absf(p.y - 22.0) < 0.1:
+		return Vector2(0, LAMP_ARM)       # улица A, север — к югу
+	if absf(p.y - 42.0) < 0.1:
+		return Vector2(0, -LAMP_ARM)      # улица A, юг — к северу
+	if absf(p.x - LAMP_B_WEST) < 0.1:
+		return Vector2(LAMP_ARM, 0)       # улица B, запад — к востоку
+	return Vector2(-LAMP_ARM, 0)          # улица B, восток — к западу
+
 ## Все декоративные твёрдые коробки в формате SOLIDS.
 static func decor_solids() -> Array:
 	var solids := []
@@ -126,6 +160,12 @@ static func decor_solids() -> Array:
 	for p in TREES:
 		solids.append(["Birch", "tree", p, Vector3(0.3, 7.0, 0.3)])
 	solids.append(["StreetSign", "sign_post", STREET_SIGN, Vector3(0.12, 3.2, 0.12)])
+	for p in TROLLEY_POLES:
+		solids.append(["TrolleyPole", "lamp", p, Vector3(0.25, LAMP_HEIGHT, 0.25)])
+	for p in POPLARS:
+		solids.append(["Poplar", "poplar", p, POPLAR_TRUNK])
+	for car in PARKED:
+		solids.append(["ParkedCar", "parked_car", car[0], Vector3(4.1, 1.4, 1.7) if car[1] else Vector3(1.7, 1.4, 4.1)])
 	return solids
 
 ## SOLIDS + декор: для геометрии и проверок свободного места.

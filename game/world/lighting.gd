@@ -1,10 +1,14 @@
 extends Node3D
-## LightingAndWeather (ART-02): сумерки, прохладный общий свет, тёплые фонари, подъезд и окно киоска,
+## LightingAndWeather (ART-02, ART-05): сумерки, прохладный общий свет, натриевые фонари, тёплые подъезд и окно киоска,
 ## мокрый снег вокруг камеры. Свечение окон и фонарей даёт glow, мокрый асфальт — SSR.
+## Цвета по сверке ART-04 (черты 14, 21): тени на снегу голубые с уклоном в циан (G > R), без лавандового налёта;
+## уличный свет — натриевый оранжевый (снег под фонарём #cb6312), окна и подъезд — теплее-белые.
 
 const Layout = preload("res://game/world/layout.gd")
 
-const WARM := Color(1.0, 0.74, 0.42)
+const WARM := Color(1.0, 0.74, 0.42)       # подъезд, окно киоска
+const SODIUM := Color(1.0, 0.50, 0.12)     # уличные и дворовый фонари
+const YARD_POOL := Color(1.0, 0.80, 0.58)  # пятно света на стоянке «Лады»
 const SnowShader = preload("res://game/world/shaders/wet_snow.gdshader")
 const SNOW_BOX := Vector3(32.0, 12.0, 32.0)      # объём хлопьев вокруг камеры
 const SNOW_AMOUNT := 3000
@@ -13,10 +17,10 @@ var snow: MultiMeshInstance3D
 
 func _ready() -> void:
 	var sky_material := ProceduralSkyMaterial.new()
-	sky_material.sky_top_color = Color(0.07, 0.09, 0.20)
-	sky_material.sky_horizon_color = Color(0.36, 0.33, 0.45)
-	sky_material.ground_bottom_color = Color(0.10, 0.10, 0.12)
-	sky_material.ground_horizon_color = Color(0.36, 0.33, 0.45)
+	sky_material.sky_top_color = Color(0.06, 0.12, 0.24)
+	sky_material.sky_horizon_color = Color(0.36, 0.47, 0.58)
+	sky_material.ground_bottom_color = Color(0.10, 0.11, 0.12)
+	sky_material.ground_horizon_color = Color(0.36, 0.47, 0.58)
 	sky_material.sun_angle_max = 0.0
 	var sky := Sky.new()
 	sky.sky_material = sky_material
@@ -34,7 +38,7 @@ func _ready() -> void:
 	env.ssr_enabled = true
 	env.ssr_max_steps = 48
 	env.fog_enabled = true
-	env.fog_light_color = Color(0.30, 0.32, 0.45)
+	env.fog_light_color = Color(0.33, 0.43, 0.54)
 	env.fog_density = 0.0075
 	env.fog_sky_affect = 0.35
 	var world_env := WorldEnvironment.new()
@@ -44,7 +48,7 @@ func _ready() -> void:
 
 	var sky_light := DirectionalLight3D.new()
 	sky_light.name = "CoolSky"
-	sky_light.light_color = Color(0.62, 0.70, 0.95)
+	sky_light.light_color = Color(0.62, 0.78, 1.0)
 	sky_light.light_energy = 0.35
 	sky_light.shadow_enabled = true
 	sky_light.rotation = Vector3(deg_to_rad(-55.0), deg_to_rad(30.0), 0.0)
@@ -52,36 +56,40 @@ func _ready() -> void:
 
 	var index := 0
 	for spec in Layout.LAMPS:
-		_lamp(spec[0], spec[1], index)
+		# Дворовый фонарь над стоянкой — мягкий тёплый, как пятно под ним: «Лада» остаётся белой.
+		_lamp(spec[0], spec[1], index, YARD_POOL if index == 1 else WARM, 16.0)
 		index += 1
+	# Светильник — на конце консоли, над проезжей частью (ART-05).
 	for p in Layout.street_lamps():
-		_lamp(Vector3(p.x, Layout.LAMP_HEIGHT - 0.4, p.y), 5.0, index)
+		var tip: Vector2 = p + Layout.lamp_arm(p)
+		_lamp(Vector3(tip.x, Layout.POLE_HEIGHT - 0.8, tip.y), 6.5, index, SODIUM, 19.0)
 		index += 1
 	# Контрастные пятна тёплого света на земле (раздел 2 канона): стоянка «Лады» под дворовым фонарём и площадка у окна киоска.
-	_pool(Layout.LAMPS[1][0] + Vector3(0.0, -0.3, 0.0), 6.0, 40.0, 12.0)
-	_pool(Layout.LAMPS[2][0] + Vector3(0.6, 0.3, 0.0), 5.0, 55.0, 7.0)
+	# Пятно у стоянки — мягче натриевого: под ним белая «Лада» должна оставаться белой (канон, раздел 2).
+	_pool(Layout.LAMPS[1][0] + Vector3(0.0, -0.3, 0.0), 4.0, 40.0, 12.0, YARD_POOL)
+	_pool(Layout.LAMPS[2][0] + Vector3(0.6, 0.3, 0.0), 5.0, 55.0, 7.0, WARM)
 	_build_snow()
 
 ## Конус света вниз: видимое пятно на снегу, без теней (дёшево).
-func _pool(at: Vector3, energy: float, angle: float, reach: float) -> void:
+func _pool(at: Vector3, energy: float, angle: float, reach: float, color: Color) -> void:
 	var spot := SpotLight3D.new()
 	spot.name = "WarmPool%d" % get_child_count()
 	spot.position = at
 	spot.rotation = Vector3(-PI * 0.5, 0.0, 0.0)
-	spot.light_color = WARM
+	spot.light_color = color
 	spot.light_energy = energy
 	spot.spot_range = reach
 	spot.spot_angle = angle
 	spot.spot_angle_attenuation = 0.6
 	add_child(spot)
 
-func _lamp(at: Vector3, energy: float, index: int) -> void:
+func _lamp(at: Vector3, energy: float, index: int, color: Color, reach: float) -> void:
 	var lamp := OmniLight3D.new()
 	lamp.name = "WarmLamp%d" % index
 	lamp.position = at
-	lamp.light_color = WARM
+	lamp.light_color = color
 	lamp.light_energy = energy
-	lamp.omni_range = 16.0
+	lamp.omni_range = reach
 	lamp.omni_attenuation = 1.4
 	add_child(lamp)
 

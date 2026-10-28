@@ -13,6 +13,7 @@ uniform float window_width = 1.4;
 uniform float window_height = 1.45;
 uniform float ground_floor_shops = 0.0;   // 1 — первый этаж витринами
 uniform float seed = 0.0;
+uniform vec3 frame_color : source_color = vec3(0.82, 0.83, 0.82);   // белые рамы (сверка ART-04, P3)
 
 varying vec3 world_pos;
 varying vec3 world_normal;
@@ -57,14 +58,25 @@ void fragment() {
 		if (in_window) {
 			bool lit = shop ? hash(cell + 1.3) < 0.75 : hash(cell) < lit_ratio;
 			float frame_line = step(abs(local.x - (wx0 + ww * 0.5)), 0.04);
+			// Рама по краю проёма и форточка сверху.
+			float edge = min(min(local.x - wx0, wx0 + ww - local.x), min(local.y - wy0, wy0 + wh - local.y));
+			frame_line = max(frame_line, step(edge, 0.05));
+			if (!shop) {
+				frame_line = max(frame_line, step(abs(local.y - (wy0 + wh * 0.72)), 0.03) * step(local.x, wx0 + ww * 0.5));
+			}
 			vec3 glass = lit ? window_lit * (0.75 + 0.5 * hash(cell + 3.1)) : window_dark;
-			color = mix(glass, seam_color * 0.6, frame_line);
+			color = mix(glass, shop ? seam_color * 0.6 : frame_color * (0.7 + 0.3 * hash(cell + 5.0)), frame_line);
 			if (lit) {
 				emission = glass * (shop ? 1.25 : 1.1) * (1.0 - frame_line);
 			}
 			ROUGHNESS = 0.2;
 		} else {
 			ROUGHNESS = 0.9;
+			// Снег на отливе под окном (сверка ART-04, черта 22).
+			bool sill = !shop && local.x > wx0 - 0.05 && local.x < wx0 + ww + 0.05 && local.y > wy0 - 0.07 && local.y < wy0 && v > 0.3;
+			if (sill) {
+				color = vec3(0.80, 0.83, 0.88);
+			}
 		}
 		ALBEDO = color;
 		EMISSION = emission;
