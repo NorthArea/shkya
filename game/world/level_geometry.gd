@@ -17,8 +17,6 @@ const GARAGE_DOOR_SIDE := {"Garages_Yard": -1.0, "Garages_Kiosk": 1.0}   # дв�
 const GARAGE_COLORS := [Color(0.18, 0.32, 0.58), Color(0.78, 0.58, 0.12), Color(0.50, 0.22, 0.10), Color(0.60, 0.20, 0.07),
 	Color(0.72, 0.40, 0.42), Color(0.30, 0.45, 0.10), Color(0.40, 0.42, 0.45)]   # бурые, ржавые, зелёные — по итоговой сверке (И2, И8)
 const GARAGE_WALL := Color(0.50, 0.30, 0.22)   # кирпичные боксы (И2)
-const CAR_COLORS := [Color(0.18, 0.22, 0.30), Color(0.55, 0.48, 0.36), Color(0.35, 0.12, 0.10), Color(0.70, 0.70, 0.66),
-	Color(0.22, 0.30, 0.22), Color(0.50, 0.18, 0.12)]
 const WARM := Color(1.0, 0.75, 0.42)           # подъезд и окна
 const SODIUM := Color(1.0, 0.74, 0.10)         # натриевые фонари, как в lighting.gd (итоговая сверка ART-06, С9)
 const CONCRETE := Color(0.50, 0.51, 0.52)
@@ -35,7 +33,7 @@ const ENTRANCE_WALL_Z := 107.98   # северный фасад H1 (центр 1
 const ENTRANCE_DOOR_X := -40.0    # дверь по центру козырька
 
 var _mound_mesh: SphereMesh       # одна сетка на все комки сугробов
-var _chunk_mesh: SphereMesh       # грубая сетка 8×4 для валов у дорог: грани читаются как рваный снег (И4)
+var _chunk_mesh: SphereMesh       # сетка 14×6 для валов у дорог: комки чуть гранёные, но без острых глыб (И4, POLISH-02 п. 4)
 # Экземпляры MultiMesh, которые собираются со всего квартала и строятся одним вызовом в конце:
 # лоджии, рамы, стёкла, ветки. Тысячи деталей без тысяч узлов и draw call.
 var _concrete: Array[Transform3D] = []
@@ -88,6 +86,12 @@ func _build_ground() -> void:
 	var center := Vector3(b.position.x + b.size.x * 0.5, -0.5, b.position.y + b.size.y * 0.5)
 	var ground := Greybox.solid_box("Ground", center, Vector3(b.size.x, 1.0, b.size.y), Greybox.COLORS["ground"])
 	(ground.get_child(1) as MeshInstance3D).material_override = Materials.snow(0.0)
+	# Коллизия земли — бесконечная плоскость y = 0, а не плита 200×1×250: о плиту капсула Илюши изредка «залипала»
+	# на ровном месте (STUCK, Poplar@(-28.4,101.7): скорость 4 м/с, все шесть скольжений — о Ground с нормалью вверх,
+	# смещение 0). За краем карты стоят невидимые стены Bound_*, так что бесконечность плоскости не видна.
+	var plane := WorldBoundaryShape3D.new()
+	plane.plane = Plane(Vector3.UP, 0.5)   # в координатах тела: центр плиты на y = −0,5
+	(ground.get_child(0) as CollisionShape3D).shape = plane
 	add_child(ground)
 
 func _build_solid(index: int, spec: Array) -> void:
@@ -112,13 +116,16 @@ func _build_solid(index: int, spec: Array) -> void:
 			if spec[0] == "Bench":
 				mesh.queue_free()
 				body.add_child(_bench(size))
+			elif spec[0] == "Playground":
+				# Не короб снега, а площадка за оградкой: горка, качели, песочница (POLISH-02, п. 15).
+				mesh.queue_free()
+				_playground_fence(body, size)
+				body.add_child(_playground(xz, size))
 			else:
-				mesh.material_override = Materials.snow(0.1) if spec[0] == "Playground" else Materials.plain(Color(0.35, 0.25, 0.18))
-				if spec[0] == "Playground":
-					_playground_fence(body, size)
+				mesh.material_override = Materials.plain(Color(0.35, 0.25, 0.18))
 		"parked_car":
 			mesh.queue_free()
-			body.add_child(_zhiguli(size, CAR_COLORS[index % CAR_COLORS.size()]))
+			body.add_child(_zhiguli(size, index))
 		"kiosk":
 			mesh.queue_free()
 			body.add_child(_kiosk(size))
@@ -147,6 +154,12 @@ func _build_solid(index: int, spec: Array) -> void:
 			body.add_child(_street_sign(size.y))
 		"fence":
 			mesh.material_override = Materials.plain(Color(0.16, 0.24, 0.18), 0.7)
+		"carpet_bar":
+			mesh.queue_free()
+			body.add_child(_carpet_post(size, xz == Layout.CARPET_BAR[0]))
+		"bins":
+			mesh.queue_free()
+			body.add_child(_trash_bins(size))
 	add_child(body)
 
 func _build_canopy() -> void:
@@ -273,7 +286,7 @@ func _lumpy_bank(size: Vector3, material: Material, seed: int) -> Node3D:
 		var h := 0.45 + 0.95 * r1
 		var lump_size := Vector3(step * (1.2 + 0.8 * r2), size.y * h, size.z * (0.8 + 0.35 * h)) if long_x else Vector3(size.x * (0.8 + 0.35 * h), size.y * h, step * (1.2 + 0.8 * r2))
 		var lump := _mound(lump_size, material, material == Materials.snow_bank())
-		lump.rotation = Vector3((r2 - 0.5) * 0.8, r1 * TAU, (r1 - 0.5) * 0.8) if material == Materials.snow_bank() else Vector3.ZERO
+		lump.rotation = Vector3((r2 - 0.5) * 0.25, r1 * TAU, (r1 - 0.5) * 0.25) if material == Materials.snow_bank() else Vector3.ZERO
 		var offset := -length * 0.5 + step * (i + 0.5)
 		var jitter := (r2 - 0.5) * 0.3 * (size.z if long_x else size.x)
 		lump.position += Vector3(offset, -size.y * 0.5 + lump_size.y * 0.5, jitter) if long_x else Vector3(jitter, -size.y * 0.5 + lump_size.y * 0.5, offset)
@@ -299,8 +312,8 @@ func _mound(size: Vector3, material: Material, rough := false) -> MeshInstance3D
 		_chunk_mesh = SphereMesh.new()
 		_chunk_mesh.radius = 0.5
 		_chunk_mesh.height = 1.0
-		_chunk_mesh.radial_segments = 8
-		_chunk_mesh.rings = 4
+		_chunk_mesh.radial_segments = 14   # округлее: на 8×4 вал читался тёмными гранёными глыбами (POLISH-02, п. 4)
+		_chunk_mesh.rings = 6
 	var mesh := MeshInstance3D.new()
 	mesh.mesh = _chunk_mesh if rough else _mound_mesh
 	mesh.material_override = material
@@ -349,40 +362,30 @@ func _garage_row(body: Node3D, name: String, size: Vector3) -> void:
 		body.add_child(number)
 	body.add_child(_slab(size, Vector3(0, size.y * 0.5 + 0.125, 0), 0.25))
 
-func _zhiguli(size: Vector3, color: Color) -> Node3D:
-	var root := Node3D.new()
-	var long_x := size.x > size.z
-	var length := size.x if long_x else size.z
-	var width := size.z if long_x else size.x
-	var visual := Node3D.new()
-	if long_x:
-		visual.rotation.y = PI * 0.5
-	root.add_child(visual)
-	var lower := Greybox.mesh_box(Vector3(width, 0.7, length), color)
-	lower.material_override = Materials.plain(color, 0.35)
-	lower.position.y = -size.y * 0.5 + 0.55
-	visual.add_child(lower)
-	var cabin := Greybox.mesh_box(Vector3(width * 0.9, 0.5, length * 0.48), color)
-	cabin.material_override = Materials.plain(color.darkened(0.1), 0.35)
-	cabin.position = Vector3(0, -size.y * 0.5 + 1.15, 0.2)
-	visual.add_child(cabin)
-	var snow_top := Greybox.mesh_box(Vector3(width * 0.88, 0.1, length * 0.46), Color.WHITE)
-	snow_top.material_override = Materials.snow(0.0)
-	snow_top.position = Vector3(0, -size.y * 0.5 + 1.45, 0.2)
-	visual.add_child(snow_top)
-	var tyre := Materials.plain(Color(0.06, 0.06, 0.06), 0.9)
-	for wx in [-width * 0.47, width * 0.47]:
-		for wz in [-length * 0.32, length * 0.32]:
-			var wheel := Greybox.mesh_cylinder(0.3, 0.3, 0.2, Color.BLACK)
-			wheel.material_override = tyre
-			wheel.rotation.z = PI * 0.5
-			wheel.position = Vector3(wx, -size.y * 0.5 + 0.3, wz)
-			visual.add_child(wheel)
-	return root
+const LadaVisual = preload("res://game/vehicles/lada_visual.gd")
+## Припаркованные «Жигули» (POLISH-02, п. 7): облик LadaVisual в цветах советских «Жигулей» —
+## белый, красный, вишнёвый, синий, зелёный, бежевый, морская волна, серебристый, охра.
+const ZHIGULI_COLORS := [Color(0.80, 0.79, 0.74), Color(0.62, 0.12, 0.08), Color(0.40, 0.08, 0.10), Color(0.16, 0.26, 0.48),
+	Color(0.26, 0.40, 0.24), Color(0.74, 0.62, 0.40), Color(0.08, 0.30, 0.34), Color(0.62, 0.66, 0.70), Color(0.55, 0.40, 0.14)]
+const PLATE_LETTERS := "авекмнорстух"
+
+## Облик на земле внутри коробки коллизии (размер коробки не меняется); перед — в случайную сторону.
+func _zhiguli(size: Vector3, index: int) -> Node3D:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = index * 7919 + 13
+	var color: Color = ZHIGULI_COLORS[index * 4 % ZHIGULI_COLORS.size()]   # шаг 4 из 9: соседние машины разного цвета
+	var plate := "%s%03d%s%s %s" % [PLATE_LETTERS[rng.randi() % PLATE_LETTERS.length()], rng.randi_range(1, 999),
+		PLATE_LETTERS[rng.randi() % PLATE_LETTERS.length()], PLATE_LETTERS[rng.randi() % PLATE_LETTERS.length()],
+		"54" if rng.randf() < 0.5 else "154"]
+	var visual := LadaVisual.build(color, plate, false, rng.randf_range(0.4, 1.0), rng.randf_range(0.12, 0.2))
+	visual.position.y = -size.y * 0.5
+	visual.rotation.y = (PI * 0.5 if size.x > size.z else 0.0) + (PI if rng.randf() < 0.5 else 0.0)
+	return visual
 
 func _kiosk(size: Vector3) -> Node3D:
-	# Пустая будка: окно на восток (к улице), внутри тёплый свет и продавщица.
+	# Будка: окно на восток (к улице), внутри тёплый свет, полки с хлебом и продавщица (POLISH-02, п. 2).
 	var root := Node3D.new()
+	root.name = "KioskDress"
 	var green := Materials.plain(Color(0.22, 0.38, 0.28), 0.7)
 	var hx := size.x * 0.5
 	var hy := size.y * 0.5
@@ -405,10 +408,7 @@ func _kiosk(size: Vector3) -> Node3D:
 	glass.material_override = Materials.glass()
 	glass.position = Vector3(hx - 0.02, -hy + 1.0 + (size.y - 1.7) * 0.5, 0)
 	root.add_child(glass)
-	var shelves := Greybox.mesh_box(Vector3(0.4, 1.4, size.z - 0.4), Color.WHITE)
-	shelves.material_override = Materials.plain(Color(0.75, 0.55, 0.30), 0.8, WARM, 0.6)   # полки с батонами
-	shelves.position = Vector3(-hx + 0.35, -hy + 1.5, 0)
-	root.add_child(shelves)
+	_kiosk_inside(root, size)
 	root.add_child(_slab(Vector3(size.x + 0.6, 0.12, size.z + 0.6), Vector3(0.3, hy + 0.16, 0), 0.2))
 	# Павильон из крашеного металла: рёбра на боковых стенах и короб рольставни над окном (сверка ART-04, черта 15).
 	var rib := Materials.plain(Color(0.17, 0.30, 0.22), 0.6)
@@ -875,10 +875,15 @@ func _build_trails() -> void:
 	for p in paths:
 		var a: Vector2 = p[0]
 		var b: Vector2 = p[1]
-		var mesh := Greybox.mesh_box(Vector3(p[2], 0.01, a.distance_to(b)), Color.WHITE)
+		# Плоскость с мягкой рваной кромкой (POLISH-02, п. 19), а не коробка с резкими краями.
+		var plane := PlaneMesh.new()
+		plane.size = Vector2(p[2], a.distance_to(b))
+		var mesh := MeshInstance3D.new()
+		mesh.mesh = plane
 		mesh.name = "Trail"
-		mesh.material_override = Materials.snow(1.0)
-		mesh.position = Vector3((a.x + b.x) * 0.5, 0.018, (a.y + b.y) * 0.5)
+		mesh.material_override = Materials.trail(p[2], a.distance_to(b))
+		mesh.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		mesh.position = Vector3((a.x + b.x) * 0.5, 0.024, (a.y + b.y) * 0.5)
 		mesh.rotation.y = atan2(b.x - a.x, b.y - a.y)
 		add_child(mesh)
 
@@ -1194,3 +1199,307 @@ func _steam_puff(parent: Node3D, at: Vector3, seed: int) -> void:
 		puff.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		parent.add_child(puff)
 
+
+# --- POLISH-02, п. 15: двор — площадка, выбивалка, контейнеры ---
+
+## Труба from → to: цилиндр радиуса radius (только вид).
+func _rod(parent: Node3D, from: Vector3, to: Vector3, radius: float, material: Material) -> void:
+	var rod := Greybox.mesh_cylinder(radius, radius, from.distance_to(to), Color.WHITE)
+	rod.material_override = material
+	var axis := (to - from).normalized()
+	var side := axis.cross(Vector3.UP if absf(axis.y) < 0.99 else Vector3.RIGHT).normalized()
+	rod.basis = Basis(side, axis, side.cross(axis))
+	rod.position = (from + to) * 0.5
+	parent.add_child(rod)
+
+## Детская площадка за оградкой (внутри коллизии Playground): советская металлическая горка, качели на
+## А-образных стойках, песочница под снегом и сугробы у оградки. Начало координат — центр площадки на земле.
+func _playground(xz: Vector2, size: Vector3) -> Node3D:
+	var root := Node3D.new()
+	root.name = "PlaygroundDress"
+	root.position.y = -size.y * 0.5
+	var red := Materials.plain(Color(0.62, 0.14, 0.10), 0.5)
+	var yellow := Materials.plain(Color(0.80, 0.60, 0.12), 0.5)
+	var blue := Materials.plain(Color(0.18, 0.30, 0.55), 0.5)
+	var steel := Materials.plain(Color(0.58, 0.60, 0.62), 0.35)
+	var wood := Materials.plain(Color(0.40, 0.27, 0.16), 0.85)
+	# Горка: лестница с запада, площадка 1,5 м, жёлоб на восток.
+	var s := Vector3(Layout.PLAYGROUND_SLIDE.x - xz.x, 0, Layout.PLAYGROUND_SLIDE.y - xz.y)
+	var top := 1.9
+	for zs in [-0.35, 0.35]:
+		_rod(root, s + Vector3(-1.9, 0, zs), s + Vector3(-1.0, top + 0.9, zs), 0.04, red)   # тетива лестницы
+		_rod(root, s + Vector3(-0.6, 0, zs), s + Vector3(-0.6, top + 0.9, zs), 0.04, red)    # задние стойки
+		_rod(root, s + Vector3(-1.0, top, zs), s + Vector3(-1.0, top + 0.9, zs), 0.04, red)  # перила
+		_rod(root, s + Vector3(-1.0, top + 0.9, zs), s + Vector3(-0.6, top + 0.9, zs), 0.04, red)
+	for k in 5:
+		var t := (k + 1) / 6.0 * top / (top + 0.9)   # доля тетивы до площадки
+		var a := s + Vector3(-1.9 + 0.9 * t, (top + 0.9) * t, 0)
+		_rod(root, a + Vector3(0, 0, -0.35), a + Vector3(0, 0, 0.35), 0.025, yellow)        # ступени
+	_part(root, Vector3(0.5, 0.06, 0.8), s + Vector3(-0.8, top, 0), yellow)                  # площадка
+	_part(root, Vector3(0.5, 0.06, 0.74), s + Vector3(-0.8, top + 0.06, 0), Materials.snow(0.0))
+	var chute_from := s + Vector3(-0.55, top, 0)
+	var chute_to := s + Vector3(2.0, 0.25, 0)
+	var chute := Greybox.mesh_box(Vector3(chute_from.distance_to(chute_to), 0.04, 0.6), Color.WHITE)
+	chute.material_override = steel
+	chute.position = (chute_from + chute_to) * 0.5
+	chute.rotation.z = atan2(chute_to.y - chute_from.y, chute_to.x - chute_from.x)
+	root.add_child(chute)
+	for zs in [-0.31, 0.31]:
+		_rod(root, chute_from + Vector3(0, 0.12, zs), chute_to + Vector3(0, 0.12, zs), 0.025, blue)   # бортики
+	_rod(root, chute_to + Vector3(-0.1, 0, -0.25), chute_to + Vector3(-0.1, -0.25, -0.25), 0.03, blue)
+	_rod(root, chute_to + Vector3(-0.1, 0, 0.25), chute_to + Vector3(-0.1, -0.25, 0.25), 0.03, blue)
+	# Качели: две А-стойки, перекладина 2,2 м, два сиденья на цепях; под качелями снег вытоптан.
+	var w := Vector3(Layout.PLAYGROUND_SWINGS.x - xz.x, 0, Layout.PLAYGROUND_SWINGS.y - xz.y)
+	var bar_y := 2.2
+	for xs in [-1.3, 1.3]:
+		for zs in [-0.75, 0.75]:
+			_rod(root, w + Vector3(xs, 0, zs), w + Vector3(xs, bar_y, 0), 0.05, red)
+	_rod(root, w + Vector3(-1.4, bar_y, 0), w + Vector3(1.4, bar_y, 0), 0.05, red)
+	var chain := Materials.plain(Color(0.25, 0.25, 0.26), 0.5)
+	for xs in [-0.6, 0.6]:
+		for zs in [-0.22, 0.22]:
+			_rod(root, w + Vector3(xs + zs, bar_y, 0), w + Vector3(xs + zs, 0.48, 0), 0.012, chain)
+		_part(root, Vector3(0.55, 0.05, 0.25), w + Vector3(xs, 0.46, 0), wood)
+		_part(root, Vector3(0.5, 0.03, 0.2), w + Vector3(xs, 0.5, 0), Materials.snow(0.0))
+	_part(root, Vector3(2.4, 0.01, 1.2), w + Vector3(0, 0.01, 0), Materials.snow(0.9))
+	# Песочница под снегом: деревянная рамка и сугроб внутри.
+	var b := Vector3(-3.2, 0, -2.6)
+	for e in [[Vector3(2.0, 0.25, 0.1), Vector3(0, 0.125, 0.95)], [Vector3(2.0, 0.25, 0.1), Vector3(0, 0.125, -0.95)],
+			[Vector3(0.1, 0.25, 2.0), Vector3(0.95, 0.125, 0)], [Vector3(0.1, 0.25, 2.0), Vector3(-0.95, 0.125, 0)]]:
+		_part(root, e[0], b + e[1], wood)
+	var heap := _mound(Vector3(1.8, 0.35, 1.8), Materials.snow(0.0))
+	heap.position += b + Vector3(0, 0.175, 0)
+	root.add_child(heap)
+	# Сугробы вдоль оградки — снег сгребали с дорожек внутрь.
+	for i in 4:
+		var drift := _mound(Vector3(2.2 + 0.6 * _rand(i, 1), 0.3 + 0.2 * _rand(i, 2), 0.9), Materials.snow(0.0))
+		drift.position += Vector3(-4.5 + i * 3.0, 0.2, size.z * 0.5 - 0.6)
+		root.add_child(drift)
+	return root
+
+## Стойка турника-выбивалки для ковров (кадр двора по ART-04: «выбивалка» у каждого дома). Первая стойка несёт
+## перекладину до второй и висящий на ней ковёр. Стойки — коллизия Layout.CARPET_BAR, между ними можно пройти.
+func _carpet_post(size: Vector3, first: bool) -> Node3D:
+	var root := Node3D.new()
+	var paint := Materials.plain(Color(0.20, 0.34, 0.30), 0.6)
+	var base := -size.y * 0.5
+	_rod(root, Vector3(0, base, 0), Vector3(0, base + size.y, 0), 0.05, paint)
+	if not first:
+		return root
+	var span: Vector2 = Layout.CARPET_BAR[1] - Layout.CARPET_BAR[0]
+	var to := Vector3(span.x, 0, span.y)
+	var bar_y := base + size.y - 0.12
+	_rod(root, Vector3(0, bar_y, 0), to + Vector3(0, bar_y, 0), 0.035, paint)
+	_rod(root, Vector3(0, base + 1.1, 0), to + Vector3(0, base + 1.1, 0), 0.03, paint)
+	_part(root, Vector3(0.12, 0.05, span.length() + 0.1), to * 0.5 + Vector3(0, bar_y + 0.06, 0), Materials.snow(0.0))
+	# Ковёр, перекинутый через перекладину: бордовый с узорной полосой, свисает на обе стороны.
+	var rug := Materials.plain(Color(0.48, 0.10, 0.10), 0.95)
+	var border := Materials.plain(Color(0.78, 0.62, 0.30), 0.9)
+	for side in [-1.0, 1.0]:
+		var panel := Node3D.new()
+		panel.position = to * 0.5 + Vector3(0, bar_y, 0)
+		panel.rotation.z = side * 0.12
+		root.add_child(panel)
+		_part(panel, Vector3(0.03, 1.15, 1.7), Vector3(side * 0.07, -0.58, 0), rug)
+		_part(panel, Vector3(0.035, 0.08, 1.7), Vector3(side * 0.07, -0.95, 0), border)
+		_part(panel, Vector3(0.035, 0.6, 0.08), Vector3(side * 0.07, -0.55, 0.6), border)
+		_part(panel, Vector3(0.035, 0.6, 0.08), Vector3(side * 0.07, -0.55, -0.6), border)
+	return root
+
+## Три мусорных контейнера на бетонной площадке у проезда: крашеный металл, крышки с шапкой снега, ржавые пятна.
+func _trash_bins(size: Vector3) -> Node3D:
+	var root := Node3D.new()
+	var base := -size.y * 0.5
+	_part(root, Vector3(size.x + 0.8, 0.08, size.z + 0.8), Vector3(0, base + 0.04, 0), Materials.plain(Color(0.42, 0.42, 0.41), 0.9))
+	var colors := [Color(0.20, 0.36, 0.24), Color(0.28, 0.34, 0.42), Color(0.22, 0.38, 0.26)]
+	var rust := Materials.plain(Color(0.42, 0.22, 0.10), 0.9)
+	var unit := size.x / 3.0
+	for i in 3:
+		var x := -size.x * 0.5 + unit * (i + 0.5)
+		var metal := Materials.plain(colors[i], 0.6)
+		var h := size.y - 0.2
+		_part(root, Vector3(unit - 0.15, h, size.z - 0.1), Vector3(x, base + 0.08 + h * 0.5, 0), metal)
+		_part(root, Vector3(unit - 0.05, 0.05, 0.08), Vector3(x, base + 0.08 + h - 0.15, size.z * 0.5), metal)   # ручка-обвязка
+		var lid := Greybox.mesh_box(Vector3(unit - 0.1, 0.06, size.z), Color.WHITE)
+		lid.material_override = Materials.plain(colors[i].darkened(0.35), 0.6)
+		lid.position = Vector3(x, base + 0.08 + h + 0.04, 0)
+		lid.rotation.x = -0.12 if i == 1 else 0.0   # средняя крышка приоткрыта
+		root.add_child(lid)
+		var cap := _mound(Vector3(unit - 0.25, 0.1, size.z - 0.3), Materials.snow(0.0))
+		cap.position += Vector3(x, base + 0.08 + h + 0.08, 0)
+		cap.rotation.x = lid.rotation.x
+		root.add_child(cap)
+		_part(root, Vector3(0.35 + 0.2 * _rand(i, 7), 0.25, 0.02), Vector3(x + 0.2 * (i - 1), base + 0.4, size.z * 0.5 - 0.03), rust)
+	# Сугроб у задней стенки и пакет мусора рядом.
+	var heap := _lumpy_bank(Vector3(size.x, 0.5, 0.8), Materials.snow(0.3), 41)
+	heap.position = Vector3(0, base + 0.25, -size.z * 0.5 - 0.5)
+	root.add_child(heap)
+	return root
+
+# --- POLISH-02, п. 2: живой киоск (концепты 06–08) ---
+
+## Внутри киоска: светлая задняя стенка, полки с батонами и буханками у задней и боковых стен, прилавок,
+## лампочка в окне и ценник «Батон 35». Продавщица стоит посередине (Layout.VENDOR) — полки по краям и за ней.
+## Снаружи: плакат «СВЕЖИЙ ХЛЕБ» и объявления на боковых стенах. Хлеб на полках — декор киоска; у Илюши руки
+## пустые, покупка — только флаг has_bread (раздел 2 канона).
+func _kiosk_inside(root: Node3D, size: Vector3) -> void:
+	var hx := size.x * 0.5
+	var hy := size.y * 0.5
+	var hz := size.z * 0.5
+	var floor_y := -hy
+	_part(root, Vector3(0.02, size.y - 0.4, size.z - 0.25), Vector3(-hx + 0.11, floor_y + (size.y - 0.4) * 0.5 + 0.1, 0),
+		Materials.plain(Color(0.86, 0.78, 0.62), 0.9, WARM, 0.18))   # тёплая светлая стенка за полками
+	var wood := Materials.plain(Color(0.52, 0.36, 0.20), 0.8)
+	var batons: Array[Transform3D] = []
+	var baton_c: Array[Color] = []
+	var bricks: Array[Transform3D] = []
+	var brick_c: Array[Color] = []
+	var golden := [Color(0.82, 0.55, 0.24), Color(0.76, 0.48, 0.20), Color(0.86, 0.62, 0.30)]
+	var rye := [Color(0.40, 0.22, 0.12), Color(0.48, 0.28, 0.14)]
+	var shelf_y := [1.0, 1.45, 1.9]   # от пола
+	# Задний стеллаж: три полки по всей ширине.
+	var back_x := -hx + 0.34
+	for s in shelf_y.size():
+		var y: float = floor_y + shelf_y[s]
+		_part(root, Vector3(0.46, 0.04, size.z - 0.3), Vector3(back_x, y, 0), wood)
+		var z := -hz + 0.35
+		var k := 0
+		while z < hz - (0.3 if s == 0 else 0.62):
+			if s == 0:
+				# Нижняя полка — буханки: чёрный и белый «кирпичик» вперемешку.
+				bricks.append(Transform3D(Basis.from_scale(Vector3(0.24, 0.13, 0.12)), Vector3(back_x + 0.05, y + 0.085, z)))
+				brick_c.append(rye[k % 2] if k % 3 != 2 else golden[1])
+				z += 0.15
+			else:
+				# Батоны лежат вдоль полки боком к окну, в два ряда; задний ряд выше, со сдвигом.
+				var along := Basis.from_euler(Vector3(PI * 0.5, 0, 0)) * Basis.from_scale(Vector3(1.0, 1.0, 0.8))
+				batons.append(Transform3D(along, Vector3(back_x + 0.1, y + 0.065, z + 0.2)))
+				baton_c.append(golden[(k + s) % golden.size()])
+				batons.append(Transform3D(along, Vector3(back_x - 0.06, y + 0.11, z + 0.05)))
+				baton_c.append(golden[(k + s + 1) % golden.size()])
+				z += 0.42
+			k += 1
+	# Боковые стеллажи у северной и южной стен, ближе к окну: видны по краям окна, продавщица — между ними.
+	for zs in [-1.0, 1.0]:
+		var rack_z: float = zs * (hz - 0.33)
+		for s in shelf_y.size():
+			var y: float = floor_y + shelf_y[s]
+			_part(root, Vector3(1.5, 0.04, 0.4), Vector3(0.55, y, rack_z), wood)
+			var x := -0.1
+			var k := 0
+			while x < 1.25:
+				if s == 1:
+					bricks.append(Transform3D(Basis.from_scale(Vector3(0.12, 0.13, 0.24)), Vector3(x, y + 0.085, rack_z)))
+					brick_c.append(golden[k % 2] if k % 2 == 0 else rye[0])
+					x += 0.15
+				else:
+					batons.append(Transform3D(Basis.from_euler(Vector3(0, 0, PI * 0.5)) * Basis.from_scale(Vector3(0.8, 0.9, 1.0)), Vector3(x, y + 0.055, rack_z)))   # торцом к окну
+					baton_c.append(golden[(k + s + 1) % golden.size()])
+					x += 0.13
+				k += 1
+		_part(root, Vector3(0.04, 1.2, 0.04), Vector3(-0.22, floor_y + 1.45, rack_z + zs * 0.18), wood)
+		_part(root, Vector3(0.04, 1.2, 0.04), Vector3(1.32, floor_y + 1.45, rack_z + zs * 0.18), wood)
+	var baton_mesh := CapsuleMesh.new()
+	baton_mesh.radius = 0.055
+	baton_mesh.height = 0.36
+	baton_mesh.radial_segments = 8
+	baton_mesh.rings = 2
+	_kiosk_multimesh(root, "KioskBatons", baton_mesh, batons, baton_c)
+	_kiosk_multimesh(root, "KioskLoaves", BoxMesh.new(), bricks, brick_c)
+	# Прилавок изнутри: столешница под окном и весы.
+	_part(root, Vector3(0.5, 0.04, size.z - 0.3), Vector3(hx - 0.32, floor_y + 1.0, 0), Materials.plain(Color(0.62, 0.58, 0.50), 0.6))
+	_part(root, Vector3(0.22, 0.1, 0.3), Vector3(hx - 0.3, floor_y + 1.07, -1.25), Materials.plain(Color(0.85, 0.85, 0.82), 0.4))
+	# Лампочка на шнуре в окне, правее продавщицы, если смотреть с улицы (кадр 07), и её тёплый свет.
+	var bulb_at := Vector3(hx - 0.6, floor_y + 2.12, -0.95)   # ниже короба рольставни (2,3 м)
+	_rod(root, Vector3(bulb_at.x, hy - 0.05, bulb_at.z), bulb_at + Vector3(0, 0.08, 0), 0.008, Materials.plain(Color(0.1, 0.1, 0.1), 0.6))
+	var bulb := Greybox.mesh_sphere(0.07, Color.WHITE)
+	bulb.material_override = Materials.plain(Color(1.0, 0.92, 0.7), 0.3, Color(1.0, 0.82, 0.5), 8.0)
+	bulb.position = bulb_at
+	bulb.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	root.add_child(bulb)
+	var bulb_light := OmniLight3D.new()
+	bulb_light.light_color = Color(1.0, 0.78, 0.45)
+	bulb_light.light_energy = 0.9
+	bulb_light.omni_range = 3.0
+	bulb_light.position = bulb_at + Vector3(0.15, -0.1, 0)
+	root.add_child(bulb_light)
+	# Ценник «Батон 35» за стеклом, в правом нижнем углу окна (если смотреть с улицы).
+	var tag_at := Vector3(hx - 0.07, floor_y + 1.2, 1.35)
+	_part(root, Vector3(0.01, 0.2, 0.32), tag_at, Materials.plain(Color(0.95, 0.94, 0.88), 0.9))
+	var tag := _label("Батон\n35 р.", 40, Color(0.12, 0.10, 0.10))
+	tag.pixel_size = 0.0028
+	tag.alpha_cut = Label3D.ALPHA_CUT_DISCARD   # за прозрачным стеклом: без сортировки прозрачных
+	tag.position = tag_at + Vector3(0.008, 0, 0)
+	tag.rotation.y = PI * 0.5
+	root.add_child(tag)
+	_kiosk_walls(root, size)
+
+func _kiosk_multimesh(root: Node3D, name: String, mesh: Mesh, transforms: Array[Transform3D], colors: Array[Color]) -> void:
+	var mm := MultiMesh.new()
+	mm.transform_format = MultiMesh.TRANSFORM_3D
+	mm.use_colors = true
+	mm.mesh = mesh
+	mm.instance_count = transforms.size()
+	for i in transforms.size():
+		mm.set_instance_transform(i, transforms[i])
+		mm.set_instance_color(i, colors[i])
+	var instance := MultiMeshInstance3D.new()
+	instance.name = name
+	instance.multimesh = mm
+	instance.material_override = Materials.instance_colored()
+	instance.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	root.add_child(instance)
+
+## Снаружи на боковых стенах: плакат «СВЕЖИЙ ХЛЕБ КАЖДЫЙ ДЕНЬ» с батоном на южной стене (к подходу с улицы B)
+## и россыпь бумажных объявлений на обеих стенах, как на столбах (_notices) и у подъезда.
+func _kiosk_walls(root: Node3D, size: Vector3) -> void:
+	var hx := size.x * 0.5
+	var hy := size.y * 0.5
+	var hz := size.z * 0.5
+	var face := hz + 0.06
+	# Плакат: светлая бумага, крупные тёмно-красные буквы, батон под надписью.
+	var poster_at := Vector3(-0.55, -hy + 1.75, face)
+	_part(root, Vector3(1.05, 1.3, 0.01), poster_at, Materials.plain(Color(0.90, 0.86, 0.74), 0.95))
+	var text := _label("СВЕЖИЙ\nХЛЕБ", 80, Color(0.45, 0.06, 0.04))
+	text.pixel_size = 0.0028
+	text.shaded = true
+	text.position = poster_at + Vector3(0, 0.3, 0.012)
+	root.add_child(text)
+	var daily := _label("каждый день", 40, Color(0.20, 0.14, 0.10))
+	daily.pixel_size = 0.0028
+	daily.shaded = true
+	daily.position = poster_at + Vector3(0, -0.1, 0.012)
+	root.add_child(daily)
+	var loaf := MeshInstance3D.new()
+	var cap := CapsuleMesh.new()
+	cap.radius = 0.5
+	cap.height = 2.6
+	loaf.mesh = cap
+	loaf.material_override = Materials.plain(Color(0.80, 0.52, 0.22), 0.7)
+	loaf.scale = Vector3(0.28, 0.1, 0.03)
+	loaf.rotation.z = PI * 0.5
+	loaf.position = poster_at + Vector3(0, -0.42, 0.012)
+	root.add_child(loaf)
+	# Объявления: [сторона z, x, y от пола, ширина, высота, наклон].
+	var paper := [Color(0.86, 0.85, 0.80), Color(0.80, 0.84, 0.88), Color(0.90, 0.86, 0.72), Color(0.92, 0.80, 0.78), Color(0.95, 0.95, 0.92)]
+	var notes := [
+		[1.0, 0.55, 1.95, 0.30, 0.40, 0.05], [1.0, 0.95, 1.55, 0.24, 0.32, -0.08], [1.0, 0.45, 1.25, 0.34, 0.24, 0.0],
+		[1.0, 1.45, 1.9, 0.22, 0.30, 0.1], [1.0, -1.6, 1.3, 0.26, 0.36, -0.04], [1.0, -1.75, 1.95, 0.22, 0.22, 0.12],
+		[-1.0, -1.2, 1.7, 0.36, 0.48, 0.03], [-1.0, -0.6, 1.95, 0.24, 0.30, -0.1], [-1.0, -0.2, 1.4, 0.30, 0.40, 0.06],
+		[-1.0, 0.5, 1.8, 0.26, 0.34, 0.0], [-1.0, 1.1, 1.3, 0.22, 0.30, -0.06], [-1.0, 1.5, 2.0, 0.30, 0.22, 0.08],
+	]
+	for i in notes.size():
+		var n: Array = notes[i]
+		var note := Greybox.mesh_box(Vector3(n[3], n[4], 0.01), Color.WHITE)
+		note.material_override = Materials.plain(paper[i % paper.size()], 0.95)
+		note.position = Vector3(n[1], -hy + n[2], n[0] * (face + 0.002 * (i % 3)))
+		note.rotation.z = n[5]
+		root.add_child(note)
+		# На части объявлений — строки «текста» тёмными полосками.
+		if i % 2 == 0:
+			for line in 3:
+				var bar := Greybox.mesh_box(Vector3(n[3] * 0.7, 0.018, 0.004), Color.WHITE)
+				bar.material_override = Materials.plain(Color(0.25, 0.25, 0.28), 0.9)
+				bar.position = note.position + Vector3(0, n[4] * 0.25 - line * n[4] * 0.22, n[0] * 0.007)
+				bar.rotation.z = n[5]
+				root.add_child(bar)

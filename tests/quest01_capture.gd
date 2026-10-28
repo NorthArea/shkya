@@ -32,7 +32,7 @@ func _run() -> void:
 	var near_babka := Layout.BABKA + Vector3(1.5, 0, -1.9)
 
 	# 01: двор, «Подойди к Бабке», ! над Бабкой, ромб на неё
-	await _place(Layout.SPAWN + Vector3(1.5, 0, 0), PI, PI)
+	await _place(Layout.SPAWN, Layout.SPAWN_YAW, Layout.SPAWN_YAW)   # ракурс первого кадра игры (POLISH-02, п. 5)
 	await _shot("01_spawn")
 
 	# 02: у Бабки, подсказка «E — ПОГОВОРИТЬ»
@@ -41,7 +41,7 @@ func _run() -> void:
 
 	# 03: диалог выдачи; заодно проверка мыши: Esc, ПРОДОЛЖИТЬ, клик по миру
 	await _press_interact()
-	await _frames(20)
+	await _frames(60)  # реплика печатается ≈40 знаков/с (POLISH-02) — снимать допечатанной
 	await _shot("03_offer_dialog")
 	_press_action(&"pause")
 	await _frames(3)
@@ -67,7 +67,8 @@ func _run() -> void:
 	# 05: настоящая езда по маршруту
 	var route: Array = Layout.ROUTE_DRIVE.slice(1)
 	await driver.drive(route.slice(0, 3), 12.0, 6.0)
-	await _frames(10)
+	# Кадр — на ходу вдоль улицы A (панельки, валы, фонари), а не в стену дома на выезде (POLISH-02, п. 22).
+	await driver.drive([Vector3(28, 0, 32)], 12.0, 6.0)
 	await _shot("05_drive")
 	await driver.drive(route.slice(3), 12.0, 6.0)
 	await driver.stop()
@@ -81,7 +82,7 @@ func _run() -> void:
 	# 07: диалог продавщицы
 	await _place(Layout.VENDOR_WINDOW + Vector3(0.6, 0, 0), PI * 0.5, PI * 0.5)
 	await _press_interact()
-	await _frames(20)
+	await _frames(60)  # реплика печатается ≈40 знаков/с (POLISH-02) — снимать допечатанной
 	await _shot("07_vendor_dialog")
 
 	# 08: хлеб куплен — карточка «ХЛЕБ +1» справа сверху

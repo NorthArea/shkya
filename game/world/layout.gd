@@ -5,8 +5,10 @@ extends RefCounted
 const BOUNDS := Rect2(-100.0, -125.0, 200.0, 250.0)  # x, z, ширина по x, длина по z
 
 # Точки на земле (y = 0) и направления взгляда (yaw: 0 — на север, PI — на юг).
-const SPAWN := Vector3(-40.0, 0.0, 99.0)
-const SPAWN_YAW := PI
+# Спавн по концепту 01 (POLISH-02, п. 5): взгляд наискось на юго-запад — подъезд и Бабка с «!» слева от центра,
+# «Лада» и машины вдоль дома справа, двор уходит в глубину. Прямо на юг (PI) камера упиралась в стену H1.
+const SPAWN := Vector3(-36.5, 0.0, 97.5)
+const SPAWN_YAW := 2.5
 const BABKA := Vector3(-41.5, 0.0, 106.0)
 const CAR_SPAWN := Vector3(-48.0, 0.0, 100.0)
 const CAR_SPAWN_YAW := 0.0
@@ -17,7 +19,7 @@ const KIOSK_ZONE := AABB(Vector3(56.0, 0.0, -87.0), Vector3(16.0, 3.0, 20.0))
 
 # Маршруты для тестов: пешком от появления до окна киоска, на машине от стоянки до площадки.
 const ROUTE_WALK: Array[Vector3] = [
-	Vector3(-40, 0, 99), Vector3(-20, 0, 85), Vector3(-5, 0, 62), Vector3(0, 0, 32),
+	Vector3(-36.5, 0, 97.5), Vector3(-20, 0, 85), Vector3(-5, 0, 62), Vector3(0, 0, 32),
 	Vector3(66, 0, 32), Vector3(66, 0, -70), Vector3(59, 0, -77),
 ]
 const ROUTE_DRIVE: Array[Vector3] = [
@@ -113,6 +115,16 @@ const PARKED: Array = [
 	[Vector2(73.9, -55), false], [Vector2(73.9, -100), false],   # сразу за углом A→B машин нет: туда выносит из поворота
 ]
 
+# Двор (POLISH-02, п. 15). Горка и качели стоят внутри коллизии Playground, за оградкой.
+# Турник-выбивалка для ковров: две стойки вдоль z у дома H2, перекладина 2,2 м — между стойками можно пройти.
+# Мусорные контейнеры — одной коробкой у северного края проезда, перед H3: от маршрутов и стоянки «Лады» > 15 м,
+# от H3 и тополя — больше 4 м (тест застреваний).
+const PLAYGROUND_SLIDE := Vector2(-57.8, 79.0)   # центр горки: ближе к проезду, жёлоб на восток
+const PLAYGROUND_SWINGS := Vector2(-62.5, 81.5)  # центр качелей
+const CARPET_BAR: Array[Vector2] = [Vector2(-68, 90), Vector2(-68, 93)]
+const CARPET_POST := Vector3(0.12, 2.3, 0.12)
+const BINS := [Vector2(-33, 65.5), Vector3(4.2, 1.3, 1.2)]   # три контейнера по 1,3 м вдоль x
+
 ## Уличные фонари вдоль тротуаров, с пропусками у переходов маршрута. [центр x/z].
 static func street_lamps() -> Array[Vector2]:
 	var points: Array[Vector2] = []
@@ -137,7 +149,9 @@ static func snow_banks() -> Array:
 			var length := minf(26.0, span[1] - x)
 			banks.append([Vector2(x + length * 0.5, span[2]), Vector2(length, w)])
 			x += length + 3.0
-	for span in [[63.4, -110.0, -94.0], [63.4, -60.0, 19.0], [76.6, -110.0, 19.0]]:    # улица B: [x, z от, z до]
+	# Восточный вал улицы B кончается у торца H8 (z = 15), а не на 19: между концом вала и углом H8 «Лада»
+	# зажималась поперёк и не выруливала (STUCK, SnowBank@(79.3,13.4); POLISH-02).
+	for span in [[63.4, -110.0, -94.0], [63.4, -60.0, 19.0], [76.6, -110.0, 15.0]]:    # улица B: [x, z от, z до]
 		var z: float = span[1]
 		while z < span[2]:
 			var length := minf(26.0, span[2] - z)
@@ -174,6 +188,9 @@ static func decor_solids() -> Array:
 		solids.append(["Poplar", "poplar", p, POPLAR_TRUNK])
 	for car in PARKED:
 		solids.append(["ParkedCar", "parked_car", car[0], Vector3(4.1, 1.4, 1.7) if car[1] else Vector3(1.7, 1.4, 4.1)])
+	for p in CARPET_BAR:
+		solids.append(["CarpetBar", "carpet_bar", p, CARPET_POST])
+	solids.append(["TrashBins", "bins", BINS[0], BINS[1]])
 	return solids
 
 ## SOLIDS + декор: для геометрии и проверок свободного места.

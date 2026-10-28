@@ -5,6 +5,7 @@ const FacadeShader = preload("res://game/world/shaders/facade.gdshader")
 const RoadShader = preload("res://game/world/shaders/road.gdshader")
 const SnowShader = preload("res://game/world/shaders/snow.gdshader")
 const BalconyGlassShader = preload("res://game/world/shaders/balcony_glass.gdshader")
+const TrailShader = preload("res://game/world/shaders/trail.gdshader")
 
 # Палитры домов (ART-05 по сверке ART-04, черты 3–5): рядом стоят серые, белые, синие панельки и кирпичные
 # или оштукатуренные старые дома. [стена, швы, акцент лестничной клетки].
@@ -57,7 +58,7 @@ static func _palette(seed: float, low: bool) -> Array:
 static func facade_accent(seed: float, low: bool) -> Color:
 	return _palette(seed, low)[2]
 
-## Вал снега у дороги: серо-бурый, у низа почти чёрный (сверка ART-04, черта 10).
+## Вал снега у дороги: светлый слежавшийся снег, грязь только у низа (сверка ART-04, черта 10; POLISH-02, п. 4).
 static func snow_bank() -> ShaderMaterial:
 	if not _cache.has("snow_bank"):
 		var m := ShaderMaterial.new()
@@ -135,6 +136,17 @@ static func plain(color: Color, roughness := 0.8, emission := Color.BLACK, energ
 			m.emission_enabled = true
 			m.emission = emission
 			m.emission_energy_multiplier = energy
+		_cache[key] = m
+	return _cache[key]
+
+## Натоптанная тропинка с мягкими краями (POLISH-02, п. 19): ширина и длина — для кромки в метрах.
+static func trail(width: float, length: float) -> ShaderMaterial:
+	var key := "trail_%s_%s" % [width, length]
+	if not _cache.has(key):
+		var m := ShaderMaterial.new()
+		m.shader = TrailShader
+		m.set_shader_parameter("width", width)
+		m.set_shader_parameter("length_m", length)
 		_cache[key] = m
 	return _cache[key]
 

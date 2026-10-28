@@ -7,9 +7,9 @@ uniform vec3 box = vec3(32.0, 12.0, 32.0);        // размер объёма �
 uniform float lift = 2.0;                          // центр объёма выше камеры
 uniform vec3 wind = vec3(0.45, 0.0, 0.2);          // м/с
 uniform float fall_speed = 1.3;                    // м/с, мокрый снег падает медленно
-uniform float flake_size = 0.075;                  // м
+uniform float flake_size = 0.0525;                 // м (×0,7 от 0,075: ближние хлопья были ≈40 px, POLISH-02 п. 14)
 uniform vec4 flake_color : source_color = vec4(0.93, 0.95, 1.0, 0.85);
-uniform float near_fade = 1.5;                     // м: ближе — хлопья прозрачные, не закрывают кадр
+uniform float near_fade = 3.5;                     // м: ближе — хлопья прозрачные, не закрывают лица (было 1,5)
 
 varying float alpha;
 
@@ -29,12 +29,12 @@ void vertex() {
 	vec3 world = low + mod(p - low, box);
 	vec3 view = (VIEW_MATRIX * vec4(world, 1.0)).xyz;
 	// Плоский хлопок, всегда лицом к камере.
-	VERTEX = view + VERTEX * flake_size * (0.7 + 0.6 * hash(seed.zyx));
+	VERTEX = view + VERTEX * flake_size * (0.45 + 1.1 * hash(seed.zyx));   // разброс 0,45–1,55: не одинаковые диски
 	NORMAL = vec3(0.0, 0.0, 1.0);
 	float dist = length(view);
 	vec3 edge = abs(world - center) / (box * 0.5);
 	float edge_fade = 1.0 - smoothstep(0.75, 1.0, max(edge.x, max(edge.y, edge.z)));
-	alpha = smoothstep(near_fade, near_fade * 2.0, dist) * edge_fade;
+	alpha = smoothstep(near_fade, near_fade * 1.6, dist) * edge_fade;
 }
 
 void fragment() {

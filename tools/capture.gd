@@ -6,7 +6,7 @@ const Layout = preload("res://game/world/layout.gd")
 
 const SHOTS := [
 	# имя, точка Илюши, yaw камеры, pitch камеры
-	["01_spawn", Layout.SPAWN, PI, -0.30],
+	["01_spawn", Layout.SPAWN, Layout.SPAWN_YAW, -0.30],
 	["04_car", Vector3(-44, 0, 94), 2.4, -0.30],
 	["05_yard_exit", Vector3(-5, 0, 62), 0.0, -0.25],
 	["05_street_a", Vector3(10, 0, 32), -PI * 0.5, -0.25],
