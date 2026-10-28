@@ -549,7 +549,7 @@ const RESIDENT_STARTS: Array[int] = [0, 1, 0, 1, 0, 0, 1, 1, 1, 1, 0, 1, 0, 2]
 # в ушанке, tourist — дед-турист с рюкзаком, kid/kid2 — пацан в вязаной шапке (две палитры).
 # Индексы: 0 двор H1, 1 двор восток, 2 пассажир остановки A, 3 A север, 4 A юг восток, 5 B восток, 6 D (первый пары),
 # 7 C (первый пары), 8 D (второй), 9 C (второй), 10–11 курящие у подъезда, 12 «АПТЕКА», 13 A юг напротив остановки.
-const RESIDENT_LOOKS: Array[StringName] = [&"shuba", &"violet", &"ushanka", &"kid", &"beret", &"shuba", &"tourist", &"kid2",
+const RESIDENT_LOOKS: Array[StringName] = [&"shuba", &"violet", &"ushanka_walk", &"kid", &"beret", &"shuba", &"tourist", &"kid2",
 		&"violet", &"beret", &"ushanka", &"tourist", &"violet", &"kid"]
 
 # CITY-01 (часть P): посадка в троллейбус. Житель 2 (Residents.RIDER) ждёт у павильона A на точке 1 своего маршрута

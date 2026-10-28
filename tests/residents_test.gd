@@ -104,7 +104,7 @@ func _part_roster() -> void:
 	for look in Layout.RESIDENT_LOOKS:
 		looks[look] = true
 	# PEOPLE-02: персонажи ШКЯ — шесть силуэтов (пацан в двух палитрах), все с рисунками resident_<look>.
-	var expected := [&"shuba", &"beret", &"violet", &"ushanka", &"tourist", &"kid", &"kid2"]
+	var expected := [&"shuba", &"beret", &"violet", &"ushanka", &"ushanka_walk", &"tourist", &"kid", &"kid2"]
 	var all_known := true
 	for look in looks:
 		all_known = all_known and expected.has(look)

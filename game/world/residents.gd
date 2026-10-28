@@ -24,7 +24,8 @@ const SILHOUETTES := {
 	&"shuba": ["babka", 2.0],
 	&"beret": ["babka", 2.0],
 	&"violet": ["babka", 2.0],
-	&"ushanka": ["vendor", 2.0],
+	&"ushanka": ["vendor", 2.0],        # поза с сигаретой — курящему у подъезда (житель 10)
+	&"ushanka_walk": ["vendor", 2.0],   # руки опущены — пассажиру остановки A (житель 2)
 	&"tourist": ["vendor", 2.0],
 	&"kid": ["vendor", 2.0],
 	&"kid2": ["vendor", 2.0],
