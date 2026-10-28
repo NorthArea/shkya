@@ -125,6 +125,25 @@ const CARPET_BAR: Array[Vector2] = [Vector2(-68, 90), Vector2(-68, 93)]
 const CARPET_POST := Vector3(0.12, 2.3, 0.12)
 const BINS := [Vector2(-33, 65.5), Vector3(4.2, 1.3, 1.2)]   # три контейнера по 1,3 м вдоль x
 
+# Расширение «Ничего необычного» (docs/extension/, EXT-01). Все точки стелса — только здесь (C1).
+# Микроавтобус ГСУМ «БЕСПЛАТНЫЙ ПРОЕЗД» стоит на обочине улицы A у южного бордюра, патруль рядом (этап 3);
+# после покупки хлеба подъезжает по VAN_PATH к остановке у выезда с улицы B и ждёт (этапы 7–8).
+const VAN_PARK := Vector3(30.0, 0.0, 37.5)       # обочина улицы A, перед — на запад
+const VAN_PARK_YAW := PI * 0.5
+const VAN_PATH: Array[Vector3] = [Vector3(30, 0, 37.5), Vector3(66, 0, 37.5), Vector3(66, 0, -20), Vector3(66, 0, -60)]
+const VAN_STOP_YAW := PI                          # у остановки улицы B, носом на юг
+const ACCOUNT_OFFICER := Vector3(27.0, 0.0, 40.0)  # «военком» у открытой двери микроавтобуса; смотрит на север
+# Полицейский у киоска: между площадкой KIOSK_ZONE и окном, разворачивается на месте (STEALTH_DESIGN: 9 м, 75°).
+const OFFICER_POST := Vector3(62.0, 0.0, -70.0)
+const OFFICER_POST_AFTER := Vector3(64.0, 0.0, -84.0)  # после покупки — ближе к выходу на площадку
+const OFFICER_FACING := [PI * 0.5, -PI * 0.5]     # поворот корпуса по таймеру: на восток и на запад
+# Укрытия у киоска — два честных пути: за павильоном остановки улицы B и через проход у гаражей.
+const KIOSK_PAVILION := [Vector2(66.5, -66), Vector3(1.6, 2.6, 4.0)]
+const KIOSK_BINS := [Vector2(52, -62), Vector3(1.2, 1.3, 3.0)]
+# Чекпоинт стелса: у парковки на площадке; после провала Илюша встаёт сюда, машина не трогается.
+const STEALTH_CHECKPOINT := Vector3(66.0, 0.0, -88.0)
+const STEALTH_CHECKPOINT_YAW := PI
+
 ## Уличные фонари вдоль тротуаров, с пропусками у переходов маршрута. [центр x/z].
 static func street_lamps() -> Array[Vector2]:
 	var points: Array[Vector2] = []
@@ -182,6 +201,8 @@ static func decor_solids() -> Array:
 	solids.append(["StreetSign", "sign_post", STREET_SIGN, Vector3(0.12, 3.2, 0.12)])
 	solids.append(["Trolleybus", "trolleybus", TROLLEYBUS[0], TROLLEYBUS[1]])
 	solids.append(["BusPavilion", "pavilion", BUS_PAVILION[0], BUS_PAVILION[1]])
+	solids.append(["KioskPavilion", "pavilion", KIOSK_PAVILION[0], KIOSK_PAVILION[1]])   # EXT: укрытие у киоска
+	solids.append(["KioskBins", "bins", KIOSK_BINS[0], KIOSK_BINS[1]])
 	for p in TROLLEY_POLES:
 		solids.append(["TrolleyPole", "lamp", p, Vector3(0.25, LAMP_HEIGHT, 0.25)])
 	for p in POPLARS:
