@@ -38,7 +38,7 @@ const PROMPT_TALK := "E — ПОГОВОРИТЬ"
 const PROMPT_TURN_IN := "E — СДАТЬ ЗАДАНИЕ"
 const PROMPT_CAR := "E — СЕСТЬ В МАШИНУ"
 
-const TITLE_CITY := "НОВОСИБИРСК"
+const TITLE_CITY := "ГОРОД Н."   # решение владельца 28.10.2026: город Н., Новосибирск — прототип
 const TITLE_QUEST := "ЗА ХЛЕБОМ"
 const TASK_DONE := "Сдай хлеб Бабке"  # COMPLETE: выполненная задача, на карточке зачёркнута
 

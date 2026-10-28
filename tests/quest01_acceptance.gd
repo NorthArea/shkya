@@ -62,7 +62,7 @@ func _step01_spawn() -> void:
 	check(flow.marker.get_parent() == world.babka, "01: marker is attached to Babka")
 	check(flow.toast_text() == "" and not flow.is_dialog_open(), "01: no toast, no dialog at start")
 	check(not hud.completion_panel.visible and not hud.speed_gauge.visible, "01: no completion panel, no speed gauge on foot")
-	check(hud.title_label.text == "НОВОСИБИРСК" and hud.task_label.text == "Подойди к Бабке", "01: card shows city title and task")
+	check(hud.title_label.text == "ГОРОД Н." and hud.task_label.text == "Подойди к Бабке", "01: card shows city title and task")
 	check(hud.minimap != null and hud.minimap.size.x > 200.0, "01: minimap exists")
 	# NPC «дышат» ±1,5 % и на время диалога поворачиваются к Илюше (POLISH-02, п. 21).
 	var breath := []

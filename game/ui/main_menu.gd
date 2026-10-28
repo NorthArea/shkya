@@ -62,13 +62,13 @@ func _ready() -> void:
 	box.alignment = BoxContainer.ALIGNMENT_CENTER
 	box.add_theme_constant_override("separation", 18)
 	card.add_child(box)
-	var title := _text("ШКЯ: ЗА ХЛЕБОМ", 64)
+	var title := _text("ШКЯ: НИЧЕГО НЕОБЫЧНОГО", 60)
 	box.add_child(title)
 	var rule := ColorRect.new()
 	rule.color = INK
 	rule.custom_minimum_size = Vector2(0, 3)
 	box.add_child(rule)
-	box.add_child(_text("Новосибирск, зима. Бабка ждёт хлеб.", 32))
+	box.add_child(_text("Город Н., зима. Бабка ждёт хлеб.", 32))
 	var gap := Control.new()
 	gap.custom_minimum_size = Vector2(0, 8)
 	box.add_child(gap)

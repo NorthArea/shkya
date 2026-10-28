@@ -89,13 +89,13 @@ func _check_spawn_and_hud(world: DemoWorld) -> void:
 	check(player.is_on_floor(), "Ilyusha stands on the ground")
 	check(world.camera_rig.camera.current, "CameraRig camera is current")
 	var hud := world.get_hud_state()
-	check(hud["title"] == "НОВОСИБИРСК" and hud["task"] == "Подойди к Бабке", "HUD objective of frame 01: %s / %s" % [hud["title"], hud["task"]])
+	check(hud["title"] == "ГОРОД Н." and hud["task"] == "Подойди к Бабке", "HUD objective of frame 01: %s / %s" % [hud["title"], hud["task"]])
 	check(hud["target_position"] is Vector3 and hud["target_position"].distance_to(Layout.BABKA) < 0.01, "HUD target is Babka")
 	check(hud["babka_marker"] == "!", "babka marker is ! before the quest")
 	check(hud["prompt"] == "", "no E prompt at spawn (Babka is %.1f m away)" % Layout.SPAWN.distance_to(Layout.BABKA))
 	check(hud["speed_kmh"] < 0.0, "no speed on foot")
 	var labels = world.get_node("GameHUD")
-	check(labels.title_label.text == "НОВОСИБИРСК" and labels.task_label.text.ends_with("Подойди к Бабке"), "GameHUD shows the objective")
+	check(labels.title_label.text == "ГОРОД Н." and labels.task_label.text.ends_with("Подойди к Бабке"), "GameHUD shows the objective")
 
 # --- критерий 5: ходьба относительно камеры ---
 

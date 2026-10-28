@@ -239,7 +239,7 @@ func test_reset() -> void:
 func test_objective_and_prompts() -> void:
 	# [состояние, заголовок, задача, цель] — тексты кадров 01–10 концептов
 	var expected := [
-		[&"NOT_STARTED", "НОВОСИБИРСК", "Подойди к Бабке", &"babka"],
+		[&"NOT_STARTED", "ГОРОД Н.", "Подойди к Бабке", &"babka"],
 		[&"OFFERED", "ЗА ХЛЕБОМ", "Прими задание", &"babka"],
 		[&"GO_TO_CAR", "ЗА ХЛЕБОМ", "Сядь в машину", &"car"],
 		[&"DRIVE_TO_KIOSK", "ЗА ХЛЕБОМ", "Доедь до киоска", &"kiosk"],
