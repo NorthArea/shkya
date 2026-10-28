@@ -1292,10 +1292,13 @@ def resident_babka(view: str) -> str:
                 for x, y in ((x0, y0), (x1, y1)):
                     svg.path(f"M{x:.1f},{y:.1f} l{-4 if x < 200 else 4},6", width=THIN * 0.7)
             soft_shape(svg, sym_d(RB_PLATOK), RB_SCARF, [(180, 180, 60, 60, RB_SCARF_HI), (262, 250, 30, 60, RB_SCARF_LO)])
-            svg.path("M150,268 Q200,300 250,268", width=THIN * 0.8)                              # складка у узла
+            # Две складки к узлу (V), а не дуга: дуга с парой горошин над ней читалась со спины как «смайлик»
+            # (повторная сверка стиля PEOPLE-01, P3). Горошины — без симметричной пары над складками.
+            svg.path("M152,262 L196,292", width=THIN * 0.8)
+            svg.path("M248,262 L204,292", width=THIN * 0.8)
             svg.path("M200,136 C196,180 196,230 200,280", width=THIN * 0.6, extra=' opacity="0.7"')
-            rb_platok_dots(svg, [(172, 160), (226, 158), (200, 200), (160, 222), (240, 222), (200, 252),
-                                 (176, 300), (224, 300), (200, 340)])
+            rb_platok_dots(svg, [(166, 172), (232, 150), (200, 206), (156, 228), (244, 226), (190, 248),
+                                 (176, 302), (226, 298), (200, 340)])
             return svg.text()
         soft_shape(svg, sym_d(RB_PLATOK), RB_SCARF, [(170, 170, 50, 50, RB_SCARF_HI), (270, 250, 24, 60, RB_SCARF_LO)])
         soft_shape(svg, sym_d(RB_FACE), RB_SKIN, [(178, 222, 38, 42, RB_SKIN_HI), (236, 280, 38, 32, RB_SKIN_LO),
