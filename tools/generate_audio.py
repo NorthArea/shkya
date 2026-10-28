@@ -162,6 +162,71 @@ def yard_ambience() -> list[float]:
     return normalize(loop_crossfade(out, 1.0), 0.45)
 
 
+def to_rms(signal: list[float], rms_db: float, peak: float = 0.95) -> list[float]:
+    """Выставить среднеквадратичную громкость (дБ полной шкалы), не выходя за peak."""
+    rms = math.sqrt(sum(x * x for x in signal) / len(signal)) or 1.0
+    gain = 10 ** (rms_db / 20) / rms
+    top = max(abs(x) for x in signal) * gain
+    if top > peak:
+        gain *= peak / top
+    return [x * gain for x in signal]
+
+
+def resonator(signal: list[float], freq: float, bandwidth: float) -> list[float]:
+    """Двухполюсный резонатор (форманта гласной)."""
+    r = math.exp(-math.pi * bandwidth / RATE)
+    c1 = 2 * r * math.cos(2 * math.pi * freq / RATE)
+    c2 = -r * r
+    gain = 1 - r
+    out, y1, y2 = [], 0.0, 0.0
+    for x in signal:
+        y = gain * x + c1 * y1 + c2 * y2
+        out.append(y)
+        y2, y1 = y1, y
+    return out
+
+
+# Форманты гласных (F1, F2), Гц: а, о, у, э, и, ы.
+VOWELS = [(750, 1200), (500, 900), (350, 700), (550, 1700), (300, 2200), (380, 1500)]
+
+
+def voice(seed: int, pitch: float, seconds: float, rate: float, wobble: float) -> list[float]:
+    """«Бормотание» персонажа (POLISH-02): короткие слоги-гласные на импульсах голосовой щели.
+
+    pitch — основной тон, Гц; rate — слогов в секунду; wobble — разброс высоты между слогами (доля).
+    Не речь и не слова: только ритм и тембр голоса под печать реплики."""
+    rng = random.Random(seed)
+    n = samples(seconds)
+    out = [0.0] * n
+    t = 0.0
+    while t < seconds - 0.08:
+        length = rng.uniform(0.6, 1.0) / rate
+        start = samples(t)
+        f0 = pitch * (1 + rng.uniform(-wobble, wobble))
+        f1, f2 = rng.choice(VOWELS)
+        count = samples(length)
+        source, phase = [], 0.0
+        for i in range(count):
+            u = i / count
+            freq = f0 * (1.04 - 0.08 * u)  # слог чуть «падает» к концу
+            phase += freq / RATE
+            if phase >= 1.0:
+                phase -= 1.0
+            pulse = (1.0 - 2.0 * phase) + 0.08 * rng.uniform(-1, 1)  # пила + немного дыхания
+            env = math.sin(math.pi * u) ** 0.7
+            source.append(pulse * env)
+        syllable = [a + 0.6 * b for a, b in zip(resonator(source, f1, 90), resonator(source, f2, 130))]
+        for i, x in enumerate(syllable):
+            if start + i < n:
+                out[start + i] += x
+        t += length + rng.uniform(0.02, 0.06)
+    out = lowpass(out, 3500)
+    fade = samples(0.02)
+    for i in range(fade):
+        out[-1 - i] *= i / fade
+    return to_rms(out, -17.0)
+
+
 def main() -> None:
     rng = random.Random(1)
     for k in range(1, 5):
@@ -174,6 +239,10 @@ def main() -> None:
     write("bread_get.wav", chime([784.0, 1046.5], 0.09, 0.5))
     write("quest_complete.wav", chime([523.3, 659.3, 784.0, 1046.5], 0.14, 0.8))
     write("yard_ambience_loop.wav", yard_ambience())
+    # POLISH-02: бормотание под печать реплик (Бабка ниже и медленнее, продавщица выше и бойче) и сигнал «ПРИНЯТЬ».
+    write("voice_babka.wav", voice(31, 165.0, 1.2, 7.0, 0.12))
+    write("voice_vendor.wav", voice(37, 245.0, 1.2, 8.5, 0.15))
+    write("quest_accept.wav", to_rms(chime([659.3, 987.8], 0.07, 0.3), -17.0))
 
 
 if __name__ == "__main__":

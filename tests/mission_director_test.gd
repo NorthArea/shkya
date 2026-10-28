@@ -251,9 +251,31 @@ func test_objective_and_prompts() -> void:
 		advance_to(d, row[0])
 		var o: Dictionary = d.objective()
 		check(o.title == row[1] and o.task == row[2] and o.target_id == row[3], "objective in %s" % row[0])
+	# по ситуации (POLISH-02, п. 16): рядом с Бабкой — кадры 02 и 09, у окна киоска — кадр 07
+	var near := [
+		[&"NOT_STARTED", &"babka", "Поговори с Бабкой"],
+		[&"NOT_STARTED", &"vendor", "Подойди к Бабке"],
+		[&"OFFERED", &"babka", "Прими задание"],
+		[&"GO_TO_CAR", &"babka", "Сядь в машину"],
+		[&"BUY_BREAD", &"vendor", "Купи хлеб"],
+		[&"BUY_BREAD", &"babka", "Поговори с продавщицей"],
+		[&"RETURN_HOME", &"babka", "Сдай хлеб Бабке"],
+		[&"RETURN_HOME", &"vendor", "Вернись к Бабке"],
+	]
+	for row in near:
+		var d := make()
+		advance_to(d, row[0])
+		var before := snap(d)
+		d.set_nearby(row[1])
+		check(d.objective().task == row[2], "objective in %s near %s: '%s'" % [row[0], row[1], d.objective().task])
+		check(snap(d) == before, "set_nearby in %s changes no mission state" % row[0])
+	var r := make()
+	r.set_nearby(&"babka")
+	r.reset()
+	check(r.nearby == &"" and r.objective().task == "Подойди к Бабке", "reset clears nearby")
 	var c := make()
 	advance_to(c, &"COMPLETE")
-	check(c.objective().title == "ЗА ХЛЕБОМ" and c.objective().task != "", "objective in COMPLETE has text")
+	check(c.objective().title == "ЗА ХЛЕБОМ" and c.objective().task == "Сдай хлеб Бабке" and c.objective().target_id == &"", "objective in COMPLETE keeps the done task (struck out on the card)")
 	# подсказки раздела 4 канона
 	var d := make()
 	check(d.prompt_for(&"babka") == "E — ПОГОВОРИТЬ", "prompt: babka talk")

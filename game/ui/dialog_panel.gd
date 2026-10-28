@@ -3,6 +3,9 @@ extends CanvasLayer
 ## Панель диалога (QUEST-01): портрет, имя, реплика и кнопки внизу экрана, как на кадрах 02, 03, 07.
 ## Сама ничего не решает: показывает, что ей передали, и шлёт choice(id) по нажатию кнопки.
 ## Координаты — в пространстве 1920x1080 (stretch canvas_items).
+## POLISH-02: панель «выпрыгивает», реплика печатается ≈40 знаков/с под «бормотание» персонажа;
+## E, пробел или щелчок во время печати дописывают реплику сразу, дальше всё как раньше (кнопки).
+## text_label.text всегда целиком — печать только открывает знаки (visible_characters).
 
 signal choice(id: StringName)
 
@@ -10,6 +13,14 @@ const PAPER := Color(0.93, 0.87, 0.72)
 const PAPER_DARK := Color(0.84, 0.76, 0.58)
 const INK := Color(0.12, 0.10, 0.08)
 const YELLOW := Color(0.99, 0.82, 0.12)
+const CHARS_PER_SECOND := 40.0
+const POP_SECONDS := 0.15
+## Бормотание: свой синтезированный голос на персонажа (tools/generate_audio.py), громкость в ряду сигналов квеста.
+const VOICES := {
+	&"babka": preload("res://assets/audio/voice_babka.wav"),
+	&"vendor": preload("res://assets/audio/voice_vendor.wav"),
+}
+const VOICE_DB := -6.0
 
 var panel: PanelContainer
 var speaker_label: Label
@@ -18,6 +29,8 @@ var portrait: Control
 var buttons: Dictionary = {}  # id -> Button
 var _row: HBoxContainer
 var _portrait_kind := &"babka"
+var _typed := 0.0
+var voice: AudioStreamPlayer
 
 func _ready() -> void:
 	layer = 8
@@ -68,6 +81,10 @@ func _ready() -> void:
 	_row.name = "Buttons"
 	_row.add_theme_constant_override("separation", 20)
 	column.add_child(_row)
+	voice = AudioStreamPlayer.new()
+	voice.name = "Voice"
+	voice.volume_db = VOICE_DB
+	add_child(voice)
 
 ## specs: [{id, text, enabled (по умолчанию true), primary (по умолчанию false)}].
 func open(speaker: String, text: String, specs: Array, portrait_kind: StringName = &"babka") -> void:
@@ -77,6 +94,8 @@ func open(speaker: String, text: String, specs: Array, portrait_kind: StringName
 	buttons.clear()
 	speaker_label.text = speaker
 	text_label.text = text
+	text_label.visible_characters = 0
+	_typed = 0.0
 	_portrait_kind = portrait_kind
 	portrait.queue_redraw()
 	var first_enabled: Button = null
@@ -96,9 +115,12 @@ func open(speaker: String, text: String, specs: Array, portrait_kind: StringName
 	visible = true
 	if first_enabled:
 		first_enabled.grab_focus()
+	play_voice(portrait_kind)
+	pop(panel)
 
 func close() -> void:
 	visible = false
+	voice.stop()
 	for child in _row.get_children():
 		_row.remove_child(child)
 		child.queue_free()
@@ -106,6 +128,109 @@ func close() -> void:
 
 func is_open() -> bool:
 	return visible
+
+## Реплика ещё печатается.
+func is_typing() -> bool:
+	return visible and text_label.visible_characters >= 0 and text_label.visible_characters < text_label.text.length()
+
+## Дописать реплику сразу.
+func finish_typing() -> void:
+	text_label.visible_characters = -1
+	voice.stop()
+
+func play_voice(kind: StringName) -> void:
+	if VOICES.has(kind):
+		voice.stream = VOICES[kind]
+		voice.play()
+
+func _process(delta: float) -> void:
+	if not is_typing():
+		return
+	_typed += delta * CHARS_PER_SECOND
+	text_label.visible_characters = mini(int(_typed), text_label.text.length())
+	if not is_typing():
+		finish_typing()
+
+## Во время печати E, пробел или щелчок только дописывают реплику; кнопки сработают со следующего нажатия.
+func _input(event: InputEvent) -> void:
+	if not is_typing():
+		return
+	var skip := event.is_action_pressed(&"interact")
+	if event is InputEventKey and event.pressed and not event.echo and (event as InputEventKey).physical_keycode == KEY_SPACE:
+		skip = true
+	if event is InputEventMouseButton and event.pressed and (event as InputEventMouseButton).button_index == MOUSE_BUTTON_LEFT:
+		skip = true
+	if skip:
+		finish_typing()
+		get_viewport().set_input_as_handled()
+
+## «Выпрыгивание» панели: масштаб от 0,85 до 1 с перелётом (POLISH-02, п. 10).
+static func pop(control: Control, from := 0.85) -> void:
+	control.pivot_offset = control.size * 0.5
+	control.scale = Vector2.ONE * from
+	var tween := control.create_tween()
+	tween.tween_property(control, "scale", Vector2.ONE, POP_SECONDS).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+
+## Шрифт интерфейса проекта (gui/theme/custom_font), иначе встроенный.
+static func ui_font() -> Font:
+	var path: String = ProjectSettings.get_setting("gui/theme/custom_font", "")
+	if path != "" and ResourceLoader.exists(path):
+		return load(path)
+	return ThemeDB.fallback_font
+
+## Клавиша-«колпачок» для подсказок и строки управления: светлая рамка, буква внутри.
+static func key_cap(text: String, font_size := 26, dark := true) -> PanelContainer:
+	var cap := PanelContainer.new()
+	cap.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var style := StyleBoxFlat.new()
+	style.bg_color = Color(0.93, 0.91, 0.85) if dark else Color(0.20, 0.18, 0.16)
+	style.border_color = INK if dark else Color(0.93, 0.87, 0.72)
+	style.set_border_width_all(2)
+	style.border_width_bottom = 4
+	style.set_corner_radius_all(6)
+	style.content_margin_left = 10
+	style.content_margin_right = 10
+	style.content_margin_top = 2
+	style.content_margin_bottom = 2
+	cap.add_theme_stylebox_override("panel", style)
+	var label := Label.new()
+	label.text = text
+	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	label.add_theme_font_size_override("font_size", font_size)
+	label.add_theme_color_override("font_color", INK if dark else Color(0.97, 0.95, 0.90))
+	label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	cap.add_child(label)
+	return cap
+
+## Строка управления по канону (раздел 7): колпачки клавиш с подписями.
+static func controls_row(font_size := 24, ink := INK) -> HFlowContainer:
+	var row := HFlowContainer.new()
+	row.alignment = FlowContainer.ALIGNMENT_CENTER
+	row.add_theme_constant_override("h_separation", 22)
+	row.add_theme_constant_override("v_separation", 10)
+	row.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	for item in CONTROLS:
+		var pair := HBoxContainer.new()
+		pair.add_theme_constant_override("separation", 8)
+		pair.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		pair.add_child(key_cap(item[0], font_size))
+		var label := Label.new()
+		label.text = item[1]
+		label.add_theme_font_size_override("font_size", font_size)
+		label.add_theme_color_override("font_color", ink)
+		label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		pair.add_child(label)
+		row.add_child(pair)
+	return row
+
+## Управление из канона (раздел 7): клавиша и что она делает.
+const CONTROLS := [
+	["WASD", "ходьба и руль"],
+	["Мышь", "камера"],
+	["E", "говорить, сесть и выйти"],
+	["Space", "ручник"],
+	["Esc", "пауза"],
+]
 
 func _on_pressed(id: StringName) -> void:
 	choice.emit(id)

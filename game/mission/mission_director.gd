@@ -40,11 +40,16 @@ const PROMPT_CAR := "E — СЕСТЬ В МАШИНУ"
 
 const TITLE_CITY := "НОВОСИБИРСК"
 const TITLE_QUEST := "ЗА ХЛЕБОМ"
+const TASK_DONE := "Сдай хлеб Бабке"  # COMPLETE: выполненная задача, на карточке зачёркнута
 
 var state: StringName = NOT_STARTED
 var has_bread := false
 var xp := 0
 var money := START_MONEY
+## С кем Илюша сейчас рядом (зона E или открытый диалог): &"babka", &"vendor" или &"".
+## Только для текста задачи по ситуации (кадры 02, 07, 09); переходы и проверки FSM его не читают.
+## Задаёт QuestFlow через set_nearby().
+var nearby: StringName = &""
 
 
 func interact(id: StringName) -> StringName:
@@ -119,6 +124,7 @@ func reset() -> void:
 	has_bread = false
 	xp = 0
 	money = START_MONEY
+	nearby = &""
 	if old != NOT_STARTED:
 		state_changed.emit(old, NOT_STARTED)
 
@@ -131,11 +137,13 @@ func babka_marker() -> String:
 	return ""
 
 
-## Тексты HUD по кадрам концептов (см. карточку MISSION-01, раздел «Реализация»).
+## Тексты HUD по кадрам концептов 01–10: задача меняется и по ситуации — рядом с Бабкой или у окна киоска
+## (кадры 02, 07, 09). В COMPLETE на карточке остаётся последняя задача, её зачёркивает HUD (кадр 10).
 func objective() -> Dictionary:
 	match state:
 		NOT_STARTED:
-			return {"title": TITLE_CITY, "task": "Подойди к Бабке", "target_id": &"babka"}
+			var task := "Поговори с Бабкой" if nearby == &"babka" else "Подойди к Бабке"
+			return {"title": TITLE_CITY, "task": task, "target_id": &"babka"}
 		OFFERED:
 			return {"title": TITLE_QUEST, "task": "Прими задание", "target_id": &"babka"}
 		GO_TO_CAR:
@@ -143,11 +151,18 @@ func objective() -> Dictionary:
 		DRIVE_TO_KIOSK:
 			return {"title": TITLE_QUEST, "task": "Доедь до киоска", "target_id": &"kiosk"}
 		BUY_BREAD:
-			return {"title": TITLE_QUEST, "task": "Поговори с продавщицей", "target_id": &"vendor"}
+			var task := "Купи хлеб" if nearby == &"vendor" else "Поговори с продавщицей"
+			return {"title": TITLE_QUEST, "task": task, "target_id": &"vendor"}
 		RETURN_HOME:
-			return {"title": TITLE_QUEST, "task": "Вернись к Бабке", "target_id": &"babka"}
+			var task := "Сдай хлеб Бабке" if nearby == &"babka" else "Вернись к Бабке"
+			return {"title": TITLE_QUEST, "task": task, "target_id": &"babka"}
 		_:
-			return {"title": TITLE_QUEST, "task": "Задание выполнено", "target_id": &""}
+			return {"title": TITLE_QUEST, "task": TASK_DONE, "target_id": &""}
+
+
+## Рядом с кем Илюша: меняет только текст задачи, не состояние миссии.
+func set_nearby(id: StringName) -> void:
+	nearby = id
 
 
 ## Подсказка зоны; "" — взаимодействие сейчас недоступно (зона отключается).

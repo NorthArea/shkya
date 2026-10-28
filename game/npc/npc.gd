@@ -1,6 +1,8 @@
 extends Node3D
 ## NPC-заглушка (Бабка, продавщица): фигура, твёрдое тело и зона Interactable.
 ## Облик ШКЯ — CharacterSprite (ART-01); диалоги и маркеры — QUEST-01.
+## POLISH-02: облик «дышит» (масштаб по высоте ±1,5 %) и на время диалога поворачивается к собеседнику
+## (look_at_target / stop_looking — вызывает QuestFlow). Поворачивается только облик, не узел и не зона E.
 
 const CharacterSpriteScript = preload("res://game/characters/character_sprite.gd")
 const InteractableScript = preload("res://game/interaction/interactable.gd")
@@ -15,10 +17,17 @@ const InteractableScript = preload("res://game/interaction/interactable.gd")
 @export var body_radius := 0.7  # по силуэту облика ART-01: Бабка-«гора» ≈1,5 м в ширину
 @export var interact_offset := Vector3.ZERO
 
+const BREATH := 0.015          # ±1,5 % по высоте
+const BREATH_PERIOD := 3.4     # с на вдох и выдох
+const TURN_SPEED := 6.0        # скорость доворота облика, 1/с
+
 var interactable: Interactable
+var visual: Node3D
+var _look_target: Node3D
+var _breath_time := 0.0
 
 func _ready() -> void:
-	var visual := Node3D.new()
+	visual = Node3D.new()
 	visual.name = "Visual"
 	visual.rotation.y = facing_yaw
 	var look: CharacterSprite = CharacterSpriteScript.new()
@@ -47,3 +56,24 @@ func _ready() -> void:
 	interactable.radius = interact_radius
 	interactable.position = interact_offset
 	add_child(interactable)
+	# Разная фаза у Бабки и продавщицы — дышат не в такт.
+	_breath_time = fposmod(float(String(interaction_id).hash() % 1000) * 0.0137, BREATH_PERIOD)
+
+func _process(delta: float) -> void:
+	_breath_time += delta
+	var s := sin(_breath_time * TAU / BREATH_PERIOD)
+	visual.scale = Vector3(1.0 - s * BREATH * 0.5, 1.0 + s * BREATH, 1.0)
+	var wanted := facing_yaw
+	if is_instance_valid(_look_target):
+		var to := _look_target.global_position - global_position
+		if Vector2(to.x, to.z).length() > 0.3:
+			# −Z облика смотрит на цель; угол в осях узла.
+			wanted = atan2(-to.x, -to.z) - global_rotation.y
+	visual.rotation.y = lerp_angle(visual.rotation.y, wanted, 1.0 - exp(-TURN_SPEED * delta))
+
+## Повернуться к target (Илюша) и держать взгляд, пока не вызван stop_looking().
+func look_at_target(target: Node3D) -> void:
+	_look_target = target
+
+func stop_looking() -> void:
+	_look_target = null

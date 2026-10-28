@@ -64,13 +64,34 @@ func _step01_spawn() -> void:
 	check(not hud.completion_panel.visible and not hud.speed_gauge.visible, "01: no completion panel, no speed gauge on foot")
 	check(hud.title_label.text == "НОВОСИБИРСК" and hud.task_label.text == "Подойди к Бабке", "01: card shows city title and task")
 	check(hud.minimap != null and hud.minimap.size.x > 200.0, "01: minimap exists")
-	# Ромб: камера смотрит на Бабку (юг) — ромб на экране у центра; камера отвернулась — ромб прижат к краю.
-	world.camera_rig.yaw = PI
+	# NPC «дышат» ±1,5 % и на время диалога поворачиваются к Илюше (POLISH-02, п. 21).
+	var breath := []
+	for i in 4:
+		breath.append(world.babka.visual.scale.y)
+		await _frames(25)
+	check(breath.max() - breath.min() > 0.005 and breath.max() <= 1.0151 and breath.min() >= 0.9849, "01: Babka breathes within ±1.5%% %s" % [breath])
+	world.player.place(Layout.BABKA + Vector3(2.0, 0, -0.5), 0.0)
+	world.babka.look_at_target(world.player)
+	await _frames(60)
+	var to_player := world.player.global_position - world.babka.global_position
+	var wanted := atan2(-to_player.x, -to_player.z)
+	check(absf(angle_difference(world.babka.visual.global_rotation.y, wanted)) < 0.1, "01: Babka turns to Ilyusha (%.2f vs %.2f)" % [world.babka.visual.global_rotation.y, wanted])
+	world.babka.stop_looking()
+	await _frames(60)
+	check(absf(angle_difference(world.babka.visual.rotation.y, 0.0)) < 0.1, "01: Babka turns back after the talk")
+	world.player.place(Layout.SPAWN, Layout.SPAWN_YAW)
+	await _frames(3)
+	# Ромб: камера смотрит на Бабку — проекция у центра экрана; камера отвернулась — ромб прижат к краю.
+	var to_babka := Layout.BABKA - world.player.global_position
+	var babka_yaw := atan2(-to_babka.x, -to_babka.z)  # yaw 0 — север, PI — юг (Layout)
+	world.camera_rig.yaw = babka_yaw
 	await _frames(3)
 	var canvas: Vector2 = hud._canvas_size()
-	check(hud.diamond_visible and not hud.diamond_clamped, "01: diamond is on screen when the camera looks at Babka")
-	check(absf(hud.diamond_position.x - canvas.x * 0.5) < canvas.x * 0.1, "01: diamond near the screen centre (%s of %s)" % [hud.diamond_position, canvas])
-	world.camera_rig.yaw = 0.0
+	# Бабка в кадре и ближе 15 м: ромб спрятан, над ней уже «!» (POLISH-02, п. 17); проекция всё равно считается.
+	check(not hud.diamond_clamped and hud.diamond_near_hidden and not hud.diamond_visible and not hud.diamond.visible, "01: diamond hidden when Babka is in frame and near")
+	check(absf(hud.diamond_position.x - canvas.x * 0.5) < canvas.x * 0.1, "01: diamond projection near the screen centre (%s of %s)" % [hud.diamond_position, canvas])
+	check(hud.minimap.route_points.size() >= 2 and hud.minimap.route_points[-1].distance_to(Vector2(Layout.BABKA.x, Layout.BABKA.z)) < 0.01, "01: minimap route line ends at Babka")
+	world.camera_rig.yaw = babka_yaw + PI
 	await _frames(3)
 	check(hud.diamond_visible and hud.diamond_clamped, "01: diamond clamps to the edge when Babka is behind")
 	var rect := Rect2(Vector2.ZERO, canvas)
@@ -97,7 +118,12 @@ func _step02_offer_and_blocking() -> void:
 	player.place(Layout.BABKA + Vector3(0, 0, -2.2), 0.0)
 	await _frames(4)
 	check(hud.prompt_label.visible and hud.prompt_label.text == "E — ПОГОВОРИТЬ", "02: E prompt next to Babka")
+	check(hud.prompt_plate.visible, "02: E prompt is on its plate")
+	check(hud.task_label.text == "Поговори с Бабкой", "02: task 'Поговори с Бабкой' next to Babka (frame 02)")
 	await _press_interact()
+	check(flow.dialog.is_typing() and flow.dialog.text_label.visible_characters < flow.dialog.text_label.text.length(), "02: offer line is being typed")
+	await _frames(70)
+	check(not flow.dialog.is_typing(), "02: offer line typed out within ~1 s")
 	check(flow.is_dialog_open() and mission.state == MissionDirector.OFFERED, "02: E opens the offer dialog, mission OFFERED")
 	check(flow.dialog.text_label.text == "Илюша, сходи за хлебом в киоск", "02: Babka offer text '%s'" % flow.dialog.text_label.text)
 	check(flow.dialog.buttons.has(&"accept") and flow.dialog.buttons[&"accept"].text == "ПРИНЯТЬ", "02: button ПРИНЯТЬ")
@@ -127,7 +153,7 @@ func _step_decline() -> void:
 	check(not flow.is_dialog_open() and not world.ui_blocking and player.input_enabled, "decline: dialog closed, input restored")
 	check(_mouse_captured(), "decline: mouse is captured again")
 	check(flow.marker.visible and flow.marker.text == "!", "decline: marker is ! again")
-	check(world.get_hud_state()["task"] == "Подойди к Бабке", "decline: task is back to 'Подойди к Бабке'")
+	check(world.get_hud_state()["task"] == "Поговори с Бабкой", "decline: task next to Babka is 'Поговори с Бабкой' (frame 02)")
 	await _frames(3)
 	var before := player.global_position
 	world.camera_rig.yaw = 0.0
@@ -198,6 +224,10 @@ func _step07_vendor_dialog() -> void:
 	mission.money = 10  # условно не хватает денег
 	await _press_interact()
 	check(flow.is_dialog_open() and flow.dialog.text_label.text == "Батон? 35 рублей", "07: vendor dialog 'Батон? 35 рублей'")
+	check(hud.task_label.text == "Купи хлеб", "07: task 'Купи хлеб' at the window (frame 07)")
+	check(flow.dialog.is_typing(), "07: vendor line is being typed")
+	await _press_interact()
+	check(not flow.dialog.is_typing() and flow.is_dialog_open(), "07: E while typing completes the line and keeps the dialog")
 	check(flow.dialog.speaker_label.text == "ПРОДАВЩИЦА", "07: speaker ПРОДАВЩИЦА")
 	var buy: Button = flow.dialog.buttons[&"buy"]
 	check(buy.text == "КУПИТЬ ХЛЕБ" and buy.disabled, "07: КУПИТЬ ХЛЕБ is disabled when can_buy_bread() is false")
@@ -241,6 +271,7 @@ func _step08_09_bread_and_return() -> void:
 	player.place(Layout.BABKA + Vector3(0, 0, -2.2), 0.0)
 	await _frames(4)
 	check(hud.prompt_label.text == "E — СДАТЬ ЗАДАНИЕ", "09: prompt 'E — СДАТЬ ЗАДАНИЕ' at Babka")
+	check(hud.task_label.text == "Сдай хлеб Бабке", "09: task 'Сдай хлеб Бабке' next to Babka (frame 09)")
 
 # --- 10: сдача ---
 
@@ -255,7 +286,7 @@ func _step10_complete() -> void:
 	check(hud.completion_panel.visible, "10: completion panel is shown")
 	check(_all_text(hud.completion_panel).has("ЗАДАНИЕ ВЫПОЛНЕНО") and _all_text(hud.completion_panel).has("+50 опыта"), "10: panel shows ЗАДАНИЕ ВЫПОЛНЕНО and +50 опыта")
 	check(not flow.marker.visible, "10: no marker after completion")
-	check(hud.strike.visible, "10: task is struck out on the card")
+	check(hud.strike.visible and hud.task_label.text == "Сдай хлеб Бабке", "10: the done task (not 'Задание выполнено') is struck out on the card")
 	check(not hud.diamond_visible and not hud.diamond.visible and not hud.minimap.has_target, "10: no diamond and no minimap target after completion")
 	check(_hands() == hands_before, "10: hands are empty")
 	check(hud.completion_close.has_focus(), "10: ЗАКРЫТЬ has keyboard focus (closable without the mouse)")
@@ -268,7 +299,14 @@ func _step10_complete() -> void:
 	accept.pressed = false
 	Input.parse_input_event(accept)
 	await _frames(3)
-	check(not flow.is_dialog_open() and not hud.completion_panel.visible and not world.ui_blocking, "10: panel closes from the keyboard (ui_accept), dialog closed")
+	check(not hud.completion_panel.visible and hud.is_end_card_open(), "10: ЗАКРЫТЬ (ui_accept) opens the «Конец демо» card")
+	check(world.ui_blocking and flow.is_dialog_open() and not world.player.input_enabled, "10: input stays blocked under the «Конец демо» card")
+	check(not flow.thanks_bubble.is_visible_in_tree(), "10: thanks bubble gone with the completion panel")
+	await _frames(2)
+	check(hud.end_buttons[&"again"].has_focus(), "10: ЕЩЁ РАЗ has keyboard focus")
+	hud.end_buttons[&"stay"].pressed.emit()
+	await _frames(3)
+	check(not flow.is_dialog_open() and not hud.is_end_card_open() and not world.ui_blocking and world.player.input_enabled, "10: ПОГУЛЯТЬ closes the card, input restored")
 	check(_mouse_captured(), "10: mouse captured after closing")
 	for i in 3:
 		await _press_interact()
@@ -327,7 +365,9 @@ func _check_target(expected: Vector3, label: String) -> void:
 	check(target is Vector3 and target.distance_to(expected) < 0.01, "%s: C6 target_position follows the objective %s" % [label, expected])
 	await_frame_sync()
 	check(hud.minimap.has_target and hud.minimap.target_world.distance_to(Vector2(expected.x, expected.z)) < 0.5, "%s: minimap target follows the objective (%s)" % [label, hud.minimap.target_world])
-	check(hud.diamond_visible and hud.diamond.visible, "%s: yellow diamond node is visible" % label)
+	# Ромб виден, если цель не рядом в кадре; рядом и в кадре — спрятан (POLISH-02, п. 17).
+	check(hud.diamond_visible == hud.diamond.visible and (hud.diamond_visible or hud.diamond_near_hidden), "%s: yellow diamond is visible or hidden only near and in frame" % label)
+	check(hud.minimap.route_points.size() >= 2 and hud.minimap.route_points[-1].distance_to(Vector2(expected.x, expected.z)) < 0.5, "%s: minimap route line ends at the target" % label)
 
 func await_frame_sync() -> void:
 	# HUD обновляется в _process; достаточно вызвать его вручную для текущего снимка.
@@ -477,8 +517,16 @@ func _real_car_pass() -> void:
 	check(mission.state == MissionDirector.COMPLETE and mission.xp == 50 and hud.completion_panel.visible, "real: turn-in completes, +50 XP, panel shown")
 	hud.completion_close.pressed.emit()
 	await _frames(3)
-	check(not flow.is_dialog_open() and not world.ui_blocking and player.input_enabled, "real: panel closed, input restored")
+	check(hud.is_end_card_open() and world.ui_blocking, "real: «Конец демо» card after ЗАКРЫТЬ")
 	if parked.origin.distance_to(car.global_position) < 1.0:
 		check(false, "real: the car actually left the kiosk")
 	driver.world = null
 	driver.tree = null
+	# «ЕЩЁ РАЗ»: новый мир с NOT_STARTED, как из меню (POLISH-02, п. 11).
+	var old: DemoWorld = world
+	hud.end_buttons[&"again"].pressed.emit()
+	await _frames(6)
+	check(not is_instance_valid(old) and main.world != null, "again: ЕЩЁ РАЗ replaces the world")
+	_bind()
+	_check_clean_start("again")
+	check(not main.menu.visible and not hud.is_end_card_open(), "again: no menu and no end card in the new world")

@@ -53,15 +53,26 @@ func _swap_world(new_game: bool) -> void:
 		world.queue_free()
 		world = null
 	if new_game:
+		menu.hide()  # до мира: двор за меню (POLISH-02) освобождается, его камера и свет не мешают миру
 		world = WorldScene.instantiate()
 		world.process_mode = Node.PROCESS_MODE_PAUSABLE
 		add_child(world)
-		menu.hide()
+		_connect_end_card(world)
 		set_paused(false)
 	else:
 		set_paused(false)
 		menu.show()
 		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+
+## Карточка «Конец демо» (POLISH-02): «ЕЩЁ РАЗ» — новый мир с NOT_STARTED, как из меню; «В МЕНЮ» — главное меню.
+func _connect_end_card(new_world: Node) -> void:
+	var hud := new_world.get_node_or_null("GameHUD")
+	if hud == null or not hud.has_signal("restart_requested"):
+		return
+	hud.restart_requested.connect(start_game)
+	hud.menu_requested.connect(return_to_menu)
+	for button in hud.end_buttons.values():
+		button.pressed.connect(ui_click.play)
 
 func _notification(what: int) -> void:
 	if what == NOTIFICATION_WM_CLOSE_REQUEST:

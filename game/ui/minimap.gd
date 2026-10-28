@@ -1,6 +1,8 @@
 extends Control
 ## Круглая мини-карта (QUEST-01): север сверху, карта по Layout (C1), белая стрелка — взгляд камеры,
 ## жёлтый ромб — цель (на краю круга, если цель за пределами). Только рисует то, что ей передали.
+## POLISH-02: жёлтая ломаная от героя до цели по маршруту Layout (C1): в машине — ROUTE_DRIVE, пешком —
+## ROUTE_WALK, как на кадрах 05 и 08 («указатель маршрута», раздел 3 канона).
 
 const Layout = preload("res://game/world/layout.gd")
 
@@ -22,6 +24,10 @@ var target_world := Vector2.ZERO
 ## Положение ромба относительно центра круга (экранные пиксели карты); для проверок.
 var target_marker := Vector2.ZERO
 var target_on_edge := false
+## Ломаная маршрута в мировых x, z (от героя к цели); пусто — цели нет. Для проверок.
+var route_points := PackedVector2Array()
+## Ближе этого по маршруту — линия прямо к цели, без захода на маршрут, м.
+const ROUTE_SHORTCUT := 12.0
 
 var _disc: PackedVector2Array
 var _n_label: Label
@@ -40,7 +46,7 @@ func _ready() -> void:
 	_n_label.position = Vector2(size.x * 0.5 - 9.0, -8.0)
 	add_child(_n_label)
 
-func set_view(new_center: Vector2, new_yaw: float, target: Variant) -> void:
+func set_view(new_center: Vector2, new_yaw: float, target: Variant, in_car := false) -> void:
 	center_world = new_center
 	yaw = new_yaw
 	has_target = target is Vector3 and target != Vector3.INF
@@ -49,10 +55,49 @@ func set_view(new_center: Vector2, new_yaw: float, target: Variant) -> void:
 		var offset := (target_world - center_world) * SCALE
 		target_on_edge = offset.length() > RADIUS - 14.0
 		target_marker = offset.limit_length(RADIUS - 14.0)
+		route_points = route_between(center_world, target_world, Layout.ROUTE_DRIVE if in_car else Layout.ROUTE_WALK)
 	else:
 		target_on_edge = false
 		target_marker = Vector2.ZERO
+		route_points = PackedVector2Array()
 	queue_redraw()
+
+## Путь от from до to по ломаной route: к ближайшей точке маршрута, по нему до точки, ближайшей к цели, и к цели.
+## Если обе точки на маршруте рядом — прямо.
+static func route_between(from: Vector2, to: Vector2, route: Array[Vector3]) -> PackedVector2Array:
+	var points := PackedVector2Array()
+	for p in route:
+		points.append(Vector2(p.x, p.z))
+	var a := _project(points, from)
+	var b := _project(points, to)
+	if absf(a[0] - b[0]) < ROUTE_SHORTCUT:
+		return PackedVector2Array([from, to])
+	var out := PackedVector2Array([from, a[1]])
+	var seg_a: int = a[2]
+	var seg_b: int = b[2]
+	if a[0] < b[0]:
+		for i in range(seg_a + 1, seg_b + 1):
+			out.append(points[i])
+	else:
+		for i in range(seg_a, seg_b, -1):
+			out.append(points[i])
+	out.append(b[1])
+	out.append(to)
+	return out
+
+## Ближайшая к p точка ломаной: [путь вдоль ломаной до неё, сама точка, номер отрезка].
+static func _project(points: PackedVector2Array, p: Vector2) -> Array:
+	var best := [0.0, points[0], 0]
+	var best_distance := INF
+	var walked := 0.0
+	for i in points.size() - 1:
+		var q := Geometry2D.get_closest_point_to_segment(p, points[i], points[i + 1])
+		var d := q.distance_to(p)
+		if d < best_distance:
+			best_distance = d
+			best = [walked + points[i].distance_to(q), q, i]
+		walked += points[i].distance_to(points[i + 1])
+	return best
 
 func _draw() -> void:
 	var mid := size * 0.5
@@ -66,6 +111,8 @@ func _draw() -> void:
 			continue
 		var size_xz := Vector2(spec[3].x, spec[3].z)
 		_draw_box(spec[2], size_xz, COL_LOW if kind == "panel_low" or kind == "garage" else COL_SOLID, mid)
+	if route_points.size() >= 2:
+		_draw_route(mid)
 	_draw_arrow(mid)
 	if has_target:
 		_draw_diamond(mid + target_marker, 12.0)
@@ -79,6 +126,16 @@ func _draw_box(center_xz: Vector2, size_xz: Vector2, color: Color, mid: Vector2)
 	for piece in Geometry2D.intersect_polygons(corners, _translate(_disc, mid)):
 		if piece.size() >= 3 and not Geometry2D.triangulate_polygon(piece).is_empty():
 			draw_colored_polygon(piece, color)
+
+func _draw_route(mid: Vector2) -> void:
+	var line := PackedVector2Array()
+	for p in route_points:
+		line.append(mid + (p - center_world) * SCALE)
+	var disc := _translate(_circle_polygon(RADIUS - 4.0, 48), mid)
+	for piece in Geometry2D.intersect_polyline_with_polygon(line, disc):
+		if piece.size() >= 2:
+			draw_polyline(piece, INK, 9.0, true)
+			draw_polyline(piece, YELLOW, 5.0, true)
 
 func _draw_diamond(at: Vector2, r: float) -> void:
 	var points := PackedVector2Array([at + Vector2(0, -r), at + Vector2(r, 0), at + Vector2(0, r), at + Vector2(-r, 0)])

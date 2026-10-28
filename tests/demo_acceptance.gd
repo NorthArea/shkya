@@ -42,6 +42,7 @@ var bread_edges := 0             # has_bread false → true за мир
 var _had_bread := false
 var completed_signals := 0
 var _player_signature := ""
+var _kiosk_goods: Array = []    # хлеб-декор на витрине киоска при создании мира
 var mon := {}                    # имя инварианта -> {frames, bad, first}
 var _lag := {}                   # подряд идущие нарушения (допуск 1 кадр отставания _process от физики)
 var textures_seen := {}
@@ -304,6 +305,11 @@ func _pass_one() -> bool:
 		await drv.click(close)
 		await drv.frames(5)
 	check(1, not _hud_has(w, "ЗАДАНИЕ ВЫПОЛНЕНО"), "10: completion panel closed by mouse click")
+	# POLISH-02: после финала — карточка «Конец демо»; «ПОГУЛЯТЬ» оставляет в мире (сценарий 6 ниже).
+	check(1, _hud_has(w, "КОНЕЦ ДЕМО") and _visible_button(w, "ЕЩЁ РАЗ") != null and _visible_button(w, "В МЕНЮ") != null, "10: «Конец демо» card with ЕЩЁ РАЗ and В МЕНЮ")
+	check(1, await drv.press_button("ПОГУЛЯТЬ", &"ui_right"), "10: ПОГУЛЯТЬ pressed from keyboard (%s)" % drv.last_error)
+	await drv.frames(5)
+	check(1, not _hud_has(w, "КОНЕЦ ДЕМО"), "10: «Конец демо» card closed")
 	check(1, await _can_walk(w), "10: Ilyusha can move after closing the panel")
 
 	# Повторное E у Бабки
@@ -457,8 +463,13 @@ func _monitor() -> void:
 		toast_frames += 1
 	if sim_frames % 30 == 0:
 		_inv("3: Ilyusha's node tree never changes (nothing attached to him)", _signature(w.player) == _player_signature, _signature(w.player))
+		# Канон, раздел 2 и 3: нельзя хлеба в руках и 3D-батона как предмета. Витрина киоска «ХЛЕБ» — декор
+		# (POLISH-02): хлеб-подобные узлы допустимы только под LevelGeometry/Kiosk, и их набор за игру не меняется,
+		# то есть покупка и сдача не порождают в мире ни батона, ни пакета.
 		var props := _bread_props(w)
-		_inv("3: no 3D bread, loaf or bag anywhere in the world", props.is_empty(), str(props))
+		var outside := props.filter(func(path: String) -> bool: return not path.begins_with("LevelGeometry/Kiosk/"))
+		_inv("3: no 3D bread, loaf or bag in the world outside the kiosk display", outside.is_empty(), str(outside))
+		_inv("3: kiosk display never changes (purchase spawns nothing)", props == _kiosk_goods, str(props))
 	# Сценарий 4: тот же облик Илюши
 	var look := _ilyusha_sprite(w)
 	var texture_path: String = look.texture.resource_path if look and look.texture else ""
@@ -479,6 +490,7 @@ func _bind(w: DemoWorld) -> void:
 	w.mission.state_changed.connect(func(old, new): transitions.append([old, new]))
 	w.mission.quest_completed.connect(func(_xp): completed_signals += 1)
 	_player_signature = _signature(w.player)
+	_kiosk_goods = _bread_props(w)
 
 ## Цель по канону: до принятия — Бабка, после — машина, в пути — киоск, у киоска — окно, с хлебом — Бабка.
 func _expected_target(w: DemoWorld) -> Variant:
@@ -512,7 +524,12 @@ func _check_navigation(w: DemoWorld) -> void:
 		_inv("7: minimap marker points from the hero toward the target (north up)", absf(marker.angle_to(real)) < 0.05, "marker %s, real %s" % [marker, real])
 	# Ромб на экране: цель впереди — на её стороне экрана, сзади — прижат к краю.
 	var diamond_visible: bool = hud.get("diamond_visible")
-	_inv("7: yellow diamond is shown while there is a target", diamond_visible, "state %s" % w.mission.state)
+	# POLISH-02: ромб прячется, только когда цель в кадре и ближе 15 м (над Бабкой есть !/?, машина и киоск видны).
+	var near_hidden: bool = hud.get("diamond_near_hidden")
+	var hero_xz := Vector2(followed.global_position.x, followed.global_position.z)
+	_inv("7: yellow diamond is shown while there is a target (or the target is near and in frame)", diamond_visible or near_hidden, "state %s" % w.mission.state)
+	if near_hidden:
+		_inv("7: diamond hides only for a near target in frame", hero_xz.distance_to(t2) < 15.0 + tol and not hud.get("diamond_clamped"), "distance %.1f" % hero_xz.distance_to(t2))
 	var camera: Camera3D = w.camera_rig.camera
 	var local := camera.global_transform.affine_inverse() * Vector3(target.x, 2.0, target.z)
 	var position: Vector2 = hud.get("diamond_position")
