@@ -12,10 +12,15 @@ extends AnimatableBody3D
 ## носом по stop_yaw; без физики трафика (README расширения). Впереди по пути — датчик, как у PathVehicle
 ## (game/vehicles/path_vehicle.gd): «Лада», Илюша, транспорт кольца в SCAN_AHEAD м — торможение и ожидание, объезда нет;
 ## перед шагом кузов на новом месте проверяется на касание — сквозь машины автобус не едет (приёмка 28.10, P2).
+## EXT-01 fix2 (P2-4): на полосе кольца (троллейбус — RING, машины — CAR_RING, Layout.ring_lane) автобус стоит не
+## дольше STALL_SECONDS: дальше поездка завершается постановочно на ближайшей по пути точке вне полос, где кузов
+## никого не касается (может оказаться и концом пути на площадке) — без толчков; вне полос ждёт, пока освободят.
+## Учебный круг на стоянке улицы A — PARK_SENSOR_RANGE 6 м и бледнее (TUTORIAL_CONE_COLOR, P3).
 
 const Materials = preload("res://game/world/materials.gd")
 const PAINT := preload("res://game/vehicles/lada_paint.gdshader")
 const DetectionSensorScript = preload("res://game/stealth/detection_sensor.gd")
+const Layout = preload("res://game/world/layout.gd")
 const InteractableScript = preload("res://game/interaction/interactable.gd")
 
 const SIZE := Vector3(2.1, 2.45, 5.5)
@@ -29,7 +34,8 @@ const WHEEL_RADIUS := 0.36
 const DOOR_AT := Vector3(1.05, 0.0, 0.3)   # низ открытого дверного проёма, правый борт
 const SENSOR_RANGE := 14.0
 const SENSOR_FOV := 80.0
-const PARK_SENSOR_RANGE := 8.0    # этап 3: пешком у двери и по проезжей части рядом — индикатор
+const PARK_SENSOR_RANGE := 6.0    # этап 3: пешком у двери и у «военкома» — индикатор (8 → 6 м, EXT-01 fix2, P3)
+const TUTORIAL_CONE_COLOR := Color(1.0, 0.85, 0.12, 0.06)   # учебный круг бледнее обычного сектора
 const PARK_SENSOR_FOV := 360.0
 const TUTORIAL_CAP := 0.6         # на стоянке улицы A шкала дорастает до 0,6 и стоит — провала нет
 const SCAN_AHEAD := 7.0           # м от переднего бампера
@@ -37,6 +43,9 @@ const SCAN_STEP := 1.0
 const STOP_MARGIN := 2.5          # м: встаёт, когда препятствие в 2,5–3,5 м от бампера
 const EMERGENCY_DECEL := 9.0
 const OBSTACLE_MASK := 1 | 2 | 4  # World (транспорт кольца), Player, Car
+const STALL_SECONDS := 12.0       # P2-4: дольше на полосе кольца не стоит
+const LANE_CLEARANCE := 1.95      # м от оси полосы до оси автобуса: полкорпуса 1,05 + полкорпуса машины кольца 0,9
+const STALL_SEARCH_STEP := 0.5    # м: шаг поиска точки пути вне полос
 
 var sensor: Node3D
 var interactable: Interactable
@@ -51,6 +60,12 @@ var _scan_query := PhysicsShapeQueryParameters3D.new()
 var _body_query := PhysicsShapeQueryParameters3D.new()
 ## Что держит автобус в последнем кадре (null — ничего) — для тестов.
 var blocked_by: Object = null
+## Сколько секунд подряд стоит перед телом (P2-4); сколько поездок завершено досрочно вне полос.
+var stall_seconds := 0.0
+var stall_ends := 0
+## Кто держал автобус перед последним досрочным завершением (имя тела) — для тестов и журнала.
+var last_stall_blocker := ""
+var _lanes: Array = []   # оси полос кольца (Layout.ring_lane): троллейбус и машины
 
 func _ready() -> void:
 	collision_layer = 1
@@ -97,6 +112,7 @@ func park(point: Vector3, yaw: float) -> void:
 	_driving = false
 	_curve = null
 	_sensor_mode(PARK_SENSOR_RANGE, PARK_SENSOR_FOV, TUTORIAL_CAP)
+	sensor.cone_color = TUTORIAL_CONE_COLOR
 
 ## Проехать по точкам (первая — где стоит сейчас) и встать в конце носом по stop_yaw.
 func drive(path: Array, stop_yaw: float) -> void:
@@ -125,6 +141,7 @@ func drive(path: Array, stop_yaw: float) -> void:
 	_speed = 0.0
 	_stop_yaw = stop_yaw
 	_driving = true
+	stall_seconds = 0.0
 	sensor.enabled = false   # в пути не смотрит; дверной режим — на месте
 
 ## Режим сенсора двери: дальность, угол, потолок шкалы; включает сенсор.
@@ -132,6 +149,7 @@ func _sensor_mode(range_m: float, fov: float, cap: float) -> void:
 	sensor.range_m = range_m
 	sensor.fov_deg = fov
 	sensor.suspicion_cap = cap
+	sensor.cone_color = DetectionSensor.CONE_COLOR
 	sensor.enabled = true
 
 func is_driving() -> bool:
@@ -155,7 +173,12 @@ func _physics_process(delta: float) -> void:
 	var next := minf(_offset + _speed * delta, length)
 	if next > _offset and not _free_at(next, length):
 		_speed = 0.0   # кузов на новом месте задел бы машину или Илюшу — стоим
+	if _speed < 0.05 and blocked_by != null:
+		stall_seconds += delta
+		if stall_seconds >= STALL_SECONDS and on_lane():
+			_end_trip_off_lane(length)
 		return
+	stall_seconds = 0.0
 	_offset = next
 	var at := _curve.sample_baked(_offset, true)
 	var ahead := _curve.sample_baked(minf(_offset + 0.6, length), true)
@@ -176,6 +199,59 @@ func _physics_process(delta: float) -> void:
 		_driving = false
 		_speed = 0.0
 		_sensor_mode(SENSOR_RANGE, SENSOR_FOV, 1.0)
+
+## Кузов на полосе кольца: ось автобуса (центр и ±2,2 м вдоль) ближе LANE_CLEARANCE к оси любой полосы (C8).
+func on_lane() -> bool:
+	return _xform_on_lane(global_transform)
+
+func _xform_on_lane(xform: Transform3D) -> bool:
+	if _lanes.is_empty():
+		_lanes = [Layout.ring_lane(6.0, 6), Layout.ring_lane(6.0, 6, true)]
+	var forward := -xform.basis.z
+	forward.y = 0.0
+	forward = forward.normalized()
+	for k: float in [-2.2, 0.0, 2.2]:
+		var p := xform.origin + forward * k
+		var q := Vector2(p.x, p.z)
+		for lane in _lanes:
+			var n: int = lane.size()
+			for i in n:
+				var a: Vector3 = lane[i]
+				var b: Vector3 = lane[(i + 1) % n]
+				var c := Geometry2D.get_closest_point_to_segment(q, Vector2(a.x, a.z), Vector2(b.x, b.z))
+				if c.distance_to(q) < LANE_CLEARANCE:
+					return true
+	return false
+
+## P2-4: простоял STALL_SECONDS на полосе — встать на ближайшей по пути точке вне полос, где кузов никого не касается
+## (вперёд или назад; конец пути — обычная остановка носом по stop_yaw), и завершить поездку; дверной сенсор включается.
+## Такой точки нет — ждать ещё STALL_SECONDS.
+func _end_trip_off_lane(length: float) -> void:
+	stall_seconds = 0.0
+	var blocker: Object = blocked_by   # _free_at ниже перезаписывает blocked_by
+	var best := -1.0
+	var best_d := INF
+	var o := 0.0
+	while o <= length + 0.001:
+		var d := absf(o - _offset)
+		if d < best_d:
+			var xform := _transform_at(o, length, 0.0)
+			if not _xform_on_lane(xform) and _free_at(o, length):
+				best = o
+				best_d = d
+		o += STALL_SEARCH_STEP
+	if best < 0.0:
+		blocked_by = blocker
+		return
+	last_stall_blocker = String(blocker.name) if blocker is Node else ""
+	_offset = best
+	_speed = 0.0
+	_driving = false
+	stall_ends += 1
+	var at := _curve.sample_baked(best, true)
+	var yaw := _stop_yaw if best >= length - STALL_SEARCH_STEP else _transform_at(best, length, 0.0).basis.get_euler().y
+	global_transform = Transform3D(Basis(Vector3.UP, yaw), Vector3(at.x, 0.0, at.z))
+	_sensor_mode(SENSOR_RANGE, SENSOR_FOV, 1.0)
 
 ## Предел скорости по датчику впереди: коробки шириной кузова + 0,3 м вдоль пути от бампера на SCAN_AHEAD.
 func _obstacle_limit(length: float) -> float:

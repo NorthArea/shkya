@@ -18,6 +18,13 @@ uniform float stripes = 0.0; // 1 — серия 97: горизонтальны�
 uniform vec3 stripe_light : source_color = vec3(0.459, 0.545, 0.596);   // #758b98
 uniform vec3 stripe_dark : source_color = vec3(0.259, 0.322, 0.373);    // #42525f
 uniform vec3 frame_color : source_color = vec3(0.82, 0.83, 0.82);   // белые рамы (сверка ART-04, P3)
+// CITY-01 L: температура света в горящих окнах и телевизоры (значения задаёт lighting.gd через materials.gd).
+uniform vec3 window_amber : source_color = vec3(1.0, 0.56, 0.24);
+uniform vec3 window_cool : source_color = vec3(0.92, 0.90, 0.80);
+uniform float cool_ratio = 0.2;
+uniform float tv_ratio = 0.12;
+uniform vec3 tv_color : source_color = vec3(0.50, 0.66, 1.0);
+uniform float tv_energy = 1.1;
 
 varying vec3 world_pos;
 varying vec3 world_normal;
@@ -72,9 +79,24 @@ void fragment() {
 				frame_line = max(frame_line, step(abs(local.y - (wy0 + wh * 0.72)), 0.03) * step(local.x, wx0 + ww * 0.5));
 			}
 			vec3 glass = lit ? window_lit * (0.75 + 0.5 * hash(cell + 3.1)) : window_dark;
+			float glass_energy = shop ? 1.25 : 1.1;
+			if (lit && !shop) {
+				float kind = hash(cell + 9.1);
+				if (kind < tv_ratio) {
+					// Телевизор в тёмной комнате: синеватое мерцание со сменой кадра ~6 раз в секунду.
+					float t = TIME * 6.0 + kind * 97.0;
+					float flick = mix(hash(vec2(floor(t), kind)), hash(vec2(floor(t) + 1.0, kind)), smoothstep(0.7, 1.0, fract(t)));
+					glass = window_dark + tv_color * (0.2 + 0.3 * flick);
+					glass_energy = tv_energy;
+				} else if (kind < tv_ratio + cool_ratio) {
+					glass = window_cool * (0.7 + 0.3 * hash(cell + 3.1));
+				} else {
+					glass = mix(glass, window_amber * (0.75 + 0.5 * hash(cell + 3.1)), step(0.6, hash(cell + 4.3)));
+				}
+			}
 			color = mix(glass, shop ? seam_color * 0.6 : frame_color * (0.7 + 0.3 * hash(cell + 5.0)), frame_line);
 			if (lit) {
-				emission = glass * (shop ? 1.25 : 1.1) * (1.0 - frame_line);
+				emission = glass * glass_energy * (1.0 - frame_line);
 			}
 			ROUGHNESS = 0.2;
 		} else {

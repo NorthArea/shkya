@@ -86,7 +86,11 @@ const RING_CLEARANCE := 2.05     # м от оси полосы до коробо
 ## Ось правой полосы кольца со скруглёнными углами идёт по проезжей части (не по тротуару) и держит зазор от всех
 ## коробок — домов, валов, фонарей, машин, павильонов. Шаг 0,5 м по всей замкнутой ломаной.
 func _check_ring() -> void:
-	var lane := Layout.ring_lane()
+	_check_lane(Layout.ring_lane(), "ring lane")
+	# Встречная полоса машин (ARENA-01 fix P2-2): CAR_RING, скругление PathVehicle.CAR_TURN_RADIUS.
+	_check_lane(Layout.ring_lane(PathVehicle.CAR_TURN_RADIUS, 6, true), "car lane")
+
+func _check_lane(lane: Array[Vector3], title: String) -> void:
 	var roads := Layout.SURFACES.filter(func(spec): return spec[1] == "road")
 	var off_road := []
 	var blocked := []
@@ -117,10 +121,10 @@ func _check_ring() -> void:
 			if hit != "" and not seen.has(hit):
 				seen[hit] = true
 				blocked.append("%s@(%.0f,%.0f)" % [hit, p.x, p.z])
-	print("INFO: ring lane length %.0f m, %d corner points" % [length, lane.size()])
-	check(length > 450.0, "ring lane closes around the block (%.0f m)" % length)
-	check(off_road.is_empty(), "ring lane stays on the carriageway, %.1f m inside the road edge %s" % [RING_ROAD_MARGIN, off_road])
-	check(blocked.is_empty(), "ring lane keeps %.2f m from solids (parked cars, banks, lamps, houses) %s" % [RING_CLEARANCE, blocked.slice(0, 6)])
+	print("INFO: %s length %.0f m, %d corner points" % [title, length, lane.size()])
+	check(length > 450.0, "%s closes around the block (%.0f m)" % [title, length])
+	check(off_road.is_empty(), "%s stays on the carriageway, %.1f m inside the road edge %s" % [title, RING_ROAD_MARGIN, off_road])
+	check(blocked.is_empty(), "%s keeps %.2f m from solids (parked cars, banks, lamps, houses) %s" % [title, RING_CLEARANCE, blocked.slice(0, 6)])
 
 ## Первая коробка ближе margin к точке в плане — по настоящему расстоянию до прямоугольника (у углов — по дуге),
 ## а не по коробке, раздутой на margin: ось полосы на повороте обходит угол вала по кругу.

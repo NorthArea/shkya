@@ -10,6 +10,8 @@ extends Node
 ## frozen — набор причин (диалог, пауза, экран провала, защита после респавна): рост остановлен, спад идёт.
 ## Узел PAUSABLE: на паузе не тикает, а frozen читает get_tree().paused.
 ## Обнаружение не меняет MissionDirector (C5).
+## EXT-01 fix2: detected_in_car — обнаружили «Ладу» с Илюшей на площадке киоска (сенсор с car_area, P1): мир
+## отгоняет машину на парковку. grant_grace(seconds) — защита после диалога с полицейским (P2-3, этап 5).
 
 signal player_detected
 signal state_changed(old: StringName, new: StringName)
@@ -31,6 +33,8 @@ var frozen: bool:
 		return not _reasons.is_empty() or _protection_left > 0.0 or (is_inside_tree() and get_tree().paused)
 ## Сколько раз сработал player_detected за мир.
 var detections := 0
+## Последнее обнаружение — в машине (сенсор с car_area видел «Ладу»); сбрасывает notify_respawned().
+var detected_in_car := false
 
 var _reasons := {}            # StringName -> true
 var _protection_left := 0.0
@@ -58,6 +62,7 @@ func _physics_process(delta: float) -> void:
 	if suspicion >= 1.0:
 		_alerted = true
 		detections += 1
+		detected_in_car = not _on_foot()
 		_set_state(ALERT)
 		player_detected.emit()
 	else:
@@ -77,7 +82,13 @@ func notify_respawned() -> void:
 	_visible_now = 0.0
 	_poll_left = POLL_SECONDS
 	_protection_left = PROTECTION_SECONDS
+	detected_in_car = false
 	_set_state(SAFE)
+
+## Защита от роста шкалы на seconds (после диалога с полицейским: «может спокойно уйти», P2-3). Шкалу не сбрасывает —
+## она спадает; уже идущая защита не укорачивается.
+func grant_grace(seconds: float) -> void:
+	_protection_left = maxf(_protection_left, seconds)
 
 ## Видит ли кто-то Илюшу сейчас (по кэшу сенсоров).
 func visible_now() -> bool:
@@ -110,7 +121,7 @@ func _max_visibility() -> float:
 		if seen > 0.0:
 			cap = maxf(cap, float(sensor.get("suspicion_cap")) if sensor.get("suspicion_cap") != null else 1.0)
 		best = maxf(best, seen)
-		sensor.set("cone_wanted", on_foot and sensor.has_method("distance_to_player") and sensor.distance_to_player() < CONE_DISTANCE)
+		sensor.set("cone_wanted", on_foot and sensor.has_method("distance_to_player") and sensor.distance_to_player() < CONE_DISTANCE)   # в машине сектор не рисуется
 	_cap_now = cap if best > 0.0 else 1.0
 	return best
 

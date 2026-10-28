@@ -9,7 +9,10 @@ extends Node
 ## EXT-01 (L): реплики — только QuestLines (game/mission/lines.gd); цепочки реплик продавщицы и Бабки
 ## при возврате; полицейский (&"officer") и «военком» (&"account_officer") — зоны Interactable исполнителя N,
 ## подключаются по id после сборки мира; миссию они не меняют. Сдача — после цепочки, кнопкой «СДАТЬ ХЛЕБ».
-## Финал — два пузыря над Бабкой подряд с паузой QuestLines.THANKS_PAUSE.
+## Финал — два пузыря над Бабкой подряд с паузой QuestLines.THANKS_PAUSE: второй встаёт на место первого (с хвостиком
+## к Бабке), первый поднимается над ним без хвостика — читается сверху вниз (EXT-01 fix2, P3).
+## EXT-01 fix2 (P2-3): по закрытию разговора с полицейским — StealthDirector.grant_grace(OFFICER_GRACE) и
+## PatrolNpc.turn_away_from(Илюша): он сразу отворачивается на угол без Илюши; задержался рядом — провал через ~5 с.
 
 const DialogPanelScript = preload("res://game/ui/dialog_panel.gd")
 const ACCEPT_SOUND := preload("res://assets/audio/quest_accept.wav")
@@ -23,6 +26,8 @@ const DIALOG_SHOULDER := 1.3  # м: камера вбок на время диа
 const TOAST_TEXT := "ХЛЕБ +1"
 ## Зоны наблюдателей расширения (исполнитель N): подключаются по id, если узлы есть в мире.
 const OBSERVER_IDS: Array[StringName] = [&"officer", &"account_officer"]
+## Защита после разговора с полицейским, с (этап 5: «может спокойно уйти, если быстро завершит диалог»).
+const OFFICER_GRACE := 3.0
 
 ## Пузырь финала: размер шрифта и пикселя текста, поля и хвостик (в пикселях текста), высота над Бабкой.
 const BUBBLE_FONT := 80
@@ -40,9 +45,13 @@ var marker: Label3D
 var thanks_bubble: Label3D
 ## Подложка пузыря финала (кадр 10): бумажный пузырь с хвостиком, текст поверх.
 var thanks_back: Sprite3D
-## Второй пузырь финала («Или не сходишь»), выше первого, без хвостика.
+## Второй пузырь финала: появляется на месте первого (с хвостиком), первый — выше него, без хвостика.
 var thanks_after_bubble: Label3D
 var thanks_after_back: Sprite3D
+var _thanks_tail_texture: Texture2D     # первый пузырь с хвостиком (пока один)
+var _thanks_plain_texture: Texture2D    # первый пузырь без хвостика (над вторым)
+var _thanks_low_y := 0.0                # центр подложки с хвостиком: кончик хвостика на BUBBLE_Y
+var _thanks_high_y := 0.0               # центр первого пузыря без хвостика над вторым
 var hud: Node
 var accept_player: AudioStreamPlayer
 
@@ -114,6 +123,7 @@ func _process(delta: float) -> void:
 	if _thanks_left > 0.0:
 		_thanks_left -= delta
 		if _thanks_left <= 0.0 and _kind == &"thanks":
+			_stack_thanks(true)
 			thanks_after_back.visible = true
 			thanks_after_bubble.visible = true
 			_pop_3d(thanks_after_back)
@@ -127,7 +137,9 @@ func _physics_process(_delta: float) -> void:
 	for id in _observer_zones:
 		var zone: Interactable = _observer_zones[id]
 		zone.prompt = mission.prompt_for(id)
-		zone.enabled = zone.prompt != ""
+		var npc: Node = zone.get_parent()
+		# Полицейский со спины не отвечает (P3): подсказки и E нет, пока Илюша за спиной.
+		zone.enabled = zone.prompt != "" and (npc == null or not npc.has_method("can_talk_to") or npc.can_talk_to(world.player))
 
 ## С кем Илюша рядом: собеседник открытого диалога или ближайшая доступная зона E пешком.
 func _nearby() -> StringName:
@@ -267,6 +279,14 @@ func _unface() -> void:
 		if npc and npc.has_method("stop_looking"):
 			npc.stop_looking()
 
+## P2-3: после разговора — защита OFFICER_GRACE с, полицейский сразу отворачивается на угол без Илюши.
+func _release_officer() -> void:
+	if world.get("stealth") != null and world.stealth.has_method("grant_grace"):
+		world.stealth.grant_grace(OFFICER_GRACE)
+	var npc: Node = _npc_for(&"officer")
+	if npc and npc.has_method("turn_away_from"):
+		npc.turn_away_from(world.player, OFFICER_GRACE)
+
 func _npc_for(id: StringName) -> Node:
 	match id:
 		&"babka":
@@ -302,11 +322,14 @@ func _on_end_closed() -> void:
 		_close()
 
 func _close() -> void:
+	var was: StringName = _kind
 	dialog.close()
 	world.camera_rig.shoulder = 0.0
 	_show_thanks(false)
 	_unface()
 	_kind = &""
+	if was == &"officer":
+		_release_officer()
 	world.ui_blocking = false
 	if world.control_mode == &"on_foot":
 		world.player.input_enabled = true
@@ -329,17 +352,29 @@ func _build_marker() -> void:
 	marker.position = Vector3(0, MARKER_Y, 0)
 	marker.visible = false
 	world.get_node("Babka").add_child(marker)
-	# Пузыри реплики (кадр 10): бумажная подложка с хвостиком к Бабке, текст поверх неё; второй — выше, без хвостика.
+	# Пузыри реплики (кадр 10): бумажная подложка с хвостиком к Бабке, текст поверх неё. Второй — тоже с хвостиком, на
+	# месте первого; первый тогда поднимается над ним и теряет хвостик (_stack_thanks).
 	var first := _build_bubble("ThanksBubble", QuestLines.THANKS, true)
 	thanks_back = first[0]
 	thanks_bubble = first[1]
-	# Кончик хвостика — на высоте BUBBLE_Y, над шапкой Бабки.
-	thanks_back.position = Vector3(0, BUBBLE_Y + _bubble_height(thanks_back) * 0.5, 0)
-	var second := _build_bubble("ThanksAfterBubble", QuestLines.THANKS_AFTER, false)
+	_thanks_tail_texture = thanks_back.texture
+	var font := DialogPanelScript.ui_font()
+	_thanks_plain_texture = _bubble_texture(font.get_string_size(QuestLines.THANKS, HORIZONTAL_ALIGNMENT_LEFT, -1, BUBBLE_FONT), 0.0)
+	var second := _build_bubble("ThanksAfterBubble", QuestLines.THANKS_AFTER, true)
 	thanks_after_back = second[0]
 	thanks_after_bubble = second[1]
-	thanks_after_back.position = Vector3(0, thanks_back.position.y + _bubble_height(thanks_back) * 0.5
-		+ BUBBLE_GAP + _bubble_height(thanks_after_back) * 0.5, 0)
+	# Кончик хвостика — на высоте BUBBLE_Y, над шапкой Бабки.
+	thanks_after_back.position = Vector3(0, BUBBLE_Y + _bubble_height(thanks_after_back) * 0.5, 0)
+	_thanks_low_y = BUBBLE_Y + _bubble_height(thanks_back) * 0.5
+	_thanks_high_y = thanks_after_back.position.y + _bubble_height(thanks_after_back) * 0.5 + BUBBLE_GAP \
+		+ _thanks_plain_texture.get_height() * thanks_back.pixel_size * 0.5
+	_stack_thanks(false)
+
+## Первый пузырь: один — на месте с хвостиком; под ним второй — выше второго, без хвостика (текст по центру подложки).
+func _stack_thanks(stacked: bool) -> void:
+	thanks_back.texture = _thanks_plain_texture if stacked else _thanks_tail_texture
+	thanks_back.position = Vector3(0, _thanks_high_y if stacked else _thanks_low_y, 0)
+	thanks_bubble.position = Vector3(0, 0.0 if stacked else BUBBLE_TAIL * 0.5 * BUBBLE_PIXEL, 0)
 
 func _bubble_height(back: Sprite3D) -> float:
 	return back.texture.get_height() * back.pixel_size
@@ -385,6 +420,7 @@ func _show_thanks(on: bool) -> void:
 		thanks_after_back.visible = false
 		thanks_after_bubble.visible = false
 		_thanks_left = 0.0
+		_stack_thanks(false)
 
 ## Бумажный пузырь: скруглённый прямоугольник с чернильной каймой и хвостиком вниз-влево (tail 0 — без хвостика).
 ## Рисуется один раз по пикселям в уменьшенном разрешении (BUBBLE_DOWNSCALE), фильтр сглаживает край.

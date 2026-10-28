@@ -66,10 +66,11 @@ static func exposure_for(mode: StringName, still: bool, close: bool) -> float:
 			return EXPOSURE_BARREL_STILL_CLOSE if close else EXPOSURE_BARREL_STILL
 	return EXPOSURE_NONE
 
-## Текст отказа для режима ("" для &"none"). interaction_id — чья зона отказала (на будущее: особые тексты).
-static func refusal_for(mode: StringName, _interaction_id: StringName = &"") -> String:
+## Текст отказа для режима ("" для &"none"). interaction_id — чья зона отказала: у окна продавщицы в коробке —
+## её реплика (EXT-02 C, HIDE_SPOTS.md раздел 6).
+static func refusal_for(mode: StringName, interaction_id: StringName = &"") -> String:
 	match mode:
-		BOX: return HINT_BOX
+		BOX: return QuestLines.HIDE_BOX_VENDOR if interaction_id == &"vendor" else HINT_BOX
 		BARREL: return HINT_BARREL
 		SNOWDRIFT: return HINT_SNOWDRIFT
 	return ""

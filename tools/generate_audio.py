@@ -280,6 +280,229 @@ def trolley_doors(seed: int) -> list[float]:
     return normalize(out, 0.7)
 
 
+# --- CITY-01 (A): фон живого города и живность. Каждая функция детерминирована (свой фиксированный seed). ---
+
+
+def wind_gust_loop() -> list[float]:
+    """Ветер с порывами: глухой шум ниже 450 Гц, порывы раз в 3–5 с (медленная огибающая), на пике порыва —
+    тихое «завывание» узкой полосой у 600–750 Гц. Цикл 12 с; 13 с генерации, хвост 1 с вшивается в начало."""
+    rng = random.Random(71)
+    n = samples(13.0)
+    base = lowpass([rng.uniform(-1, 1) for _ in range(n)], 450, stages=4)
+    howl_src = [rng.uniform(-1, 1) for _ in range(n)]
+    howl = resonator(resonator(howl_src, 680, 60), 680, 60)
+    # Огибающая порывов: сумма двух медленных синусов с фазами от seed, только положительная часть.
+    p1, p2 = rng.uniform(0, 6.28), rng.uniform(0, 6.28)
+    out = []
+    for i in range(n):
+        t = i / RATE
+        g = 0.55 * math.sin(2 * math.pi * t / 4.0 + p1) + 0.45 * math.sin(2 * math.pi * t / 6.5 + p2)
+        gust = max(0.0, g) ** 1.5
+        out.append(base[i] * (0.35 + 1.4 * gust) * 6.0 + howl[i] * gust * 0.25)
+    out = highpass(out, 60)
+    return to_rms(loop_crossfade(out, 1.0), -24.0)
+
+
+def distant_traffic_loop() -> list[float]:
+    """Далёкий трафик за домами: ровный низкий гул ниже 160 Гц и три далёких «проезда» — полоса шума до 700 Гц,
+    нарастает и спадает за 3–4 с, с тихим шинным тоном, чуть падающим (Доплер). Цикл 14 с."""
+    rng = random.Random(73)
+    n = samples(15.0)
+    rumble = lowpass([rng.uniform(-1, 1) for _ in range(n)], 160, stages=2)
+    hiss = highpass(lowpass([rng.uniform(-1, 1) for _ in range(n)], 700, stages=2), 120)
+    passes = [(1.5, 3.5, 92.0), (6.0, 4.0, 84.0), (10.2, 3.2, 98.0)]   # начало, длительность, тон шин, Гц
+    out = []
+    phase = 0.0
+    for i in range(n):
+        t = i / RATE
+        swell, tone = 0.0, 0.0
+        for start, length, freq in passes:
+            u = (t - start) / length
+            if 0.0 < u < 1.0:
+                env = math.sin(math.pi * u) ** 2
+                swell += env
+                tone += env * math.sin(2 * math.pi * freq * (1.03 - 0.06 * u) * t)
+        out.append(rumble[i] * 5.0 + hiss[i] * swell * 1.6 + tone * 0.05)
+    return to_rms(loop_crossfade(out, 1.0), -26.0)
+
+
+def crow_caw(seed: int, count: int) -> list[float]:
+    """Серая ворона: count хриплых «кар» по 0,22–0,3 с — пила 480…560 Гц с падением тона, шероховатость шумом,
+    носовые форманты 1250 и 2300 Гц."""
+    rng = random.Random(seed)
+    gap = 0.14
+    out: list[float] = []
+    for k in range(count):
+        length = rng.uniform(0.22, 0.30)
+        f0 = rng.uniform(480, 560)
+        m = samples(length)
+        source, phase = [], 0.0
+        for i in range(m):
+            u = i / m
+            freq = f0 * (1.05 - 0.22 * u)
+            phase += freq * (1 + 0.05 * rng.uniform(-1, 1)) / RATE
+            phase -= math.floor(phase)
+            env = min(1.0, u / 0.08) * (1.0 - max(0.0, u - 0.6) / 0.4)
+            source.append(((1.0 - 2.0 * phase) * 0.8 + rng.uniform(-1, 1) * 0.45) * env)
+        caw = [a + 0.7 * b for a, b in zip(resonator(source, 1250, 220), resonator(source, 2300, 300))]
+        out += caw + [0.0] * samples(gap if k < count - 1 else 0.05)
+    out = highpass(out, 250)
+    return to_rms(out, -18.0)
+
+
+def dog_bark(seed: int) -> list[float]:
+    """Дворняга: «гав-гав» — два коротких лая по 0,13–0,16 с, тон 330→230 Гц, резкая атака, форманты 700 и 1500 Гц."""
+    rng = random.Random(seed)
+    out: list[float] = []
+    for k in range(2):
+        length = rng.uniform(0.13, 0.16)
+        f0 = rng.uniform(320, 360) * (1.0 if k == 0 else 0.93)
+        m = samples(length)
+        source, phase = [], 0.0
+        for i in range(m):
+            u = i / m
+            freq = f0 * (1.0 - 0.3 * u)
+            phase += freq / RATE
+            phase -= math.floor(phase)
+            env = min(1.0, u / 0.04) * math.exp(-u * 3.0)
+            source.append(((1.0 - 2.0 * phase) + rng.uniform(-1, 1) * 0.6) * env)
+        bark = [a + 0.6 * b for a, b in zip(resonator(source, 700, 180), resonator(source, 1500, 260))]
+        out += bark + [0.0] * samples(0.22 if k == 0 else 0.08)
+    out = highpass(lowpass(out, 4000), 150)
+    return to_rms(out, -18.0)
+
+
+def door_slam() -> list[float]:
+    """Железная дверь подъезда: глухой удар 55 Гц, звон полотна (негармонические 310, 517, 845 Гц), щелчок замка
+    и короткое эхо подъезда (две задержки 70 и 140 мс). 1,2 с."""
+    rng = random.Random(79)
+    n = samples(1.2)
+    dry = []
+    for i in range(n):
+        t = i / RATE
+        thump = math.sin(2 * math.pi * 55 * t) * math.exp(-t / 0.12)
+        ring = sum(a * math.sin(2 * math.pi * f * t) for f, a in ((310, 0.35), (517, 0.25), (845, 0.15))) * math.exp(-t / 0.28)
+        latch_t = t - 0.03
+        latch = rng.uniform(-1, 1) * math.exp(-latch_t / 0.006) if latch_t >= 0 else 0.0
+        dry.append(thump + ring * 0.6 + latch * 0.3)
+    out = list(dry)
+    for delay, gain in ((0.07, 0.35), (0.14, 0.18)):
+        d = samples(delay)
+        for i in range(d, n):
+            out[i] += dry[i - d] * gain
+    out = lowpass(out, 3000)
+    fade = samples(0.1)
+    for i in range(fade):
+        out[-1 - i] *= i / fade
+    return to_rms(out, -18.0)
+
+
+def car_horn_short() -> list[float]:
+    """Короткий сигнал легковушки: два тона 410 и 515 Гц (как два рожка), мягкий прямоугольник через ФНЧ, 0,35 с."""
+    n = samples(0.35)
+    out = []
+    for i in range(n):
+        t = i / RATE
+        tone = 0.0
+        for f in (410.0, 515.0):
+            tone += sum(math.sin(2 * math.pi * f * k * t) / k for k in (1, 3, 5))
+        env = min(1.0, t / 0.012) * min(1.0, (0.35 - t) / 0.04)
+        out.append(tone * env)
+    out = lowpass(out, 2200, stages=2)
+    return to_rms(out, -16.0)
+
+
+def window_music_loop() -> list[float]:
+    """Музыка из форточки во дворе: собственный короткий мотив (ля минор, 96 уд/мин, 4 такта), мягкий треугольник
+    и бас, приглушённый «через стекло» (полоса 180…900 Гц). Цикл ровно 4 такта = 10 с; ноты гаснут до шва."""
+    beat = 60.0 / 96.0
+    total = beat * 16
+    n = samples(total)
+    out = [0.0] * n
+    # Мелодия: (доля начала, длительность в долях, частота). Мотив свой: A4 C5 E5 D5 | C5 A4 G4 A4 | ...
+    a4, b4, c5, d5, e5, g4, f4 = 440.0, 493.9, 523.3, 587.3, 659.3, 392.0, 349.2
+    melody = [(0, 1, a4), (1, 1, c5), (2, 1, e5), (3, 1, d5), (4, 1, c5), (5, 1, a4), (6, 1.5, g4), (7.5, 0.5, a4),
+              (8, 1, f4), (9, 1, a4), (10, 1, c5), (11, 1, b4), (12, 1, a4), (13, 1, g4), (14, 1.6, a4)]
+    bass = [(0, 4, 110.0), (4, 4, 98.0), (8, 4, 87.3), (12, 4, 110.0)]
+
+    def add(notes: list, gain: float, decay: float) -> None:
+        for start_beat, length_beats, freq in notes:
+            start = samples(start_beat * beat)
+            m = min(samples(length_beats * beat), n - start)
+            for i in range(m):
+                t = i / RATE
+                u = i / m
+                tri = 2.0 * abs(2.0 * ((freq * t) % 1.0) - 1.0) - 1.0
+                env = min(1.0, t / 0.01) * math.exp(-t / decay) * min(1.0, (1.0 - u) / 0.1)
+                out[start + i] += tri * env * gain
+
+    add(melody, 0.5, 0.5)
+    add(bass, 0.35, 1.2)
+    muffled = highpass(lowpass(out, 900, stages=2), 180)
+    return to_rms(muffled, -24.0)
+
+
+def barrel_roll_loop() -> list[float]:
+    """Бочка катится (EXT-02 E): пустая ржавая бочка — гулкий рокот корпуса (резонансы 95 и 160 Гц на шуме ниже
+    250 Гц), шов стучит о землю дважды за оборот (металлические щелчки 430, 700, 1150 Гц), внутри дребезжит мусор
+    (частые мелкие тики через резонанс 2,3 кГц). Цикл 2 с, ровно четыре удара шва; громкость задаёт игра по скорости."""
+    rng = random.Random(101)
+    cycle = 2.0
+    fade = 0.1
+    n = samples(cycle + fade)
+    noise = lowpass([rng.uniform(-1, 1) for _ in range(n)], 250, stages=2)
+    body = resonator(noise, 95, 18)
+    body2 = resonator(noise, 160, 25)
+    out = [0.0] * n
+    for i in range(n):
+        t = i / RATE
+        swell = 0.75 + 0.25 * math.sin(2 * math.pi * t / 0.5)
+        out[i] = (body[i] * 1.0 + body2[i] * 0.6) * swell
+    out = normalize(out, 0.5)
+
+    def strike(at: float, gain: float, decay: float, freqs: tuple) -> None:
+        start = samples(at)
+        for j in range(samples(decay * 6)):
+            if start + j >= n:
+                break
+            t = j / RATE
+            env = math.exp(-t / decay)
+            ring = sum(a * math.sin(2 * math.pi * f * t) for f, a in freqs)
+            out[start + j] += gain * env * (ring + rng.uniform(-1, 1) * 0.4 * math.exp(-t / 0.004))
+
+    seam = ((430, 0.5), (700, 0.35), (1150, 0.2))
+    for k in range(int((cycle + fade) / 0.5) + 1):
+        strike(k * 0.5 + rng.uniform(-0.02, 0.02), 0.45, 0.035, seam)
+    t = 0.0
+    while t < cycle + fade:
+        strike(t, rng.uniform(0.04, 0.12), 0.006, ((2300, 0.6), (3100, 0.3)))
+        t += rng.uniform(0.02, 0.07)
+    out = loop_crossfade(lowpass(out, 5000), fade)
+    return to_rms(out, -20.0)
+
+
+def barrel_bump() -> list[float]:
+    """«БУМ» (EXT-02 E): бочка с разгона в стену — глухой удар 58→45 Гц, гулкий звон пустого корпуса (негармонические
+    112, 176, 254, 347 Гц, долгий хвост), шлепок жести в начале. 1,3 с."""
+    rng = random.Random(103)
+    n = samples(1.3)
+    out = []
+    phase = 0.0
+    for i in range(n):
+        t = i / RATE
+        phase += 2 * math.pi * (45 + 13 * math.exp(-t / 0.08)) / RATE
+        thump = math.sin(phase) * math.exp(-t / 0.18)
+        ring = sum(a * math.sin(2 * math.pi * f * t) * math.exp(-t / d)
+                   for f, a, d in ((112, 0.5, 0.55), (176, 0.35, 0.45), (254, 0.25, 0.35), (347, 0.15, 0.25)))
+        slap = rng.uniform(-1, 1) * math.exp(-t / 0.012)
+        out.append(thump * 1.0 + ring * 0.7 + slap * 0.35)
+    out = lowpass(out, 3500)
+    fade = samples(0.15)
+    for i in range(fade):
+        out[-1 - i] *= i / fade
+    return to_rms(out, -16.0)
+
+
 def main() -> None:
     rng = random.Random(1)
     for k in range(1, 5):
@@ -305,6 +528,19 @@ def main() -> None:
     # ARENA-01 (T): троллейбус на кольце — тихий гул (цикл) и пневматические двери на остановках.
     write("trolley_hum_loop.wav", trolley_hum_loop())
     write("trolley_doors.wav", trolley_doors(67))
+    # CITY-01 (A): слои фона и живность — ветер с порывами, далёкий трафик, музыка из окна (циклы), вороны,
+    # собака, дверь подъезда, короткий сигнал машины (разовые).
+    write("wind_gust_loop.wav", wind_gust_loop())
+    write("distant_traffic_loop.wav", distant_traffic_loop())
+    write("window_music_loop.wav", window_music_loop())
+    write("crow_caw_1.wav", crow_caw(83, 2))
+    write("crow_caw_2.wav", crow_caw(89, 3))
+    write("dog_bark.wav", dog_bark(97))
+    write("door_slam.wav", door_slam())
+    write("car_horn_short.wav", car_horn_short())
+    # EXT-02 (E): бочка — дребезжание качения (цикл, громкость по скорости) и «БУМ» удара о стену.
+    write("barrel_roll_loop.wav", barrel_roll_loop())
+    write("barrel_bump.wav", barrel_bump())
 
 
 if __name__ == "__main__":

@@ -6,6 +6,7 @@ const RoadShader = preload("res://game/world/shaders/road.gdshader")
 const SnowShader = preload("res://game/world/shaders/snow.gdshader")
 const BalconyGlassShader = preload("res://game/world/shaders/balcony_glass.gdshader")
 const TrailShader = preload("res://game/world/shaders/trail.gdshader")
+const Lighting = preload("res://game/world/lighting.gd")   # CITY-01 L: ручки окон и мокрого асфальта
 
 # Палитры домов (ART-05 по сверке ART-04, черты 3–5): рядом стоят серые, белые, синие панельки и кирпичные
 # или оштукатуренные старые дома. [стена, швы, акцент лестничной клетки].
@@ -36,6 +37,7 @@ static func facade(seed: float, low := false, shops := false) -> ShaderMaterial:
 		m.shader = FacadeShader
 		m.set_shader_parameter("seed", seed)
 		m.set_shader_parameter("ground_floor_shops", 1.0 if shops else 0.0)
+		_window_light(m)
 		var palette: Array = _palette(seed, low)
 		m.set_shader_parameter("wall_color", palette[0])
 		m.set_shader_parameter("seam_color", palette[1])
@@ -115,7 +117,29 @@ static func road(along_x: bool, center: Vector2, width: float) -> ShaderMaterial
 	m.set_shader_parameter("along_x", 1.0 if along_x else 0.0)
 	m.set_shader_parameter("center", center)
 	m.set_shader_parameter("width", width)
+	_wet(m)
 	return m
+
+## Окна (CITY-01 L): тёплые разных оттенков, часть холодных белых, часть — мерцающий телевизор.
+static func _window_light(m: ShaderMaterial) -> void:
+	m.set_shader_parameter("window_lit", Lighting.WINDOW_WARM)
+	m.set_shader_parameter("window_amber", Lighting.WINDOW_AMBER)
+	m.set_shader_parameter("window_cool", Lighting.WINDOW_COOL)
+	m.set_shader_parameter("cool_ratio", Lighting.WINDOW_COOL_RATIO)
+	m.set_shader_parameter("tv_ratio", Lighting.WINDOW_TV_RATIO)
+	m.set_shader_parameter("tv_color", Lighting.WINDOW_TV)
+	m.set_shader_parameter("tv_energy", Lighting.WINDOW_TV_ENERGY)
+
+## Мокрые пятна асфальта у перекрёстков и остановок (CITY-01 L).
+static func _wet(m: ShaderMaterial) -> void:
+	var spots := PackedVector4Array()
+	for spot in Lighting.WET_SPOTS:
+		spots.append(spot)
+	m.set_shader_parameter("wet_spots", spots)
+	m.set_shader_parameter("wet_count", spots.size())
+	m.set_shader_parameter("wet_gloss", Lighting.WET_GLOSS)
+	m.set_shader_parameter("wet_darken", Lighting.WET_DARKEN)
+	m.set_shader_parameter("wet_roughness", Lighting.WET_ROUGHNESS)
 
 ## Угол кольца (ARENA-01): колеи по дуге вокруг внутреннего угла corner; signs — знаки направления от угла к осям
 ## улицы вдоль x (по z) и улицы вдоль z (по x); width — ширина улиц (обе одинаковые).
@@ -126,6 +150,7 @@ static func road_corner(corner: Vector2, signs: Vector2, width: float) -> Shader
 	m.set_shader_parameter("corner_point", corner)
 	m.set_shader_parameter("corner_sign", signs)
 	m.set_shader_parameter("width", width)
+	_wet(m)
 	return m
 
 static func snow(trodden: float) -> ShaderMaterial:

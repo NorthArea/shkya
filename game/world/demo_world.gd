@@ -22,6 +22,7 @@ const HINT_SECONDS := 2.0
 const FAIL_SECONDS := 2.0
 const STEALTH_TOAST := "ВЫ ОСТАЛИСЬ ПЕШЕХОДОМ. ХЛЕБ ПРИ ВАС"            # после покупки (has_bread)
 const STEALTH_TOAST_NO_BREAD := "МАРШРУТ УТОЧНЁН: ВЫ ВСЁ ЕЩЁ ЗА ХЛЕБОМ"   # до покупки (канон расширения); приёмка P2 6
+const STEALTH_TOAST_CAR := "МАШИНУ ОТОГНАЛИ НА ПАРКОВКУ"                 # провал в машине на площадке (EXT-01 fix2, P1)
 const STEALTH_TOAST_SECONDS := 2.0
 
 var control_mode: StringName = &"on_foot"
@@ -32,7 +33,10 @@ var _hint_left := 0.0
 ## Владелец шкалы подозрения (C7); создаётся в _ready, узел «StealthDirector».
 var stealth: StealthDirector
 var _fail_left := 0.0
+## Текущий провал — «Лада» с Илюшей на площадке киоска (P1): после экрана машина встаёт на парковку, Илюша — пешком.
+var _fail_in_car := false
 var _stealth_toast_left := 0.0
+var _stealth_toast_car := false
 ## EXT-02: подсказка-отказ в укрытии («СНАЧАЛА СНЯТЬ КОРОБКУ», «ВЫХОД ЗАНЯТ»), HUD — get_hud_state()["hide_hint"].
 var _hide_hint := ""
 var _hide_hint_left := 0.0
@@ -190,24 +194,46 @@ func _car_spot_free(point: Vector3, yaw: float) -> bool:
 
 # --- C7: обнаружение и чекпоинт ---
 
-## Обнаружили: экран провала, ввод Илюши остановлен, шкала заморожена до респавна. В машине не видят,
-## поэтому сюда попадаем только пешком; если всё же в машине — ничего не делаем.
+## Обнаружили: экран провала, ввод Илюши остановлен, шкала заморожена до респавна. В машине видит только сенсор с
+## car_area (полицейский, «Лада» на площадке киоска — P1, stealth.detected_in_car): водитель «выходит» — машина
+## тормозит сама, после экрана она на парковке. Иначе в машине ничего не делаем.
 func _on_player_detected() -> void:
-	if control_mode == &"in_car" or _fail_left > 0.0:
+	if _fail_left > 0.0:
+		return
+	if control_mode == &"in_car" and not stealth.detected_in_car:
 		return
 	_fail_left = FAIL_SECONDS
+	_fail_in_car = control_mode == &"in_car"
 	stealth.set_frozen(true, &"fail")
+	if _fail_in_car:
+		car.exit()   # без водителя «Лада» тормозит до остановки (lada.gd), E в машине больше не работает
 	player.input_enabled = false
 	player.velocity = Vector3.ZERO
 
 func _finish_fail() -> void:
 	_fail_left = 0.0
+	_stealth_toast_car = _fail_in_car
+	if _fail_in_car:
+		_tow_car_to_parking()
+	_fail_in_car = false
 	respawn_at_checkpoint()
 	stealth.notify_respawned()
 	stealth.set_frozen(false, &"fail")
 	if control_mode == &"on_foot" and not ui_blocking:
 		player.input_enabled = true
 	_stealth_toast_left = STEALTH_TOAST_SECONDS
+
+## P1: «машину отогнали на парковку» — Илюша пешком (дальше respawn_at_checkpoint), «Лада» на конце ROUTE_DRIVE носом
+## по последнему отрезку маршрута, как после reset_car(). Миссия и has_bread не трогаются; до прибытия парковка
+## засчитывает прибытие (KioskZone), как обычный заезд.
+func _tow_car_to_parking() -> void:
+	var park := Layout.ROUTE_DRIVE[-1]
+	var d := park - Layout.ROUTE_DRIVE[-2]
+	car.exit()
+	car.reset_to(park, atan2(-d.x, -d.z))
+	control_mode = &"on_foot"
+	_set_player_active(true)
+	camera_rig.follow(player, &"on_foot", false)
 
 ## Илюша на Layout.STEALTH_CHECKPOINT; машина и миссия не трогаются (C7). В машине не применяется.
 func respawn_at_checkpoint() -> bool:
@@ -278,8 +304,14 @@ func get_hud_state() -> Dictionary:
 		"suspicion": stealth.suspicion,
 		"stealth_state": stealth.state,
 		"stealth_fail": _fail_left > 0.0,
-		"stealth_toast": (STEALTH_TOAST if mission.has_bread else STEALTH_TOAST_NO_BREAD) if _stealth_toast_left > 0.0 else "",
+		"stealth_toast": _stealth_toast_text() if _stealth_toast_left > 0.0 else "",
 		# EXT-02: режим укрытия и подсказка-отказ (HUD показывает её вместо prompt, пока не пуста).
 		"hide_mode": player.hide_mode,
 		"hide_hint": _hide_hint if _hide_hint_left > 0.0 else "",
 	}
+
+## Тост после респавна: провал в машине (P1) — про машину, иначе — по has_bread.
+func _stealth_toast_text() -> String:
+	if _stealth_toast_car:
+		return STEALTH_TOAST_CAR
+	return STEALTH_TOAST if mission.has_bread else STEALTH_TOAST_NO_BREAD

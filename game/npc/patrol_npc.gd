@@ -5,6 +5,10 @@ extends "res://game/npc/npc.gd"
 ## покупки хлеба): на переходе сенсор выключен и конус скрыт — идущий патруль не «смотрит» (приёмка 28.10, P1),
 ## на новом посту доворачивается на текущий угол из facings и включает сенсор. Облик, тело, дыхание и зона E —
 ## npc.gd; на время диалога смотрит на Илюшу (look_at_target).
+## EXT-01 fix2 (P2-3, этап 5 «может спокойно уйти, если быстро завершит диалог»): после диалога QuestFlow зовёт
+## turn_away_from(Илюша, grace) — сразу разворот на угол из facings, в котором Илюши нет, таймер разворотов заново.
+## Если по истечении grace Илюша всё ещё стоит рядом (LINGER_RADIUS), полицейский поворачивается к нему и смотрит,
+## пока тот не отойдёт: дальше видит сенсор — провал через 2 с. can_talk_to(target) — Илюша не за спиной (P3).
 
 const DetectionSensorScript = preload("res://game/stealth/detection_sensor.gd")
 
@@ -17,6 +21,8 @@ const DetectionSensorScript = preload("res://game/stealth/detection_sensor.gd")
 const TURN_SECONDS := 0.6
 const MOVE_SPEED := 1.5
 const LOOK_SPEED := 6.0   # доворот к собеседнику, 1/с (как у npc.gd)
+const TALK_ANGLE := 100.0      # град от направления корпуса: дальше — «за спиной», подсказки E нет
+const LINGER_RADIUS := 3.5     # м: после диалога ближе этого — «не ушёл» (зона E 2,5 м + зонд Илюши 0,5 м + запас)
 
 var sensor: Node3D
 var _facing_index := 0
@@ -25,6 +31,9 @@ var _turn_to := 0.0
 var _turn_t := 1.0        # 0…1 — идёт разворот
 var _wait_left := 0.0
 var _move_target := Vector3.INF
+var _linger_target: Node3D
+var _linger_left := 0.0
+var _watching := false     # после диалога Илюша не ушёл — смотрим на него
 var _rng := RandomNumberGenerator.new()
 
 func _ready() -> void:
@@ -48,8 +57,9 @@ func _process(delta: float) -> void:
 	_breath_time += delta
 	var s := sin(_breath_time * TAU / BREATH_PERIOD)
 	visual.scale = Vector3(1.0 - s * BREATH * 0.5, 1.0 + s * BREATH, 1.0)
+	_update_linger(delta)
 	if is_instance_valid(_look_target):
-		# Диалог: корпус к Илюше, таймер разворотов стоит.
+		# Диалог (или Илюша задержался после него): корпус к Илюше, таймер разворотов стоит.
 		var to := _look_target.global_position - global_position
 		if Vector2(to.x, to.z).length() > 0.3:
 			var wanted := atan2(-to.x, -to.z) - global_rotation.y
@@ -96,6 +106,74 @@ func _next_facing() -> void:
 	_turn_t = 0.0
 	_wait_left = _rng.randf_range(turn_every.x, turn_every.y)
 
+## После диалога (P2-3): сразу на угол из facings, дальше всего от target (не в конусе), таймер разворотов заново;
+## grace с — время уйти. Позже — _update_linger.
+func turn_away_from(target: Node3D, grace: float) -> void:
+	_look_target = null
+	_watching = false
+	_linger_target = target
+	_linger_left = grace
+	if not is_instance_valid(target) or facings.is_empty():
+		return
+	var best := _facing_index
+	var best_angle := -1.0
+	for i in facings.size():
+		var angle := _angle_to(target, float(facings[i]))
+		if angle > best_angle:
+			best_angle = angle
+			best = i
+	_facing_index = best
+	_turn_from = visual.rotation.y
+	_turn_to = float(facings[best])
+	_turn_t = 0.0
+	_wait_left = _rng.randf_range(turn_every.x, turn_every.y)
+
+func _update_linger(delta: float) -> void:
+	if not is_instance_valid(_linger_target):
+		_linger_target = null
+		return
+	var near := _flat_distance(_linger_target) <= LINGER_RADIUS
+	if _watching:
+		if not near:
+			# Отошёл: перестать смотреть, снова на угол без него.
+			var target := _linger_target
+			turn_away_from(target, 0.0)
+			_linger_target = null
+		return
+	_linger_left -= delta
+	if _linger_left > 0.0:
+		return
+	if near:
+		_watching = true
+		_look_target = _linger_target
+	else:
+		_linger_target = null
+
+## Илюша задержался после диалога, полицейский смотрит на него (для тестов).
+func is_watching() -> bool:
+	return _watching
+
+## Можно ли заговорить: target не за спиной — угол от направления корпуса не больше TALK_ANGLE.
+func can_talk_to(target: Node3D) -> bool:
+	if not is_instance_valid(target):
+		return true
+	if is_instance_valid(_look_target):
+		return true
+	return _angle_to(target, visual.rotation.y) <= TALK_ANGLE
+
+## Угол (град) между направлением корпуса при yaw (в осях узла) и направлением на target в плоскости XZ.
+func _angle_to(target: Node3D, yaw: float) -> float:
+	var to := target.global_position - global_position
+	var flat := Vector2(to.x, to.z)
+	if flat.length() < 0.01:
+		return 0.0
+	var world_yaw := yaw + global_rotation.y
+	return rad_to_deg(absf(Vector2(-sin(world_yaw), -cos(world_yaw)).angle_to(flat)))
+
+func _flat_distance(target: Node3D) -> float:
+	var to := target.global_position - global_position
+	return Vector2(to.x, to.z).length()
+
 ## Перейти на новый пост (этап 7): шагом MOVE_SPEED, лицом по ходу, сенсор выключен до прихода; на месте — снова
 ## разворачивается по facings.
 func move_post(point: Vector3) -> void:
@@ -108,6 +186,9 @@ func is_moving() -> bool:
 ## Встать на пост сразу (перезапуск, тесты): без перехода, с первым углом facings, сенсор включён.
 func place_at(point: Vector3) -> void:
 	_move_target = Vector3.INF
+	_linger_target = null
+	_watching = false
+	_look_target = null
 	global_position = Vector3(point.x, global_position.y, point.z)
 	_facing_index = 0
 	_turn_from = float(facings[0])

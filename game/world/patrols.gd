@@ -5,7 +5,11 @@ extends Node3D
 ## После mission.bread_received (C5) — этап 7: патруль сдвигается к выходу, автобус едет на площадку киоска.
 ## Полицейский смотрит дальше канона (STEALTH_DESIGN: 9 м, 75°): OFFICER_RANGE/OFFICER_FOV — при 9 м проход у гаражей
 ## (x ≈ 51, в 11 м от поста) не накрывался ни одним углом, а «в лоб» от парковки шкала не доходила до провала
-## (приёмка 28.10, P1; расчёт экспозиции путей — отчёт EXT-01 fix). Держит угол OFFICER_HOLD с.
+## (приёмка 28.10, P1; расчёт экспозиции путей — отчёт EXT-01 fix). Держит угол OFFICER_HOLD с. Угол 100°, а не 80°
+## (EXT-01 fix2, P2-1): при 80° «в лоб» от парковки к окну проходила в 2 фазах разворота из 4 — прямая идёт в 2,5 м от
+## поста и пересекает узкий конус за ~1 с. Полицейский «предназначен для обнаружения машин» (STEALTH_DESIGN):
+## «Лада» с Илюшей на площадке Layout.KIOSK_SQUARE для его сенсора — как Илюша (car_area, P1).
+## Подсказка «E — ПОГОВОРИТЬ» у полицейского — только спереди и сбоку (PatrolNpc.can_talk_to, P3).
 ## Подсказки зон E — из MissionDirector.prompt_for (C3); реплики подключает QuestFlow по id зон
 ## (&"officer", &"account_officer"). Узел создаёт LevelGeometry (ребёнок DemoWorld/LevelGeometry/Patrols);
 ## мир ищется вверх по дереву, как в DetectionSensor.
@@ -17,13 +21,14 @@ const CityVanScript = preload("res://game/vehicles/city_van.gd")
 
 const PROMPT_TALK := "E — ПОГОВОРИТЬ"
 const OFFICER_RANGE := 12.0
-const OFFICER_FOV := 80.0
+const OFFICER_FOV := 100.0
 const OFFICER_HOLD := Vector2(7.0, 9.0)   # с на угол: при 3–4 с осторожный честный проход занимал 14–15 с (норма участка 45–90 с)
 
 var officer: Node3D
 var account_officer: Node3D
 var van: CityVan
 var _mission: Node
+var _world_node: Node
 var _moved := false
 
 func _init() -> void:
@@ -44,6 +49,7 @@ func _ready() -> void:
 	officer.position = Layout.OFFICER_POST
 	add_child(officer)
 	officer.sensor.show_cone = true
+	officer.sensor.car_area = Layout.KIOSK_SQUARE
 	account_officer = NpcScript.new()
 	account_officer.name = "AccountOfficer"
 	account_officer.interaction_id = &"account_officer"
@@ -61,6 +67,7 @@ func _ready() -> void:
 	for npc in [officer, account_officer]:
 		npc.interactable.prompt = PROMPT_TALK
 	var world := _world()
+	_world_node = world
 	_mission = world.get_node_or_null("MissionDirector") if world else null
 	if _mission and _mission.has_signal("bread_received"):
 		_mission.bread_received.connect(_on_bread_received)
@@ -85,7 +92,13 @@ func _physics_process(_delta: float) -> void:
 	for npc in [officer, account_officer]:
 		var zone: Interactable = npc.interactable
 		zone.prompt = _mission.prompt_for(zone.interaction_id)
-		zone.enabled = zone.prompt != ""
+		zone.enabled = zone.prompt != "" and talkable(npc)
+
+## Можно ли заговорить с наблюдателем сейчас: полицейский со спины не отвечает (угол от корпуса > 100°, P3).
+func talkable(npc: Node) -> bool:
+	if _world_node == null or not npc.has_method("can_talk_to"):
+		return true
+	return npc.can_talk_to(_world_node.get("player"))
 
 ## Этап 7 (MISSION_EXTENSION): патруль ближе к выходу с площадки, автобус встаёт на площадке и ждёт.
 func _on_bread_received() -> void:

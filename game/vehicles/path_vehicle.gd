@@ -7,16 +7,23 @@ extends AnimatableBody3D
 ## (передняя и задняя — на полколёсной базы вперёд и назад), поэтому в повороте задние колёса идут внутри дуги.
 ## Скорость — минимум из ограничений: крейсерская, поворот, свои впереди (дистанция ≥ FOLLOW_GAP по бамперам),
 ## датчик впереди SENSOR_RANGE м (Lada, Илюша, любой не статичный корпус: торможение до остановки, объезда нет —
-## ждёт), и ограничение потомка (остановки троллейбуса). Перед шагом — проверка, что корпус на новом месте
-## никого не задевает: если задевает, транспорт стоит. Без случайностей: всё задаётся смещением старта.
+## ждёт), и ограничение потомка (остановки троллейбуса). Препятствие ближе тормозного пути при 9 м/с² —
+## аварийное торможение до HARD_DECEL (12 м/с²) с остановкой за CONTACT_MARGIN до него (ARENA-01 fix P3). Перед шагом —
+## последняя страховка: корпус на новом месте никого не задевает, иначе стоит (никого не толкает).
+## Без случайностей: всё задаётся смещением старта.
 
 const Materials = preload("res://game/world/materials.gd")
 const Layout = preload("res://game/world/layout.gd")
 
 const TURN_RADIUS := 6.0
+## Машины (ARENA-01 fix P2-2) идут против троллейбуса, по внешней полосе, повороты левые. Радиус 4 м, а не 6: на
+## углу A∩B дуга 6 м подводила борт «Газели» к оси ROUTE_DRIVE (70, 32) на 0,56 м, 4 м — на 1,30 м (C8: ≥ 0,9).
+const CAR_TURN_RADIUS := 4.0
 const ACCEL := 2.5              # м/с² разгон
 const SOFT_DECEL := 2.5         # м/с² плановое торможение (поворот, остановка)
 const EMERGENCY_DECEL := 9.0    # м/с² до упора — препятствие из датчика (9 → 0 м/с за 1 с, 4,5 м)
+const HARD_DECEL := 12.0        # м/с² аварийное: препятствие возникло ближе тормозного пути при 9 м/с² (6 м/с → 1,5 м)
+const CONTACT_MARGIN := 0.3     # м: аварийная остановка — за столько до начала коробки датчика с препятствием
 const SENSOR_RANGE := 8.0       # м от переднего бампера
 const SENSOR_STEP := 1.0        # длина одной коробки датчика вдоль пути
 const STOP_MARGIN := 3.5        # м: стоп, когда препятствие в 3–4 м от бампера (шаг коробок 1 м): разворачивающейся
@@ -44,6 +51,10 @@ var blocked_by: Object = null
 var blocked_time := 0.0
 ## Ограничение скорости и его причина в последнем кадре — для тестов и отладки.
 var limit_reason: StringName = &""
+## Замедление в последнем кадре, м/с² (0 — не тормозил) — для тестов: аварийное не больше HARD_DECEL.
+var last_decel := 0.0
+## Расстояние от бампера до препятствия датчика в последнем кадре (INF — нет).
+var obstacle_gap := INF
 var visual: Node3D
 
 var _wheels: Array[Node3D] = []
@@ -105,15 +116,18 @@ func _physics_process(delta: float) -> void:
 	_tick(delta)
 	var target := _target_speed()
 	var braking := target < speed - 0.01
+	var before := speed
 	if speed < target:
 		speed = minf(speed + ACCEL * delta, target)
 	else:
-		speed = maxf(speed - EMERGENCY_DECEL * delta, target)
+		speed = maxf(speed - _brake_decel() * delta, target)
 	var step := _limit_step(speed * delta)
 	if step > 0.0 and not _free_at(s + step):
+		# Страховка: аварийное торможение не успело (кто-то шагнул под самый бампер или в борт) — стоим, не толкаем.
 		step = 0.0
 		speed = 0.0
 		limit_reason = &"body"
+	last_decel = maxf((before - speed) / delta, 0.0)
 	s = fposmod(s + step, path.length)
 	distance_travelled += step
 	if step > 0.0:
@@ -181,10 +195,22 @@ func _obstacle_limit() -> float:
 	var hit: Variant = scan_ahead()
 	if hit == null:
 		blocked_by = null
+		obstacle_gap = INF
 		return INF
 	blocked_by = hit[1]
 	var d: float = hit[0]
+	obstacle_gap = d
 	return sqrt(2.0 * EMERGENCY_DECEL * maxf(d - STOP_MARGIN, 0.0))
+
+## Замедление: плановое — EMERGENCY_DECEL; если препятствие датчика ближе тормозного пути при нём — сколько нужно,
+## чтобы встать за CONTACT_MARGIN до него, но не больше HARD_DECEL (ARENA-01 fix P3: было — мгновенный стоп).
+func _brake_decel() -> float:
+	if obstacle_gap == INF or speed <= 0.0:
+		return EMERGENCY_DECEL
+	var room := obstacle_gap - CONTACT_MARGIN
+	if room <= 0.0:
+		return HARD_DECEL
+	return clampf(speed * speed / (2.0 * room), EMERGENCY_DECEL, HARD_DECEL)
 
 ## [расстояние от бампера до начала коробки, корпус] или null.
 func scan_ahead() -> Variant:

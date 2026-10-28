@@ -376,7 +376,8 @@ func _step10_complete() -> void:
 	check(hud.completion_close.has_focus(), "10: ЗАКРЫТЬ has keyboard focus (closable without the mouse)")
 	await _frames(60)
 	check(flow.thanks_after_bubble.visible and flow.thanks_after_bubble.text == QuestLines.THANKS_AFTER and flow.thanks_bubble.visible, "10: second bubble '%s' after ~%.1f s, first stays" % [QuestLines.THANKS_AFTER, QuestLines.THANKS_PAUSE])
-	check(flow.thanks_after_back.global_position.y > flow.thanks_back.global_position.y, "10: second bubble sits above the first")
+	# EXT-01 fix2 (P3): второй пузырь — на месте первого, у головы Бабки; первый поднимается над ним (читается сверху вниз).
+	check(flow.thanks_after_back.global_position.y < flow.thanks_back.global_position.y, "10: second bubble sits below the first")
 	var accept := InputEventAction.new()
 	accept.action = &"ui_accept"
 	accept.pressed = true

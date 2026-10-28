@@ -12,6 +12,13 @@ uniform vec3 slush : source_color = vec3(0.58, 0.56, 0.51);   // бежево-с
 uniform float corner = 0.0;
 uniform vec2 corner_point = vec2(0.0);
 uniform vec2 corner_sign = vec2(1.0);
+// Мокрый асфальт (CITY-01 L): у перекрёстков и остановок каша темнеет и блестит, в лужах отражаются фонари (SSR).
+// xy — центр x/z, z — радиус, w — сила; задаёт lighting.gd (WET_SPOTS) через materials.gd.
+uniform vec4 wet_spots[8];
+uniform int wet_count = 0;
+uniform float wet_gloss = 0.9;
+uniform float wet_darken = 0.55;
+uniform float wet_roughness = 0.16;
 
 varying vec3 world_pos;
 
@@ -64,7 +71,22 @@ void fragment() {
 		slushiness = slushiness_at(across, along, half_w);
 	}
 	vec3 color = mix(asphalt, slush, slushiness);
+	float roughness = mix(0.08, 0.88, slushiness);   // мокрые колеи отражают фонари, каша — матовая
+	float specular = mix(0.6, 0.3, slushiness);
+	float wet = 0.0;
+	for (int i = 0; i < wet_count; i++) {
+		float d = length(world_pos.xz - wet_spots[i].xy) / wet_spots[i].z;
+		wet = max(wet, (1.0 - smoothstep(0.45, 1.0, d)) * wet_spots[i].w);
+	}
+	if (wet > 0.0) {
+		// Пятна и лужи рваные: шум, а не ровный круг.
+		float patches = smoothstep(0.3, 0.65, noise(world_pos.xz * 0.45) * 0.7 + noise(world_pos.xz * 1.7) * 0.3);
+		wet *= mix(0.45, 1.0, patches);
+		color = mix(color, color * wet_darken, wet * slushiness);
+		roughness = mix(roughness, wet_roughness, wet * wet_gloss);   // не зеркало: блик фонаря — мягкая полоса, не точка
+		specular = mix(specular, 0.45, wet);
+	}
 	ALBEDO = color;
-	ROUGHNESS = mix(0.08, 0.88, slushiness);   // мокрые колеи отражают фонари, каша — матовая
-	SPECULAR = mix(0.6, 0.3, slushiness);
+	ROUGHNESS = roughness;
+	SPECULAR = specular;
 }

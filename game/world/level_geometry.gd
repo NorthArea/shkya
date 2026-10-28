@@ -6,6 +6,7 @@ extends Node3D
 const Layout = preload("res://game/world/layout.gd")
 const Greybox = preload("res://game/world/greybox.gd")
 const Materials = preload("res://game/world/materials.gd")
+const Lighting = preload("res://game/world/lighting.gd")   # CITY-01 L: подсветка вывесок
 const Patrols = preload("res://game/world/patrols.gd")   # EXT-01 N: полицейский, «военком», микроавтобус ГСУМ
 
 const WALL_HEIGHT := 12.0
@@ -79,6 +80,7 @@ func _ready() -> void:
 	add_child(Patrols.new())   # EXT-01 N: наблюдатели и автобус (точки — Layout, C1)
 	add_child(preload("res://game/world/traffic.gd").new())   # ARENA-01: транспорт кольца (C8)
 	add_child(preload("res://game/world/residents.gd").new())   # PEOPLE-01: жители города Н.
+	add_child(preload("res://game/world/ambient.gd").new())   # CITY-01 (A): вороны, собака, кошка, мусор
 	add_child(preload("res://game/stealth/hide_spots.gd").new())   # EXT-02: укрытия у киоска (C7а)
 
 func _exit_tree() -> void:
@@ -151,7 +153,11 @@ func _build_solid(index: int, spec: Array) -> void:
 		"pavilion":
 			mesh.queue_free()
 			# Павильон вдоль z (остановка улицы B, EXT-01): строится как «вдоль x» и поворачивается спиной на запад.
-			body.add_child(_turned(_pavilion(_along_x(size)), -PI * 0.5) if size.z > size.x else _pavilion(size))
+			# Вдоль x — остановка улицы A на северном тротуаре (ARENA-01 fix P2-1): открытой стороной на юг, к дороге.
+			if size.z > size.x:
+				body.add_child(_turned(_pavilion(_along_x(size)), -PI * 0.5))
+			else:
+				body.add_child(_turned(_pavilion(size), PI) if xz.y < Layout.RING[0].z else _pavilion(size))
 		"sign_post":
 			mesh.material_override = Materials.plain(Color(0.15, 0.15, 0.16), 0.6)
 			for sign in Layout.STREET_SIGNS:
@@ -585,12 +591,30 @@ func _build_signs() -> void:
 		label.position = spec[1]
 		label.rotation.y = spec[2]
 		add_child(label)
+		if spec[0] in LIT_SIGNS:
+			_light_sign(label, spec[4])
+
+## Вывеска с подсветкой (CITY-01 L): буквы ярче единицы — их подхватывает glow, и цветной отсвет на снег перед домом.
+const LIT_SIGNS := ["АПТЕКА", "ПРОДУКТЫ", "ПРОДУКТЫ 24", "ГАСТРОНОМ"]
+func _light_sign(label: Label3D, color: Color) -> void:
+	# Насыщение перед усилением: filmic выбеливает яркое, без pow красное «ПРОДУКТЫ» уходило в розово-белое.
+	var lit := Color(pow(color.r, 1.6), pow(color.g, 1.6), pow(color.b, 1.6)) * Lighting.SIGN_GLOW
+	label.modulate = Color(lit.r, lit.g, lit.b)
+	var spill := OmniLight3D.new()
+	spill.name = label.name + "_Light"
+	spill.light_color = color
+	spill.light_energy = Lighting.SIGN_LIGHT_ENERGY
+	spill.omni_range = Lighting.SIGN_LIGHT_RANGE
+	spill.omni_attenuation = 1.6
+	var facing := Vector3(sin(label.rotation.y), 0.0, cos(label.rotation.y))
+	spill.position = label.position + facing * 1.2 - Vector3(0, 0.6, 0)
+	add_child(spill)
 
 ## Вывеска-короб над окном киоска: светлый фон, простые красные буквы без обводки (сверка ART-04, черты 15, 16).
 func _build_kiosk_sign() -> void:
 	var board := Greybox.mesh_box(Vector3(0.22, 0.62, 3.7), Color.WHITE)
 	board.name = "KioskSignBox"
-	board.material_override = Materials.plain(Color(0.60, 0.58, 0.52), 0.6)   # не пересвечен окном (Н4)
+	board.material_override = Materials.plain(Color(0.60, 0.58, 0.52), 0.6, Color(1.0, 0.93, 0.80), Lighting.KIOSK_SIGN_GLOW)   # световой короб, не пересвечен окном (Н4)
 	board.position = Layout.KIOSK + Vector3(2.62, 2.86, 0.0)
 	add_child(board)
 	var sign := Label3D.new()
@@ -1115,23 +1139,28 @@ func _build_house_plates() -> void:
 			add_child(label)
 
 ## Знак остановки у площадки киоска: синий квадрат с белым автобусом на опоре контактной сети (черта 18, P3 17).
+## Остановка A (ARENA-01 fix P2-1): такой же знак на своей стойке у западного края павильона BUS_PAVILION, к
+## подъезжающему с востока троллейбусу, и табличка «Тб 13». Стойка — только вид: коллизию даёт сам павильон рядом.
 func _build_bus_stop() -> void:
 	var pole: Vector2 = Layout.TROLLEY_POLES[2]
-	var root := Node3D.new()
-	root.name = "BusStopSign"
-	root.position = Vector3(pole.x + 0.16, 2.7, pole.y)
-	root.rotation.y = PI * 0.5   # к улице, на восток
-	add_child(root)
-	var board := Greybox.mesh_box(Vector3(0.6, 0.6, 0.03), Color.WHITE)
-	board.material_override = Materials.plain(Color(0.08, 0.30, 0.62), 0.5)
-	root.add_child(board)
-	var white := Materials.plain(Color(0.95, 0.95, 0.95), 0.6)
-	for part in [[Vector3(0.4, 0.2, 0.01), Vector3(0, 0.04, 0.02)], [Vector3(0.08, 0.08, 0.01), Vector3(-0.12, -0.1, 0.02)],
-			[Vector3(0.08, 0.08, 0.01), Vector3(0.12, -0.1, 0.02)]]:
-		var piece := Greybox.mesh_box(part[0], Color.WHITE)
-		piece.material_override = white
-		piece.position = part[1]
-		root.add_child(piece)
+	var root := _stop_sign("BusStopSign", Vector3(pole.x + 0.16, 2.7, pole.y), PI * 0.5)   # к улице, на восток
+	var pav: Vector2 = Layout.BUS_PAVILION[0]
+	var pav_size: Vector3 = Layout.BUS_PAVILION[1]
+	var at := Vector3(pav.x - pav_size.x * 0.5 - 0.4, 0.0, pav.y + pav_size.z * 0.5 + 0.5)
+	var post := Greybox.mesh_cylinder(0.04, 0.04, 3.3, Color.BLACK)
+	post.name = "BusStopSignAPost"
+	post.material_override = Materials.plain(Color(0.15, 0.15, 0.16), 0.6)
+	post.position = at + Vector3(0, 1.65, 0)
+	add_child(post)
+	var sign_a := _stop_sign("BusStopSignA", at + Vector3(0, 3.0, 0.05), PI * 0.5)   # над крышей павильона, на восток
+	var route_plate := Greybox.mesh_box(Vector3(0.6, 0.26, 0.03), Color.WHITE)
+	route_plate.material_override = Materials.plain(Color(0.92, 0.92, 0.90), 0.6)
+	route_plate.position = Vector3(0, -0.48, 0)
+	sign_a.add_child(route_plate)
+	var route := _label("Тб 13", 40, Color(0.06, 0.08, 0.18))
+	route.pixel_size = 0.004
+	route.position = route_plate.position + Vector3(0, 0, 0.02)
+	sign_a.add_child(route)
 	# EXT-01 (DIALOGUES_AND_JOKES «Надписи»): табличка под знаком остановки у киоска — «ОСТАНОВКА ПО ТРЕБОВАНИЮ»,
 	# мелко «НЕ ОБЯЗАТЕЛЬНО ВАШЕМУ». Микроавтобус ГСУМ после покупки встаёт рядом, на площадке (Layout.VAN_PATH[-1]).
 	var plate := Greybox.mesh_box(Vector3(1.3, 0.42, 0.03), Color.WHITE)
@@ -1147,122 +1176,29 @@ func _build_bus_stop() -> void:
 	small.position = plate.position + Vector3(0, -0.1, 0.02)
 	root.add_child(small)
 
-# --- ART-06: приметы именно Новосибирска ---
-
-## Облик троллейбуса ЗиУ-9 (ЗиУ-682) маршрута № 13 (ART-06; модель и маршрут —
-## слово владельца 28.10.2026). Размеры — по статье «ЗиУ-9»: 11 888 × 2500 × 3347 мм, база 6200 мм, три двери
-## (узкая передняя, широкие средняя и задняя). Цвет и оформление — по фото владельца
-## `Novosibirsk_KrasnyProspekt_trolley_07-2016_img1.jpg`: кузов целиком зелёный #01a148, тёмный бампер #1e232e,
-## светлая решётка #bbbec3, белое табло маршрута, бортовой номер жёлтым и белым. Перед — −x, двери — к тротуару (−z).
-## Статичный троллейбус на улице A снят (ARENA-01); облик — для ездящего по кольцу (часть T). Начало координат — центр
-## кузова; штанги — к паре проводов над осью улицы, троллейбус идёт по полосе Layout.RING_LANE правее оси.
-func _trolleybus(size: Vector3) -> Node3D:
+## Синий квадратный знак остановки с белым автобусом; лицом — локальная +z, повёрнут на yaw.
+func _stop_sign(sign_name: String, at: Vector3, yaw: float) -> Node3D:
 	var root := Node3D.new()
-	var hx := size.x * 0.5
-	var hz := size.z * 0.5
-	var base := -size.y * 0.5
-	var green := Materials.plain(Color(0.02, 0.56, 0.25), 0.45)
-	var dark := Materials.plain(Color(0.12, 0.14, 0.18), 0.6)
-	var glass := Materials.plain(Color(0.05, 0.07, 0.09), 0.1)
-	var light_grey := Materials.plain(Color(0.73, 0.75, 0.77), 0.5)
-	# Кузов: низ, оконный пояс со стойками, верх, крыша.
-	_part(root, Vector3(size.x, 1.65, size.z), Vector3(0, base + 0.35 + 0.825, 0), green)
-	_part(root, Vector3(size.x - 0.2, 1.25, size.z - 0.06), Vector3(0.05, base + 2.62, 0), glass)
-	_part(root, Vector3(size.x, 0.7, size.z), Vector3(0, base + 3.25 - 0.35 + 0.1, 0), green)
-	_part(root, Vector3(size.x - 0.3, 0.06, size.z - 0.2), Vector3(0, base + size.y - 0.02, 0), light_grey)
-	var pillar := 1.45
-	var x := -hx + 2.6
-	while x < hx - 0.2:
-		for side in [-1.0, 1.0]:
-			_part(root, Vector3(0.16, 1.25, 0.04), Vector3(x, base + 2.62, side * (hz - 0.005)), green)
-		x += pillar
-	# Двери к тротуару (−z): узкая передняя, широкие средняя и задняя — тёмное стекло в зелёной раме.
-	for door in [[-hx + 1.85, 0.9], [-0.2, 1.4], [hx - 1.9, 1.4]]:
-		_part(root, Vector3(door[1], 2.0, 0.04), Vector3(door[0], base + 1.45, -hz - 0.01), glass)
-		_part(root, Vector3(0.06, 2.0, 0.05), Vector3(door[0], base + 1.45, -hz - 0.02), green)
-	# Тёмный бампер и юбка понизу.
-	_part(root, Vector3(0.12, 0.3, size.z + 0.04), Vector3(-hx - 0.04, base + 0.5, 0), dark)
-	_part(root, Vector3(0.12, 0.3, size.z + 0.04), Vector3(hx + 0.04, base + 0.5, 0), dark)
-	for side in [-1.0, 1.0]:
-		_part(root, Vector3(size.x, 0.12, 0.03), Vector3(0, base + 0.42, side * (hz + 0.01)), dark)
-	# Перед: лобовое из двух половин, табло маршрута, решётка, круглые фары, поворотники, зеркала.
-	for zs in [-0.62, 0.62]:
-		_part(root, Vector3(0.05, 1.25, 1.1), Vector3(-hx - 0.02, base + 1.95, zs), glass)
-	_part(root, Vector3(0.06, 1.3, 0.12), Vector3(-hx - 0.03, base + 1.95, 0), dark)
-	_part(root, Vector3(0.05, 0.42, 1.9), Vector3(-hx - 0.03, base + 2.86, 0), Materials.plain(Color(0.92, 0.92, 0.90), 0.6, Color(1.0, 0.98, 0.9), 0.4))
-	_part(root, Vector3(0.05, 0.14, 1.2), Vector3(-hx - 0.03, base + 1.2, 0), light_grey)
-	var lamp := Materials.plain(Color(1.0, 0.96, 0.85), 0.2, Color(1.0, 0.92, 0.75), 2.0)
-	var amber := Materials.plain(Color(0.95, 0.5, 0.1), 0.3)
-	for zs in [-0.85, 0.85]:
-		var head := Greybox.mesh_cylinder(0.12, 0.12, 0.06, Color.WHITE)
-		head.material_override = lamp
-		head.rotation.z = PI * 0.5
-		head.position = Vector3(-hx - 0.04, base + 0.85, zs)
-		root.add_child(head)
-		_part(root, Vector3(0.05, 0.16, 0.1), Vector3(-hx - 0.03, base + 0.85, zs * 1.22), amber)
-		_part(root, Vector3(0.05, 0.36, 0.2), Vector3(-hx - 0.25, base + 2.05, zs * 1.62), dark)
-	var labels := [
-		["13", 115, Color(0.05, 0.05, 0.05), Vector3(-hx - 0.07, base + 2.86, 0), -PI * 0.5],
-		["Учительская", 22, Color(0.75, 0.1, 0.08), Vector3(-hx - 0.07, base + 2.95, -0.62), -PI * 0.5],
-		["Речной вокзал", 22, Color(0.75, 0.1, 0.08), Vector3(-hx - 0.07, base + 2.95, 0.62), -PI * 0.5],
-		["13", 140, Color(0.05, 0.05, 0.05), Vector3(hx + 0.07, base + 2.86, 0), PI * 0.5],
-	]
-	for spec in labels:
-		var label := _label(spec[0], spec[1], spec[2])
-		label.pixel_size = 0.004
-		label.position = spec[3]
-		label.rotation.y = spec[4]
-		root.add_child(label)
-	# Табло сзади и сбоку у передней двери; бортовой номер: первые цифры жёлтые, последние белые, как на фото.
-	_part(root, Vector3(0.05, 0.42, 1.4), Vector3(hx + 0.03, base + 2.86, 0), Materials.plain(Color(0.92, 0.92, 0.90), 0.6))
-	for side in [-1.0, 1.0]:
-		_part(root, Vector3(0.9, 0.32, 0.03), Vector3(-hx + 3.0, base + 1.6, side * (hz + 0.02)), Materials.plain(Color(0.92, 0.92, 0.90), 0.6))
-		var board := _label("13", 60, Color(0.05, 0.05, 0.05))
-		board.pixel_size = 0.004
-		board.position = Vector3(-hx + 3.0, base + 1.6, side * (hz + 0.04))
-		board.rotation.y = PI if side < 0.0 else 0.0
-		root.add_child(board)
-	for spot in [[Vector3(-hx - 0.07, base + 1.25, -0.6), -PI * 0.5], [Vector3(-2.0, base + 1.05, -hz - 0.04), PI], [Vector3(-2.0, base + 1.05, hz + 0.04), 0.0]]:
-		var yaw_s: float = spot[1]
-		var right := Basis(Vector3.UP, yaw_s) * Vector3.RIGHT   # «вправо» для того, кто смотрит на надпись
-		for part in [["32", Color(1.0, 0.82, 0.10), -0.19], ["71", Color(0.96, 0.96, 0.94), 0.19]]:
-			var digits := _label(part[0], 80, part[1])
-			digits.pixel_size = 0.004
-			digits.position = spot[0] + right * float(part[2])
-			digits.rotation.y = yaw_s
-			root.add_child(digits)
-	# Колёса: передняя ось в 2,65 м от передка, база 6,2 м.
-	var tyre := Materials.plain(Color(0.05, 0.05, 0.05), 0.9)
-	var hub := Materials.plain(Color(0.26, 0.25, 0.23), 0.6)   # #43413b
-	for wx in [-hx + 2.65, -hx + 2.65 + 6.2]:
-		for wz in [-hz + 0.12, hz - 0.12]:
-			var wheel := Greybox.mesh_cylinder(0.5, 0.5, 0.3, Color.BLACK)
-			wheel.material_override = tyre
-			wheel.rotation.x = PI * 0.5
-			wheel.position = Vector3(wx, base + 0.5, wz)
-			root.add_child(wheel)
-			var disc := Greybox.mesh_cylinder(0.25, 0.25, 0.32, Color.BLACK)
-			disc.material_override = hub
-			disc.rotation.x = PI * 0.5
-			disc.position = wheel.position
-			root.add_child(disc)
-	# Крыша: короб оборудования, снег; штанги назад-влево к контактным проводам (ось улицы ± WIRE_PAIR).
-	_part(root, Vector3(3.6, 0.32, 1.6), Vector3(0.8, base + size.y + 0.16, 0), light_grey)
-	_part(root, Vector3(size.x - 4.6, 0.1, size.z - 0.4), Vector3(-2.6, base + size.y + 0.05, 0), Materials.snow(0.0))
-	for wire_off in [Layout.RING_LANE - WIRE_PAIR, Layout.RING_LANE + WIRE_PAIR]:
-		var from := Vector3(1.6, base + size.y + 0.35, wire_off * 0.15)
-		var to := Vector3(7.4, CONTACT_Y - 0.05 - size.y * 0.5, wire_off)
-		var boom := Greybox.mesh_cylinder(0.035, 0.05, from.distance_to(to), Color.BLACK)
-		boom.material_override = Materials.plain(Color(0.30, 0.30, 0.28), 0.6)
-		boom.position = (from + to) * 0.5
-		var axis := (to - from).normalized()
-		var s := axis.cross(Vector3.UP).normalized()
-		boom.basis = Basis(s, axis, s.cross(axis))
-		root.add_child(boom)
+	root.name = sign_name
+	root.position = at
+	root.rotation.y = yaw
+	add_child(root)
+	var board := Greybox.mesh_box(Vector3(0.6, 0.6, 0.03), Color.WHITE)
+	board.material_override = Materials.plain(Color(0.08, 0.30, 0.62), 0.5)
+	root.add_child(board)
+	var white := Materials.plain(Color(0.95, 0.95, 0.95), 0.6)
+	for part in [[Vector3(0.4, 0.2, 0.01), Vector3(0, 0.04, 0.02)], [Vector3(0.08, 0.08, 0.01), Vector3(-0.12, -0.1, 0.02)],
+			[Vector3(0.08, 0.08, 0.01), Vector3(0.12, -0.1, 0.02)]]:
+		var piece := Greybox.mesh_box(part[0], Color.WHITE)
+		piece.material_override = white
+		piece.position = part[1]
+		root.add_child(piece)
 	return root
 
+# --- ART-06: приметы именно Новосибирска ---
+
 ## Павильон остановки из профлиста: три стенки, крыша, лавка, объявления, табличка маршрутов (ART-06, Н6).
-## Открыт к улице (на север).
+## Открыт на −z; к улице его поворачивает _build_solid. Облик ездящего троллейбуса — game/vehicles/trolleybus.gd.
 func _pavilion(size: Vector3) -> Node3D:
 	var root := Node3D.new()
 	var hx := size.x * 0.5

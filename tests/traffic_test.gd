@@ -1,12 +1,16 @@
 extends SceneTree
 ## ARENA-01 T: транспорт кольца по контракту C8 на настоящей сцене main.tscn (набор TRAFFIC).
 ## Если интегратор ещё не подключил узел Traffic к LevelGeometry, тест добавляет его сам.
-## Проверки: путь — правая полоса RING со скруглением 6 м; старт — равномерно, ≥ 20 м от CAR_SPAWN, стоянки «Лады»
-## у киоска (конец ROUTE_DRIVE) и окна, VAN_PARK; слои тел; путь каждого корпуса не входит в коробки Layout.all_solids(); за прогон все три машины
+## Проверки: троллейбус — правая полоса RING (по часовой) со скруглением 6 м, машины — встречная правая полоса
+## CAR_RING (ARENA-01 fix P2-2: B на север, C на запад, D на юг, A на восток; скругление CAR_TURN_RADIUS); корпуса
+## машин по всему кругу ≥ 0,9 м от оси ROUTE_DRIVE на A и B и ≥ 0,8 м от припаркованных; старт — троллейбус
+## START_OFFSET, машины равномерно, ≥ 20 м от CAR_SPAWN, стоянки «Лады» у киоска (конец ROUTE_DRIVE) и окна,
+## VAN_PARK; слои тел; путь каждого корпуса не входит в коробки Layout.all_solids(); за прогон все три машины
 ## проходят полный круг, троллейбус стоит ≈6 с на обеих остановках со звуком дверей, отклонение от оси на
-## прямых ≤ RING_LANE + 0,5, дистанция между своими ≥ 10 м; машина тормозит перед стоящей на полосе «Ладой» и
-## не сдвигает её, троллейбус — перед Илюшей; после ухода препятствия едут дальше; на паузе транспорт стоит,
-## при открытом диалоге едет и мир не ломает.
+## прямых ≤ RING_LANE + 0,5, дистанция между своими ≥ 10 м; за 240 с ни одна машина не стоит в колонне за
+## троллейбусом, встречные расходятся без касаний; машина тормозит перед стоящей на полосе «Ладой» и не сдвигает
+## её, троллейбус — перед Илюшей; Илюша под бампером на 6 м/с — аварийное торможение ≤ 12 м/с² без касания
+## (ARENA-01 fix P3); после ухода препятствия едут дальше; на паузе транспорт стоит, при открытом диалоге едет.
 ##
 ## Headless: tools/run.command --headless --fixed-fps 60 --script tests/traffic_test.gd
 
@@ -20,7 +24,8 @@ var main: Node
 var drv
 var world: DemoWorld
 var traffic: Node3D
-var lane: PathVehicle.LanePath
+var lane: PathVehicle.LanePath       # троллейбус
+var car_lane: PathVehicle.LanePath   # машины, встречная
 var _solids: Array = []
 var _sim_time := 0.0
 var _door_events: Array = []   # [время, "open"/"close", индекс остановки, позиция]
@@ -53,6 +58,7 @@ func _run() -> void:
 		s.enabled = false   # наблюдатели не мешают: Илюша стоит на дорогах
 	await drv.frames(3)
 	lane = traffic.path
+	car_lane = traffic.car_path
 	for spec in Layout.all_solids():
 		_solids.append([spec[0], spec[2], spec[3]])
 	traffic.trolleybus.doors_opened.connect(func(i): _door_events.append([_sim_time, "open", i, traffic.trolleybus.global_position]))
@@ -62,8 +68,10 @@ func _run() -> void:
 	_part_start()
 	_part_sweep()
 	await _part_laps()
+	await _part_oncoming()
 	await _part_lada_block()
 	await _part_player_block()
+	await _part_hard_brake()
 	await _part_pause_and_dialog()
 	drv.release_all()
 	_finish()
@@ -101,6 +109,53 @@ func _part_path() -> void:
 	check(worst_straight < 0.01, "straights: lane is RING_LANE from the street axis (max error %.3f m)" % worst_straight)
 	var arc_bound := Layout.RING_LANE + PathVehicle.TURN_RADIUS * (1.0 - cos(PI / 4.0)) + 0.01
 	check(worst_arc <= arc_bound, "corners: lane within %.2f m of the nearer axis (max %.2f m)" % [arc_bound, worst_arc])
+	# Полоса машин — встречная (ARENA-01 fix P2-2).
+	var r := PathVehicle.CAR_TURN_RADIUS
+	var car_expected := straight + 16.0 * Layout.RING_LANE - 4.0 * (2.0 * r - PI * r * 0.5)   # внешний прямоугольник: +2·RING_LANE на сторону
+	check(absf(car_lane.length - car_expected) < 0.05, "car lane loop length %.2f m (expected %.2f)" % [car_lane.length, car_expected])
+	var car_mids := [[Vector3(0, 0, 35), Vector3(1, 0, 0), "A eastbound z=35"], [Vector3(73, 0, -34), Vector3(0, 0, -1), "B northbound x=73"],
+		[Vector3(5, 0, -103), Vector3(-1, 0, 0), "C westbound z=-103"], [Vector3(-63, 0, -34), Vector3(0, 0, 1), "D southbound x=-63"]]
+	for m in car_mids:
+		var c_at := car_lane.offset_of(m[0])
+		check(car_lane.position_at(c_at).distance_to(m[0]) < 0.01 and car_lane.direction_at(c_at).dot(m[1]) > 0.999, "car lane %s" % m[2])
+	var car_worst := 0.0
+	at = 0.0
+	while at < car_lane.length:
+		if not car_lane.in_arc(at):
+			car_worst = maxf(car_worst, absf(car_lane.axis_distance(car_lane.position_at(at)) - Layout.RING_LANE))
+		at += 0.5
+	check(car_worst < 0.01, "car lane straights: RING_LANE from the street axis (max error %.3f m)" % car_worst)
+	# Ось «Лады» (ROUTE_DRIVE по A на восток и по B на север) и припаркованные машины — от корпусов машин по кругу.
+	var drive_axis: Array = [[Vector2(0, 32), Vector2(70, 32)], [Vector2(70, 32), Vector2(70, -46)]]
+	var parked: Array = []
+	for spec in Layout.all_solids():
+		if spec[1] == "parked_car":
+			parked.append([spec[0], spec[2], Vector2(spec[3].x, spec[3].z)])
+	for kind in TrafficCar.KINDS:
+		var spec: Dictionary = TrafficCar.KINDS[kind]
+		var size: Vector3 = spec["size"]
+		var wb: float = spec["wheelbase"]
+		var min_axis := INF
+		var min_parked := INF
+		var min_parked_name := ""
+		at = 0.0
+		while at < car_lane.length:
+			var front := car_lane.position_at(at + wb * 0.5)
+			var rear := car_lane.position_at(at - wb * 0.5)
+			var corners := _obb_corners(_flat((front + rear) * 0.5), _flat(front - rear).normalized(), Vector2(size.x, size.z))
+			for seg in drive_axis:
+				for c in corners:
+					min_axis = minf(min_axis, c.distance_to(Geometry2D.get_closest_point_to_segment(c, seg[0], seg[1])))
+				for e in seg:
+					min_axis = minf(min_axis, _point_obb_distance(e, corners))
+			for pc in parked:
+				var d := _obb_rect_distance(corners, pc[1], pc[2])
+				if d < min_parked:
+					min_parked = d
+					min_parked_name = "%s@(%.1f,%.1f)" % [pc[0], pc[1].x, pc[1].y]
+			at += 0.25
+		check(min_axis >= 0.9, "%s body on the car lane keeps ≥ 0.9 m from the ROUTE_DRIVE axis on A and B (%.2f m)" % [kind, min_axis])
+		check(min_parked >= 0.8, "%s body on the car lane keeps ≥ 0.8 m from parked cars (%.2f m, %s)" % [kind, min_parked, min_parked_name])
 
 # =====================================================================================
 # 2. Состав и старт
@@ -118,20 +173,25 @@ func _part_start() -> void:
 		check(v is AnimatableBody3D and v.collision_layer == 1 and v.collision_mask == 0, "%s: AnimatableBody3D, layer 1, mask 0" % v.name)
 		check(v.is_in_group(PathVehicle.GROUP), "%s in group traffic_vehicles" % v.name)
 	check(traffic.cars.all(func(c): return is_equal_approx(c.cruise_speed, 9.0)) and is_equal_approx(traffic.trolleybus.cruise_speed, 7.0), "speeds: cars 9 m/s, trolleybus 7 m/s")
-	var offsets: Array[float] = TrafficScript.start_offsets(lane.length)
-	check(offsets == TrafficScript.start_offsets(lane.length), "start offsets are constants (same on a second call)")
-	var step := lane.length / offsets.size()
+	var offsets: Array[float] = TrafficScript.start_offsets(lane.length, car_lane.length)
+	check(offsets == TrafficScript.start_offsets(lane.length, car_lane.length), "start offsets are constants (same on a second call)")
+	check(traffic.trolleybus.path == lane and traffic.cars.all(func(c): return c.path == car_lane), "trolleybus on RING, cars on the oncoming CAR_RING lane")
+	check(traffic.cars.all(func(c): return c.peers == traffic.cars) and traffic.trolleybus.peers == [traffic.trolleybus], "follow distance only to own lane (cars ↔ cars)")
+	var step := car_lane.length / Layout.TRAFFIC_CARS
 	for i in offsets.size():
-		var p := lane.position_at(offsets[i])
-		var name: String = traffic.vehicles[i].name
+		var v: PathVehicle = traffic.vehicles[i]
+		var p := v.path.position_at(offsets[i])
+		var name: String = v.name
 		var d_car := _flat(p).distance_to(_flat(Layout.CAR_SPAWN))
 		# Киоск — стоянка «Лады» (конец ROUTE_DRIVE) и окно: KIOSK_ZONE после EXT-01 захватывает край улицы B
 		# у заезда на парковку, и полоса кольца идёт вдоль неё — мерить до коробки зоны стало бессмысленно.
 		var d_kiosk := minf(_flat(p).distance_to(_flat(Layout.ROUTE_DRIVE[-1])), _flat(p).distance_to(_flat(Layout.VENDOR_WINDOW)))
 		var d_van := _flat(p).distance_to(_flat(Layout.VAN_PARK))
 		check(d_car >= 20.0 and d_kiosk >= 20.0 and d_van >= 20.0, "%s starts at (%.1f, %.1f): CAR_SPAWN %.1f, kiosk parking/window %.1f, VAN_PARK %.1f m (≥ 20)" % [name, p.x, p.z, d_car, d_kiosk, d_van])
-		var gap := fposmod(offsets[(i + 1) % offsets.size()] - offsets[i], lane.length)
-		check(absf(gap - step) < 0.01, "%s: next one %.1f m ahead (even spacing %.1f)" % [name, gap, step])
+		if v != traffic.trolleybus:
+			var next := 1 + (i % Layout.TRAFFIC_CARS)   # индекс следующей машины в vehicles (0 — троллейбус)
+			var gap := fposmod(offsets[next] - offsets[i], car_lane.length)
+			check(absf(gap - step) < 0.01, "%s: next car %.1f m ahead (even spacing %.1f)" % [name, gap, step])
 	var stops: Array[float] = traffic.trolleybus.stop_offsets
 	for i in Layout.TROLLEY_STOPS.size():
 		var stop: Vector3 = Layout.TROLLEY_STOPS[i]
@@ -146,7 +206,7 @@ func _part_sweep() -> void:
 	for v in traffic.vehicles:
 		var hits := {}
 		var at := 0.0
-		while at < lane.length:
+		while at < v.path.length:
 			var xf: Transform3D = v._transform_at(at)
 			for solid in _overlaps(xf, v.size):
 				if not hits.has(solid[0]):
@@ -176,18 +236,18 @@ func _part_laps() -> void:
 		for v in traffic.vehicles:
 			var front: float = v.s + v.wheelbase * 0.5
 			var rear: float = v.s - v.wheelbase * 0.5
-			var d := lane.axis_distance(v.global_position)
-			if lane.in_arc(front) or lane.in_arc(rear) or lane.in_arc(v.s):
+			var d: float = v.path.axis_distance(v.global_position)
+			if v.path.in_arc(front) or v.path.in_arc(rear) or v.path.in_arc(v.s):
 				worst_corner = maxf(worst_corner, d)
 			else:
 				worst_lane = maxf(worst_lane, absf(d - Layout.RING_LANE))
 		for i in traffic.vehicles.size():
 			var a: PathVehicle = traffic.vehicles[i]
 			for b in traffic.vehicles:
-				if b == a:
+				if b == a or b.path != a.path:
 					continue
-				var ahead := fposmod(b.s - a.s, lane.length)
-				if ahead < lane.length * 0.5:
+				var ahead := fposmod(b.s - a.s, a.path.length)
+				if ahead < a.path.length * 0.5:
 					min_gap = minf(min_gap, ahead - a.size.z * 0.5 - b.size.z * 0.5)
 		if frame % 10 == 0:
 			for v in traffic.vehicles:
@@ -198,7 +258,7 @@ func _part_laps() -> void:
 			lap_done_at = _sim_time - t0
 			break
 	for car in traffic.cars:
-		check(car.distance_travelled >= lane.length, "%s made a full lap (%.0f of %.0f m)" % [car.name, car.distance_travelled, lane.length])
+		check(car.distance_travelled >= car_lane.length, "%s made a full lap (%.0f of %.0f m)" % [car.name, car.distance_travelled, car_lane.length])
 	check(lap_done_at > 0.0, "all cars lapped and the trolleybus served both stops in %.0f s (limit 200 s)" % (lap_done_at if lap_done_at > 0.0 else _sim_time - t0))
 	check(worst_lane <= 0.5, "straights: distance to the street axis within RING_LANE ± 0.5 (worst %.3f m)" % worst_lane)
 	check(worst_corner <= 6.0, "corners: body centre stays on the carriageway, ≤ 6 m from the axis (worst %.2f m)" % worst_corner)
@@ -235,9 +295,64 @@ func _follow_gap_min() -> float:
 
 func _cars_lapped() -> bool:
 	for car in traffic.cars:
-		if car.distance_travelled < lane.length:
+		if car.distance_travelled < car_lane.length:
 			return false
 	return true
+
+# =====================================================================================
+# 4а. 240 с: машины не стоят в колонне за троллейбусом, встречные расходятся без касаний (ARENA-01 fix P2-2)
+# =====================================================================================
+
+func _part_oncoming() -> void:
+	print("--- oncoming, 240 s ---")
+	traffic.reset_positions()
+	var bus: Trolleybus = traffic.trolleybus
+	var column := {}           # машина → кадров «за троллейбусом в одну сторону и медленно»
+	var standing := {}         # машина → самый длинный простой подряд, кадров
+	var run := {}
+	var min_oncoming := INF
+	var min_any := INF
+	var passes := 0
+	var close := {}            # пара → была ли рядом в прошлом кадре (для счёта разъездов)
+	var dist0: Array = traffic.cars.map(func(c): return c.distance_travelled)
+	for frame in 240 * 60:
+		await physics_frame
+		var bus_f: Vector2 = bus.footprint()[1]
+		for car in traffic.cars:
+			var fp: Array = car.footprint()
+			var to_bus: Vector2 = _flat(bus.global_position) - fp[0]
+			var along: float = to_bus.dot(fp[1])
+			var across := absf(to_bus.dot(Vector2(-fp[1].y, fp[1].x)))
+			if car.blocked_by == bus or (fp[1].dot(bus_f) > 0.7 and along > 0.0 and along < 25.0 and across < 2.5 and car.speed < 7.5):
+				column[car.name] = column.get(car.name, 0) + 1
+			run[car.name] = run.get(car.name, 0) + 1 if car.speed < 0.05 else 0
+			standing[car.name] = maxi(standing.get(car.name, 0), run[car.name])
+		var vs: Array = traffic.vehicles
+		for i in vs.size():
+			for j in range(i + 1, vs.size()):
+				var a: PathVehicle = vs[i]
+				var b: PathVehicle = vs[j]
+				var pair := "%s|%s" % [a.name, b.name]
+				if _flat(a.global_position).distance_to(_flat(b.global_position)) > 20.0:
+					close[pair] = false
+					continue
+				var d := _poly_distance(_footprint_corners(a), _footprint_corners(b))
+				min_any = minf(min_any, d)
+				if a.footprint()[1].dot(b.footprint()[1]) < -0.3 or a.path != b.path:
+					min_oncoming = minf(min_oncoming, d)
+					if not close.get(pair, false):
+						passes += 1
+					close[pair] = true
+	for car in traffic.cars:
+		check(column.get(car.name, 0) == 0, "%s never queues behind the trolleybus in 240 s (%d frames)" % [car.name, column.get(car.name, 0)])
+	var laps := INF
+	for i in traffic.cars.size():
+		laps = minf(laps, (traffic.cars[i].distance_travelled - dist0[i]) / car_lane.length)
+	print("INFO: longest stand per car (frames) %s, oncoming encounters %d" % [standing, passes])
+	check(laps >= 3.0, "every car makes ≥ 3 laps in 240 s (min %.2f) — nobody stuck in a column" % laps)
+	check(passes >= 10, "cars and the trolleybus meet head-on on the ring (%d encounters within 20 m)" % passes)
+	check(min_oncoming >= 1.0, "oncoming vehicles pass without touching (min body gap %.2f m, ≥ 1)" % min_oncoming)
+	check(min_any > 0.0, "no two vehicles ever overlap (min body gap %.2f m)" % min_any)
 
 # =====================================================================================
 # 5. «Лада» стоит на полосе: машина тормозит, не трогает её, ждёт; «Лада» ушла — едет
@@ -246,10 +361,10 @@ func _cars_lapped() -> bool:
 func _part_lada_block() -> void:
 	print("--- Lada blocks the lane ---")
 	traffic.reset_positions()
-	var lada_point := Vector3(67, 0, 0)   # улица B, полоса на юг; «Газель» стартует севернее (z ≈ −35)
-	var at := lane.offset_of(lada_point)
-	var dir := lane.direction_at(at)
-	var car: PathVehicle = _vehicle_behind(at)
+	var lada_point := Vector3(73, 0, -40)   # улица B, полоса машин на север; «Жигули» стартуют южнее (z ≈ 1)
+	var at := car_lane.offset_of(lada_point)
+	var dir := car_lane.direction_at(at)
+	var car: PathVehicle = _vehicle_behind(at, car_lane)
 	world.car.reset_to(lada_point, atan2(-dir.x, -dir.z))
 	await drv.frames(2)
 	var lada_at: Vector3 = world.car.global_position
@@ -258,8 +373,9 @@ func _part_lada_block() -> void:
 	while waited < 30 * 60 and car.blocked_time < 3.5:
 		await physics_frame
 		waited += 1
-		var gap := fposmod(at - car.s, lane.length) - car.size.z * 0.5 - Lada.SIZE.z * 0.5
+		var gap := fposmod(at - car.s, car_lane.length) - car.size.z * 0.5 - Lada.SIZE.z * 0.5
 		min_gap = minf(min_gap, gap)
+	check(car is TrafficCar, "a car (not the trolleybus) comes up behind the Lada (%s)" % car.name)
 	check(car.blocked_by == world.car, "%s stopped for the Lada (blocked by %s)" % [car.name, car.blocked_by.name if car.blocked_by else "nothing"])
 	check(car.speed == 0.0 and car.blocked_time >= 3.0, "%s waits standing ≥ 3 s (%.1f s), no overtaking" % [car.name, car.blocked_time])
 	check(min_gap > 2.5 and min_gap <= PathVehicle.SENSOR_RANGE, "%s stopped %.2f m short of the Lada (2.5…8)" % [car.name, min_gap])
@@ -294,6 +410,47 @@ func _part_player_block() -> void:
 	world.player.place(Layout.SPAWN, Layout.SPAWN_YAW)
 	var resumed := await _wait_until(func(): return bus.speed > 1.0, 5 * 60)
 	check(resumed >= 0, "trolleybus drives on after Ilyusha leaves (%d frames)" % resumed)
+
+# =====================================================================================
+# 6а. Илюша шагнул под бампер машины на 6 м/с: аварийное торможение ≤ 12 м/с², встаёт до касания (ARENA-01 fix P3)
+# =====================================================================================
+
+func _part_hard_brake() -> void:
+	print("--- hard brake ---")
+	traffic.reset_positions()
+	world.player.place(Layout.SPAWN, Layout.SPAWN_YAW)
+	var car: TrafficCar = traffic.cars[0]   # «Жигули»: старт на B у z = 1, на север
+	var reached := await _wait_until(func(): return car.speed >= 6.0, 10 * 60)
+	if not check(reached >= 0, "%s reaches 6 m/s (%d frames)" % [car.name, reached]):
+		return
+	# Центр Илюши — в 2,2 м перед бампером (край капсулы ~1,85 м): при 9 м/с² тормозной путь 2,0 м — касание,
+	# при 12 м/с² — 1,5 м.
+	var v0 := car.speed
+	var gap0 := 2.2
+	var at := car.s + car.size.z * 0.5 + gap0
+	var point := car_lane.position_at(at)
+	world.player.place(point, 0.0)
+	var player_at: Vector3 = world.player.global_position
+	var max_decel := 0.0
+	var body_stop := false
+	var min_gap := INF
+	var frames := 0
+	while frames < 3 * 60:
+		await physics_frame
+		frames += 1
+		max_decel = maxf(max_decel, car.last_decel)
+		body_stop = body_stop or car.limit_reason == &"body"
+		min_gap = minf(min_gap, fposmod(car_lane.offset_of(world.player.global_position) - car.s, car_lane.length) - car.size.z * 0.5 - 0.35)
+		if car.speed == 0.0 and frames > 30:
+			break
+	check(car.speed == 0.0, "%s stopped for Ilyusha stepping in %.1f m ahead at %.1f m/s" % [car.name, gap0, v0])
+	check(max_decel <= PathVehicle.HARD_DECEL + 0.05 and max_decel > PathVehicle.EMERGENCY_DECEL, "emergency braking %.1f m/s² (9 < … ≤ 12), no instant stop" % max_decel)
+	check(not body_stop, "the last-resort body check never fired (no 6 → 0 m/s in one frame)")
+	check(min_gap > 0.0, "stopped before touching: bumper %.2f m short of Ilyusha's capsule" % min_gap)
+	check(_flat(world.player.global_position).distance_to(_flat(player_at)) < 0.05, "Ilyusha not pushed")
+	world.player.place(Layout.SPAWN, Layout.SPAWN_YAW)
+	var resumed := await _wait_until(func(): return car.speed > 1.0, 5 * 60)
+	check(resumed >= 0, "%s drives on after Ilyusha leaves (%d frames)" % [car.name, resumed])
 
 # =====================================================================================
 # 7. Пауза и диалог
@@ -344,12 +501,14 @@ func _part_pause_and_dialog() -> void:
 # Геометрия и служебное
 # =====================================================================================
 
-## Ближайший транспорт позади точки at по пути.
-func _vehicle_behind(at: float) -> PathVehicle:
+## Ближайший транспорт позади точки at по пути on.
+func _vehicle_behind(at: float, on: PathVehicle.LanePath) -> PathVehicle:
 	var best: PathVehicle = null
 	var best_d := INF
 	for v in traffic.vehicles:
-		var d := fposmod(at - v.s, lane.length)
+		if v.path != on:
+			continue
+		var d := fposmod(at - v.s, on.length)
 		if d < best_d:
 			best_d = d
 			best = v
@@ -378,6 +537,44 @@ func _overlaps(xf: Transform3D, size: Vector3) -> Array:
 		if not separated:
 			out.append(solid)
 	return out
+
+## Углы корпуса в плане: центр, направление «вперёд», (ширина, длина).
+func _obb_corners(c: Vector2, f: Vector2, wl: Vector2) -> Array[Vector2]:
+	var r := Vector2(-f.y, f.x)
+	var out: Array[Vector2] = []
+	for k in [Vector2(1, 1), Vector2(1, -1), Vector2(-1, -1), Vector2(-1, 1)]:
+		out.append(c + f * wl.y * 0.5 * k.x + r * wl.x * 0.5 * k.y)
+	return out
+
+func _footprint_corners(v: PathVehicle) -> Array[Vector2]:
+	var fp: Array = v.footprint()
+	return _obb_corners(fp[0], fp[1], fp[2])
+
+## Расстояние от точки до выпуклого четырёхугольника (0 внутри).
+func _point_obb_distance(p: Vector2, poly: Array[Vector2]) -> float:
+	if Geometry2D.is_point_in_polygon(p, PackedVector2Array(poly)):
+		return 0.0
+	var best := INF
+	for i in poly.size():
+		var q := Geometry2D.get_closest_point_to_segment(p, poly[i], poly[(i + 1) % poly.size()])
+		best = minf(best, q.distance_to(p))
+	return best
+
+## Расстояние между двумя выпуклыми четырёхугольниками (0 — касаются или пересекаются).
+func _poly_distance(a: Array[Vector2], b: Array[Vector2]) -> float:
+	if not Geometry2D.intersect_polygons(PackedVector2Array(a), PackedVector2Array(b)).is_empty():
+		return 0.0
+	var best := INF
+	for p in a:
+		best = minf(best, _point_obb_distance(p, b))
+	for p in b:
+		best = minf(best, _point_obb_distance(p, a))
+	return best
+
+func _obb_rect_distance(corners: Array[Vector2], center: Vector2, size: Vector2) -> float:
+	var h := size * 0.5
+	var rect: Array[Vector2] = [center + Vector2(-h.x, -h.y), center + Vector2(h.x, -h.y), center + h, center + Vector2(-h.x, h.y)]
+	return _poly_distance(corners, rect)
 
 func _aabb_distance(box: AABB, p: Vector3) -> float:
 	var dx := maxf(maxf(box.position.x - p.x, 0.0), p.x - box.end.x)
