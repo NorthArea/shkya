@@ -643,7 +643,8 @@ NOTE_PAPER, PENCIL, BRASS = "#F3F1E6", "#E9B93A", "#C9B35A"
 O_SKIN, O_SKIN_LO, O_SKIN_HI = "#F5A3B0", "#D98593", "#FBC4CC"      # розовое худое лицо без румянца (e03: #F9A4AE)
 O_COAT, O_COAT_HI, O_COAT_LO = "#5F4E29", "#76643A", "#46391C"      # буро-оливковая шинель (e03: #5F4E29)
 O_CAP, O_CAP_HI, O_CAP_BAND, O_VISOR = "#665A2E", "#7E7140", "#9A2414", "#1E1A12"   # фуражка, красный околыш
-O_HAIR, O_HAIR_HI = "#9A968A", "#C2BEB2"                            # седина (e03: #8D867D)
+O_HAIR, O_HAIR_HI, O_HAIR_LO = "#9A968A", "#C2BEB2", "#5E5A52"      # седина (e03: #8D867D), низ затылка темнее
+O_STRAND = "#DCD8CC"                                                # светлые пряди затылка
 O_STRAP, O_SHIRT, O_PANTS = "#9A2414", "#3B2E1F", "#3E3A33"         # красные погоны без знаков, рубашка, брюки
 CLIP_BOARD, CLIP_PAPER, CLIP_METAL = "#B2925F", "#F2EEE0", "#8E9096"
 O_BOOT = "#1A1718"
@@ -700,45 +701,63 @@ def police_boots(svg: Svg, xs: tuple[float, float] = (158, 242)) -> None:
             svg.path(f"M{x - 18},548 Q{x},554 {x + 18},548", width=THIN * 0.7)
 
 
+def brush_moustache(svg: Svg, x0: float, x1: float, top: float, bottom: float) -> None:
+    """Усы-щётка (e03): тёмный брусок, нижний край — неровный ворс, внутри светлые штрихи щетины."""
+    n = max(4, round((x1 - x0) / 4))
+    d = f"M{x0},{bottom - 2} C{x0 - 1},{top + 3} {x0 + 3},{top} {x0 + 8},{top} L{x1 - 8},{top} " \
+        f"C{x1 - 3},{top} {x1 + 1},{top + 3} {x1},{bottom - 2}"
+    for i in range(n, -1, -1):   # ворс справа налево: зубцы разной длины
+        x = x0 + (x1 - x0) * i / n
+        d += f" L{x:.1f},{bottom + (2.5, 0.5, 3.5, 1.0)[i % 4]:.1f}"
+    svg.path(d + " Z", INK, INK, FACE * 0.7)
+    for i in range(1, n):
+        x = x0 + (x1 - x0) * i / n
+        svg.path(f"M{x:.1f},{top + 2.5} L{x + 0.4:.1f},{bottom - 1.5}", "none", "#6B6A72", FACE * 0.55)
+
+
 def police_face(svg: Svg) -> None:
-    # Маленькие глаза близко к центру под тяжёлыми бровями, усики щёточкой, рот углами вниз, брыли (e01, e03).
-    for x, s in ((178, -1), (222, 1)):
-        svg.path(f"M{x - 9},182 Q{x},176 {x + 9},182 Q{x},188 {x - 9},182 Z", "#FFFFFF", INK, FACE * 0.8)
-        svg.ellipse(x + 1.5 * s, 182, 2.6, 2.6, INK, None)
-        svg.path(f"M{x - 12},171 Q{x},{172 - 3 * s * s} {x + 12},{168 if s > 0 else 174}", "none", INK, FACE * 2.0)
-        svg.path(f"M{x - 8},190 Q{x},194 {x + 8},190", width=FACE * 0.6)
-    svg.path("M200,178 C196,190 194,200 200,204 C205,206 208,200 206,194", width=FACE)
-    svg.path("M181,210 C188,204 212,204 219,210 C214,220 186,220 181,210 Z", INK, INK, FACE * 0.8)
-    svg.path("M184,232 Q200,224 216,232", width=FACE)
-    svg.path("M130,214 C138,236 154,248 172,242 M270,214 C262,236 246,248 228,242", width=FACE * 0.9)
-    svg.path("M168,260 Q200,266 232,260", width=FACE * 0.8)
+    # Маленькие глаза близко к центру под сердитыми бровями-«галочкой», усики щёткой, рот прямой чертой,
+    # носогубные складки к брылям, три складки по нижнему краю (e01, e03).
+    for x, s in ((182, -1), (218, 1)):
+        svg.path(f"M{x - 8},183 Q{x},178 {x + 8},183 Q{x},188 {x - 8},183 Z", "#FFFFFF", INK, FACE * 0.8)
+        svg.ellipse(x - 1.5 * s, 183.5, 2.6, 2.6, INK, None)
+        # Бровь: внешний конец выше, внутренний опущен к переносице.
+        svg.path(f"M{x + 15 * s},169 Q{x + 4 * s},170 {x - 9 * s},177", "none", INK, FACE * 2.2)
+        svg.path(f"M{x - 7},191 Q{x},194 {x + 7},191", width=FACE * 0.6)
+    svg.path("M193,174 L196,178 M207,174 L204,178", width=FACE * 0.7)                 # морщинки хмурого лба
+    svg.path("M200,180 C196,190 194,199 199,203 C204,205 207,200 205,195", width=FACE)
+    brush_moustache(svg, 183, 217, 205, 215)
+    svg.path("M189,231 Q200,228.5 211,231", width=FACE)                              # рот прямой чертой
+    svg.path("M180,200 C170,214 166,232 170,248 M220,200 C230,214 234,232 230,248", width=FACE * 0.9)
+    for d in ("M138,248 Q156,262 176,254", "M184,258 Q200,267 216,258", "M224,254 Q244,262 262,248"):
+        svg.path(d, width=FACE * 0.9)                                                  # три складки брылей
 
 
-# Ушанка (e01, e03, e05): плоский верх, меховой фестончатый край, шире лица в ≈1,35 раза по брылям и в ≈1,5 —
-# по линии лба; передний клапан поднят над бровями, уши-клапаны опущены вдоль щёк до брылей и висят СНАРУЖИ лица.
-U_CROWN = superellipse(200, 102, 122, 38, 4, 26)
-U_BAND = superellipse(200, 128, 134, 32, 5, 30)
-U_FLAPS = [superellipse(200 + 106 * s, 206, 30, 52, 2.4, 16, rot=-8 * s) for s in (-1, 1)]
-U_BACK = superellipse(200, 170, 130, 66, 3.2, 30)       # задний клапан со спины: закрывает затылок до шеи
+# Ушанка (e01, e03, e05): плоский верх, меховой фестончатый край, ≈0,37 роста, шире лица в ≈1,4 раза по брылям;
+# передний клапан поднят над бровями, уши-клапаны висят снаружи узкого верха лица, брыли ложатся поверх их низа.
+U_CROWN = superellipse(200, 106, 108, 34, 4, 24)
+U_BAND = superellipse(200, 130, 116, 28, 5, 28)
+U_FLAPS = [superellipse(200 + 88 * s, 208, 28, 52, 2.4, 16, rot=-8 * s) for s in (-1, 1)]
+U_BACK = superellipse(200, 170, 116, 66, 3.2, 28)       # задний клапан со спины: закрывает затылок до шеи
 
 
 def ushanka_flaps(svg: Svg) -> None:
     for pts, s in zip(U_FLAPS, (-1, 1)):
-        soft_shape(svg, fur_d(pts, 7), P_HAT, [(200 + 112 * s, 200, 14, 34, P_HAT_HI)], LINE * 0.8)
-        fur_strokes(svg, [(200 + (100 + 8 * (i % 2)) * s, 178 + i * 16) for i in range(5)])
+        soft_shape(svg, fur_d(pts, 7), P_HAT, [(200 + 96 * s, 200, 13, 34, P_HAT_HI)], LINE * 0.8)
+        fur_strokes(svg, [(200 + (90 + 8 * (i % 2)) * s, 178 + i * 16) for i in range(5)])
 
 
 def ushanka_front(svg: Svg, back: bool = False) -> None:
-    soft_shape(svg, fur_d(U_CROWN, 7), P_HAT, [(176, 84, 70, 20, P_HAT_HI)], LINE * 0.8)
+    soft_shape(svg, fur_d(U_CROWN, 7), P_HAT, [(178, 90, 62, 18, P_HAT_HI)], LINE * 0.8)
     if back:
-        soft_shape(svg, fur_d(U_BACK, 8), P_HAT, [(220, 150, 90, 40, P_HAT_HI)], LINE * 0.8)
-        fur_strokes(svg, [(96 + i * 26, 150 + 22 * (i % 3)) for i in range(9)])
-        svg.path("M84,112 Q200,96 316,112", "none", INK, THIN * 0.8)       # шов: верх ушанки и задний клапан
+        soft_shape(svg, fur_d(U_BACK, 8), P_HAT, [(218, 150, 80, 40, P_HAT_HI)], LINE * 0.8)
+        fur_strokes(svg, [(108 + i * 23, 150 + 22 * (i % 3)) for i in range(9)])
+        svg.path("M98,116 Q200,102 302,116", "none", INK, THIN * 0.8)       # шов: верх ушанки и задний клапан
         return
-    soft_shape(svg, fur_d(U_BAND, 8), P_HAT, [(166, 116, 80, 18, P_HAT_HI)], LINE * 0.8)
-    fur_strokes(svg, [(86 + i * 24, 116 + 14 * (i % 3)) for i in range(11)])
-    svg.ellipse(200, 126, 7, 7, BRASS, INK, THIN)   # простой диск вместо кокарды: без реальных эмблем
-    svg.ellipse(200, 126, 2.5, 2.5, INK, None)
+    soft_shape(svg, fur_d(U_BAND, 8), P_HAT, [(170, 120, 70, 16, P_HAT_HI)], LINE * 0.8)
+    fur_strokes(svg, [(98 + i * 21, 120 + 12 * (i % 3)) for i in range(11)])
+    svg.ellipse(200, 129, 6.5, 6.5, BRASS, INK, THIN)   # простой диск вместо кокарды: без реальных эмблем
+    svg.ellipse(200, 129, 2.3, 2.3, INK, None)
 
 
 def ushanka_side(svg: Svg) -> None:
@@ -746,18 +765,20 @@ def ushanka_side(svg: Svg) -> None:
     soft_shape(svg, fur_d(superellipse(150, 186, 48, 64, 2.6, 18, rot=12), 5), P_HAT,
                [(140, 176, 22, 36, P_HAT_HI)], LINE * 0.8)
     fur_strokes(svg, [(126 + 10 * (i % 2), 160 + i * 16) for i in range(5)])
-    soft_shape(svg, fur_d(superellipse(194, 102, 112, 38, 4, 24), 5), P_HAT, [(170, 84, 64, 20, P_HAT_HI)], LINE * 0.8)
-    soft_shape(svg, fur_d(superellipse(194, 134, 108, 20, 5, 24), 5), P_HAT, [(160, 130, 60, 10, P_HAT_HI)], LINE * 0.8)
-    soft_shape(svg, fur_d(superellipse(268, 124, 40, 36, 3, 16), 5), P_HAT, [(258, 116, 22, 18, P_HAT_HI)], LINE * 0.8)
-    fur_strokes(svg, [(250 + 10 * (i % 2), 108 + i * 12) for i in range(4)])
+    soft_shape(svg, fur_d(superellipse(196, 106, 99, 34, 4, 22), 5), P_HAT, [(174, 90, 56, 18, P_HAT_HI)], LINE * 0.8)
+    soft_shape(svg, fur_d(superellipse(196, 136, 96, 18, 5, 22), 5), P_HAT, [(166, 132, 54, 9, P_HAT_HI)], LINE * 0.8)
+    soft_shape(svg, fur_d(superellipse(262, 126, 36, 32, 3, 16), 5), P_HAT, [(253, 119, 20, 16, P_HAT_HI)], LINE * 0.8)
+    fur_strokes(svg, [(246 + 9 * (i % 2), 112 + i * 11) for i in range(4)])
 
 
-POLICE_HEAD = ("M200,104 C248,104 276,136 284,176 C294,216 300,248 268,264 C246,272 222,272 200,272 "
-               "C178,272 154,272 132,264 C100,248 106,216 116,176 C124,136 152,104 200,104 Z")
+POLICE_HEAD = ("M200,146 C226,146 246,152 256,164 C266,178 272,196 278,214 C286,234 291,252 285,264 "
+               "C280,273 270,279 258,277 C250,276 242,273 236,268 C228,274 214,276 200,275 "
+               "C186,276 172,274 164,268 C158,273 150,276 142,277 C130,279 120,273 115,264 "
+               "C109,252 114,234 122,214 C128,196 134,178 144,164 C154,152 174,146 200,146 Z")
 POLICE_BODY = ("M126,262 C76,276 46,330 40,400 C36,452 42,486 50,504 L350,504 C358,486 364,452 360,400 "
                "C354,330 324,276 274,262 C250,254 150,254 126,262 Z")
 P_FIGURE_K = 1.1   # вся фигура вокруг ступней: рост облика прежний при height_m 2,05, хотя голова стала меньше
-P_HEAD_K = 0.74    # голова с ушанкой ≈0,33 роста, лицо ≈0,28, ушанка ≈0,4 (e01: 0,31/0,31/0,36; e03: 0,28/0,25/0,39)
+P_HEAD_K = 0.74    # лицо-«груша» ≈0,18 роста, низ к лбу ≈1,55, ушанка ≈0,37 (сверка 28.10: e01/e03 0,33–0,38)
 
 
 def police(view: str) -> str:
@@ -806,8 +827,10 @@ def police_figure(svg: Svg, view: str) -> None:
         # Голова-груша с брылями между опущенными ушами ушанки, сверху плоская меховая ушанка.
         with svg.group(head_k):
             ushanka_flaps(svg)
-            soft_shape(svg, POLICE_HEAD, P_SKIN, [(176, 168, 52, 50, P_SKIN_HI), (252, 236, 44, 34, P_SKIN_LO),
-                                                  (146, 240, 34, 28, P_SKIN_LO)])
+            soft_shape(svg, POLICE_HEAD, P_SKIN, [(184, 176, 40, 30, P_SKIN_HI), (258, 238, 34, 34, P_SKIN_LO),
+                                                  (142, 240, 30, 30, P_SKIN_LO), (200, 284, 96, 16, P_SKIN_LO),
+                                                  (156, 247, 14, 5, P_SKIN_HI), (200, 253, 13, 5, P_SKIN_HI),
+                                                  (244, 247, 14, 5, P_SKIN_HI)])
             police_face(svg)
             ushanka_front(svg)
     elif view == "back":
@@ -860,9 +883,9 @@ def police_figure(svg: Svg, view: str) -> None:
             soft_shape(svg, head, P_SKIN, [(240, 170, 50, 60, P_SKIN_HI), (176, 236, 40, 30, P_SKIN_LO)])
             svg.path("M246,182 Q254,176 262,182 Q254,188 246,182 Z", "#FFFFFF", INK, FACE * 0.8)
             svg.ellipse(257, 182, 2.6, 2.6, INK, None)
-            svg.path("M236,170 Q252,166 268,172", "none", INK, FACE * 2.0)
+            svg.path("M238,168 Q252,169 266,176", "none", INK, FACE * 2.2)
             svg.path("M276,186 C290,194 298,206 292,214 C286,218 278,214 276,208", P_SKIN, INK, FACE)   # нос
-            svg.path("M258,214 C270,210 286,214 292,222 C280,228 262,226 258,214 Z", INK, INK, FACE * 0.8)   # усы
+            brush_moustache(svg, 262, 290, 212, 222)                                          # усы-щётка
             svg.path("M262,238 Q276,234 286,240", width=FACE)
             svg.path("M206,214 C214,236 230,248 248,246", width=FACE * 0.9)
             svg.path("M190,256 Q224,266 258,256", width=FACE * 0.8)
@@ -872,6 +895,7 @@ def police_figure(svg: Svg, view: str) -> None:
 # «Военком» (e03): высокий и худой; голова ≈0,22 роста, лицо узкое и длинное ≈0,10 роста, длинная тонкая шея
 # с кадыком, фуражка с высокой тульей и красным околышем; двубортная буро-оливковая шинель без ремня, красные
 # погоны без знаков, папка-планшет у груди. Холст: верх тульи y=16, подбородок y=147, ступни y=590.
+# Сутулость (e03): голова на шее вынесена вперёд и опущена — сдвиг O_STOOP_* всей головы с фуражкой.
 OFFICER_FACE = ("M172,62 C170,80 170,98 172,112 C174,128 184,146 200,147 C216,146 226,128 228,112 "
                 "C230,98 230,80 228,62 Z")
 OFFICER_BODY = ("M186,166 C170,168 152,172 142,182 C134,194 132,214 132,240 C130,320 124,420 118,508 "
@@ -879,6 +903,9 @@ OFFICER_BODY = ("M186,166 C170,168 152,172 142,182 C134,194 132,214 132,240 C130
 O_TUFT = ("M176,56 C164,56 154,60 147,68 L157,71 C150,77 146,85 145,94 L155,90 C155,97 157,103 161,108 "
           "L167,99 L170,104 L174,90 Z")      # вихры седых волос в стороны из-под околыша
 O_EAR = "M174,80 C165,74 157,80 158,91 C159,102 166,107 174,103"
+O_STOOP_FRONT = (3, 7)     # в фас голова ниже и чуть в сторону взгляда
+O_STOOP_SIDE = (10, 7)     # в профиль голова вперёд, шея наклонена, спина горбится
+O_STOOP_BACK = (0, 7)
 
 
 def officer_cap(svg: Svg, view: str) -> None:
@@ -907,9 +934,9 @@ def officer_face(svg: Svg) -> None:
         svg.path(f"M{x + 9 * s},79 Q{x + 2 * s},75 {x - 5 * s},71.5", "none", INK, FACE * 1.7)   # бровь «домиком»
     svg.path("M177,98 C178,110 181,120 184,128 M223,98 C222,110 219,120 216,128", width=FACE * 0.8)   # впалые щёки
     svg.path("M175,96 Q179,94 183,97 M225,96 Q221,94 217,97", width=FACE * 0.6)                   # скулы
-    # Рот с зубами между концами усов, складка подбородка.
-    svg.path("M191,138 C196,136 204,136 209,138 C206,143 194,143 191,138 Z", INK, INK, FACE * 0.6)
-    svg.path("M193.5,138.2 L206.5,138.2 L205.5,140 L194.5,140 Z", "#F4F0E2", None)
+    # Рот — кривая гримаса между концами усов (без зубов), уголки вниз, складка подбородка.
+    svg.path("M191,139.5 C195,136.8 201,136.6 209,139 C204,140.6 196,141 191,139.5 Z", INK, INK, FACE * 0.7)
+    svg.path("M191,139.5 L188.5,143 M209,139 L211.5,142.5", width=FACE * 0.8)
     svg.path("M194,144.5 Q200,146.5 206,144.5", width=FACE * 0.6)
     # Пышные седые усы-подкова шире носа: концы свисают вниз мимо рта.
     must = ("M200,119 C190,116 178,118 173,126 C169,133 170,141 174,146 C177,140 181,135 188,133 "
@@ -973,10 +1000,10 @@ def officer(view: str) -> str:
             svg.path(f"M{x0},{402} L{x1},{400} L{x1},{411} L{x0 + 1},{413} Z", O_COAT_LO, INK, THIN * 0.7)
         svg.path("M124,470 Q200,478 276,470", width=THIN * 0.5, extra=' opacity="0.4"')
         # Длинная тонкая шея с кадыком и жилами.
-        neck = "M192,132 C192,150 191,170 189,200 L211,200 C209,170 208,150 208,132 Z"
-        soft_shape(svg, neck, O_SKIN, [(206, 170, 6, 30, O_SKIN_LO)], LINE * 0.7)
-        svg.path("M196,166 C197,160 203,160 204,166", width=FACE * 0.8)                     # кадык
-        svg.path("M194,150 L197,190 M206,150 L203,190", width=FACE * 0.45, extra=' opacity="0.6"')
+        neck = "M195,139 C194,156 192,174 189,200 L211,200 C210,176 210,156 211,139 Z"
+        soft_shape(svg, neck, O_SKIN, [(207, 172, 6, 30, O_SKIN_LO)], LINE * 0.7)
+        svg.path("M197,170 C198,164 204,164 205,170", width=FACE * 0.8)                     # кадык
+        svg.path("M197,156 L198,192 M208,156 L204,192", width=FACE * 0.45, extra=' opacity="0.6"')
         # Лацканы с вырезом-«нотчем».
         lapel = "M187,166 C178,170 168,178 163,190 L175,197 L169,205 L200,242 C196,214 192,190 189,168 Z"
         for d in (lapel, mirror_d(lapel)):
@@ -995,16 +1022,17 @@ def officer(view: str) -> str:
             svg.path(f"M{222},{300 + k * 5} L{235},{296 + k * 5}", "none", INK, 5)
             svg.path(f"M{222},{300 + k * 5} L{235},{296 + k * 5}", "none", O_SKIN, 5 - LINE * 1.2)
         svg.ellipse(220, 307, 7.5, 8.5, O_SKIN, None)
-        # Голова: вихры, торчащие уши, узкое длинное лицо, фуражка.
-        for d in (O_TUFT, mirror_d(O_TUFT)):
-            soft_shape(svg, d, O_HAIR, [(160, 76, 8, 12, O_HAIR_HI)], FACE * 0.9)
-        for d in (O_EAR, mirror_d(O_EAR)):
-            svg.path(d, O_SKIN, INK, FACE * 0.9)
-        svg.path("M171,84 C166,86 165,94 169,98 M229,84 C234,86 235,94 231,98", width=FACE * 0.6)
-        soft_shape(svg, OFFICER_FACE, O_SKIN, [(186, 82, 16, 22, O_SKIN_HI), (180, 118, 9, 16, O_SKIN_LO),
-                                               (220, 118, 9, 16, O_SKIN_LO)], LINE * 0.9)
-        officer_face(svg)
-        officer_cap(svg, "front")
+        # Голова: вихры, торчащие уши, узкое длинное лицо, фуражка; опущена и вынесена вперёд (сутулость).
+        with svg.group("translate(%d,%d)" % O_STOOP_FRONT):
+            for d in (O_TUFT, mirror_d(O_TUFT)):
+                soft_shape(svg, d, O_HAIR, [(160, 76, 8, 12, O_HAIR_HI)], FACE * 0.9)
+            for d in (O_EAR, mirror_d(O_EAR)):
+                svg.path(d, O_SKIN, INK, FACE * 0.9)
+            svg.path("M171,84 C166,86 165,94 169,98 M229,84 C234,86 235,94 231,98", width=FACE * 0.6)
+            soft_shape(svg, OFFICER_FACE, O_SKIN, [(186, 82, 16, 22, O_SKIN_HI), (180, 118, 9, 16, O_SKIN_LO),
+                                                   (220, 118, 9, 16, O_SKIN_LO)], LINE * 0.9)
+            officer_face(svg)
+            officer_cap(svg, "front")
     elif view == "back":
         officer_boots(svg)
         soft_shape(svg, OFFICER_BODY, O_COAT, [(222, 270, 40, 100, O_COAT_HI), (130, 440, 22, 110, O_COAT_LO)])
@@ -1012,8 +1040,8 @@ def officer(view: str) -> str:
         svg.path("M200,390 L206,508", width=THIN * 0.6, extra=' opacity="0.6"')
         svg.path("M124,470 Q200,478 276,470", width=THIN * 0.5, extra=' opacity="0.4"')
         # Узкая шея между седым затылком и стоячим воротником.
-        soft_shape(svg, "M191,112 C191,130 191,150 190,174 L210,174 C209,150 209,130 209,112 Z", O_SKIN,
-                   [(204, 150, 6, 24, O_SKIN_LO)], LINE * 0.7)
+        soft_shape(svg, "M191,119 C191,136 191,154 190,174 L210,174 C209,154 209,136 209,119 Z", O_SKIN,
+                   [(204, 154, 6, 22, O_SKIN_LO)], LINE * 0.7)
         svg.path("M178,164 C190,159 210,159 222,164 L225,180 C212,175 188,175 175,180 Z", O_COAT_LO, INK, LINE * 0.8)
         for d in ("M142,186 L176,170 L180,181 L147,197 Z", mirror_d("M142,186 L176,170 L180,181 L147,197 Z")):
             svg.path(d, O_STRAP, INK, THIN * 0.8)
@@ -1021,23 +1049,31 @@ def officer(view: str) -> str:
         svg.path("M124,396 L148,396", width=THIN * 0.8)
         officer_hand_down(svg, 136, 414)
         tube(svg, "M252,192 C262,232 266,270 264,300", 30, O_COAT, O_COAT_LO)            # правая согнута вперёд
-        # Затылок — седая масса волос с вихрами, по бокам торчат уши.
-        for d in (O_TUFT, mirror_d(O_TUFT)):
-            soft_shape(svg, d, O_HAIR, [(160, 76, 8, 12, O_HAIR_HI)], FACE * 0.9)
-        nape = ("M170,60 C164,76 164,96 171,111 C176,120 184,124 190,122 L194,129 L199,122 L204,129 L209,122 "
-                "C217,124 225,119 229,111 C236,96 236,76 230,60 Z")
-        soft_shape(svg, nape, O_HAIR, [(190, 84, 18, 22, O_HAIR_HI)], FACE * 1.0)
-        for x in (184, 194, 206, 216):
-            svg.path(f"M{x},{72 + abs(x - 200) * 0.3:.0f} q{-2 if x < 200 else 2},10 0,20", width=FACE * 0.5)
-        for d in (O_EAR, mirror_d(O_EAR)):
-            svg.path(d, O_SKIN, INK, FACE * 0.9)
-        officer_cap(svg, "back")
+        # Затылок — седая масса волос: светлые и тёмные пряди, низ темнее; по бокам торчат уши.
+        with svg.group("translate(%d,%d)" % O_STOOP_BACK):
+            for d in (O_TUFT, mirror_d(O_TUFT)):
+                soft_shape(svg, d, O_HAIR, [(160, 76, 8, 12, O_HAIR_HI), (152, 98, 8, 10, O_HAIR_LO)], FACE * 0.9)
+            nape = ("M170,60 C164,76 164,96 171,111 C176,120 184,124 190,122 L194,129 L199,122 L204,129 L209,122 "
+                    "C217,124 225,119 229,111 C236,96 236,76 230,60 Z")
+            soft_shape(svg, nape, O_HAIR, [(190, 78, 16, 16, O_HAIR_HI), (200, 122, 40, 22, O_HAIR_LO, 0.45)],
+                       FACE * 1.0)
+            for i, x in enumerate((176, 184, 192, 200, 208, 216, 224)):
+                bend = -3 if x < 200 else 3 if x > 200 else 0
+                y0 = 66 + abs(x - 200) * 0.25
+                strand = f"M{x},{y0:.0f} q{bend},14 {bend * 0.3:.1f},{40 - abs(x - 200) * 0.35:.0f}"
+                if i % 2:
+                    svg.path(strand, "none", INK, FACE * 1.1)                              # тёмная прядь
+                else:
+                    svg.path(strand, "none", O_STRAND, FACE * 2.0)                        # светлая прядь
+            for d in (O_EAR, mirror_d(O_EAR)):
+                svg.path(d, O_SKIN, INK, FACE * 0.9)
+            officer_cap(svg, "back")
     else:  # side, лицом вправо
         svg.path("M192,506 L212,506 L212,552 L192,552 Z", O_PANTS, INK, LINE * 0.7)
         svg.path("M188,548 C184,574 194,592 212,592 L250,592 C266,592 268,576 254,566 C242,558 232,552 228,540 L192,540 Z",
                  O_BOOT, INK, LINE * 0.8)
-        body = ("M186,170 C172,174 164,190 162,214 C158,300 152,420 146,508 L262,508 C256,420 248,320 240,240 "
-                "C237,212 232,186 222,174 C214,168 196,166 186,170 Z")
+        body = ("M190,168 C170,170 156,184 154,212 C152,300 150,420 146,508 L262,508 C256,420 248,320 240,240 "
+                "C237,212 232,186 222,174 C214,168 200,166 190,168 Z")
         soft_shape(svg, body, O_COAT, [(216, 280, 20, 90, O_COAT_HI), (160, 440, 16, 110, O_COAT_LO)])
         svg.path("M232,236 C238,320 246,420 252,508", width=THIN * 0.8)                    # борт
         for y in (262, 302, 342, 382):
@@ -1045,9 +1081,9 @@ def officer(view: str) -> str:
             svg.ellipse(214 + (y - 262) * 0.04, y, 3.0, 3.0, BRASS, INK, THIN * 0.6)
         svg.path("M200,390 L196,508", width=THIN * 0.5, extra=' opacity="0.5"')
         # Шея наклонена вперёд, кадык спереди.
-        neck = "M196,134 C196,152 194,168 190,182 L218,182 C216,170 215,162 219,155 C220,150 217,145 214,138 Z"
-        soft_shape(svg, neck, O_SKIN, [(198, 160, 6, 22, O_SKIN_LO)], LINE * 0.7)
-        svg.path("M200,150 L202,178", width=FACE * 0.45, extra=' opacity="0.6"')
+        neck = "M205,140 C202,156 196,170 190,182 L218,182 C220,172 224,165 228,160 C230,154 227,149 224,145 Z"
+        soft_shape(svg, neck, O_SKIN, [(202, 164, 6, 20, O_SKIN_LO)], LINE * 0.7)
+        svg.path("M207,156 L203,178", width=FACE * 0.45, extra=' opacity="0.6"')
         svg.path("M218,170 C224,180 230,196 236,214 L227,218 L232,226 L240,240 C236,214 230,190 222,172 Z",
                  O_COAT, INK, LINE * 0.8)                                                    # лацкан
         svg.path("M180,174 L210,171 L212,182 L183,186 Z", O_STRAP, INK, THIN * 0.8)        # погон
@@ -1060,29 +1096,30 @@ def officer(view: str) -> str:
             svg.path(f"M240,{283 + k * 4} L251,{280 + k * 4}", "none", INK, 5)
             svg.path(f"M240,{283 + k * 4} L251,{280 + k * 4}", "none", O_SKIN, 5 - LINE * 1.2)
         svg.ellipse(240, 289, 7.5, 7.5, O_SKIN, None)
-        # Голова в профиль: седой затылок, ухо, узкое длинное лицо, «луковица» носа над висячими усами.
-        tuft = ("M182,58 C172,62 166,70 163,80 L171,82 C165,88 163,96 165,105 L173,101 C175,107 179,111 184,113 "
-                "L187,98 C189,84 191,72 196,60 Z")
-        soft_shape(svg, tuft, O_HAIR, [(176, 80, 8, 14, O_HAIR_HI)], FACE * 0.9)
-        head = ("M184,60 C180,74 180,92 184,106 C188,122 194,134 200,142 C206,148 214,151 219,147 "
-                "C224,141 225,132 225,122 C227,108 229,92 229,76 C229,68 228,62 226,60 Z")
-        soft_shape(svg, head, O_SKIN, [(216, 84, 10, 20, O_SKIN_HI), (206, 116, 8, 16, O_SKIN_LO)], LINE * 0.9)
-        svg.path("M199,82 C191,79 186,87 188,95 C190,103 196,105 200,101", O_SKIN, INK, FACE * 0.9)   # ухо
-        svg.path("M197,86 C193,88 193,95 196,98", width=FACE * 0.6)
-        svg.path("M216,87 Q220,83.5 224,87 Q220,89.5 216,87 Z", "#FFFFFF", INK, FACE * 0.7)
-        svg.ellipse(222, 87, 1.6, 1.6, INK, None)
-        svg.path("M215,85.5 Q220,81 225,85", width=FACE * 1.1)
-        svg.path("M213,79 Q219,75 227,72", "none", INK, FACE * 1.7)                        # бровь «домиком»
-        svg.path("M212,98 C209,110 209,120 211,128", width=FACE * 0.8)                     # впалая щека
-        svg.path("M219,141 Q223,142.5 227,140", width=FACE * 0.8)                         # рот
-        must = ("M230,118 C222,117 214,123 210,133 C208,139 209,145 212,149 C214,143 218,137 224,135 "
-                "C229,134 233,132 235,129 Z")
-        soft_shape(svg, must, O_HAIR, [(220, 126, 6, 5, O_HAIR_HI)], FACE * 0.9)
-        nose = ("M228,79 C233,89 236,97 239,104 C250,108 253,123 246,131 C241,136 233,136 229,131 "
-                "C225,126 226,119 229,114 C229,104 229,92 228,79 Z")
-        soft_shape(svg, nose, O_SKIN, [(240, 112, 6, 8, O_SKIN_HI), (240, 128, 8, 6, O_SKIN_LO)], FACE * 1.0)
-        svg.path("M233,129 Q236,127 239,129", width=FACE * 0.6)
-        officer_cap(svg, "side")
+        # Голова в профиль: седой затылок, ухо, узкое длинное лицо, «луковица» носа над висячими усами; вынесена вперёд.
+        with svg.group("translate(%d,%d)" % O_STOOP_SIDE):
+            tuft = ("M182,58 C172,62 166,70 163,80 L171,82 C165,88 163,96 165,105 L173,101 C175,107 179,111 184,113 "
+                    "L187,98 C189,84 191,72 196,60 Z")
+            soft_shape(svg, tuft, O_HAIR, [(176, 80, 8, 14, O_HAIR_HI)], FACE * 0.9)
+            head = ("M184,60 C180,74 180,92 184,106 C188,122 194,134 200,142 C206,148 214,151 219,147 "
+                    "C224,141 225,132 225,122 C227,108 229,92 229,76 C229,68 228,62 226,60 Z")
+            soft_shape(svg, head, O_SKIN, [(216, 84, 10, 20, O_SKIN_HI), (206, 116, 8, 16, O_SKIN_LO)], LINE * 0.9)
+            svg.path("M199,82 C191,79 186,87 188,95 C190,103 196,105 200,101", O_SKIN, INK, FACE * 0.9)   # ухо
+            svg.path("M197,86 C193,88 193,95 196,98", width=FACE * 0.6)
+            svg.path("M216,87 Q220,83.5 224,87 Q220,89.5 216,87 Z", "#FFFFFF", INK, FACE * 0.7)
+            svg.ellipse(222, 87, 1.6, 1.6, INK, None)
+            svg.path("M215,85.5 Q220,81 225,85", width=FACE * 1.1)
+            svg.path("M213,79 Q219,75 227,72", "none", INK, FACE * 1.7)                        # бровь «домиком»
+            svg.path("M212,98 C209,110 209,120 211,128", width=FACE * 0.8)                     # впалая щека
+            svg.path("M219,141 Q223,142.5 227,140", width=FACE * 0.8)                         # рот
+            must = ("M230,118 C222,117 214,123 210,133 C208,139 209,145 212,149 C214,143 218,137 224,135 "
+                    "C229,134 233,132 235,129 Z")
+            soft_shape(svg, must, O_HAIR, [(220, 126, 6, 5, O_HAIR_HI)], FACE * 0.9)
+            nose = ("M228,79 C233,89 236,97 239,104 C250,108 253,123 246,131 C241,136 233,136 229,131 "
+                    "C225,126 226,119 229,114 C229,104 229,92 228,79 Z")
+            soft_shape(svg, nose, O_SKIN, [(240, 112, 6, 8, O_SKIN_HI), (240, 128, 8, 6, O_SKIN_LO)], FACE * 1.0)
+            svg.path("M233,129 Q236,127 239,129", width=FACE * 0.6)
+            officer_cap(svg, "side")
     return svg.text()
 
 
