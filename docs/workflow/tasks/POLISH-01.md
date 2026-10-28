@@ -66,3 +66,17 @@
 - Цикл мотора, каши и фона двора задан в импорте (`edit/loop_mode=2`). `SoundDirector` больше не меняет общие ресурсы во время игры (`_make_loop` удалён). Проверки зацикливания теперь проверяют сам импорт.
 - `assets/README.md`: по строке на каждый из 12 звуковых файлов.
 - Проверка: `make test` — AUDIO 16/16, остальные наборы 0 failures (`builds/checks/polish01/p4-make-test.log`). В окне AUDIO 18/18, предупреждений нет (`menu-click-window.log`).
+
+## Утечка при выходе (28.10.2026)
+
+Владелец закрыл окно игры, и Godot написал «2 ObjectDB instances were leaked», «1 resources still in use». Воспроизведено в окне с `--verbose` (`tests/polish01_quit.gd`, режимы по одному):
+- утекают `AudioStreamWAV` и `AudioStreamPlaybackWAV` того звука, который в момент выхода стоит на паузе (фон двора при открытой паузе) или только что запущен (щелчок кнопки);
+- выход из меню, из мира без паузы, полный автопроход `demo_acceptance` — без утечки.
+
+Исправление в `game/main.gd`: выход по крестику окна (`auto_accept_quit = false`, `NOTIFICATION_WM_CLOSE_REQUEST`) и по кнопке «ВЫХОД» идёт через `quit_game()`, который сначала останавливает все `AudioStreamPlayer` и `AudioStreamPlayer3D`.
+
+Проверка:
+- после правки режимы pause, restart, click, close, menu_quit — код 0, утечек 0 (`builds/checks/polish01/quit-*.log`);
+- без остановки, но с ожиданием 150 мс при выходе — пауза снова даёт 6 строк об утечке;
+- без остановки и без ожидания утекают оба случая;
+- `make test` — 10 наборов, 0 failures (`quit-make-test.log`).

@@ -16,11 +16,12 @@ var ui_click: AudioStreamPlayer
 
 func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
+	get_tree().auto_accept_quit = false
 	InputSetup.install()
 	menu = MainMenu.new()
 	menu.name = "MainMenu"
 	menu.start_requested.connect(start_game)
-	menu.quit_requested.connect(func(): get_tree().quit())
+	menu.quit_requested.connect(quit_game)
 	add_child(menu)
 	pause_menu = PauseMenu.new()
 	pause_menu.name = "PauseMenu"
@@ -61,6 +62,19 @@ func _swap_world(new_game: bool) -> void:
 		set_paused(false)
 		menu.show()
 		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+
+func _notification(what: int) -> void:
+	if what == NOTIFICATION_WM_CLOSE_REQUEST:
+		quit_game()
+
+## Выход из игры: сначала остановить весь звук. Если выйти, когда звук на паузе или только
+## запущен (щелчок кнопки), Godot при выходе пишет «ObjectDB instances were leaked» про
+## AudioStreamWAV и AudioStreamPlayback (POLISH-01; замеры в карточке).
+func quit_game() -> void:
+	for type in ["AudioStreamPlayer", "AudioStreamPlayer3D"]:
+		for player in get_tree().root.find_children("*", type, true, false):
+			player.stop()
+	get_tree().quit()
 
 func reset_car() -> void:
 	if world:
