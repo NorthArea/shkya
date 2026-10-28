@@ -1,8 +1,8 @@
 extends SceneTree
 ## ARENA-01 T: транспорт кольца по контракту C8 на настоящей сцене main.tscn (набор TRAFFIC).
 ## Если интегратор ещё не подключил узел Traffic к LevelGeometry, тест добавляет его сам.
-## Проверки: путь — правая полоса RING со скруглением 6 м; старт — равномерно, ≥ 20 м от CAR_SPAWN, KIOSK_ZONE,
-## VAN_PARK; слои тел; путь каждого корпуса не входит в коробки Layout.all_solids(); за прогон все три машины
+## Проверки: путь — правая полоса RING со скруглением 6 м; старт — равномерно, ≥ 20 м от CAR_SPAWN, стоянки «Лады»
+## у киоска (конец ROUTE_DRIVE) и окна, VAN_PARK; слои тел; путь каждого корпуса не входит в коробки Layout.all_solids(); за прогон все три машины
 ## проходят полный круг, троллейбус стоит ≈6 с на обеих остановках со звуком дверей, отклонение от оси на
 ## прямых ≤ RING_LANE + 0,5, дистанция между своими ≥ 10 м; машина тормозит перед стоящей на полосе «Ладой» и
 ## не сдвигает её, троллейбус — перед Илюшей; после ухода препятствия едут дальше; на паузе транспорт стоит,
@@ -125,9 +125,11 @@ func _part_start() -> void:
 		var p := lane.position_at(offsets[i])
 		var name: String = traffic.vehicles[i].name
 		var d_car := _flat(p).distance_to(_flat(Layout.CAR_SPAWN))
-		var d_kiosk := _aabb_distance(Layout.KIOSK_ZONE, p)
+		# Киоск — стоянка «Лады» (конец ROUTE_DRIVE) и окно: KIOSK_ZONE после EXT-01 захватывает край улицы B
+		# у заезда на парковку, и полоса кольца идёт вдоль неё — мерить до коробки зоны стало бессмысленно.
+		var d_kiosk := minf(_flat(p).distance_to(_flat(Layout.ROUTE_DRIVE[-1])), _flat(p).distance_to(_flat(Layout.VENDOR_WINDOW)))
 		var d_van := _flat(p).distance_to(_flat(Layout.VAN_PARK))
-		check(d_car >= 20.0 and d_kiosk >= 20.0 and d_van >= 20.0, "%s starts at (%.1f, %.1f): CAR_SPAWN %.1f, KIOSK_ZONE %.1f, VAN_PARK %.1f m (≥ 20)" % [name, p.x, p.z, d_car, d_kiosk, d_van])
+		check(d_car >= 20.0 and d_kiosk >= 20.0 and d_van >= 20.0, "%s starts at (%.1f, %.1f): CAR_SPAWN %.1f, kiosk parking/window %.1f, VAN_PARK %.1f m (≥ 20)" % [name, p.x, p.z, d_car, d_kiosk, d_van])
 		var gap := fposmod(offsets[(i + 1) % offsets.size()] - offsets[i], lane.length)
 		check(absf(gap - step) < 0.01, "%s: next one %.1f m ahead (even spacing %.1f)" % [name, gap, step])
 	var stops: Array[float] = traffic.trolleybus.stop_offsets

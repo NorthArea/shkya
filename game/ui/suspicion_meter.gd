@@ -2,7 +2,7 @@ class_name SuspicionMeter
 extends Control
 ## Индикатор подозрения (EXT-01 S, референс e04): жёлтый глаз + «!» справа вверху в бумажном стиле HUD.
 ## Появляется, когда suspicion > 0, зрачок и «!» наливаются жёлтым по шкале, под глазом — полоска уровня.
-## При первом появлении — подсказка «Тебя заметили. Отойди, пока только смотрят» на HINT_SECONDS.
+## При первом появлении — подсказка «Тебя заметили. Отойди, пока это ни к чему не обязывает» на HINT_SECONDS.
 ## Экран провала: затемнение и «ВАШ МАРШРУТ УТОЧНЁН» (Tween), пока мир держит stealth_fail;
 ## затем тост stealth_toast («ВЫ ОСТАЛИСЬ ПЕШЕХОДОМ. ХЛЕБ ПРИ ВАС») из снимка HUD (C6/C7).
 ## Только читает снимок через update_from(); состояния стелса не хранит.
@@ -14,7 +14,7 @@ const PAPER_LIGHT := Color(0.99, 0.97, 0.90)
 const INK := Color(0.12, 0.10, 0.08)
 const YELLOW := Color(0.99, 0.82, 0.12)
 const RED := Color(0.72, 0.12, 0.10)
-const HINT_TEXT := "Тебя заметили. Отойди, пока только смотрят"
+const HINT_TEXT := "Тебя заметили. Отойди, пока это ни к чему не обязывает"
 const HINT_SECONDS := 3.0
 const FAIL_TEXT := "ВАШ МАРШРУТ УТОЧНЁН"
 const FAIL_FADE_IN := 0.35
@@ -123,7 +123,7 @@ func _build_hint() -> void:
 	hint_plate.add_theme_stylebox_override("panel", style)
 	hint_plate.anchor_left = 1.0
 	hint_plate.anchor_right = 1.0
-	hint_plate.offset_left = -560
+	hint_plate.offset_left = -800   # 760 px: подсказка из 42 знаков шрифтом 30 px обрезалась при 520 (приёмка EXT-01)
 	hint_plate.offset_right = -40
 	hint_plate.offset_top = 32 + PLATE_SIZE.y + 14
 	hint_plate.offset_bottom = hint_plate.offset_top + 64

@@ -126,7 +126,7 @@ func _step02_offer_and_blocking() -> void:
 	await _frames(120)
 	check(not flow.dialog.is_typing(), "02: offer line (%d chars) typed out within ~2 s" % QuestLines.OFFER.length())
 	check(flow.is_dialog_open() and mission.state == MissionDirector.OFFERED, "02: E opens the offer dialog, mission OFFERED")
-	check(flow.dialog.text_label.text == QuestLines.OFFER and QuestLines.OFFER.contains("Ничего не подписывай"), "02: Babka offer text '%s'" % flow.dialog.text_label.text)
+	check(flow.dialog.text_label.text == QuestLines.OFFER and QuestLines.OFFER.contains("Кто спросит — ты за хлебом"), "02: Babka offer text '%s'" % flow.dialog.text_label.text)
 	check(flow.dialog.line_count() == 1 and flow.dialog.is_last_line(), "02: offer is a single line with choices")
 	check(flow.dialog.buttons.has(&"accept") and flow.dialog.buttons[&"accept"].text == "ПРИНЯТЬ", "02: button ПРИНЯТЬ")
 	check(flow.dialog.buttons.has(&"decline") and flow.dialog.buttons[&"decline"].text == "ОТКАЗАТЬСЯ", "02: button ОТКАЗАТЬСЯ")
@@ -212,7 +212,7 @@ func _step_observers() -> void:
 	flow.dialog.finish_typing()
 	flow.dialog.buttons[&"next"].pressed.emit()
 	await _frames(2)
-	check(flow.dialog.line_index() == 2 and flow.dialog.is_last_line() and flow.dialog.text_label.text == "Так и запишем: без определённой цели", "ext officer: ДАЛЬШЕ shows the last line")
+	check(flow.dialog.line_index() == 2 and flow.dialog.is_last_line() and flow.dialog.text_label.text == "Так и запишем: хлеба при себе не имеет", "ext officer: ДАЛЬШЕ shows the last line")
 	check(flow.dialog.buttons.size() == 1 and flow.dialog.buttons[&"close"].text == "ПОЙДУ Я", "ext officer: exit button ПОЙДУ Я")
 	flow.dialog.finish_typing()
 	await _press_interact()
@@ -224,12 +224,12 @@ func _step_observers() -> void:
 	for variant in [&"ride_no", &"ride_near"]:
 		flow._on_interacted(player, &"account_officer")
 		await _frames(2)
-		check(flow.is_dialog_open() and flow.dialog.text_label.text == "Вас подвезти? Бесплатно. И совершенно добровольно" and flow.dialog.speaker_label.text == "СОТРУДНИК ГСУМ", "ext ride (%s): question" % variant)
+		check(flow.is_dialog_open() and flow.dialog.text_label.text == "Вас подвезти? Бесплатно. Куда — уточним по дороге" and flow.dialog.speaker_label.text == "СОТРУДНИК ГСУМ", "ext ride (%s): question" % variant)
 		check(flow.dialog.buttons.size() == 2 and flow.dialog.buttons[&"ride_no"].text == "НЕТ, СПАСИБО" and flow.dialog.buttons[&"ride_near"].text == "Я УЖЕ РЯДОМ", "ext ride (%s): two answers" % variant)
 		flow.dialog.finish_typing()
 		flow.dialog.buttons[variant].pressed.emit()
 		await _frames(2)
-		check(flow.is_dialog_open() and flow.dialog.text_label.text == "Понимаю. Отказы мы оформляем в салоне", "ext ride (%s): same reply to either answer" % variant)
+		check(flow.is_dialog_open() and flow.dialog.text_label.text == "Понимаю. Сначала все отвечают по-разному", "ext ride (%s): same reply to either answer" % variant)
 		check(flow.dialog.buttons.size() == 1 and flow.dialog.buttons.has(&"close"), "ext ride (%s): one exit button" % variant)
 		flow.dialog.buttons[&"close"].pressed.emit()
 		await _frames(3)
@@ -351,7 +351,7 @@ func _step10_complete() -> void:
 	# EXT-01, этап 9: сначала цепочка при возврате, сдача — кнопкой на последней реплике.
 	check(flow.is_dialog_open() and flow.dialog.line_count() == 4 and flow.dialog.text_label.text == "Ты где был? Я уже в окно глядела", "09: return chain opens with 'Ты где был?' ('%s')" % flow.dialog.text_label.text)
 	check(mission.state == MissionDirector.RETURN_HOME and mission.has_bread and flow.marker.text == "?", "09: no turn-in before the chain ends")
-	var expected_chain := [["ИЛЮША", "За хлебом"], ["БАБКА", "Подписывал что-нибудь?"], ["ИЛЮША", "Нет. Я же за хлебом"]]
+	var expected_chain := [["ИЛЮША", "За хлебом"], ["БАБКА", "Это ты им говори. Мне правду скажи"], ["ИЛЮША", "За хлебом"]]
 	for i in expected_chain.size():
 		flow.dialog.finish_typing()
 		flow.dialog.buttons[&"next"].pressed.emit()
@@ -592,12 +592,12 @@ func _real_car_pass() -> void:
 	await _frames(4)
 	check(world.control_mode == &"in_car" and mission.state == MissionDirector.RETURN_HOME, "real: re-entered the Lada, state stays RETURN_HOME")
 	check(flow.marker.text == "?" and flow.marker.visible, "real: ? above Babka while returning")
-	# Разворот: машина стоит у киоска носом на север. Пока курс не станет «на юг» (yaw PI), едем вперёд
-	# с полным рулём вправо по свободной части улицы Б (она 12 м шириной), потом возвращаемся по маршруту
-	# в обратном порядке настоящей ездой. Никаких телепортов машины.
-	var turned: bool = await driver.turn_to(PI, -1.0)
-	check(turned, "real: Lada turned around by steering at the kiosk")
-	var back: Array = Layout.ROUTE_DRIVE.slice(0, Layout.ROUTE_DRIVE.size() - 1)
+	# Разворот (EXT-01): машина стоит на парковке южнее павильона носом на запад-северо-запад. Разворот налево по
+	# свободному пустырю западнее тротуара и выезд через разрыв западного вала на улицу Б (Layout.ROUTE_LEAVE_KIOSK),
+	# потом — маршрут в обратном порядке без двух последних точек, настоящей ездой. Никаких телепортов машины.
+	var turned: bool = await driver.drive(Layout.ROUTE_LEAVE_KIOSK, 8.0, 3.0)
+	check(turned, "real: Lada turned around on the lot by the parking and left through the bank gap onto street B")
+	var back: Array = Layout.ROUTE_DRIVE.slice(0, Layout.ROUTE_DRIVE.size() - 2)
 	back.reverse()
 	var returned: bool = await driver.drive(back, 12.0, 6.0)
 	check(returned, "real: Lada drove back to the yard along the route in reverse order")

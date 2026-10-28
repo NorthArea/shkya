@@ -71,6 +71,11 @@ func _run() -> void:
 	var traffic := world.get_node_or_null("LevelGeometry/Traffic")
 	if traffic:
 		traffic.free()
+	# Жители (PEOPLE-01) — тоже движущиеся тела на слое Car: пробы _free (маска World|Car) считали бы их препятствиями
+	# и меняли выборку сценариев (интегратор 28.10: H10_NorthWest 2,4 м из-за жителя на маршруте 7). Свой набор — RESIDENTS.
+	var residents := world.get_node_or_null("LevelGeometry/Residents")
+	if residents:
+		residents.free()
 	_park_car_away(true)  # машина вне карты, чтобы не мешала пешеходу ни в одном сценарии
 	await _sweep_walk()
 	var scenarios := _scenarios()

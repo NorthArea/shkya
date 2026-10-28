@@ -222,7 +222,10 @@ func _pass_one() -> bool:
 	await _shot("06_arrive_kiosk", true)
 
 	# 07 — продавщица: цепочка реплик (EXT-01, этап 6) с «ДАЛЬШЕ», сначала УЙТИ, потом КУПИТЬ ХЛЕБ
-	if not check(1, await drv.walk_to(_vendor_stand()), "07: walked to the kiosk window (%s)" % drv.last_error):
+	# EXT-01, этап 4: от парковки к окну — честный путь «за остановкой» с ожиданием разворота полицейского.
+	if not check(1, await _sneak(Layout.SNEAK_EAST), "07: sneaked from the parking to the kiosk window behind the stop (%s)" % drv.last_error):
+		return false
+	if not check(1, w.stealth.detections == 0, "07: not detected on the way to the window (%d)" % w.stealth.detections):
 		return false
 	check(1, _hud_has(w, "E — ПОГОВОРИТЬ"), "07: prompt at the vendor")
 	await drv.interact()
@@ -273,16 +276,16 @@ func _pass_one() -> bool:
 	await _close_any_dialog(w)
 
 	# 09 — назад к машине и во двор
-	if not check(1, await drv.walk_to(_car_stand(w)), "09: walked back to the car (%s)" % drv.last_error):
+	# EXT-01, этап 8: обратно — между постом полицейского и автобусом ГСУМ, пока он смотрит на запад.
+	if not check(1, await _sneak(Layout.SNEAK_BACK) and await drv.walk_to(_car_stand(w)), "09: sneaked back to the car (%s)" % drv.last_error):
+		return false
+	if not check(1, w.stealth.detections == 0, "09: not detected on the way back (%d)" % w.stealth.detections):
 		return false
 	await _shot("08b_before_enter_kiosk", true)
 	await drv.interact()
 	await drv.frames(10)
 	check(1, w.control_mode == &"in_car" and m.state == &"RETURN_HOME", "09: in the car, still RETURN_HOME")
-	var back: Array = Layout.ROUTE_DRIVE.slice(0, Layout.ROUTE_DRIVE.size() - 1)
-	back.reverse()
-	back[back.size() - 1] = Layout.CAR_SPAWN + Vector3(3.0, 0, -6.0)
-	if not check(1, await drv.drive_path(back), "09: drove back to the yard (%s)" % drv.last_error):
+	if not check(1, await drv.drive_path(_back_route()), "09: drove back to the yard (%s)" % drv.last_error):
 		return false
 	await drv.brake()
 	await drv.interact()
@@ -299,7 +302,7 @@ func _pass_one() -> bool:
 	await drv.interact()
 	await drv.frames(10)
 	check(1, m.state == &"RETURN_HOME" and m.has_bread and _hud_has(w, "Ты где был? Я уже в окно глядела"), "09: E at Babka opens the return chain, no turn-in yet (got %s)" % m.state)
-	for line in ["За хлебом", "Подписывал что-нибудь?", "Нет. Я же за хлебом"]:
+	for line in ["За хлебом", "Это ты им говори. Мне правду скажи", "За хлебом"]:
 		await drv.frames(40)
 		if not check(1, await drv.press_button("ДАЛЬШЕ"), "09: ДАЛЬШЕ pressed before «%s» (%s)" % [line, drv.last_error]):
 			return false
@@ -360,7 +363,7 @@ func _pass_one() -> bool:
 	await drv.brake()
 	await drv.interact()
 	await drv.frames(15)
-	if not check(6, await drv.walk_to(_vendor_stand()), "after: walked to the kiosk window (%s)" % drv.last_error):
+	if not check(6, await _sneak(Layout.SNEAK_AGAIN), "after: sneaked to the kiosk window past the moved patrol (%s)" % drv.last_error):
 		return false
 	check(6, not _hud_has(w, "E — ПОГОВОРИТЬ"), "after: no vendor prompt after completion")
 	await drv.interact()
@@ -409,7 +412,7 @@ func _pass_two() -> void:
 	await drv.brake()
 	await drv.interact()
 	await drv.frames(15)
-	if not check(1, await drv.walk_to(_vendor_stand()), "no quest: walked to the window (%s)" % drv.last_error):
+	if not check(1, await _sneak(Layout.SNEAK_EAST), "no quest: sneaked to the window (%s)" % drv.last_error):
 		return
 	check(3, not _hud_has(w, "E — ПОГОВОРИТЬ"), "no quest: no vendor prompt without the quest")
 	await drv.interact()
@@ -418,14 +421,16 @@ func _pass_two() -> void:
 	await _close_any_dialog(w)
 	check(2, _babka_symbol(w) == "!", "no quest: ! still above Babka")
 	# Назад во двор и принять
-	if not check(1, await drv.walk_to(_car_stand(w)), "pass 2: back to the car (%s)" % drv.last_error):
+	# Обратно до покупки — путь «за остановкой» в обратную сторону, пока полицейский смотрит на запад.
+	var east_back: Array = Layout.SNEAK_EAST[2].slice(0, Layout.SNEAK_EAST[2].size() - 1)
+	east_back.reverse()
+	east_back.append(Layout.SNEAK_EAST[0][2])
+	if not check(1, await drv.wait_officer_turn(Layout.SNEAK_EAST[1]) and await drv.walk_path(east_back) and await drv.walk_to(_car_stand(w)), "pass 2: back to the car (%s)" % drv.last_error):
 		return
+	check(1, w.stealth.detections == 0, "pass 2: not detected at the kiosk (%d)" % w.stealth.detections)
 	await drv.interact()
 	await drv.frames(10)
-	var back: Array = Layout.ROUTE_DRIVE.slice(0, Layout.ROUTE_DRIVE.size() - 1)
-	back.reverse()
-	back[back.size() - 1] = Layout.CAR_SPAWN + Vector3(3.0, 0, -6.0)
-	if not check(1, await drv.drive_path(back), "pass 2: drove back to the yard (%s)" % drv.last_error):
+	if not check(1, await drv.drive_path(_back_route()), "pass 2: drove back to the yard (%s)" % drv.last_error):
 		return
 	await drv.brake()
 	await drv.interact()
@@ -589,6 +594,21 @@ func _babka_stand() -> Vector3:
 func _vendor_stand() -> Vector3:
 	return Layout.VENDOR_WINDOW + Vector3(0.6, 0.0, 0.0)
 
+## Честный путь у киоска (Layout.SNEAK_*): до укрытия, выждать разворот полицейского, дальше.
+func _sneak(route: Array) -> bool:
+	return await drv.sneak(route[0], route[1], route[2])
+
+## Отъезд с парковки киоска во двор: разворот по пустырю и выезд на улицу B (ROUTE_LEAVE_KIOSK), затем ROUTE_DRIVE
+## в обратном порядке без двух последних точек; конец — рядом со стоянкой во дворе.
+func _back_route() -> Array:
+	var back: Array = Layout.ROUTE_DRIVE.slice(0, Layout.ROUTE_DRIVE.size() - 2)
+	back.reverse()
+	back[back.size() - 1] = Layout.CAR_SPAWN + Vector3(3.0, 0, -6.0)
+	var out: Array = []
+	out.append_array(Layout.ROUTE_LEAVE_KIOSK)
+	out.append_array(back)
+	return out
+
 ## Встать сбоку от машины, с ближней к Илюше стороны.
 func _car_stand(w: DemoWorld) -> Vector3:
 	var best := Vector3.INF
@@ -698,7 +718,7 @@ func _can_walk(w: DemoWorld) -> bool:
 
 ## Закрыть открытую реплику (кнопка ЗАКРЫТЬ или УЙТИ), если она есть.
 func _close_any_dialog(w: DemoWorld) -> void:
-	for text in ["ЗАКРЫТЬ", "УЙТИ"]:
+	for text in ["ЗАКРЫТЬ", "ЛАДНО", "УЙТИ"]:
 		if _visible_button(w, text):
 			await drv.press_button(text)
 			await drv.frames(3)

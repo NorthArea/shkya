@@ -78,6 +78,7 @@ func _ready() -> void:
 	_build_instances()
 	add_child(Patrols.new())   # EXT-01 N: наблюдатели и автобус (точки — Layout, C1)
 	add_child(preload("res://game/world/traffic.gd").new())   # ARENA-01: транспорт кольца (C8)
+	add_child(preload("res://game/world/residents.gd").new())   # PEOPLE-01: жители города Н.
 
 func _exit_tree() -> void:
 	Materials.clear_cache()
@@ -423,7 +424,7 @@ func _garage_row(body: Node3D, name: String, size: Vector3) -> void:
 ## Граффити на воротах гаражного ряда улицы C (ARENA-01): мазки баллончиком под углом и короткие надписи,
 ## не на каждом боксе. Только вид, ряд вдоль x.
 const SPRAY := [Color(0.92, 0.30, 0.62), Color(0.55, 0.85, 0.20), Color(0.20, 0.70, 0.85), Color(0.95, 0.55, 0.12), Color(0.92, 0.92, 0.90)]
-const TAGS := ["НСК", "ЗИМА", "54", "ДИМА + ЛЕНА", "ШКЯ"]
+const TAGS := ["ГОРОД Н", "ЗИМА", "54", "ДИМА + ЛЕНА", "ШКЯ"]   # «НСК» убран ради «города Н.» (решение владельца 28.10, приёмка EXT-01)
 func _graffiti(body: Node3D, size: Vector3, count: int, unit: float, side: float) -> void:
 	var face := side * (size.z * 0.5 + 0.07)
 	for i in count:
@@ -1131,7 +1132,7 @@ func _build_bus_stop() -> void:
 		piece.position = part[1]
 		root.add_child(piece)
 	# EXT-01 (DIALOGUES_AND_JOKES «Надписи»): табличка под знаком остановки у киоска — «ОСТАНОВКА ПО ТРЕБОВАНИЮ»,
-	# мелко «НЕ ОБЯЗАТЕЛЬНО ВАШЕМУ». Это остановка, у которой встаёт микроавтобус ГСУМ (Layout.VAN_PATH[-1]).
+	# мелко «НЕ ОБЯЗАТЕЛЬНО ВАШЕМУ». Микроавтобус ГСУМ после покупки встаёт рядом, на площадке (Layout.VAN_PATH[-1]).
 	var plate := Greybox.mesh_box(Vector3(1.3, 0.42, 0.03), Color.WHITE)
 	plate.material_override = Materials.plain(Color(0.90, 0.90, 0.86), 0.6)
 	plate.position = Vector3(0.35, 0.62, 0)   # над знаком: ниже табличку закрывал бы павильон KioskPavilion

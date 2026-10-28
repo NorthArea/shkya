@@ -148,6 +148,38 @@ func walk_path(points: Array, tolerance := 0.6) -> bool:
 			return false
 	return true
 
+# --- стелс у киоска (EXT-01): автомат читает, куда смотрит полицейский, и выжидает за укрытием ---
+
+## Полицейский у киоска (LevelGeometry/Patrols/Officer) или null.
+func officer() -> Node3D:
+	var patrols := world().get_node_or_null("LevelGeometry/Patrols")
+	return patrols.officer if patrols else null
+
+## Дождаться, пока полицейский заново развернётся на угол facings[index] и встанет: если он уже смотрит туда,
+## сначала дождаться, пока отвернётся (осторожный игрок не знает, сколько ему осталось стоять). false — не дождался.
+func wait_officer_turn(index: int, max_frames := 1500) -> bool:
+	release_all()
+	var o := officer()
+	var waited := 0
+	while o.facing_index() == index and waited < max_frames:
+		await frames(1)
+		waited += 1
+	while (o.facing_index() != index or o.is_turning() or o.is_moving()) and waited < max_frames:
+		await frames(1)
+		waited += 1
+	if waited >= max_frames:
+		last_error = "officer never turned to facing %d" % index
+		return false
+	return true
+
+## Пройти укрытие → выждать разворот → пройти открытый участок. sneak: [[точки до укрытия], индекс угла, [точки после]].
+func sneak(to_cover: Array, safe_facing: int, after: Array) -> bool:
+	if not await walk_path(to_cover):
+		return false
+	if not await wait_officer_turn(safe_facing):
+		return false
+	return await walk_path(after)
+
 # --- езда: руль и газ по курсу на точку маршрута ---
 
 func forward_speed() -> float:

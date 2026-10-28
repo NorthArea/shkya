@@ -4,22 +4,26 @@ extends Node3D
 ## от «глаз» (y + 1,5) до центра Илюши (y + 0,9) по слою World (C2): стены, гаражи, павильоны укрывают,
 ## снег-декор без коллизий — нет. В машине Илюшу не видят (C4). Опрос раз в POLL_SECONDS, результат кэшируется;
 ## дальше ACTIVE_DISTANCE от Илюши сенсор не считает. Все сенсоры — в группе `detection_sensors`,
-## их опрашивает StealthDirector. Конус видимости — отладочный сектор, по умолчанию выключен.
+## их опрашивает StealthDirector. Сектор видимости на земле — по show_cone (полицейский, автобус ГСУМ), виден, пока
+## StealthDirector держит cone_wanted (Илюша пешком ближе CONE_DISTANCE). suspicion_cap — потолок шкалы от этого
+## сенсора: «учебный» наблюдатель (автобус на улице A, этап 3) зажигает индикатор, но не доводит до провала.
 
 const POLL_SECONDS := 0.15
 const ACTIVE_DISTANCE := 40.0
 const EYE_HEIGHT := 1.5
 const TARGET_HEIGHT := 0.9
 const WORLD_MASK := 1
-const CONE_COLOR := Color(1.0, 0.85, 0.12, 0.22)
+const CONE_COLOR := Color(1.0, 0.85, 0.12, 0.16)
 
 @export var range_m := 9.0
 @export var fov_deg := 75.0
 @export var enabled := true
-## Отладочный сектор видимости на земле. В игре выключен (STEALTH_DESIGN: конус не показывать постоянно).
+## Сектор видимости на земле. Показывается только при приближении (STEALTH_DESIGN: не постоянно) — см. cone_wanted.
 @export var show_cone := false
+## Потолок suspicion, до которого дорастает шкала, пока Илюшу видит только этот сенсор (1 — до провала).
+@export var suspicion_cap := 1.0
 
-## Выставляет StealthDirector: сектор рисуется только при suspicion > 0.
+## Выставляет StealthDirector: сектор рисуется, пока Илюша пешком ближе CONE_DISTANCE.
 var cone_wanted := false
 
 var _visible := 0.0
@@ -27,6 +31,7 @@ var _poll_left := 0.0
 ## Что перекрыло луч в последнем опросе (имя тела) — для тестов и настройки укрытий; "" — ничего.
 var last_blocker := ""
 var _cone: MeshInstance3D
+var _cone_shape := Vector2.ZERO   # (range_m, fov_deg), под которые построен сектор
 var _exclude: Array[RID] = []
 
 func _ready() -> void:
@@ -108,15 +113,19 @@ func _world() -> Node:
 
 func _update_cone() -> void:
 	var wanted := show_cone and cone_wanted and enabled
+	if wanted and _cone and _cone_shape != Vector2(range_m, fov_deg):
+		_cone.queue_free()   # дальность или угол сменились (автобус ГСУМ на стоянке и у киоска)
+		_cone = null
 	if wanted and _cone == null:
 		_cone = _build_cone()
+		_cone_shape = Vector2(range_m, fov_deg)
 		add_child(_cone)
 	if _cone:
 		_cone.visible = wanted
 
 func _build_cone() -> MeshInstance3D:
-	var half := deg_to_rad(fov_deg * 0.5)
-	var steps := 24
+	var half := deg_to_rad(minf(fov_deg, 360.0) * 0.5)
+	var steps := 48 if fov_deg > 180.0 else 24
 	var vertices := PackedVector3Array()
 	for i in steps:
 		var a0 := -half + 2.0 * half * i / steps

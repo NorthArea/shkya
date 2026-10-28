@@ -19,7 +19,8 @@ const HINT_NO_EXIT := "НЕТ МЕСТА, ЧТОБЫ ВЫЙТИ"
 const HINT_SECONDS := 2.0
 ## Стелс (C7, EXT-01): экран «ВАШ МАРШРУТ УТОЧНЁН» держится FAIL_SECONDS, затем респавн на чекпоинт и тост.
 const FAIL_SECONDS := 2.0
-const STEALTH_TOAST := "ВЫ ОСТАЛИСЬ ПЕШЕХОДОМ. ХЛЕБ ПРИ ВАС"
+const STEALTH_TOAST := "ВЫ ОСТАЛИСЬ ПЕШЕХОДОМ. ХЛЕБ ПРИ ВАС"            # после покупки (has_bread)
+const STEALTH_TOAST_NO_BREAD := "МАРШРУТ УТОЧНЁН: ВЫ ВСЁ ЕЩЁ ЗА ХЛЕБОМ"   # до покупки (канон расширения); приёмка P2 6
 const STEALTH_TOAST_SECONDS := 2.0
 
 var control_mode: StringName = &"on_foot"
@@ -245,5 +246,5 @@ func get_hud_state() -> Dictionary:
 		"suspicion": stealth.suspicion,
 		"stealth_state": stealth.state,
 		"stealth_fail": _fail_left > 0.0,
-		"stealth_toast": STEALTH_TOAST if _stealth_toast_left > 0.0 else "",
+		"stealth_toast": (STEALTH_TOAST if mission.has_bread else STEALTH_TOAST_NO_BREAD) if _stealth_toast_left > 0.0 else "",
 	}

@@ -66,7 +66,11 @@ func _check_layout(world: DemoWorld) -> void:
 		check(b.has_point(Vector2(p.x, p.z)) and is_zero_approx(p.y), "point %s inside bounds at ground level" % key)
 		var hit := _solid_at(p, 0.5)
 		check(hit == "", "point %s is not inside solid %s" % [key, hit])
-	check(Layout.KIOSK_ZONE.has_point(Layout.VENDOR_WINDOW + Vector3.UP), "vendor window is inside kiosk zone")
+	# EXT-01 (приёмка 28.10): парковка — южнее павильона, окно в KIOSK_ZONE не входит; пешком у окна прибытие
+	# засчитывает KIOSK_WINDOW_ZONE.
+	check(not Layout.KIOSK_ZONE.has_point(Layout.VENDOR_WINDOW + Vector3.UP), "vendor window is outside the parking zone KIOSK_ZONE")
+	check(Layout.KIOSK_WINDOW_ZONE.has_point(Layout.VENDOR_WINDOW + Vector3.UP), "vendor window is inside the on-foot KIOSK_WINDOW_ZONE")
+	check(Layout.VENDOR_WINDOW.distance_to(Layout.ROUTE_DRIVE[-1]) > 20.0, "kiosk parking is > 20 m from the window (%.1f m)" % Layout.VENDOR_WINDOW.distance_to(Layout.ROUTE_DRIVE[-1]))
 	check(Layout.KIOSK_ZONE.has_point(Layout.ROUTE_DRIVE[-1] + Vector3.UP), "drive route ends inside kiosk zone")
 	var drive := 0.0
 	for i in range(1, Layout.ROUTE_DRIVE.size()):
@@ -258,7 +262,7 @@ func _check_kiosk_zone(world: DemoWorld) -> void:
 	var zone = world.kiosk_zone
 	world.player.place(Layout.VENDOR_WINDOW, 0.0)
 	await _frames(3)
-	check(zone.is_occupied(), "KioskZone sees Ilyusha on foot")
+	check(zone.is_occupied(), "KioskZone sees Ilyusha on foot at the window")
 	world.player.place(Layout.SPAWN, 0.0)
 	await _frames(3)
 	check(not zone.is_occupied(), "KioskZone is empty when Ilyusha leaves")
@@ -274,6 +278,9 @@ func _check_kiosk_zone(world: DemoWorld) -> void:
 	world.add_child(probe)
 	await _frames(3)
 	check(zone.is_occupied(), "KioskZone sees a body on the Car layer")
+	probe.position = Layout.VENDOR_WINDOW + Vector3(1.0, 0.7, 0)
+	await _frames(3)
+	check(not zone.is_occupied(), "a car at the kiosk window is not an arrival (only the parking counts for the car)")
 	probe.queue_free()
 	await _frames(3)
 

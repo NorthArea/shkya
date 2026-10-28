@@ -2,7 +2,10 @@ extends Node3D
 ## Наблюдатели и автобус расширения «Ничего необычного» (EXT-01 N): полицейский у киоска (PatrolNpc, пост
 ## Layout.OFFICER_POST → OFFICER_POST_AFTER), «военком» у микроавтобуса (статичный NPC, Layout.ACCOUNT_OFFICER)
 ## и микроавтобус ГСУМ (CityVan: Layout.VAN_PARK → по VAN_PATH к остановке улицы B). Точки — только Layout (C1).
-## После mission.bread_received (C5) — этап 7: патруль сдвигается к выходу, автобус уезжает к остановке.
+## После mission.bread_received (C5) — этап 7: патруль сдвигается к выходу, автобус едет на площадку киоска.
+## Полицейский смотрит дальше канона (STEALTH_DESIGN: 9 м, 75°): OFFICER_RANGE/OFFICER_FOV — при 9 м проход у гаражей
+## (x ≈ 51, в 11 м от поста) не накрывался ни одним углом, а «в лоб» от парковки шкала не доходила до провала
+## (приёмка 28.10, P1; расчёт экспозиции путей — отчёт EXT-01 fix). Держит угол OFFICER_HOLD с.
 ## Подсказки зон E — из MissionDirector.prompt_for (C3); реплики подключает QuestFlow по id зон
 ## (&"officer", &"account_officer"). Узел создаёт LevelGeometry (ребёнок DemoWorld/LevelGeometry/Patrols);
 ## мир ищется вверх по дереву, как в DetectionSensor.
@@ -13,6 +16,9 @@ const PatrolNpcScript = preload("res://game/npc/patrol_npc.gd")
 const CityVanScript = preload("res://game/vehicles/city_van.gd")
 
 const PROMPT_TALK := "E — ПОГОВОРИТЬ"
+const OFFICER_RANGE := 12.0
+const OFFICER_FOV := 80.0
+const OFFICER_HOLD := Vector2(7.0, 9.0)   # с на угол: при 3–4 с осторожный честный проход занимал 14–15 с (норма участка 45–90 с)
 
 var officer: Node3D
 var account_officer: Node3D
@@ -32,8 +38,12 @@ func _ready() -> void:
 	officer.tint = Color(1.0, 1.0, 1.0)
 	officer.body_radius = 0.6
 	officer.facings = Layout.OFFICER_FACING
+	officer.sensor_range = OFFICER_RANGE
+	officer.sensor_fov = OFFICER_FOV
+	officer.turn_every = OFFICER_HOLD
 	officer.position = Layout.OFFICER_POST
 	add_child(officer)
+	officer.sensor.show_cone = true
 	account_officer = NpcScript.new()
 	account_officer.name = "AccountOfficer"
 	account_officer.interaction_id = &"account_officer"
@@ -77,7 +87,7 @@ func _physics_process(_delta: float) -> void:
 		zone.prompt = _mission.prompt_for(zone.interaction_id)
 		zone.enabled = zone.prompt != ""
 
-## Этап 7 (MISSION_EXTENSION): патруль ближе к выходу с площадки, автобус едет к остановке улицы B и ждёт.
+## Этап 7 (MISSION_EXTENSION): патруль ближе к выходу с площадки, автобус встаёт на площадке и ждёт.
 func _on_bread_received() -> void:
 	if _moved:
 		return
@@ -88,5 +98,5 @@ func _on_bread_received() -> void:
 ## Для тестов и перезапуска: вернуть всех на исходные места.
 func reset_positions() -> void:
 	_moved = false
-	officer.position = Layout.OFFICER_POST
+	officer.place_at(Layout.OFFICER_POST)
 	van.park(Layout.VAN_PARK, Layout.VAN_PARK_YAW)

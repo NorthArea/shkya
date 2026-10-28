@@ -75,8 +75,10 @@ func _run() -> void:
 	await _press_interact()
 	await _frames(10)
 
-	# 06: вышли у киоска, идём к продавщице
-	await _place(Layout.VENDOR_WINDOW + Vector3(3.0, 0, 1.5), PI * 0.5, PI * 0.5)
+	# 06: вышли на парковке южнее павильона остановки (EXT-01): камера на север — павильон, полицейский на посту,
+	# киоск с окном впереди; Илюша там, где его поставил выход из машины.
+	var exit_at: Vector3 = world.player.global_position
+	await _place(exit_at, 0.15, 0.15)
 	await _shot("06_arrive_kiosk")
 
 	# 07: диалог продавщицы — цепочка (EXT-01): кадр первой реплики, потом долистать до покупки

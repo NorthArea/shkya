@@ -345,11 +345,14 @@ const PORTRAIT_REGION := {
 	&"officer": Rect2(85, 50, 230, 230),
 	&"account_officer": Rect2(85, 50, 230, 230),
 }
+## Ключ портрета → имя рисунка: полицейский (зона &"officer") нарисован как police_*, сотрудник ГСУМ
+## (&"account_officer") — как officer_* (имена генератора EXT-01 N). Приёмка EXT-01, P2 4–5.
+const PORTRAIT_FILE := {&"officer": "police", &"account_officer": "officer"}
 
 func _draw_portrait() -> void:
 	var rect := Rect2(Vector2.ZERO, portrait.size)
 	portrait.draw_rect(rect, PAPER_DARK)
-	var path := "res://assets/art/characters/%s_front_idle.svg" % _portrait_kind
+	var path := "res://assets/art/characters/%s_front_idle.svg" % PORTRAIT_FILE.get(_portrait_kind, _portrait_kind)
 	var region: Rect2 = PORTRAIT_REGION.get(_portrait_kind, PORTRAIT_REGION[&"babka"])
 	if ResourceLoader.exists(path):
 		var texture: Texture2D = load(path)

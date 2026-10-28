@@ -4,10 +4,14 @@ extends AnimatableBody3D
 ## остекление, тёплый свет в салоне, открытая правая боковая дверь, надписи «БЕСПЛАТНЫЙ ПРОЕЗД» на боках и
 ## «МАРШРУТ УТОЧНЯЕТСЯ» сзади, номер региона 154 без реальных эмблем. Перед — −Z, правая сторона (дверь) — +X,
 ## начало — на земле. Тело — AnimatableBody3D на слое World (C2): укрытие для луча DetectionSensor, коллизия едет
-## вместе с кузовом. Дочерний DetectionSensor у двери (C7; STEALTH_DESIGN: 14 м, 80°) смотрит из двери наружу.
+## вместе с кузовом. Дочерний DetectionSensor у двери (C7) в двух режимах: на стоянке (park) — «учебный»
+## (этап 3: PARK_SENSOR_RANGE м во все стороны, потолок шкалы TUTORIAL_CAP — индикатор без провала); в пути выключен;
+## в конце пути — дверной (STEALTH_DESIGN: 14 м, 80°) из двери наружу. Сектор на земле — при приближении Илюши.
 ## Interactable «ГОРОДСКОЙ ТРАНСПОРТ (?)» — только подпись при приближении, без действия (MISSION_EXTENSION).
 ## drive(path, stop_yaw) — постановочный проезд по точкам (сглаженные повороты, SPEED м/с) и остановка в конце
-## носом по stop_yaw; без физики трафика (README расширения).
+## носом по stop_yaw; без физики трафика (README расширения). Впереди по пути — датчик, как у PathVehicle
+## (game/vehicles/path_vehicle.gd): «Лада», Илюша, транспорт кольца в SCAN_AHEAD м — торможение и ожидание, объезда нет;
+## перед шагом кузов на новом месте проверяется на касание — сквозь машины автобус не едет (приёмка 28.10, P2).
 
 const Materials = preload("res://game/world/materials.gd")
 const PAINT := preload("res://game/vehicles/lada_paint.gdshader")
@@ -25,6 +29,14 @@ const WHEEL_RADIUS := 0.36
 const DOOR_AT := Vector3(1.05, 0.0, 0.3)   # низ открытого дверного проёма, правый борт
 const SENSOR_RANGE := 14.0
 const SENSOR_FOV := 80.0
+const PARK_SENSOR_RANGE := 8.0    # этап 3: пешком у двери и по проезжей части рядом — индикатор
+const PARK_SENSOR_FOV := 360.0
+const TUTORIAL_CAP := 0.6         # на стоянке улицы A шкала дорастает до 0,6 и стоит — провала нет
+const SCAN_AHEAD := 7.0           # м от переднего бампера
+const SCAN_STEP := 1.0
+const STOP_MARGIN := 2.5          # м: встаёт, когда препятствие в 2,5–3,5 м от бампера
+const EMERGENCY_DECEL := 9.0
+const OBSTACLE_MASK := 1 | 2 | 4  # World (транспорт кольца), Player, Car
 
 var sensor: Node3D
 var interactable: Interactable
@@ -35,6 +47,10 @@ var _speed := 0.0
 var _stop_yaw := 0.0
 var _driving := false
 var _wheels: Array[MeshInstance3D] = []
+var _scan_query := PhysicsShapeQueryParameters3D.new()
+var _body_query := PhysicsShapeQueryParameters3D.new()
+## Что держит автобус в последнем кадре (null — ничего) — для тестов.
+var blocked_by: Object = null
 
 func _ready() -> void:
 	collision_layer = 1
@@ -55,7 +71,18 @@ func _ready() -> void:
 	sensor.fov_deg = SENSOR_FOV
 	sensor.position = DOOR_AT
 	sensor.rotation.y = -PI * 0.5   # −Z сенсора → +X: из двери наружу
+	sensor.show_cone = true
 	add_child(sensor)
+	var scan_box := BoxShape3D.new()
+	scan_box.size = Vector3(SIZE.x + 0.3, 1.8, SCAN_STEP)
+	_scan_query.shape = scan_box
+	_scan_query.collision_mask = OBSTACLE_MASK
+	_scan_query.exclude = [get_rid()]
+	var body_box := BoxShape3D.new()
+	body_box.size = Vector3(SIZE.x + 0.1, 1.8, SIZE.z + 0.1)
+	_body_query.shape = body_box
+	_body_query.collision_mask = OBSTACLE_MASK
+	_body_query.exclude = [get_rid()]
 	interactable = InteractableScript.new()
 	interactable.name = "Interactable"
 	interactable.interaction_id = &"city_van"
@@ -69,6 +96,7 @@ func park(point: Vector3, yaw: float) -> void:
 	global_transform = Transform3D(Basis(Vector3.UP, yaw), Vector3(point.x, 0.0, point.z))
 	_driving = false
 	_curve = null
+	_sensor_mode(PARK_SENSOR_RANGE, PARK_SENSOR_FOV, TUTORIAL_CAP)
 
 ## Проехать по точкам (первая — где стоит сейчас) и встать в конце носом по stop_yaw.
 func drive(path: Array, stop_yaw: float) -> void:
@@ -97,6 +125,14 @@ func drive(path: Array, stop_yaw: float) -> void:
 	_speed = 0.0
 	_stop_yaw = stop_yaw
 	_driving = true
+	sensor.enabled = false   # в пути не смотрит; дверной режим — на месте
+
+## Режим сенсора двери: дальность, угол, потолок шкалы; включает сенсор.
+func _sensor_mode(range_m: float, fov: float, cap: float) -> void:
+	sensor.range_m = range_m
+	sensor.fov_deg = fov
+	sensor.suspicion_cap = cap
+	sensor.enabled = true
 
 func is_driving() -> bool:
 	return _driving
@@ -109,11 +145,18 @@ func _physics_process(delta: float) -> void:
 	# Тормозной путь v²/2a: перед концом сбрасываем, иначе набираем до SPEED.
 	var allowed := sqrt(maxf(2.0 * ACCEL * left, 0.0))
 	var target := minf(SPEED, allowed)
-	if _speed < target:
+	var obstacle := _obstacle_limit(length)
+	if obstacle < target:
+		_speed = maxf(_speed - EMERGENCY_DECEL * delta, obstacle)
+	elif _speed < target:
 		_speed = minf(_speed + ACCEL * delta, target)
 	else:
 		_speed = maxf(_speed - ACCEL * 1.5 * delta, target)
-	_offset = minf(_offset + _speed * delta, length)
+	var next := minf(_offset + _speed * delta, length)
+	if next > _offset and not _free_at(next, length):
+		_speed = 0.0   # кузов на новом месте задел бы машину или Илюшу — стоим
+		return
+	_offset = next
 	var at := _curve.sample_baked(_offset, true)
 	var ahead := _curve.sample_baked(minf(_offset + 0.6, length), true)
 	var behind := _curve.sample_baked(maxf(_offset - 0.6, 0.0), true)
@@ -132,6 +175,53 @@ func _physics_process(delta: float) -> void:
 		global_transform = Transform3D(Basis(Vector3.UP, _stop_yaw), Vector3(at.x, 0.0, at.z))
 		_driving = false
 		_speed = 0.0
+		_sensor_mode(SENSOR_RANGE, SENSOR_FOV, 1.0)
+
+## Предел скорости по датчику впереди: коробки шириной кузова + 0,3 м вдоль пути от бампера на SCAN_AHEAD.
+func _obstacle_limit(length: float) -> float:
+	var space := get_world_3d().direct_space_state
+	blocked_by = null
+	for k in int(round(SCAN_AHEAD / SCAN_STEP)):
+		var at := _offset + SIZE.z * 0.5 + SCAN_STEP * (k + 0.5)
+		if at > length + SIZE.z * 0.5:
+			break
+		_scan_query.transform = _transform_at(at, length, 1.1)
+		for result in space.intersect_shape(_scan_query, 8):
+			if _is_obstacle(result["collider"]):
+				blocked_by = result["collider"]
+				return sqrt(2.0 * EMERGENCY_DECEL * maxf(SCAN_STEP * k - STOP_MARGIN, 0.0))
+	return INF
+
+## Кузов на смещении at никого подвижного не задевает.
+func _free_at(at: float, length: float) -> bool:
+	_body_query.transform = _transform_at(at, length, 0.95)
+	for result in get_world_3d().direct_space_state.intersect_shape(_body_query, 8):
+		if _is_obstacle(result["collider"]):
+			blocked_by = result["collider"]
+			return false
+	return true
+
+## Положение на кривой со смещением at (за концом — продолжение по последнему направлению), на высоте y.
+func _transform_at(at: float, length: float, y: float) -> Transform3D:
+	var clamped := clampf(at, 0.0, length)
+	var p := _curve.sample_baked(clamped, true)
+	var ahead := _curve.sample_baked(minf(clamped + 0.6, length), true)
+	var behind := _curve.sample_baked(maxf(clamped - 0.6, 0.0), true)
+	var dir := ahead - behind
+	dir.y = 0.0
+	if dir.length() < 0.01:
+		dir = -global_basis.z
+	dir = dir.normalized()
+	p += dir * (at - clamped)
+	return Transform3D(Basis(Vector3.UP, atan2(-dir.x, -dir.z)), Vector3(p.x, y, p.z))
+
+## Препятствие — любой корпус, кроме неподвижной застройки и NPC (StaticBody3D, не AnimatableBody3D).
+static func _is_obstacle(body: Object) -> bool:
+	if body == null:
+		return false
+	if body is StaticBody3D and not (body is AnimatableBody3D):
+		return false
+	return true
 
 # --- облик (по e02: кабина со скошенным капотом, окна по всему борту, открытая сдвижная дверь) ---
 
