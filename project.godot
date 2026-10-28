@@ -26,3 +26,7 @@ environment/defaults/default_clear_color=Color(0.16, 0.18, 0.21, 1)
 
 [physics]
 common/physics_interpolation=true
+
+[gui]
+
+theme/custom_font="res://assets/fonts/Pangolin-Regular.ttf"
