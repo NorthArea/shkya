@@ -13,6 +13,7 @@ uniform float window_width = 1.4;
 uniform float window_height = 1.45;
 uniform float ground_floor_shops = 0.0;   // 1 — первый этаж витринами
 uniform float seed = 0.0;
+uniform float seams = 1.0;   // 0 — оштукатуренный дом без швов панелей (И7)
 uniform vec3 frame_color : source_color = vec3(0.82, 0.83, 0.82);   // белые рамы (сверка ART-04, P3)
 
 varying vec3 world_pos;
@@ -42,7 +43,7 @@ void fragment() {
 		vec2 local = vec2(fract(u / window_spacing) * window_spacing, fract(v / floor_height) * floor_height);
 		vec3 color = wall_color * (0.92 + 0.12 * hash(cell * 0.37));
 		// Швы панелей.
-		float seam = step(local.x, 0.06) + step(local.y, 0.06);
+		float seam = (step(local.x, 0.06) + step(local.y, 0.06)) * seams;
 		color = mix(color, seam_color, clamp(seam, 0.0, 1.0));
 		// Грязь и сырость снизу.
 		color *= mix(0.55, 1.0, smoothstep(0.0, 1.6, v));

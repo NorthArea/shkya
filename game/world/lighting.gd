@@ -9,7 +9,9 @@ const Layout = preload("res://game/world/layout.gd")
 const WARM := Color(1.0, 0.74, 0.42)       # подъезд, окно киоска
 # Повторная сверка ART-05 (Н1): чистый (1,0; 0,50; 0,12) в смеси с голубым общим светом давал розово-сиреневое;
 # светлее и желтее, сильнее, а общий свет слабее — снег под фонарём уходит в оранжевый.
-const SODIUM := Color(1.0, 0.56, 0.18)     # уличные фонари
+# Итоговая сверка ART-05 (И1): цвет света Godot переводит из sRGB в линейный — G 0,56 становился ≈0,28,
+# и с голубым общим светом выходила маджента. Зелёного больше, синего меньше.
+const SODIUM := Color(1.0, 0.68, 0.12)     # уличные фонари
 const YARD_POOL := Color(1.0, 0.90, 0.78)  # пятно света на стоянке: белая «Лада» остаётся белой (Н3)
 const SnowShader = preload("res://game/world/shaders/wet_snow.gdshader")
 const SNOW_BOX := Vector3(32.0, 12.0, 32.0)      # объём хлопьев вокруг камеры
@@ -40,7 +42,7 @@ func _ready() -> void:
 	env.ssr_enabled = true
 	env.ssr_max_steps = 48
 	env.fog_enabled = true
-	env.fog_light_color = Color(0.33, 0.43, 0.54)
+	env.fog_light_color = Color(0.24, 0.30, 0.37)   # тот же оттенок, темнее: меньше синего в тёплом (И2)
 	env.fog_density = 0.0075
 	env.fog_sky_affect = 0.35
 	var world_env := WorldEnvironment.new()

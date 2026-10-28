@@ -93,6 +93,7 @@ const POPLARS: Array[Vector2] = [
 	Vector2(-95, 17), Vector2(-50, 17), Vector2(-5, 17), Vector2(20, 17), Vector2(40, 17), Vector2(90, 18),
 	Vector2(34, 50), Vector2(52, 51), Vector2(72, 50), Vector2(92, 51),
 	Vector2(-70, 102), Vector2(-64, 61), Vector2(-40, 62), Vector2(6, 104), Vector2(16, 90), Vector2(-28, 101),
+	Vector2(53, -46), Vector2(53, -54), Vector2(36, -68), Vector2(36, -82), Vector2(36, -96),   # улица B (И3)
 ]
 const POPLAR_TRUNK := Vector3(0.8, 10.0, 0.8)
 # Опоры контактной сети без фонаря там, где фонари пропущены (выезд со двора, площадка киоска):

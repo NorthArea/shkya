@@ -13,13 +13,13 @@ const SHOP_FRONTS := ["H5_North", "H6_West", "H8_East"]
 const GARAGE_DOOR_SIDE := {"Garages_Yard": -1.0, "Garages_Kiosk": 1.0}   # дверями к двору / к улице
 # Ворота гаражей: синие, жёлтые, бурые, ржавые, розовые, зелёные (сверка ART-04, черта 17).
 # Насыщеннее, чтобы в холодном сумеречном свете бурые и ржавые не уходили в серое (повторная сверка ART-05, Н2).
-const GARAGE_COLORS := [Color(0.18, 0.32, 0.58), Color(0.78, 0.58, 0.12), Color(0.48, 0.28, 0.14), Color(0.58, 0.24, 0.10),
-	Color(0.72, 0.40, 0.42), Color(0.20, 0.44, 0.28), Color(0.40, 0.42, 0.45)]
-const GARAGE_WALL := Color(0.42, 0.36, 0.33)   # кирпичные боксы
+const GARAGE_COLORS := [Color(0.18, 0.32, 0.58), Color(0.78, 0.58, 0.12), Color(0.50, 0.22, 0.10), Color(0.60, 0.20, 0.07),
+	Color(0.72, 0.40, 0.42), Color(0.24, 0.42, 0.14), Color(0.40, 0.42, 0.45)]   # бурые, ржавые, зелёные — по итоговой сверке (И2, И8)
+const GARAGE_WALL := Color(0.50, 0.30, 0.22)   # кирпичные боксы (И2)
 const CAR_COLORS := [Color(0.18, 0.22, 0.30), Color(0.55, 0.48, 0.36), Color(0.35, 0.12, 0.10), Color(0.70, 0.70, 0.66),
 	Color(0.22, 0.30, 0.22), Color(0.50, 0.18, 0.12)]
 const WARM := Color(1.0, 0.75, 0.42)           # подъезд и окна
-const SODIUM := Color(1.0, 0.56, 0.18)         # натриевые фонари, как в lighting.gd (повторная сверка ART-05, Н1)
+const SODIUM := Color(1.0, 0.68, 0.12)         # натриевые фонари, как в lighting.gd (итоговая сверка ART-05, И1)
 const CONCRETE := Color(0.50, 0.51, 0.52)
 # Лоджии: ограждения разного цвета, остекление разное у каждой (сверка ART-04, черты 1, 4).
 const PARAPET_COLORS := [Color(0.55, 0.56, 0.57), Color(0.66, 0.64, 0.58), Color(0.40, 0.45, 0.52), Color(0.58, 0.44, 0.38),
@@ -31,6 +31,7 @@ const ENTRANCE_WALL_Z := 107.98   # северный фасад H1 (центр 1
 const ENTRANCE_DOOR_X := -40.0    # дверь по центру козырька
 
 var _mound_mesh: SphereMesh       # одна сетка на все комки сугробов
+var _chunk_mesh: SphereMesh       # грубая сетка 8×4 для валов у дорог: грани читаются как рваный снег (И4)
 # Экземпляры MultiMesh, которые собираются со всего квартала и строятся одним вызовом в конце:
 # лоджии, рамы, стёкла, ветки. Тысячи деталей без тысяч узлов и draw call.
 var _concrete: Array[Transform3D] = []
@@ -177,7 +178,7 @@ func _build_entrance() -> void:
 	# (повторная сверка ART-05, Н7).
 	var post_material := Materials.plain(Color(0.30, 0.31, 0.33), 0.6)
 	for x in [canopy_center.x - canopy_size.x * 0.5 + 0.1, canopy_center.x + canopy_size.x * 0.5 - 0.1]:
-		_wires.append(_segment(Vector3(x, canopy_bottom - 1.1, z - 0.05), Vector3(x, canopy_bottom - 0.02, canopy_center.z - canopy_size.z * 0.5 + 0.3), 3.0))
+		_wires.append(_segment(Vector3(x, canopy_bottom - 0.6, z - 0.05), Vector3(x, canopy_bottom - 0.02, canopy_center.z - canopy_size.z * 0.5 + 0.3), 3.0))
 	# Две низкие бетонные ступени у двери и трубный поручень (сверка ART-04, черта 7). Без коллизий:
 	# ступени по 0,08 м, Илюша проходит к двери как раньше.
 	var step_material := Materials.plain(Color(0.46, 0.46, 0.45), 0.9)
@@ -251,14 +252,15 @@ func _lumpy_bank(size: Vector3, material: Material, seed: int) -> Node3D:
 		var r2 := fposmod(sin(float(seed * 17 + i) * 78.233) * 43758.5453, 1.0)
 		var h := 0.45 + 0.95 * r1
 		var lump_size := Vector3(step * (1.2 + 0.8 * r2), size.y * h, size.z * (0.8 + 0.35 * h)) if long_x else Vector3(size.x * (0.8 + 0.35 * h), size.y * h, step * (1.2 + 0.8 * r2))
-		var lump := _mound(lump_size, material)
+		var lump := _mound(lump_size, material, material == Materials.snow_bank())
+		lump.rotation = Vector3((r2 - 0.5) * 0.8, r1 * TAU, (r1 - 0.5) * 0.8) if material == Materials.snow_bank() else Vector3.ZERO
 		var offset := -length * 0.5 + step * (i + 0.5)
 		var jitter := (r2 - 0.5) * 0.3 * (size.z if long_x else size.x)
 		lump.position += Vector3(offset, -size.y * 0.5 + lump_size.y * 0.5, jitter) if long_x else Vector3(jitter, -size.y * 0.5 + lump_size.y * 0.5, offset)
 		root.add_child(lump)
 		if r1 > 0.35:
 			var chunk_size := Vector3(0.5 + 0.5 * r2, 0.35 + 0.3 * r1, 0.45 + 0.4 * r1)
-			var chunk := _mound(chunk_size, material)
+			var chunk := _mound(chunk_size, material, material == Materials.snow_bank())
 			var top := -size.y * 0.5 + lump_size.y * 0.85
 			var shift := offset + (r1 - 0.5) * step
 			chunk.position += Vector3(shift, top, -jitter) if long_x else Vector3(-jitter, top, shift)
@@ -267,15 +269,20 @@ func _lumpy_bank(size: Vector3, material: Material, seed: int) -> Node3D:
 	return root
 
 ## Округлый сугроб, вписанный в коллизионную коробку (центр коробки — начало координат).
-func _mound(size: Vector3, material: Material) -> MeshInstance3D:
+func _mound(size: Vector3, material: Material, rough := false) -> MeshInstance3D:
 	if _mound_mesh == null:
 		_mound_mesh = SphereMesh.new()
 		_mound_mesh.radius = 0.5
 		_mound_mesh.height = 1.0
 		_mound_mesh.radial_segments = 24
 		_mound_mesh.rings = 10
+		_chunk_mesh = SphereMesh.new()
+		_chunk_mesh.radius = 0.5
+		_chunk_mesh.height = 1.0
+		_chunk_mesh.radial_segments = 8
+		_chunk_mesh.rings = 4
 	var mesh := MeshInstance3D.new()
-	mesh.mesh = _mound_mesh
+	mesh.mesh = _chunk_mesh if rough else _mound_mesh
 	mesh.material_override = material
 	mesh.scale = Vector3(size.x * 1.05, size.y * 2.0, size.z * 1.05)
 	mesh.position.y = -size.y * 0.5

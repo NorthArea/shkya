@@ -31,10 +31,10 @@ void fragment() {
 	vec3 color = mix(clean, dirty, clamp(dirt + trodden * 0.35, 0.0, 1.0));
 	if (roadside > 0.5) {
 		// Брызги от колёс: чем ниже, тем темнее; поверх — бурые пятна и редкие чистые комья сверху.
-		float low = 1.0 - smoothstep(0.1, 1.0, world_pos.y + (noise(p * 2.3) - 0.5) * 0.45);
-		color = mix(color, dirty * vec3(1.0, 0.97, 0.92), 0.5);
+		float low = 1.0 - smoothstep(0.1, 1.4, world_pos.y + (noise(p * 2.3) - 0.5) * 0.45);
+		color = mix(color, dirty * vec3(1.0, 0.97, 0.92), 0.75);
 		color = mix(color, brown, smoothstep(0.45, 0.75, noise(p * 1.7 + 4.0)) * 0.7);
-		color = mix(color, grime, low * 0.9);
+		color = mix(color, grime, low);
 	}
 	ALBEDO = color;
 	ROUGHNESS = mix(0.85, 0.45, trodden * dirt);

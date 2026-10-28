@@ -16,9 +16,10 @@ const PANEL_PALETTES := [
 ]
 const LOW_PALETTES := [
 	# Насыщеннее: в холодном свете жёлтое уходило в оливковое, розовое — в серо-голубое (повторная сверка ART-05, Н2).
-	[Color(0.58, 0.28, 0.20), Color(0.44, 0.22, 0.17), Color(0.74, 0.68, 0.58)],   # красный кирпич
-	[Color(0.86, 0.66, 0.30), Color(0.66, 0.50, 0.24), Color(0.86, 0.82, 0.72)],   # жёлтая штукатурка
-	[Color(0.80, 0.52, 0.48), Color(0.62, 0.40, 0.37), Color(0.84, 0.80, 0.72)],   # розовая
+	# Итоговая сверка (И2): ещё теплее — в кадре жёлтое было серо-оливковым (G/R 1,13).
+	[Color(0.60, 0.24, 0.14), Color(0.46, 0.19, 0.12), Color(0.74, 0.68, 0.58)],   # красный кирпич
+	[Color(0.90, 0.58, 0.16), Color(0.70, 0.45, 0.13), Color(0.86, 0.82, 0.72)],   # жёлтая штукатурка
+	[Color(0.84, 0.46, 0.40), Color(0.65, 0.36, 0.31), Color(0.84, 0.80, 0.72)],   # розовая
 ]
 
 static var _cache := {}
@@ -37,6 +38,8 @@ static func facade(seed: float, low := false, shops := false) -> ShaderMaterial:
 		var palette: Array = _palette(seed, low)
 		m.set_shader_parameter("wall_color", palette[0])
 		m.set_shader_parameter("seam_color", palette[1])
+		if low and posmod(int(seed), LOW_PALETTES.size()) != 0:
+			m.set_shader_parameter("seams", 0.0)   # штукатурка — без швов (И7)
 		if low:
 			# Старый дом: этажи выше, окна уже.
 			m.set_shader_parameter("floor_height", 3.3)
