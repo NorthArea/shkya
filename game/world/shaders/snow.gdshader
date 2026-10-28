@@ -34,13 +34,13 @@ void fragment() {
 	if (roadside > 0.5) {
 		// Вал — светлый слежавшийся снег (POLISH-02, п. 4: был темнее дороги). Грязь от колёс — только в нижних
 		// 20–30 см с рваной кромкой, выше — редкие бурые брызги; сверху светлая шапка (ART-06, С1).
-		vec3 packed = mix(clean, dirty, 0.22 + dirt * 0.25);
+		vec3 packed = mix(clean, dirty, 0.32 + dirt * 0.25);   // проверка POLISH-02 B: вал/дорога ≈1,3, не 1,55
 		color = mix(packed, brown * 1.6, smoothstep(0.62, 0.85, noise(p * 2.1 + 4.0)) * 0.35 * (1.0 - smoothstep(0.3, 0.7, world_pos.y)));
 		float edge = 0.23 + (noise(p * 4.3 + world_pos.y) - 0.5) * 0.16;   // кромка грязи 0,15–0,31 м
 		float low = 1.0 - smoothstep(edge - 0.06, edge + 0.04, world_pos.y);
 		color = mix(color, mix(grime, brown, 0.35), low * 0.9);
 		float cap = smoothstep(0.45, 0.85, world_normal.y) * smoothstep(0.25, 0.6, world_pos.y);
-		color = mix(color, clean * 0.95, cap * 0.7);
+		color = mix(color, clean * 0.95, cap * 0.55);
 	}
 	ALBEDO = color;
 	ROUGHNESS = mix(0.85, 0.45, trodden * dirt);
