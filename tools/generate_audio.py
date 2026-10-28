@@ -24,12 +24,16 @@ def samples(seconds: float) -> int:
     return max(1, round(seconds * RATE))
 
 
-def lowpass(signal: list[float], cutoff: float) -> list[float]:
+def lowpass(signal: list[float], cutoff: float, stages: int = 1) -> list[float]:
+    """Однополюсный фильтр нижних частот; stages — сколько раз подряд (крутизна 6 дБ/окт на каждый)."""
     alpha = 1.0 - math.exp(-2.0 * math.pi * cutoff / RATE)
-    out, y = [], 0.0
-    for x in signal:
-        y += alpha * (x - y)
-        out.append(y)
+    out = signal
+    for _ in range(stages):
+        nxt, y = [], 0.0
+        for x in out:
+            y += alpha * (x - y)
+            nxt.append(y)
+        out = nxt
     return out
 
 
@@ -142,9 +146,11 @@ def yard_ambience() -> list[float]:
     """Двор зимним вечером: ветер, далёкий гул города, редкий далёкий сигнал. Цикл 10 с."""
     rng = random.Random(21)
     n = samples(11.0)
-    wind = lowpass([rng.uniform(-1, 1) for _ in range(n)], 500)
+    # Ветер и гул — шум через четыре однополюсных фильтра (24 дБ/окт). С одним фильтром (6 дБ/окт)
+    # оставалось шипение выше 2 кГц всего на 11 дБ тише фона — владелец слышал его постоянно (28.10).
+    wind = lowpass([rng.uniform(-1, 1) for _ in range(n)], 350, stages=4)
     gusts = lowpass([rng.uniform(-1, 1) for _ in range(n)], 0.4)
-    hum = lowpass([rng.uniform(-1, 1) for _ in range(n)], 120)
+    hum = lowpass([rng.uniform(-1, 1) for _ in range(n)], 120, stages=2)
     out = []
     for i in range(n):
         t = i / RATE
