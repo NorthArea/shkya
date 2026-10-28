@@ -36,7 +36,10 @@ var driver: Node3D
 var exit_requested := false
 var enter_zone: Interactable
 var lateral_speed := 0.0        # для тестов и звука заноса
+var braking := false            # тормоз или ручник с водителем — стоп-сигналы ярче (POLISH-02)
+var visual: Node3D
 var _steer_now := 0.0
+var _lights := -1
 
 func _ready() -> void:
 	collision_layer = 4  # Car
@@ -49,7 +52,9 @@ func _ready() -> void:
 	collider.shape = shape
 	collider.position.y = SIZE.y * 0.5
 	add_child(collider)
-	add_child(LadaVisual.build())  # облик белой «Лады» — ART-03
+	visual = LadaVisual.build()  # облик белой «Лады» — ART-03; водитель, фары и огни — POLISH-02
+	add_child(visual)
+	_update_lights()
 	var spray := SlushSpray.new()  # брызги каши из-под колёс — PLAY-03
 	spray.name = "SlushSpray"
 	add_child(spray)
@@ -99,6 +104,9 @@ func _physics_process(delta: float) -> void:
 			forward_speed = maxf(forward_speed + ACCELERATION * REVERSE_ACCEL * throttle * delta, -MAX_REVERSE)
 	else:
 		forward_speed = move_toward(forward_speed, 0.0, (ROLL_DRAG + AIR_DRAG * forward_speed * forward_speed) * delta)
+	braking = driver != null and (handbrake or (stopping and absf(forward_speed) > 0.5)
+		or (throttle < 0.0 and forward_speed > 0.5) or (throttle > 0.0 and forward_speed < -0.5))
+	_update_lights()
 	lateral *= exp(-(HANDBRAKE_GRIP if handbrake else GRIP) * delta)
 	lateral_speed = lateral.length()
 
@@ -125,15 +133,29 @@ func _unhandled_input(event: InputEvent) -> void:
 
 func enter(new_driver: Node3D) -> void:
 	driver = new_driver
+	LadaVisual.set_driver_visible(visual, true)
+	_update_lights()
 	driver_entered.emit(driver)
 
 func exit() -> Node3D:
 	var former := driver
 	driver = null
 	exit_requested = false
+	braking = false
+	LadaVisual.set_driver_visible(visual, false)
+	_update_lights()
 	if former:
 		driver_exited.emit(former)
 	return former
+
+## Фары и стоп-сигналы: без водителя погашены (задние тусклые), с водителем горят, при торможении ярче.
+func _update_lights() -> void:
+	var mode: int = LadaVisual.Lights.OFF
+	if driver:
+		mode = LadaVisual.Lights.BRAKE if braking else LadaVisual.Lights.ON
+	if mode != _lights:
+		_lights = mode
+		LadaVisual.set_lights(visual, mode)
 
 func speed_kmh() -> float:
 	return Vector2(velocity.x, velocity.z).length() * 3.6
