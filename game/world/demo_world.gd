@@ -5,6 +5,7 @@ extends Node3D
 
 const Layout = preload("res://game/world/layout.gd")
 const SnowTracks = preload("res://game/world/snow_tracks.gd")
+const StealthDirectorScript = preload("res://game/stealth/stealth_director.gd")
 
 const EXIT_OFFSETS: Array[Vector3] = [   # куда встаёт Илюша при выходе, в осях машины (−x — сторона водителя)
 	Vector3(-1.7, 0, 0), Vector3(1.7, 0, 0), Vector3(0, 0, 3.4), Vector3(0, 0, -3.4),
@@ -16,12 +17,20 @@ const RESET_CLEARANCE := 3.0
 const RESET_SHIFTS: Array[float] = [0.0, 4.5, -4.5, 9.0, -9.0, 13.5, -13.5]
 const HINT_NO_EXIT := "НЕТ МЕСТА, ЧТОБЫ ВЫЙТИ"
 const HINT_SECONDS := 2.0
+## Стелс (C7, EXT-01): экран «ВАШ МАРШРУТ УТОЧНЁН» держится FAIL_SECONDS, затем респавн на чекпоинт и тост.
+const FAIL_SECONDS := 2.0
+const STEALTH_TOAST := "МАРШРУТ УТОЧНЁН. ПОПРОБУЙТЕ ЕЩЁ РАЗ"
+const STEALTH_TOAST_SECONDS := 2.0
 
 var control_mode: StringName = &"on_foot"
 ## true, пока открыт диалог или панель: мышь видна и не захватывается по клику (выставляет QuestFlow).
 var ui_blocking := false
 var _hint := ""
 var _hint_left := 0.0
+## Владелец шкалы подозрения (C7); создаётся в _ready, узел «StealthDirector».
+var stealth: StealthDirector
+var _fail_left := 0.0
+var _stealth_toast_left := 0.0
 
 @onready var player: Ilyusha = $Ilyusha
 @onready var camera_rig: CameraRig = $CameraRig
@@ -30,6 +39,7 @@ var _hint_left := 0.0
 @onready var vendor: Node3D = $Vendor
 @onready var car: Lada = $Car
 @onready var kiosk_zone: Area3D = $KioskZone
+@onready var quest_flow: Node = $QuestFlow
 
 func _ready() -> void:
 	babka.position = Layout.BABKA
@@ -46,11 +56,22 @@ func _ready() -> void:
 	var tracks := SnowTracks.new()   # следы колёс и шагов на снегу — PLAY-03
 	tracks.name = "SnowTracks"
 	add_child(tracks)
+	stealth = StealthDirectorScript.new()
+	stealth.name = "StealthDirector"
+	add_child(stealth)
+	stealth.player_detected.connect(_on_player_detected)
 	_sync_prompts()
 
 func _physics_process(delta: float) -> void:
 	_sync_prompts()
 	_hint_left = maxf(_hint_left - delta, 0.0)
+	_stealth_toast_left = maxf(_stealth_toast_left - delta, 0.0)
+	# Заморозка шкалы на время диалога (C7); пауза — через process_mode, директор на ней не тикает.
+	stealth.set_frozen(quest_flow.is_dialog_open(), &"dialog")
+	if _fail_left > 0.0:
+		_fail_left -= delta
+		if _fail_left <= 0.0:
+			_finish_fail()
 
 ## Тексты и доступность зон E — только из MissionDirector (C3).
 func _sync_prompts() -> void:
@@ -158,6 +179,40 @@ func _car_spot_free(point: Vector3, yaw: float) -> bool:
 	query.transform = Transform3D(Basis(Vector3.UP, yaw), point + Vector3.UP * (Lada.SIZE.y * 0.5 + 0.1))
 	return get_world_3d().direct_space_state.intersect_shape(query, 1).is_empty()
 
+# --- C7: обнаружение и чекпоинт ---
+
+## Обнаружили: экран провала, ввод Илюши остановлен, шкала заморожена до респавна. В машине не видят,
+## поэтому сюда попадаем только пешком; если всё же в машине — ничего не делаем.
+func _on_player_detected() -> void:
+	if control_mode == &"in_car" or _fail_left > 0.0:
+		return
+	_fail_left = FAIL_SECONDS
+	stealth.set_frozen(true, &"fail")
+	player.input_enabled = false
+	player.velocity = Vector3.ZERO
+
+func _finish_fail() -> void:
+	_fail_left = 0.0
+	respawn_at_checkpoint()
+	stealth.notify_respawned()
+	stealth.set_frozen(false, &"fail")
+	if control_mode == &"on_foot" and not ui_blocking:
+		player.input_enabled = true
+	_stealth_toast_left = STEALTH_TOAST_SECONDS
+
+## Илюша на Layout.STEALTH_CHECKPOINT; машина и миссия не трогаются (C7). В машине не применяется.
+func respawn_at_checkpoint() -> bool:
+	if control_mode != &"on_foot":
+		return false
+	player.place(Layout.STEALTH_CHECKPOINT, Layout.STEALTH_CHECKPOINT_YAW)
+	camera_rig.yaw = Layout.STEALTH_CHECKPOINT_YAW
+	camera_rig.snap()
+	return true
+
+## Экран провала открыт (для HUD и тестов).
+func is_stealth_failing() -> bool:
+	return _fail_left > 0.0
+
 func anchor_position(id: StringName) -> Vector3:
 	match id:
 		&"babka": return babka.global_position
@@ -186,4 +241,9 @@ func get_hud_state() -> Dictionary:
 		"speed_kmh": car.speed_kmh() if control_mode == &"in_car" else -1.0,
 		"toast": $QuestFlow.toast_text(),
 		"complete": mission.state == MissionDirector.COMPLETE,
+		# C7: шкала подозрения, состояние, экран провала и тост после респавна.
+		"suspicion": stealth.suspicion,
+		"stealth_state": stealth.state,
+		"stealth_fail": _fail_left > 0.0,
+		"stealth_toast": STEALTH_TOAST if _stealth_toast_left > 0.0 else "",
 	}

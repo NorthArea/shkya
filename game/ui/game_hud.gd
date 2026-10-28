@@ -9,6 +9,7 @@ extends CanvasLayer
 
 const MinimapScript = preload("res://game/ui/minimap.gd")
 const DialogPanelScript = preload("res://game/ui/dialog_panel.gd")
+const SuspicionMeterScript = preload("res://game/ui/suspicion_meter.gd")
 
 const PAPER := Color(0.93, 0.87, 0.72)
 const INK := Color(0.12, 0.10, 0.08)
@@ -44,6 +45,8 @@ var completion_close: Button
 var prompt_plate: PanelContainer
 var end_panel: PanelContainer
 var end_buttons: Dictionary = {}  # id -> Button: &"again", &"menu", &"stay"
+## Стелс (EXT-01, C7): глаз + «!» справа вверху, подсказка, экран провала и тост — читает снимок мира.
+var suspicion_meter: SuspicionMeter
 
 signal completion_closed
 ## Карточка «Конец демо»: «ПОГУЛЯТЬ» — вернуть управление (QuestFlow), остальное — main.gd.
@@ -68,8 +71,10 @@ func _ready() -> void:
 	_build_toast()
 	_build_completion()
 	_build_end_card()
+	suspicion_meter = SuspicionMeterScript.new()
+	add_child(suspicion_meter)
 
-func _process(_delta: float) -> void:
+func _process(delta: float) -> void:
 	var world := get_parent()
 	if not world or not world.has_method("get_hud_state"):
 		return
@@ -109,6 +114,7 @@ func _process(_delta: float) -> void:
 		DialogPanelScript.pop(completion_panel, 0.5)
 	completion_panel.visible = show_completion
 	_update_map_and_diamond(world, state.get("target_position", null), speed >= 0.0)
+	suspicion_meter.update_from(state, delta)
 
 func dismiss_completion() -> void:
 	completion_dismissed = true
