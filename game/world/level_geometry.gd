@@ -79,6 +79,7 @@ func _ready() -> void:
 	add_child(Patrols.new())   # EXT-01 N: наблюдатели и автобус (точки — Layout, C1)
 	add_child(preload("res://game/world/traffic.gd").new())   # ARENA-01: транспорт кольца (C8)
 	add_child(preload("res://game/world/residents.gd").new())   # PEOPLE-01: жители города Н.
+	add_child(preload("res://game/stealth/hide_spots.gd").new())   # EXT-02: укрытия у киоска (C7а)
 
 func _exit_tree() -> void:
 	Materials.clear_cache()
