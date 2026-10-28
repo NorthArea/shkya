@@ -45,6 +45,9 @@ var permanent_exclusions: Array[RID] = []
 var shoulder := 0.0
 var _shoulder_now := 0.0
 const SHOULDER_SHARPNESS := 5.0
+## Пешком на время диалога (shoulder > 0) камера ближе: собеседник с 25–27 % высоты кадра становится ≈30 %,
+## как Бабка на концепте 03 (LOOK-01: кадры диалога builds/screenshots/LOOK-01/).
+const TALK_DISTANCE := 3.4
 func _ready() -> void:
 	arm = SpringArm3D.new()
 	arm.name = "Arm"
@@ -113,7 +116,10 @@ func _physics_process(delta: float) -> void:
 	if profile == &"in_car" and target is Lada:
 		fov += minf(FOV_PER_SPEED * (target as Lada).speed_kmh() / 3.6, FOV_SPEED_MAX)
 	camera.fov = lerpf(camera.fov, fov, 1.0 - exp(-FOV_SHARPNESS * delta))
-	arm.spring_length = lerpf(arm.spring_length, PROFILES[profile]["distance"], 1.0 - exp(-4.0 * delta))
+	var distance: float = PROFILES[profile]["distance"]
+	if shoulder > 0.0 and profile == &"on_foot":
+		distance = TALK_DISTANCE
+	arm.spring_length = lerpf(arm.spring_length, distance, 1.0 - exp(-4.0 * delta))
 	_shoulder_now = lerpf(_shoulder_now, shoulder, 1.0 - exp(-SHOULDER_SHARPNESS * delta))
 	rotation = Vector3(pitch, yaw, 0.0)
 

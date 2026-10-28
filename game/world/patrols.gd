@@ -34,7 +34,7 @@ func _ready() -> void:
 	officer.name = "Officer"
 	officer.interaction_id = &"officer"
 	officer.character = "police"
-	officer.height_m = 2.05
+	officer.height_m = 2.05   # фигура 0,861 холста = 1,77 м ≈ Илюша (1,80 м), как на e01 (LOOK-01)
 	officer.tint = Color(1.0, 1.0, 1.0)
 	officer.body_radius = 0.6
 	officer.facings = Layout.OFFICER_FACING
@@ -48,7 +48,7 @@ func _ready() -> void:
 	account_officer.name = "AccountOfficer"
 	account_officer.interaction_id = &"account_officer"
 	account_officer.character = "officer"
-	account_officer.height_m = 2.1
+	account_officer.height_m = 2.2   # фигура 0,948 холста = 2,09 м: в 1,18 раза выше полицейского (1,77 м), как на e03 (LOOK-01)
 	account_officer.tint = Color(1.0, 1.0, 1.0)
 	account_officer.body_radius = 0.45
 	account_officer.facing_yaw = Layout.ACCOUNT_OFFICER_YAW

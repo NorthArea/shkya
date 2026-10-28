@@ -8,17 +8,25 @@
 с одной светлой полосой, мелкие тонкие линии лица. Холст 400×600 условных единиц,
 ноги стоят на y=590, ось персонажа x=200. Ракурсы: front (лицом к камере), back, side
 (смотрит вправо; левый бок — зеркало в игре). Только стандартная библиотека Python.
+
+Контур для игры (LOOK-01): все чернильные линии толще в GAME_LINE_K раз — с игровой камеры персонаж занимает
+140–290 px по росту, и линия LINE 1,8 ед. выходила 0,35–0,95 px и пропадала. Трубки «чернила под цветом»
+(пальцы, карандаш, лямки) сохраняют ширину цветной части, толще только их кайма. Для листа — --line-k 1:
+  uv run tools/generate_characters.py --line-k 1 --out <каталог>
 """
 
 from __future__ import annotations
 
 import math
 import re
+import sys
 from pathlib import Path
 
 OUT = Path(__file__).resolve().parent.parent / "assets" / "art" / "characters"
 W, H = 400, 600
 SCALE = 2  # пиксели текстуры на единицу холста
+GAME_LINE_K = 2.0   # толщина чернил в игре к листу: 1,8 ед. → 3,6 ед. (LOOK-01; ≈0,7 % роста фигуры, как контур e03)
+TUBE_MIN = 3.0      # чернильный штрих от этой ширины — внешняя часть «трубки» (за ним тот же путь цветом)
 
 INK = "#141213"
 LINE = 1.8   # внешний контур тонкий, как в роликах V01/V02: ≈0,013 ширины лица (решение владельца 28.10.2026)
@@ -83,8 +91,44 @@ class Svg:
 
     def text(self) -> str:
         defs = f"<defs>{''.join(self.defs)}</defs>" if self.defs else ""
+        parts = thicken(self.parts, LINE_K)
         return (f'<svg xmlns="http://www.w3.org/2000/svg" width="{W * SCALE}" height="{H * SCALE}" '
-                f'viewBox="0 0 {W} {H}">{defs}{"".join(self.parts)}</svg>\n')
+                f'viewBox="0 0 {W} {H}">{defs}{"".join(parts)}</svg>\n')
+
+
+LINE_K = GAME_LINE_K
+_INK_W = re.compile(r'stroke="' + INK + r'" stroke-width="([0-9.]+)"')
+_PATH = re.compile(r'<path d="([^"]*)" fill="none" stroke="([^"]+)" stroke-width="([0-9.]+)"')
+
+
+def _fmt(w: float) -> str:
+    return f"{w:.3f}".rstrip("0").rstrip(".")
+
+
+def thicken(parts: list[str], k: float) -> list[str]:
+    """Чернила толще в k раз: тонкие штрихи INK (< TUBE_MIN) — умножением; «трубка» (INK ≥ TUBE_MIN и сразу за ней
+    тот же путь цветным штрихом уже) — цветная часть прежняя, кайма (внешняя − цветная)/2 в k раз шире."""
+    if k == 1.0:
+        return parts
+    out = list(parts)
+    i = 0
+    while i < len(out):
+        outer = _PATH.match(out[i])
+        if outer and outer.group(2) == INK and float(outer.group(3)) >= TUBE_MIN and i + 1 < len(out):
+            inner = _PATH.match(out[i + 1])
+            w_out = float(outer.group(3))
+            if inner and inner.group(1) == outer.group(1) and inner.group(2) != INK and float(inner.group(3)) < w_out:
+                w_in = float(inner.group(3))
+                rim = (w_out - w_in) / 2.0
+                out[i] = out[i].replace(f'stroke-width="{outer.group(3)}"', f'stroke-width="{_fmt(w_in + 2.0 * rim * k)}"', 1)
+                i += 2
+                continue
+        m = _INK_W.search(out[i])
+        if m and float(m.group(1)) < TUBE_MIN:
+            out[i] = _INK_W.sub(lambda g: f'stroke="{INK}" stroke-width="{_fmt(float(g.group(1)) * k)}"'
+                                if float(g.group(1)) < TUBE_MIN else g.group(0), out[i])
+        i += 1
+    return out
 
 
 class Group:
@@ -1828,6 +1872,12 @@ RESIDENTS = {"babka": resident_babka, "man": resident_man, "woman": resident_wom
 
 
 def main() -> None:
+    global LINE_K, OUT
+    args = sys.argv[1:]
+    if "--line-k" in args:
+        LINE_K = float(args[args.index("--line-k") + 1])
+    if "--out" in args:
+        OUT = Path(args[args.index("--out") + 1]).resolve()
     OUT.mkdir(parents=True, exist_ok=True)
     files: dict[str, str] = {}
     for view in ("front", "back", "side"):
@@ -1842,7 +1892,7 @@ def main() -> None:
             files[f"resident_{name}_{view}_idle.svg"] = draw(view)
     for name, text in files.items():
         (OUT / name).write_text(text, encoding="utf-8")
-    print(f"CHARACTERS: {len(files)} files -> {OUT}")
+    print(f"CHARACTERS: {len(files)} files, line k={LINE_K} -> {OUT}")
 
 
 if __name__ == "__main__":
