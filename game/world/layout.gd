@@ -138,7 +138,7 @@ const OFFICER_POST := Vector3(62.0, 0.0, -70.0)
 const OFFICER_POST_AFTER := Vector3(64.0, 0.0, -84.0)  # после покупки — ближе к выходу на площадку
 const OFFICER_FACING := [PI * 0.5, -PI * 0.5]     # поворот корпуса по таймеру: на восток и на запад
 # Укрытия у киоска — два честных пути: за павильоном остановки улицы B и через проход у гаражей.
-const KIOSK_PAVILION := [Vector2(66.5, -66), Vector3(1.6, 2.6, 4.0)]
+const KIOSK_PAVILION := [Vector2(62.5, -62), Vector3(1.6, 2.6, 4.0)]   # на тротуаре Walk_B_West, севернее KIOSK_ZONE; ROUTE_WALK (x = 66) свободен
 const KIOSK_BINS := [Vector2(52, -62), Vector3(1.2, 1.3, 3.0)]
 # Чекпоинт стелса: у парковки на площадке; после провала Илюша встаёт сюда, машина не трогается.
 const STEALTH_CHECKPOINT := Vector3(66.0, 0.0, -88.0)
