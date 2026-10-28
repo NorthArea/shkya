@@ -5,7 +5,7 @@ extends CharacterBody3D
 
 const CharacterSpriteScript = preload("res://game/characters/character_sprite.gd")
 
-const WALK_SPEED := 4.5
+const WALK_SPEED := 4.0         # 2,2 роста/с при фигуре 1,8 м, как у эталона (PLAY-02)
 const ACCELERATION := 30.0
 const DECELERATION := 11.0      # остановка за ~0,4 с, как у эталона (PLAY-01)
 const TURN_RATE := 12.0
@@ -70,7 +70,10 @@ func _physics_process(delta: float) -> void:
 		var facing := atan2(-direction.x, -direction.z)
 		visual.rotation.y = lerp_angle(visual.rotation.y, facing, clampf(TURN_RATE * delta, 0.0, 1.0))
 	if camera_rig and camera_rig.target == self:
-		camera_rig.follow_heading = visual.rotation.y
+		# Курс доводки — направление ввода, а не плавно поворачивающийся облик: иначе при ходьбе
+		# на камеру она рывком облетала героя (повторная сверка PLAY-02, P2).
+		if direction.length_squared() > 0.01:
+			camera_rig.follow_heading = atan2(-direction.x, -direction.z)
 		camera_rig.follow_speed = Vector2(velocity.x, velocity.z).length() if input_enabled else 0.0
 
 func _unhandled_input(event: InputEvent) -> void:

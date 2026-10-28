@@ -179,7 +179,8 @@ func _pass_one() -> bool:
 	check(1, not _hud_speed_visible(w), "midway: no speed gauge on foot")
 	await _shot("05b_exit_midway", true)
 	var away := w.player.global_position + (w.player.global_position - car.global_position).normalized() * 2.5
-	check(1, await drv.walk_to(away), "midway: walked away from the car (%s)" % drv.last_error)
+	# Точка выбрана вслепую и может лечь в вал у бордюра: отойти хотя бы на ~1,7 м (допуск 0,8).
+	check(1, await drv.walk_to(away, 0.8), "midway: walked away from the car (%s)" % drv.last_error)
 	if not check(1, await drv.walk_to(_car_stand(w)), "midway: walked back to the car (%s)" % drv.last_error):
 		return false
 	var n_before := transitions.size()

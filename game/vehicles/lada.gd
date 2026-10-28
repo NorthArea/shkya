@@ -18,8 +18,9 @@ const MAX_SPEED := 28.0         # м/с ≈ 100 км/ч
 const MAX_REVERSE := 10.0
 const ACCELERATION := 9.0       # м/с² с места; к максимуму спадает как 1 − (v/MAX_SPEED)²
 const REVERSE_ACCEL := 0.9      # доля ACCELERATION на заднем ходу
-const BRAKE := 16.0
+const BRAKE := 24.0             # 18→0 м/с за ~0,75 с, как у эталона (повторная сверка PLAY-02)
 const ROLL_DRAG := 2.0          # накат PLAY-01 P3 (1,2) не взят: машина катилась бы 145 м
+const AIR_DRAG := 0.004         # ·v²: на скорости накат короче (повторная сверка PLAY-02, P3)
 const HANDBRAKE := 8.0
 const HANDBRAKE_TURN := 1.4     # ручник докручивает машину
 const GRIP := 7.0               # мокрая дорога: боковая скорость гасится не мгновенно
@@ -93,7 +94,7 @@ func _physics_process(delta: float) -> void:
 		else:
 			forward_speed = maxf(forward_speed + ACCELERATION * REVERSE_ACCEL * throttle * delta, -MAX_REVERSE)
 	else:
-		forward_speed = move_toward(forward_speed, 0.0, ROLL_DRAG * delta)
+		forward_speed = move_toward(forward_speed, 0.0, (ROLL_DRAG + AIR_DRAG * forward_speed * forward_speed) * delta)
 	lateral *= exp(-(HANDBRAKE_GRIP if handbrake else GRIP) * delta)
 	lateral_speed = lateral.length()
 

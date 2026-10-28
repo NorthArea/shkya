@@ -187,6 +187,7 @@ func drive_path(points: Array, top_speed := 13.0, tolerance := 5.0, stop_at := C
 			turn = absf(Vector2(here.x, here.z).angle_to(Vector2(next.x, next.z)))
 		var tol := 2.5 if last else tolerance
 		var stuck := 0
+		var backups := 0
 		var frames_left := 3600
 		while true:
 			var to := target - car.global_position
@@ -203,6 +204,16 @@ func drive_path(points: Array, top_speed := 13.0, tolerance := 5.0, stop_at := C
 				return true
 			stuck = stuck + 1 if absf(forward_speed()) < 0.3 else 0
 			frames_left -= 1
+			# Упёрлись носом (разворот на узкой улице): сдать назад с обратным рулём, как игрок в три приёма
+			# (PLAY-02: радиус разворота по эталону шире улицы Б).
+			if stuck == 40 and backups < 4:
+				backups += 1
+				var error := wrapf(atan2(-to.x, -to.z) - car.global_rotation.y, -PI, PI)
+				for k in 70:
+					_axis(&"move_left", &"move_right", -signf(error))
+					_axis(&"move_forward", &"move_back", -1.0 if forward_speed() > -3.0 else 0.0)
+					await frames(1)
+				stuck = 0
 			if stuck > 180 or frames_left <= 0:
 				release_all()
 				last_error = "drive stuck at %s, %.1f m from point %d %s" % [car.global_position, distance, i, target]
