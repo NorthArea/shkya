@@ -7,6 +7,7 @@ const CharacterSpriteScript = preload("res://game/characters/character_sprite.gd
 
 const WALK_SPEED := 4.5
 const ACCELERATION := 30.0
+const DECELERATION := 11.0      # остановка за ~0,4 с, как у эталона (PLAY-01)
 const TURN_RATE := 12.0
 const PROBE_RADIUS := 0.5
 
@@ -14,6 +15,7 @@ var input_enabled := true
 var camera_rig: CameraRig
 var visual: Node3D
 var probe: Area3D
+var _last_input := Vector2.ZERO
 
 func _ready() -> void:
 	collision_layer = 2       # Player
@@ -48,9 +50,15 @@ func _physics_process(delta: float) -> void:
 	var input := Vector2.ZERO
 	if input_enabled:
 		input = Input.get_vector(&"move_left", &"move_right", &"move_forward", &"move_back")
-	var yaw := camera_rig.yaw if camera_rig else 0.0
+	# Курс ходьбы — от камеры на момент смены клавиш (CameraRig.input_yaw): автодоводка камеры
+	# не закручивает Илюшу, пока держишь те же клавиши (PLAY-02).
+	if camera_rig and not input.is_equal_approx(_last_input):
+		camera_rig.sync_input_yaw()
+	_last_input = input
+	var yaw := camera_rig.input_yaw if camera_rig else 0.0
 	var direction := Vector3(input.x, 0.0, input.y).rotated(Vector3.UP, yaw)
-	var horizontal := Vector3(velocity.x, 0.0, velocity.z).move_toward(direction * WALK_SPEED, ACCELERATION * delta)
+	var rate := ACCELERATION if direction.length_squared() > 0.01 else DECELERATION
+	var horizontal := Vector3(velocity.x, 0.0, velocity.z).move_toward(direction * WALK_SPEED, rate * delta)
 	velocity.x = horizontal.x
 	velocity.z = horizontal.z
 	if is_on_floor():
@@ -61,6 +69,9 @@ func _physics_process(delta: float) -> void:
 	if direction.length_squared() > 0.01:
 		var facing := atan2(-direction.x, -direction.z)
 		visual.rotation.y = lerp_angle(visual.rotation.y, facing, clampf(TURN_RATE * delta, 0.0, 1.0))
+	if camera_rig and camera_rig.target == self:
+		camera_rig.follow_heading = visual.rotation.y
+		camera_rig.follow_speed = Vector2(velocity.x, velocity.z).length() if input_enabled else 0.0
 
 func _unhandled_input(event: InputEvent) -> void:
 	if input_enabled and event.is_action_pressed(&"interact"):
@@ -96,6 +107,6 @@ func _build_visual() -> Node3D:
 	var look: CharacterSprite = CharacterSpriteScript.new()
 	look.name = "Look"
 	look.character = "ilyusha"
-	look.height_m = 2.4
+	look.height_m = 2.0   # фигура ≈1,8 м — чуть выше крыши «Лады», как в концепте 04 и у эталона (PLAY-01)
 	root.add_child(look)
 	return root

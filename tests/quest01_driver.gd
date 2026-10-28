@@ -74,16 +74,27 @@ func stop(max_frames := 600) -> bool:
 	return true
 
 ## Разворот на месте проезда: ехать вперёд с полным рулём, пока курс не станет ≈ target_yaw.
-## direction: +1 — влево, -1 — вправо.
+## Упёрлись в вал — сдать назад с обратным рулём и продолжить, как игрок в три приёма
+## (PLAY-02: радиус разворота по эталону шире улицы Б). direction: +1 — влево, -1 — вправо.
 func turn_to(target_yaw: float, direction: float, max_frames := 900) -> bool:
 	var frames := 0
+	var blocked := 0
 	while absf(wrapf(target_yaw - world.car.global_rotation.y, -PI, PI)) > 0.3:
+		if blocked > 20:
+			for i in 70:
+				_apply_steer(-direction)
+				_throttle(-1.0 if speed() > -3.0 else 0.0)
+				await tree.physics_frame
+			blocked = 0
+			frames += 70
 		_apply_steer(direction)
 		_throttle(1.0 if speed() < 4.0 else 0.0)
 		await tree.physics_frame
+		blocked = blocked + 1 if absf(speed()) < 0.3 else 0
 		frames += 1
 		if frames > max_frames:
 			release_all()
+			print("INFO: turn_to failed at %s, yaw %.2f, speed %.1f" % [world.car.global_position, world.car.global_rotation.y, speed()])
 			return false
 	release_all()
 	return true

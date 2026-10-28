@@ -8,6 +8,7 @@ extends Node
 const DialogPanelScript = preload("res://game/ui/dialog_panel.gd")
 
 const TOAST_SECONDS := 2.0
+const MARKER_Y := 2.62   # над шапкой Бабки: верх облика 2,07 м при height_m 2,17 (ART-01, PLAY-02)
 const DIALOG_SHOULDER := 1.3  # м: камера вбок на время диалога, собеседник виден из-за Илюши (кадр 07)
 const TOAST_TEXT := "ХЛЕБ +1"
 
@@ -59,7 +60,7 @@ func _process(delta: float) -> void:
 	marker.visible = symbol != ""
 	marker.text = symbol
 	_marker_time += delta
-	marker.position.y = 3.05 + sin(_marker_time * 3.0) * 0.08
+	marker.position.y = MARKER_Y + sin(_marker_time * 3.0) * 0.08
 
 func _physics_process(_delta: float) -> void:
 	# Прибытие: Илюша или машина на площадке киоска, пока миссия ждёт прибытия.
@@ -152,7 +153,7 @@ func _build_marker() -> void:
 	marker.outline_size = 24
 	marker.modulate = Color(1.0, 0.85, 0.1)
 	marker.outline_modulate = Color(0.12, 0.10, 0.08)
-	marker.position = Vector3(0, 3.05, 0)  # над шапкой Бабки (ART-01: верх облика 2,48 м)
+	marker.position = Vector3(0, MARKER_Y, 0)
 	marker.visible = false
 	world.get_node("Babka").add_child(marker)
 	thanks_bubble = Label3D.new()

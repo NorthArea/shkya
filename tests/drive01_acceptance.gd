@@ -132,7 +132,8 @@ func _drive_to(target: Vector3, final: bool, next: Vector3 = Vector3.INF) -> Dic
 		var delta := target - car.global_position
 		delta.y = 0.0
 		var distance := delta.length()
-		if distance < (3.0 if final else 5.0):
+		# Перед крутым поворотом руль — с 8 м, как срезает угол игрок (PLAY-02: радиус по эталону шире).
+		if distance < (3.0 if final else (8.0 if corner > 0.6 else 5.0)):
 			return {"ok": true, "top": top}
 		var forward := -car.global_basis.z
 		var error := forward.signed_angle_to(delta.normalized(), Vector3.UP)
@@ -141,7 +142,7 @@ func _drive_to(target: Vector3, final: bool, next: Vector3 = Vector3.INF) -> Dic
 		top = maxf(top, speed)
 		var wanted := 20.0 if absf(error) < 0.25 else 8.0
 		if corner > 0.6 and distance < 30.0:
-			wanted = minf(wanted, 9.0)  # тормозить перед поворотом, как игрок
+			wanted = minf(wanted, 7.0)  # тормозить перед поворотом, как игрок (PLAY-02: радиус по эталону шире)
 		if final:
 			wanted = minf(wanted, distance * 0.8 + 2.0)
 		Input.action_release(&"move_forward")

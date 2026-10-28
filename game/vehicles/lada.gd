@@ -12,23 +12,29 @@ const InteractableScript = preload("res://game/interaction/interactable.gd")
 const LadaVisual = preload("res://game/vehicles/lada_visual.gd")
 
 const SIZE := Vector3(1.7, 1.4, 4.1)
-const MAX_SPEED := 22.0         # м/с ≈ 80 км/ч
-const MAX_REVERSE := 6.0
-const ACCELERATION := 8.0
+## Темп по замеру эталона PLAY-01 (G02, G03): потолок 28 м/с ≈ 100 км/ч, разгон спадает к максимуму
+## (0→20 м/с ≈ 2,8 с, как у G02), радиусы поворота в метрах — как у G02 (PLAY-02).
+const MAX_SPEED := 28.0         # м/с ≈ 100 км/ч
+const MAX_REVERSE := 10.0
+const ACCELERATION := 9.0       # м/с² с места; к максимуму спадает как 1 − (v/MAX_SPEED)²
+const REVERSE_ACCEL := 0.9      # доля ACCELERATION на заднем ходу
 const BRAKE := 16.0
-const ROLL_DRAG := 2.0
-const HANDBRAKE := 9.0
+const ROLL_DRAG := 2.0          # накат PLAY-01 P3 (1,2) не взят: машина катилась бы 145 м
+const HANDBRAKE := 8.0
+const HANDBRAKE_TURN := 1.4     # ручник докручивает машину
 const GRIP := 7.0               # мокрая дорога: боковая скорость гасится не мгновенно
 const HANDBRAKE_GRIP := 1.2
-const TURN_RATE_LOW := 1.9      # рад/с на малой скорости
-const TURN_RATE_HIGH := 0.75    # рад/с на максимальной
-const TURN_FULL_AT := 5.0       # ниже этой скорости поворот слабеет до нуля
+const TURN_RATE_LOW := 1.3      # рад/с на малой скорости: радиус ниже TURN_FULL_AT = 7/1,3 ≈ 5,4 м = 1,3 длины, как у G02 в длинах машины
+const TURN_RATE_HIGH := 0.85    # рад/с на максимальной
+const TURN_FULL_AT := 7.0       # ниже этой скорости поворот слабеет до нуля
+const STEER_SHARPNESS := 10.0   # руль доходит до упора за ~0,2 с, а не мгновенно
 const EXIT_SPEED_KMH := 3.0     # быстрее этого водитель не выходит, машина сначала тормозит
 
 var driver: Node3D
 var exit_requested := false
 var enter_zone: Interactable
 var lateral_speed := 0.0        # для тестов и звука заноса
+var _steer_now := 0.0
 
 func _ready() -> void:
 	collision_layer = 4  # Car
@@ -45,7 +51,7 @@ func _ready() -> void:
 	enter_zone = InteractableScript.new()
 	enter_zone.name = "EnterZone"
 	enter_zone.interaction_id = &"car"
-	enter_zone.radius = 2.8
+	enter_zone.radius = 3.5   # ≈ длина машины, как у эталона (PLAY-01)
 	add_child(enter_zone)
 
 func _physics_process(delta: float) -> void:
@@ -61,9 +67,12 @@ func _physics_process(delta: float) -> void:
 	var forward := -global_basis.z
 	var forward_speed := old_velocity.dot(forward)
 
+	_steer_now = lerpf(_steer_now, steer, 1.0 - exp(-STEER_SHARPNESS * delta))
 	var speed_factor := clampf(absf(forward_speed) / TURN_FULL_AT, 0.0, 1.0)
 	var turn_rate := lerpf(TURN_RATE_LOW, TURN_RATE_HIGH, clampf(absf(forward_speed) / MAX_SPEED, 0.0, 1.0))
-	rotate_y(steer * turn_rate * speed_factor * signf(forward_speed) * delta)
+	if handbrake:
+		turn_rate *= HANDBRAKE_TURN
+	rotate_y(_steer_now * turn_rate * speed_factor * signf(forward_speed) * delta)
 
 	forward = -global_basis.z
 	forward_speed = old_velocity.dot(forward)
@@ -76,12 +85,13 @@ func _physics_process(delta: float) -> void:
 		if forward_speed < -0.5:
 			forward_speed = move_toward(forward_speed, 0.0, BRAKE * delta)
 		else:
-			forward_speed = minf(forward_speed + ACCELERATION * throttle * delta, MAX_SPEED)
+			var ratio := clampf(forward_speed / MAX_SPEED, 0.0, 1.0)
+			forward_speed = minf(forward_speed + ACCELERATION * throttle * (1.0 - ratio * ratio) * delta, MAX_SPEED)
 	elif throttle < 0.0:
 		if forward_speed > 0.5:
 			forward_speed = move_toward(forward_speed, 0.0, BRAKE * delta)
 		else:
-			forward_speed = maxf(forward_speed + ACCELERATION * 0.6 * throttle * delta, -MAX_REVERSE)
+			forward_speed = maxf(forward_speed + ACCELERATION * REVERSE_ACCEL * throttle * delta, -MAX_REVERSE)
 	else:
 		forward_speed = move_toward(forward_speed, 0.0, ROLL_DRAG * delta)
 	lateral *= exp(-(HANDBRAKE_GRIP if handbrake else GRIP) * delta)
@@ -128,5 +138,6 @@ func reset_to(point: Vector3, facing_yaw: float) -> void:
 	rotation = Vector3(0.0, facing_yaw, 0.0)
 	velocity = Vector3.ZERO
 	lateral_speed = 0.0
+	_steer_now = 0.0
 	exit_requested = false
 	reset_physics_interpolation()

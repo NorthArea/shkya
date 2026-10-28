@@ -7,7 +7,7 @@ const InteractableScript = preload("res://game/interaction/interactable.gd")
 
 @export var interaction_id: StringName
 @export var character := "babka"
-@export var height_m := 2.6  # Бабка крупнее Илюши (огромная голова, силуэт-гора — паспорт ART-01)
+@export var height_m := 2.17  # Бабка крупнее Илюши (паспорт ART-01); ×0,83 вместе с Илюшей (PLAY-02)
 @export var tint := Color(1.06, 1.02, 0.88)  # тёплее, как лицо и платье Бабки на концептах 02, 10
 @export var facing_yaw := 0.0  # поворот облика относительно узла (зона взаимодействия не поворачивается)
 @export var solid := true

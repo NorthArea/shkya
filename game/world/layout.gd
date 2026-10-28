@@ -105,7 +105,7 @@ const PARKED: Array = [
 	[Vector2(-56.5, 100), false], [Vector2(-60.5, 100.5), false], [Vector2(17, 80), false], [Vector2(17, 71.5), false],
 	[Vector2(-2, 103), false], [Vector2(-60, 27.0), true], [Vector2(-45, 27.0), true],
 	[Vector2(-75, 37.1), true], [Vector2(-50, 37.1), true],
-	[Vector2(73.9, -5), false], [Vector2(73.9, -55), false], [Vector2(73.9, -100), false],
+	[Vector2(73.9, -55), false], [Vector2(73.9, -100), false],   # сразу за углом A→B машин нет: туда выносит из поворота
 ]
 
 ## Уличные фонари вдоль тротуаров, с пропусками у переходов маршрута. [центр x/z].

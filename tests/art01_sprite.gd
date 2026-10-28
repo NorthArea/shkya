@@ -59,7 +59,8 @@ func _run() -> void:
 	check(idle_samples == 0, "walking never drops to the idle drawing between physics steps (idle samples: %d)" % idle_samples)
 	check(seen.has(0) and seen.has(1) and seen.has(2) and seen.has(3), "walking cycles through all four frames (seen %s)" % [seen.keys()])
 	check(look.sprite.texture in (look._walk[look.view] as Array), "walking shows a walk drawing")
-	await _physics(10)
+	# Илюша тормозит ~0,4 с (Ilyusha.DECELERATION, PLAY-02) и всё это время перебирает ногами; после — стойка.
+	await _physics(int(Engine.physics_ticks_per_second * 0.5))
 	check(look.frame == -1, "stopping returns to the idle drawing")
 	# Телепорт — не шаг.
 	world.player.place(Layout.SPAWN + Vector3(5, 0, 0), PI * 0.5)
