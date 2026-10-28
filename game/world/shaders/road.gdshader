@@ -29,8 +29,11 @@ void fragment() {
 	// читались издалека (ревью ART-02: раньше колеи сливались в тёмные пятна).
 	float lane = abs(across) - half_w * 0.5;
 	float wobble = noise(vec2(along * 0.15, across * 0.5));
-	float sway = (noise(vec2(along * 0.08, sign(across) * 3.0)) - 0.5) * 0.35;
-	float track = 1.0 - smoothstep(0.18, 0.36, abs(abs(lane + sway) - 0.8));
+	// Колеи виляют и меняют ширину, край размыт: не «дорожная разметка» (повторная сверка ART-05, Н5).
+	float sway = (noise(vec2(along * 0.08, sign(across) * 3.0)) - 0.5) * 0.7 + (noise(vec2(along * 0.5, across)) - 0.5) * 0.15;
+	float rut_w = 0.22 + 0.14 * noise(vec2(along * 0.3, across * 0.8 + 11.0));
+	float track = 1.0 - smoothstep(rut_w * 0.4, rut_w * 1.6, abs(abs(lane + sway) - 0.8));
+	track *= mix(0.6, 1.0, noise(vec2(along * 1.3, across * 2.0)));
 	// Каша: между колеями, по оси и у бордюров.
 	float edge = smoothstep(half_w - 2.2, half_w - 0.6, abs(across));
 	float mid = 1.0 - smoothstep(0.3, 1.2, abs(across));

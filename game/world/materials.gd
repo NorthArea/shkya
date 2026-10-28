@@ -15,9 +15,10 @@ const PANEL_PALETTES := [
 	[Color(0.30, 0.40, 0.50), Color(0.20, 0.27, 0.34), Color(0.70, 0.70, 0.68)],   # крашеная синяя
 ]
 const LOW_PALETTES := [
-	[Color(0.52, 0.32, 0.26), Color(0.40, 0.25, 0.21), Color(0.70, 0.66, 0.58)],   # красный кирпич
-	[Color(0.74, 0.64, 0.42), Color(0.58, 0.50, 0.33), Color(0.82, 0.80, 0.74)],   # жёлтая штукатурка
-	[Color(0.70, 0.56, 0.52), Color(0.55, 0.43, 0.40), Color(0.80, 0.78, 0.72)],   # розовая
+	# Насыщеннее: в холодном свете жёлтое уходило в оливковое, розовое — в серо-голубое (повторная сверка ART-05, Н2).
+	[Color(0.58, 0.28, 0.20), Color(0.44, 0.22, 0.17), Color(0.74, 0.68, 0.58)],   # красный кирпич
+	[Color(0.86, 0.66, 0.30), Color(0.66, 0.50, 0.24), Color(0.86, 0.82, 0.72)],   # жёлтая штукатурка
+	[Color(0.80, 0.52, 0.48), Color(0.62, 0.40, 0.37), Color(0.84, 0.80, 0.72)],   # розовая
 ]
 
 static var _cache := {}
@@ -68,6 +69,7 @@ static func instance_colored() -> StandardMaterial3D:
 	if not _cache.has("instance_colored"):
 		var m := StandardMaterial3D.new()
 		m.vertex_color_use_as_albedo = true
+		m.vertex_color_is_srgb = true   # цвета экземпляров заданы в sRGB (повторная сверка ART-05, Н8)
 		m.roughness = 0.85
 		_cache["instance_colored"] = m
 	return _cache["instance_colored"]

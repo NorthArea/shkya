@@ -7,8 +7,10 @@ extends Node3D
 const Layout = preload("res://game/world/layout.gd")
 
 const WARM := Color(1.0, 0.74, 0.42)       # подъезд, окно киоска
-const SODIUM := Color(1.0, 0.50, 0.12)     # уличные и дворовый фонари
-const YARD_POOL := Color(1.0, 0.80, 0.58)  # пятно света на стоянке «Лады»
+# Повторная сверка ART-05 (Н1): чистый (1,0; 0,50; 0,12) в смеси с голубым общим светом давал розово-сиреневое;
+# светлее и желтее, сильнее, а общий свет слабее — снег под фонарём уходит в оранжевый.
+const SODIUM := Color(1.0, 0.56, 0.18)     # уличные фонари
+const YARD_POOL := Color(1.0, 0.90, 0.78)  # пятно света на стоянке: белая «Лада» остаётся белой (Н3)
 const SnowShader = preload("res://game/world/shaders/wet_snow.gdshader")
 const SNOW_BOX := Vector3(32.0, 12.0, 32.0)      # объём хлопьев вокруг камеры
 const SNOW_AMOUNT := 3000
@@ -17,7 +19,7 @@ var snow: MultiMeshInstance3D
 
 func _ready() -> void:
 	var sky_material := ProceduralSkyMaterial.new()
-	sky_material.sky_top_color = Color(0.06, 0.12, 0.24)
+	sky_material.sky_top_color = Color(0.08, 0.12, 0.22)
 	sky_material.sky_horizon_color = Color(0.36, 0.47, 0.58)
 	sky_material.ground_bottom_color = Color(0.10, 0.11, 0.12)
 	sky_material.ground_horizon_color = Color(0.36, 0.47, 0.58)
@@ -28,7 +30,7 @@ func _ready() -> void:
 	env.background_mode = Environment.BG_SKY
 	env.sky = sky
 	env.ambient_light_source = Environment.AMBIENT_SOURCE_SKY
-	env.ambient_light_energy = 0.7
+	env.ambient_light_energy = 0.42
 	env.tonemap_mode = Environment.TONE_MAPPER_FILMIC
 	env.tonemap_exposure = 1.1
 	env.glow_enabled = true
@@ -49,7 +51,7 @@ func _ready() -> void:
 	var sky_light := DirectionalLight3D.new()
 	sky_light.name = "CoolSky"
 	sky_light.light_color = Color(0.62, 0.78, 1.0)
-	sky_light.light_energy = 0.35
+	sky_light.light_energy = 0.2   # голубой направленный свет с оранжевым давал сиреневое (повторная сверка ART-05, Н1)
 	sky_light.shadow_enabled = true
 	sky_light.rotation = Vector3(deg_to_rad(-55.0), deg_to_rad(30.0), 0.0)
 	add_child(sky_light)
@@ -62,11 +64,11 @@ func _ready() -> void:
 	# Светильник — на конце консоли, над проезжей частью (ART-05).
 	for p in Layout.street_lamps():
 		var tip: Vector2 = p + Layout.lamp_arm(p)
-		_lamp(Vector3(tip.x, Layout.POLE_HEIGHT - 0.8, tip.y), 6.5, index, SODIUM, 19.0)
+		_lamp(Vector3(tip.x, Layout.POLE_HEIGHT - 0.8, tip.y), 11.0, index, SODIUM, 19.0)
 		index += 1
 	# Контрастные пятна тёплого света на земле (раздел 2 канона): стоянка «Лады» под дворовым фонарём и площадка у окна киоска.
 	# Пятно у стоянки — мягче натриевого: под ним белая «Лада» должна оставаться белой (канон, раздел 2).
-	_pool(Layout.LAMPS[1][0] + Vector3(0.0, -0.3, 0.0), 4.0, 40.0, 12.0, YARD_POOL)
+	_pool(Layout.LAMPS[1][0] + Vector3(0.0, -0.3, 0.0), 3.0, 40.0, 12.0, YARD_POOL)   # Н6: Илюша не сливается с пятном
 	_pool(Layout.LAMPS[2][0] + Vector3(0.6, 0.3, 0.0), 5.0, 55.0, 7.0, WARM)
 	_build_snow()
 

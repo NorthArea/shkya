@@ -12,13 +12,14 @@ const WALL_THICKNESS := 2.0
 const SHOP_FRONTS := ["H5_North", "H6_West", "H8_East"]
 const GARAGE_DOOR_SIDE := {"Garages_Yard": -1.0, "Garages_Kiosk": 1.0}   # дверями к двору / к улице
 # Ворота гаражей: синие, жёлтые, бурые, ржавые, розовые, зелёные (сверка ART-04, черта 17).
-const GARAGE_COLORS := [Color(0.20, 0.32, 0.52), Color(0.68, 0.56, 0.20), Color(0.40, 0.30, 0.22), Color(0.46, 0.26, 0.15),
-	Color(0.62, 0.44, 0.44), Color(0.24, 0.40, 0.30), Color(0.40, 0.42, 0.45)]
+# Насыщеннее, чтобы в холодном сумеречном свете бурые и ржавые не уходили в серое (повторная сверка ART-05, Н2).
+const GARAGE_COLORS := [Color(0.18, 0.32, 0.58), Color(0.78, 0.58, 0.12), Color(0.48, 0.28, 0.14), Color(0.58, 0.24, 0.10),
+	Color(0.72, 0.40, 0.42), Color(0.20, 0.44, 0.28), Color(0.40, 0.42, 0.45)]
 const GARAGE_WALL := Color(0.42, 0.36, 0.33)   # кирпичные боксы
 const CAR_COLORS := [Color(0.18, 0.22, 0.30), Color(0.55, 0.48, 0.36), Color(0.35, 0.12, 0.10), Color(0.70, 0.70, 0.66),
 	Color(0.22, 0.30, 0.22), Color(0.50, 0.18, 0.12)]
 const WARM := Color(1.0, 0.75, 0.42)           # подъезд и окна
-const SODIUM := Color(1.0, 0.55, 0.16)         # натриевые фонари (сверка ART-04: снег под фонарём #cb6312)
+const SODIUM := Color(1.0, 0.56, 0.18)         # натриевые фонари, как в lighting.gd (повторная сверка ART-05, Н1)
 const CONCRETE := Color(0.50, 0.51, 0.52)
 # Лоджии: ограждения разного цвета, остекление разное у каждой (сверка ART-04, черты 1, 4).
 const PARAPET_COLORS := [Color(0.55, 0.56, 0.57), Color(0.66, 0.64, 0.58), Color(0.40, 0.45, 0.52), Color(0.58, 0.44, 0.38),
@@ -172,13 +173,11 @@ func _build_entrance() -> void:
 	lamp.position = Vector3(ENTRANCE_DOOR_X, canopy_bottom - 0.3, z - 0.16)
 	root.add_child(lamp)
 	_part(root, Vector3(0.06, 0.06, 0.12), Vector3(ENTRANCE_DOOR_X, canopy_bottom - 0.3, z - 0.05), Materials.plain(Color(0.2, 0.2, 0.2), 0.5))
-	# Опоры козырька — у передних углов, тонкие трубы.
+	# Консольный козырёк: косые кронштейны от стены под краями, без опор у земли — опора закрывала край Бабки
+	# (повторная сверка ART-05, Н7).
 	var post_material := Materials.plain(Color(0.30, 0.31, 0.33), 0.6)
 	for x in [canopy_center.x - canopy_size.x * 0.5 + 0.1, canopy_center.x + canopy_size.x * 0.5 - 0.1]:
-		var post := Greybox.mesh_cylinder(0.05, 0.05, canopy_bottom, Color.WHITE)
-		post.material_override = post_material
-		post.position = Vector3(x, canopy_bottom * 0.5, canopy_center.z - canopy_size.z * 0.5 + 0.1)
-		root.add_child(post)
+		_wires.append(_segment(Vector3(x, canopy_bottom - 1.1, z - 0.05), Vector3(x, canopy_bottom - 0.02, canopy_center.z - canopy_size.z * 0.5 + 0.3), 3.0))
 	# Две низкие бетонные ступени у двери и трубный поручень (сверка ART-04, черта 7). Без коллизий:
 	# ступени по 0,08 м, Илюша проходит к двери как раньше.
 	var step_material := Materials.plain(Color(0.46, 0.46, 0.45), 0.9)
@@ -190,10 +189,11 @@ func _build_entrance() -> void:
 		_part(root, Vector3(0.05, 0.9, 0.05), Vector3(x, 0.45, z - 1.05), rail)
 		_part(root, Vector3(0.05, 0.05, 1.05), Vector3(x, 0.9, z - 0.55), rail)
 	# Сугробы по бокам входа, у стены: только вид.
-	for x in [ENTRANCE_DOOR_X - 4.2, ENTRANCE_DOOR_X + 3.6]:
-		var mound := _mound(Vector3(2.2, 0.7, 1.3), Materials.snow(0.15))
-		mound.position += Vector3(x, 0.35, z - 0.7)
-		root.add_child(mound)
+	for i in 2:
+		var x: float = [ENTRANCE_DOOR_X - 4.2, ENTRANCE_DOOR_X + 3.6][i]
+		var heap := _lumpy_bank(Vector3(2.4, 0.75, 1.3), Materials.snow(0.15), 77 + i * 5)   # рваные, не полусферы (Н9)
+		heap.position = Vector3(x, 0.375, z - 0.7)
+		root.add_child(heap)
 
 func _part(parent: Node3D, size: Vector3, at: Vector3, material: Material) -> void:
 	var mesh := Greybox.mesh_box(size, Color.WHITE)
@@ -462,7 +462,7 @@ func _build_signs() -> void:
 func _build_kiosk_sign() -> void:
 	var board := Greybox.mesh_box(Vector3(0.22, 0.62, 3.7), Color.WHITE)
 	board.name = "KioskSignBox"
-	board.material_override = Materials.plain(Color(0.90, 0.88, 0.82), 0.6)
+	board.material_override = Materials.plain(Color(0.60, 0.58, 0.52), 0.6)   # не пересвечен окном (Н4)
 	board.position = Layout.KIOSK + Vector3(2.62, 2.86, 0.0)
 	add_child(board)
 	var sign := Label3D.new()
@@ -470,7 +470,7 @@ func _build_kiosk_sign() -> void:
 	sign.text = "ХЛЕБ"
 	sign.font_size = 120
 	sign.pixel_size = 0.0045
-	sign.modulate = Color(0.58, 0.05, 0.04)
+	sign.modulate = Color(0.42, 0.03, 0.02)
 	sign.outline_size = 0
 	sign.shaded = false
 	sign.position = Layout.KIOSK + Vector3(2.75, 2.86, 0.0)
@@ -835,8 +835,8 @@ func _build_trails() -> void:
 		var b: Vector2 = p[1]
 		var mesh := Greybox.mesh_box(Vector3(p[2], 0.01, a.distance_to(b)), Color.WHITE)
 		mesh.name = "Trail"
-		mesh.material_override = Materials.snow(0.75)
-		mesh.position = Vector3((a.x + b.x) * 0.5, 0.012, (a.y + b.y) * 0.5)
+		mesh.material_override = Materials.snow(1.0)
+		mesh.position = Vector3((a.x + b.x) * 0.5, 0.018, (a.y + b.y) * 0.5)
 		mesh.rotation.y = atan2(b.x - a.x, b.y - a.y)
 		add_child(mesh)
 

@@ -92,7 +92,7 @@ const STREET_SIGN := Vector2(60.5, 22.5)
 const POPLARS: Array[Vector2] = [
 	Vector2(-95, 17), Vector2(-50, 17), Vector2(-5, 17), Vector2(20, 17), Vector2(40, 17), Vector2(90, 18),
 	Vector2(34, 50), Vector2(52, 51), Vector2(72, 50), Vector2(92, 51),
-	Vector2(-70, 102), Vector2(-64, 61), Vector2(-40, 62), Vector2(6, 104), Vector2(16, 90),
+	Vector2(-70, 102), Vector2(-64, 61), Vector2(-40, 62), Vector2(6, 104), Vector2(16, 90), Vector2(-28, 101),
 ]
 const POPLAR_TRUNK := Vector3(0.8, 10.0, 0.8)
 # Опоры контактной сети без фонаря там, где фонари пропущены (выезд со двора, площадка киоска):
@@ -103,7 +103,7 @@ const POLE_HEIGHT := 8.0        # видимая высота столба фо�
 # [центр x/z, вдоль x — true]. От валов у бордюра — больше 1 м: ближе тест застреваний считает это щелью.
 const PARKED: Array = [
 	[Vector2(-56.5, 100), false], [Vector2(-60.5, 100.5), false], [Vector2(17, 80), false], [Vector2(17, 71.5), false],
-	[Vector2(-2, 103), false], [Vector2(-60, 27.0), true], [Vector2(-45, 27.0), true],
+	[Vector2(-2, 103), false], [Vector2(-46, 72), false], [Vector2(-46, 66), false], [Vector2(5, 66), false], [Vector2(-60, 27.0), true], [Vector2(-45, 27.0), true],
 	[Vector2(-75, 37.1), true], [Vector2(-50, 37.1), true],
 	[Vector2(73.9, -55), false], [Vector2(73.9, -100), false],   # сразу за углом A→B машин нет: туда выносит из поворота
 ]

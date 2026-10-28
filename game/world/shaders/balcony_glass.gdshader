@@ -5,7 +5,7 @@ shader_type spatial;
 varying vec4 tint;
 
 void vertex() {
-	tint = COLOR;
+	tint = vec4(pow(COLOR.rgb, vec3(2.2)), COLOR.a);   // цвет экземпляра задан в sRGB (повторная сверка ART-05, Н8)
 }
 
 void fragment() {

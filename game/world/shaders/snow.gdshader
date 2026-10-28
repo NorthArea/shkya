@@ -7,7 +7,7 @@ uniform vec3 dirty : source_color = vec3(0.42, 0.42, 0.44);
 uniform float trodden = 0.0;
 uniform float scale = 0.35;
 uniform float roadside = 0.0;
-uniform vec3 grime : source_color = vec3(0.13, 0.15, 0.18);
+uniform vec3 grime : source_color = vec3(0.07, 0.09, 0.11);
 uniform vec3 brown : source_color = vec3(0.36, 0.31, 0.25);
 
 varying vec3 world_pos;
@@ -31,7 +31,7 @@ void fragment() {
 	vec3 color = mix(clean, dirty, clamp(dirt + trodden * 0.35, 0.0, 1.0));
 	if (roadside > 0.5) {
 		// Брызги от колёс: чем ниже, тем темнее; поверх — бурые пятна и редкие чистые комья сверху.
-		float low = 1.0 - smoothstep(0.05, 0.85, world_pos.y + (noise(p * 2.3) - 0.5) * 0.35);
+		float low = 1.0 - smoothstep(0.1, 1.0, world_pos.y + (noise(p * 2.3) - 0.5) * 0.45);
 		color = mix(color, dirty * vec3(1.0, 0.97, 0.92), 0.5);
 		color = mix(color, brown, smoothstep(0.45, 0.75, noise(p * 1.7 + 4.0)) * 0.7);
 		color = mix(color, grime, low * 0.9);
