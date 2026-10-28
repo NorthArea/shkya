@@ -43,7 +43,8 @@ func _ready() -> void:
 		emitter.name = "Spray"
 		emitter.amount = 140
 		emitter.lifetime = 0.5
-		emitter.local_coords = false
+		# В осях машины: частицы в мире не наследуют её скорость, и камера на скорости наезжала на них.
+		emitter.local_coords = true
 		emitter.mesh = quad
 		emitter.direction = BACK
 		emitter.spread = 35.0

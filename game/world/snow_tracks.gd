@@ -116,9 +116,10 @@ func _rear_wheels(car: Node3D) -> Array[Vector3]:
 
 ## Отрезок колеи от прошлого положения колеса до нового.
 func _stamp_tyre(from: Vector3, to: Vector3) -> void:
-	var mid := (from + to) * 0.5
-	if _on_road(mid):
+	# Оба конца, а не середина: иначе отрезок у края заходит на проезжую часть.
+	if _on_road(from) or _on_road(to):
 		return
+	var mid := (from + to) * 0.5
 	var d := to - from
 	var basis := Basis(Vector3.UP, atan2(d.x, d.z)) * Basis.from_scale(Vector3(TYRE_WIDTH, 1.0, _flat(d)))
 	_tyres.set_instance_transform(_tyre_next, Transform3D(basis, Vector3(mid.x, LIFT, mid.z)))
