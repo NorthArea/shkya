@@ -19,7 +19,7 @@ const LOW_PALETTES := [
 	# Итоговая сверка (И2): ещё теплее — в кадре жёлтое было серо-оливковым (G/R 1,13).
 	[Color(0.60, 0.24, 0.14), Color(0.46, 0.19, 0.12), Color(0.74, 0.68, 0.58)],   # красный кирпич
 	[Color(0.90, 0.58, 0.16), Color(0.70, 0.45, 0.13), Color(0.86, 0.82, 0.72)],   # жёлтая штукатурка
-	[Color(0.84, 0.46, 0.40), Color(0.65, 0.36, 0.31), Color(0.84, 0.80, 0.72)],   # розовая
+	[Color(0.86, 0.44, 0.34), Color(0.66, 0.34, 0.27), Color(0.84, 0.80, 0.72)],   # розовая (теплее, С10)
 ]
 
 static var _cache := {}
@@ -87,12 +87,26 @@ static func balcony_glass() -> ShaderMaterial:
 ## Пар (ART-06, Н4, Н9): полупрозрачный белёсый — шлейфы ТЭЦ и вытяжек на крышах.
 static func steam() -> StandardMaterial3D:
 	if not _cache.has("steam"):
+		# Без освещения и светлее неба: иначе пар в ночном свете темнел и читался дымом (итоговая сверка ART-06, С3).
 		var m := StandardMaterial3D.new()
-		m.albedo_color = Color(0.86, 0.87, 0.89, 0.45)
+		m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+		m.albedo_color = Color(0.55, 0.58, 0.64, 0.5)
 		m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-		m.roughness = 1.0
 		_cache["steam"] = m
 	return _cache["steam"]
+
+## Пар и окраска труб ТЭЦ на горизонте: без тумана, дымка задана самим цветом (С2, С3).
+static func far(color: Color) -> StandardMaterial3D:
+	var key := "far_%s" % color
+	if not _cache.has(key):
+		var m := StandardMaterial3D.new()
+		m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+		m.disable_fog = true
+		m.albedo_color = color
+		if color.a < 1.0:
+			m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+		_cache[key] = m
+	return _cache[key]
 
 static func road(along_x: bool, center: Vector2, width: float) -> ShaderMaterial:
 	var m := ShaderMaterial.new()

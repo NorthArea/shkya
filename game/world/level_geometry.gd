@@ -10,17 +10,17 @@ const Materials = preload("res://game/world/materials.gd")
 const WALL_HEIGHT := 12.0
 const WALL_THICKNESS := 2.0
 const SHOP_FRONTS := ["H5_North", "H6_West", "H8_East"]
-const SERIES_97 := ["H2_West", "H10_NorthWest"]   # голубые и серые полосы панелей (ART-06, Н10)
+const SERIES_97 := ["H2_West", "H10_NorthWest", "H4_SouthEast"]   # голубые и серые полосы панелей (ART-06, Н10)
 const GARAGE_DOOR_SIDE := {"Garages_Yard": -1.0, "Garages_Kiosk": 1.0}   # дверями к двору / к улице
 # Ворота гаражей: синие, жёлтые, бурые, ржавые, розовые, зелёные (сверка ART-04, черта 17).
 # Насыщеннее, чтобы в холодном сумеречном свете бурые и ржавые не уходили в серое (повторная сверка ART-05, Н2).
 const GARAGE_COLORS := [Color(0.18, 0.32, 0.58), Color(0.78, 0.58, 0.12), Color(0.50, 0.22, 0.10), Color(0.60, 0.20, 0.07),
-	Color(0.72, 0.40, 0.42), Color(0.24, 0.42, 0.14), Color(0.40, 0.42, 0.45)]   # бурые, ржавые, зелёные — по итоговой сверке (И2, И8)
+	Color(0.72, 0.40, 0.42), Color(0.30, 0.45, 0.10), Color(0.40, 0.42, 0.45)]   # бурые, ржавые, зелёные — по итоговой сверке (И2, И8)
 const GARAGE_WALL := Color(0.50, 0.30, 0.22)   # кирпичные боксы (И2)
 const CAR_COLORS := [Color(0.18, 0.22, 0.30), Color(0.55, 0.48, 0.36), Color(0.35, 0.12, 0.10), Color(0.70, 0.70, 0.66),
 	Color(0.22, 0.30, 0.22), Color(0.50, 0.18, 0.12)]
 const WARM := Color(1.0, 0.75, 0.42)           # подъезд и окна
-const SODIUM := Color(1.0, 0.68, 0.12)         # натриевые фонари, как в lighting.gd (итоговая сверка ART-05, И1)
+const SODIUM := Color(1.0, 0.74, 0.10)         # натриевые фонари, как в lighting.gd (итоговая сверка ART-06, С9)
 const CONCRETE := Color(0.50, 0.51, 0.52)
 # Лоджии: ограждения разного цвета, остекление разное у каждой (сверка ART-04, черты 1, 4).
 const PARAPET_COLORS := [Color(0.55, 0.56, 0.57), Color(0.66, 0.64, 0.58), Color(0.40, 0.45, 0.52), Color(0.58, 0.44, 0.38),
@@ -1056,7 +1056,7 @@ func _trolleybus(size: Vector3) -> Node3D:
 		_part(root, Vector3(0.05, 0.16, 0.1), Vector3(-hx - 0.03, base + 0.85, zs * 1.22), amber)
 		_part(root, Vector3(0.05, 0.36, 0.2), Vector3(-hx - 0.25, base + 2.05, zs * 1.62), dark)
 	var labels := [
-		["13", 150, Color(0.05, 0.05, 0.05), Vector3(-hx - 0.07, base + 2.86, 0), -PI * 0.5],
+		["13", 115, Color(0.05, 0.05, 0.05), Vector3(-hx - 0.07, base + 2.86, 0), -PI * 0.5],
 		["Учительская", 22, Color(0.75, 0.1, 0.08), Vector3(-hx - 0.07, base + 2.95, -0.62), -PI * 0.5],
 		["Речной вокзал", 22, Color(0.75, 0.1, 0.08), Vector3(-hx - 0.07, base + 2.95, 0.62), -PI * 0.5],
 		["13", 140, Color(0.05, 0.05, 0.05), Vector3(hx + 0.07, base + 2.86, 0), PI * 0.5],
@@ -1079,8 +1079,8 @@ func _trolleybus(size: Vector3) -> Node3D:
 	for spot in [[Vector3(-hx - 0.07, base + 1.25, -0.6), -PI * 0.5], [Vector3(-2.0, base + 1.05, -hz - 0.04), PI], [Vector3(-2.0, base + 1.05, hz + 0.04), 0.0]]:
 		var yaw_s: float = spot[1]
 		var right := Basis(Vector3.UP, yaw_s) * Vector3.RIGHT   # «вправо» для того, кто смотрит на надпись
-		for part in [["32", Color(1.0, 0.82, 0.10), -0.25], ["71", Color(0.96, 0.96, 0.94), 0.25]]:
-			var digits := _label(part[0], 110, part[1])
+		for part in [["32", Color(1.0, 0.82, 0.10), -0.19], ["71", Color(0.96, 0.96, 0.94), 0.19]]:
+			var digits := _label(part[0], 80, part[1])
 			digits.pixel_size = 0.004
 			digits.position = spot[0] + right * float(part[2])
 			digits.rotation.y = yaw_s
@@ -1151,11 +1151,13 @@ func _pavilion(size: Vector3) -> Node3D:
 ## Трубы ТЭЦ: красно-белые, с неподвижным шлейфом пара, на горизонте к северу (ART-06, Н4: снимает «не подтверждено»
 ## из ART-04). Только вид.
 func _build_chimneys() -> void:
-	var red := Materials.plain(Color(0.62, 0.14, 0.10), 0.7)
-	var white := Materials.plain(Color(0.82, 0.82, 0.80), 0.7)
-	var steam := Materials.steam()
-	# В перспективе улицы B, левее башни «ГОСТИНИЦА» (x 57–83): самый длинный вид квартала.
-	for spec in [[Vector3(15, 0, -185), 110.0], [Vector3(35, 0, -200), 125.0]]:
+	# Туман съедал полосы (итоговая сверка ART-06, С2): материалы без тумана, дымка — в самом цвете
+	# (красный и белый, смешанные с цветом тумана на ~40 %).
+	var red := Materials.far(Color(0.50, 0.21, 0.20))
+	var white := Materials.far(Color(0.62, 0.64, 0.66))
+	var steam := Materials.far(Color(0.66, 0.68, 0.72, 0.55))
+	# Две в перспективе улицы B, левее башни «ГОСТИНИЦА» (x 57–83), и третья на западе — видна от киоска (С4).
+	for spec in [[Vector3(15, 0, -185), 80.0], [Vector3(35, 0, -200), 90.0], [Vector3(-150, 0, -95), 85.0]]:
 		var at: Vector3 = spec[0]
 		var height: float = spec[1]
 		var bands := 10
@@ -1168,7 +1170,7 @@ func _build_chimneys() -> void:
 			band.position = at + Vector3(0, y0 + height / bands * 0.5, 0)
 			add_child(band)
 		var light := Greybox.mesh_sphere(0.8, Color.WHITE)
-		light.material_override = Materials.plain(Color(1.0, 0.1, 0.05), 0.4, Color(1.0, 0.1, 0.05), 8.0)
+		light.material_override = Materials.far(Color(1.0, 0.15, 0.08))
 		light.position = at + Vector3(0, height + 0.8, 0)
 		add_child(light)
 		for k in 7:
@@ -1176,7 +1178,7 @@ func _build_chimneys() -> void:
 			puff.material_override = steam
 			var r := 4.0 + k * 2.2
 			puff.scale = Vector3(r, r * 0.8, r)
-			puff.position = at + Vector3(-k * 6.0, height + 4.0 + k * 3.5, -k * 1.5)   # ветер на запад, от башни
+			puff.position = at + Vector3(-k * 6.5, height + 3.0 + k * 1.6, -k * 1.5)   # пологий шлейф на запад, от башни (С2)
 			puff.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 			add_child(puff)
 

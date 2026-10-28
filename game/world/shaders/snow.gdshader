@@ -11,6 +11,7 @@ uniform vec3 grime : source_color = vec3(0.07, 0.09, 0.11);
 uniform vec3 brown : source_color = vec3(0.36, 0.31, 0.25);
 
 varying vec3 world_pos;
+varying vec3 world_normal;
 
 float hash(vec2 p) { return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453); }
 float noise(vec2 p) {
@@ -22,6 +23,7 @@ float noise(vec2 p) {
 
 void vertex() {
 	world_pos = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
+	world_normal = normalize((MODEL_MATRIX * vec4(NORMAL, 0.0)).xyz);
 }
 
 void fragment() {
@@ -34,7 +36,10 @@ void fragment() {
 		float low = 1.0 - smoothstep(0.1, 1.4, world_pos.y + (noise(p * 2.3) - 0.5) * 0.45);
 		color = mix(color, dirty * vec3(1.0, 0.97, 0.92), 0.75);
 		color = mix(color, brown, smoothstep(0.45, 0.75, noise(p * 1.7 + 4.0)) * 0.7);
-		color = mix(color, grime, low);
+		color = mix(color, grime, low * 0.85);
+		// Светлая шапка на верхних гранях: вал — снег, а не тёмные глыбы (итоговая сверка ART-06, С1).
+		float cap = smoothstep(0.55, 0.9, world_normal.y) * smoothstep(0.35, 0.75, world_pos.y);
+		color = mix(color, clean * 0.82, cap * 0.8);
 	}
 	ALBEDO = color;
 	ROUGHNESS = mix(0.85, 0.45, trodden * dirt);
