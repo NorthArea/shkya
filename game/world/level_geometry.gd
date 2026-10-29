@@ -9,6 +9,9 @@ const Materials = preload("res://game/world/materials.gd")
 const Lighting = preload("res://game/world/lighting.gd")   # CITY-01 L: подсветка вывесок
 const Patrols = preload("res://game/world/patrols.gd")   # EXT-01 N: полицейский, «военком», микроавтобус ГСУМ
 const Buildings = preload("res://game/world/buildings.gd")   # CITY-02 B: дома, подъезды, крыши
+const EnvDress = preload("res://game/world/environment_dress.gd")   # CITY-02 E: валы, деревья, тротуары, провода
+const Skyline = preload("res://game/world/skyline.gd")   # CITY-02 E: панорама за краем карты
+const SnowField = preload("res://game/world/snow_field.gd")   # DRIVE-02 (C10): форма валов для вида и колёс
 
 const WALL_HEIGHT := 12.0
 const WALL_THICKNESS := 2.0
@@ -23,21 +26,16 @@ const GARAGE_WALL := Color(0.50, 0.30, 0.22)   # кирпичные боксы (
 const WARM := Color(1.0, 0.75, 0.42)           # подъезд и окна
 const SODIUM := Color(1.0, 0.74, 0.10)         # натриевые фонари, как в lighting.gd (итоговая сверка ART-06, С9)
 const CONCRETE := Color(0.50, 0.51, 0.52)
-const BARK := Color(0.16, 0.15, 0.14)
-# Куржак — толстая изморозь на ветках (ART-06, Н8: крона #b9b5b2, `Trees, Novosibirsk 1.jpg`). Канон говорит
-# «мокрый снег»; куржак добавлен решением владельца 28.10.2026.
-const FROST := Color(0.88, 0.88, 0.90)   # светлее замера (#b9b5b2 днём): ночью в слабом свете иначе не читается
 const ENTRANCE_WALL_Z := Buildings.ENTRANCE_WALL_Z   # северный фасад H1 (центр 115, глубина 14) — z = 108
 const ENTRANCE_DOOR_X := Buildings.ENTRANCE_DOOR_X   # дверь по центру козырька
 
-var _mound_mesh: SphereMesh       # одна сетка на все комки сугробов
-var _chunk_mesh: SphereMesh       # сетка 14×6 для валов у дорог: комки чуть гранёные, но без острых глыб (И4, POLISH-02 п. 4)
-# Экземпляры MultiMesh, которые собираются со всего квартала и строятся одним вызовом в конце:
-# ветки, провода. Тысячи деталей без тысяч узлов и draw call. Дома — свои пакеты в _buildings (CITY-02 B).
+# Экземпляры MultiMesh, которые собираются со всего квартала и строятся одним вызовом в конце: провода.
+# Тысячи деталей без тысяч узлов и draw call. Дома — свои пакеты в _buildings (CITY-02 B); деревья, бордюры,
+# снег на проводах, столбы — пакеты _environment (CITY-02 E); панорама — _skyline.
 var _buildings: Buildings = null
-var _branches: Array[Transform3D] = []
+var _environment: EnvDress = null
+var _skyline: Skyline = null
 var _wires: Array[Transform3D] = []
-var _frost: Array[Transform3D] = []   # ветки в куржаке (ART-06, Н8; решение владельца 28.10.2026)
 
 # Надписи: [текст, позиция, поворот y, размер шрифта, цвет].
 const SIGNS := [
@@ -82,6 +80,7 @@ func _ready() -> void:
 
 func _exit_tree() -> void:
 	Materials.clear_cache()
+	EnvDress.clear_cache()
 
 # --- коллизии + вид ---
 
@@ -136,11 +135,11 @@ func _build_solid(index: int, spec: Array) -> void:
 				body.add_child(_street_pole(size.y, Layout.lamp_arm(xz) if spec[0] == "StreetLamp" else Vector2.ZERO))
 			else:
 				body.add_child(_lamp_head(size.y))
-			if index % 5 == 2:
+			if spec[0] != "Lamp_Yard":
 				_notices(body, size, index)
 		"tree":
 			mesh.queue_free()
-			body.add_child(_birch(size.y, float(index)))
+			body.add_child(_birch(size.y, float(index), Vector3(xz.x, 0, xz.y)))
 		"poplar":
 			mesh.queue_free()
 			_poplar(Vector3(xz.x, 0, xz.y), index)
@@ -260,6 +259,7 @@ func _build_corners() -> void:
 			mesh.position = Vector3(sq.get_center().x, 0.025, sq.get_center().y)
 			mesh.material_override = Materials.road_corner(corner, signs, a_size.y)
 			add_child(mesh)
+	_env().street_dress()   # бордюры, наледь, проталины, люки (CITY-02 E)
 
 func _build_bounds() -> void:
 	var b := Layout.BOUNDS
@@ -280,51 +280,34 @@ func _build_bounds() -> void:
 
 # --- детали ---
 
-## Вал снега из перекрывающихся комков разной высоты, чтобы не было гладкой «трубы».
+## Вал снега у дороги или сугроб (CITY-02 E): одна сетка вместо комков-сфер — комья на гребне, крутой срез со
+## стороны дороги, ступени лопаты со двора, корка сверху. Форма — SnowField.profile (DRIVE-02, C10): по ней же едут
+## колёса «Лады». У дороги — брызги колёс и грязная кромка у низа (snow_bank_mesh.gdshader; ART-04, черта 10: серые
+## и бурые валы, у проезжей части почти чёрные гребни). Коробка Layout (SnowField.boxes: тот же seed и размер) берёт
+## оттуда сторону дороги; прочие кучи (у подъездов, контейнеров) — без неё. Начало координат — центр коробки.
 func _lumpy_bank(size: Vector3, material: Material, seed: int) -> Node3D:
 	var root := Node3D.new()
 	var long_x := size.x >= size.z
-	var length := size.x if long_x else size.z
-	var count := maxi(1, int(ceil(length / 2.2)))
-	var step := length / count
-	# Комки разной высоты (0,45–1,4 высоты вала) и мелкие глыбы сверху: вал рваный, как после уборки
-	# (сверка ART-04, черта 10), а не ровная «гусеница».
-	for i in count:
-		var r1 := fposmod(sin(float(seed * 31 + i) * 12.9898) * 43758.5453, 1.0)
-		var r2 := fposmod(sin(float(seed * 17 + i) * 78.233) * 43758.5453, 1.0)
-		var h := 0.45 + 0.95 * r1
-		var lump_size := Vector3(step * (1.2 + 0.8 * r2), size.y * h, size.z * (0.8 + 0.35 * h)) if long_x else Vector3(size.x * (0.8 + 0.35 * h), size.y * h, step * (1.2 + 0.8 * r2))
-		var lump := _mound(lump_size, material, material == Materials.snow_bank())
-		lump.rotation = Vector3((r2 - 0.5) * 0.25, r1 * TAU, (r1 - 0.5) * 0.25) if material == Materials.snow_bank() else Vector3.ZERO
-		var offset := -length * 0.5 + step * (i + 0.5)
-		var jitter := (r2 - 0.5) * 0.3 * (size.z if long_x else size.x)
-		lump.position += Vector3(offset, -size.y * 0.5 + lump_size.y * 0.5, jitter) if long_x else Vector3(jitter, -size.y * 0.5 + lump_size.y * 0.5, offset)
-		root.add_child(lump)
-		if r1 > 0.35:
-			var chunk_size := Vector3(0.5 + 0.5 * r2, 0.35 + 0.3 * r1, 0.45 + 0.4 * r1)
-			var chunk := _mound(chunk_size, material, material == Materials.snow_bank())
-			var top := -size.y * 0.5 + lump_size.y * 0.85
-			var shift := offset + (r1 - 0.5) * step
-			chunk.position += Vector3(shift, top, -jitter) if long_x else Vector3(-jitter, top, shift)
-			chunk.rotation.y = r2 * TAU
-			root.add_child(chunk)
+	var toward := 0.0
+	for b in SnowField.boxes():
+		if b[3] == seed and (b[1] as Vector3).is_equal_approx(size):
+			toward = b[4]
+	var mesh := MeshInstance3D.new()
+	mesh.name = "SnowMesh"
+	mesh.mesh = EnvDress.bank_mesh(size.x if long_x else size.z, size.z if long_x else size.x, size.y, seed, toward)
+	mesh.material_override = Materials.bank_snow(1.0) if (material == Materials.snow_bank() or toward != 0.0) else material
+	mesh.position.y = -size.y * 0.5
+	if not long_x:
+		mesh.rotation.y = PI * 0.5   # +z сетки — к +x мира, x сетки — к −z (SnowField.box_height)
+	root.add_child(mesh)
 	return root
 
-## Округлый сугроб, вписанный в коллизионную коробку (центр коробки — начало координат).
+## Округлый сугроб, вписанный в коллизионную коробку (центр коробки — начало координат): купол с рваной кромкой
+## и буграми (EnvDress.dome_mesh, CITY-02 E) вместо полусферы; вариант шума — по размеру. rough — другой вариант.
 func _mound(size: Vector3, material: Material, rough := false) -> MeshInstance3D:
-	if _mound_mesh == null:
-		_mound_mesh = SphereMesh.new()
-		_mound_mesh.radius = 0.5
-		_mound_mesh.height = 1.0
-		_mound_mesh.radial_segments = 24
-		_mound_mesh.rings = 10
-		_chunk_mesh = SphereMesh.new()
-		_chunk_mesh.radius = 0.5
-		_chunk_mesh.height = 1.0
-		_chunk_mesh.radial_segments = 14   # округлее: на 8×4 вал читался тёмными гранёными глыбами (POLISH-02, п. 4)
-		_chunk_mesh.rings = 6
 	var mesh := MeshInstance3D.new()
-	mesh.mesh = _chunk_mesh if rough else _mound_mesh
+	var variant := int(absf(size.x * 7.0 + size.z * 13.0 + size.y * 31.0)) + (1 if rough else 0)
+	mesh.mesh = EnvDress.dome_mesh(variant)
 	mesh.material_override = material
 	mesh.scale = Vector3(size.x * 1.05, size.y * 2.0, size.z * 1.05)
 	mesh.position.y = -size.y * 0.5
@@ -343,8 +326,21 @@ func _garage_row(body: Node3D, name: String, size: Vector3) -> void:
 	var count := maxi(1, int(round(length / 3.6)))
 	var unit := length / count
 	var side: float = GARAGE_DOOR_SIDE.get(name, 1.0)
-	# Кирпичные боксы с распашными воротами разного цвета, номера краской, снег 0,25 м (сверка ART-04, черта 17).
+	# Кирпичные боксы с распашными воротами разного цвета, номера краской (сверка ART-04, черта 17).
 	var wall := Materials.plain(GARAGE_WALL, 0.9)
+	var k := EnvDress.kit()
+	var near := EnvDress.kit()
+	var depth := size.x if long_z else size.z
+	var face := side * (depth * 0.5)
+	# Бокс у «Жигулей» (17; 80) распахнут — его строит PROPS-01 (props.gd): там без замка и хлама.
+	var open_box := -1
+	if name == "Garages_Yard":
+		var best := 0
+		for i in count:
+			if absf(-length * 0.5 + unit * (i + 0.5) + body.position.z - 80.5) < absf(-length * 0.5 + unit * (best + 0.5) + body.position.z - 80.5):
+				best = i
+		open_box = best
+	var on_square := name == "Garages_Kiosk"   # ворота на площадку киоска: только плоское (ARENA-02, «Что не делать», 1)
 	for i in count:
 		var offset := -length * 0.5 + unit * (i + 0.5)
 		var color: Color = GARAGE_COLORS[(i * 5 + name.length() * 3) % GARAGE_COLORS.size()]
@@ -353,23 +349,56 @@ func _garage_row(body: Node3D, name: String, size: Vector3) -> void:
 		box.material_override = wall
 		box.position = Vector3(0, 0, offset) if long_z else Vector3(offset, 0, 0)
 		body.add_child(box)
-		# Ворота на длинной стороне ряда: две створки со швом посередине.
 		var leaf_material := Materials.plain(Color(color.r * tone, color.g * tone, color.b * tone), 0.55)
+		var leaf_w := unit * 0.39
 		for half: float in [-1.0, 1.0]:
-			var leaf_w := unit * 0.39
 			var along := offset + half * (leaf_w * 0.5 + 0.02)
-			var leaf_size := Vector3(0.05, size.y * 0.72, leaf_w) if long_z else Vector3(leaf_w, size.y * 0.72, 0.05)
-			var leaf := Greybox.mesh_box(leaf_size, Color.WHITE)
+			var leaf := Greybox.mesh_box(Vector3(0.05, size.y * 0.72, leaf_w) if long_z else Vector3(leaf_w, size.y * 0.72, 0.05), Color.WHITE)
 			leaf.material_override = leaf_material
-			leaf.position = Vector3(side * (size.x * 0.5 + 0.03), -size.y * 0.12, along) if long_z else Vector3(along, -size.y * 0.12, side * (size.z * 0.5 + 0.03))
+			leaf.position = _gpos(long_z, along, -size.y * 0.12, side * (depth * 0.5 + 0.03))
 			body.add_child(leaf)
 		var number := _label(str(i * 3 + 11 + name.length()), 72, Color(0.92, 0.92, 0.88))
 		number.pixel_size = 0.005
-		var face := side * (size.x * 0.5 + 0.06) if long_z else side * (size.z * 0.5 + 0.06)
-		number.position = Vector3(face, size.y * 0.3, offset) if long_z else Vector3(offset, size.y * 0.3, face)
+		number.position = _gpos(long_z, offset, size.y * 0.3, side * (depth * 0.5 + 0.06))
 		number.rotation.y = (PI * 0.5 if side > 0.0 else -PI * 0.5) if long_z else (0.0 if side > 0.0 else PI)
 		body.add_child(number)
-	body.add_child(_slab(size, Vector3(0, size.y * 0.5 + 0.125, 0), 0.25))
+		var r1 := _rand(i * 31 + name.length(), 1)
+		var r2 := _rand(i * 31 + name.length(), 2)
+		var gate_top := -size.y * 0.12 + size.y * 0.36
+		# Бетонная перемычка над воротами, стальная рама-уголок (CITY-02 E).
+		EnvDress.kit_box(k, _gsize(long_z, unit - 0.1, 0.2, 0.1), _gpos(long_z, offset, gate_top + 0.12, face + side * 0.05), Color(0.55, 0.55, 0.53), Color(0, 0.95, 0, 0))
+		for e: float in [-1.0, 1.0]:
+			EnvDress.kit_box(k, _gsize(long_z, 0.05, size.y * 0.74, 0.04), _gpos(long_z, offset + e * (leaf_w + 0.06), -size.y * 0.12, face + side * 0.04), Color(0.16, 0.16, 0.17), Color(0, 0.6, 0, 0))
+			# Петли и ржавые потёки под ними.
+			for hy: float in [0.35, -0.55]:
+				EnvDress.kit_box(near, _gsize(long_z, 0.12, 0.05, 0.03), _gpos(long_z, offset + e * (leaf_w - 0.02), -size.y * 0.12 + hy, face + side * 0.07), Color(0.18, 0.17, 0.16), Color(0, 0.6, 0, 0))
+				if r1 > 0.4:
+					EnvDress.kit_box(near, _gsize(long_z, 0.03, 0.35 + 0.3 * r2, 0.005), _gpos(long_z, offset + e * (leaf_w - 0.02), -size.y * 0.12 + hy - 0.22, face + side * 0.058), Color(0.40, 0.20, 0.08), Color(0, 0.95, 0, 0))
+		if i != open_box:
+			# Проушины и навесной замок на шве створок, поперечный засов.
+			EnvDress.kit_box(near, _gsize(long_z, 0.14, 0.05, 0.03), _gpos(long_z, offset, -0.28, face + side * 0.07), Color(0.20, 0.20, 0.21), Color(0, 0.5, 0, 0))
+			EnvDress.kit_box(near, _gsize(long_z, 0.065, 0.085, 0.035), _gpos(long_z, offset, -0.37, face + side * 0.09), Color(0.62, 0.52, 0.22) if r2 > 0.5 else Color(0.30, 0.31, 0.32), Color(3.0, 0.4, 0, 0))
+			EnvDress.kit_box(near, _gsize(long_z, leaf_w * 1.1, 0.06, 0.03), _gpos(long_z, offset - leaf_w * 0.3, 0.1, face + side * 0.07), Color(0.17, 0.17, 0.18), Color(0, 0.5, 0, 0))
+		# Шифер: листы с волной поверх плоской крыши, напуск 0,3 м над воротами, лёгкий уклон назад.
+		var sheet := Color(0.56, 0.57, 0.55).darkened(0.25 * r1)
+		EnvDress.kit_box(k, _gsize(long_z, unit + 0.04, 0.035, depth + 0.45), _gpos(long_z, offset, size.y * 0.5 + 0.03, side * 0.2), sheet,
+			Color(1.0, 0.92, 0, 0), Vector3(0, 0, -side * 0.03) if long_z else Vector3(side * 0.03, 0, 0))
+		# Снег на крыше: слой и бугры, карниз-напуск над воротами и сосульки.
+		EnvDress.kit_snow(k, _gsize(long_z, unit, 0.16, depth + 0.2), _gpos(long_z, offset, size.y * 0.5 + 0.13, side * 0.15))
+		EnvDress.kit_lump(k, _gsize(long_z, unit * 0.9, 0.12 + 0.12 * r2, depth * 0.7), _gpos(long_z, offset + (r1 - 0.5) * 0.6, size.y * 0.5 + 0.2, (r2 - 0.5) * depth * 0.4), r1 * TAU)
+		EnvDress.kit_snow(k, _gsize(long_z, unit, 0.12, 0.25), _gpos(long_z, offset, size.y * 0.5 + 0.1, face + side * 0.33), Vector3(side * 0.25, 0, 0) if long_z else Vector3(-side * 0.25, 0, 0))
+		var eave := face + side * 0.42
+		var ia := _gpos(long_z, offset - unit * 0.48, size.y * 0.5 + 0.0, eave)
+		var ib := _gpos(long_z, offset + unit * 0.48, size.y * 0.5 + 0.0, eave)
+		EnvDress.kit_icicles(near, ia, ib, 0.45, i * 17 + name.length())
+		# Снег у ворот: намело к створкам; часть боксов откопана — там утоптанная площадка.
+		if r1 < 0.6 or on_square:
+			EnvDress.kit_lump(k, _gsize(long_z, unit * 0.85, 0.22 + (0.0 if on_square else 0.2 * r2), 0.9), _gpos(long_z, offset, -size.y * 0.5, face + side * 0.35), r2 * 0.4)
+		if not on_square and i != open_box and r2 < 0.38:
+			_garage_clutter(near, long_z, offset, face, side, size.y, i * 13 + name.length())
+	body.add_child(_slab(Vector3(size.x, 0.0, size.z), Vector3(0, size.y * 0.5 + 0.04, 0), 0.06))
+	EnvDress.kit_emit(k, body, "GarageDress")
+	EnvDress.kit_emit(near, body, "GarageNear", 60.0)
 	if name == "Garages_C" and not long_z:
 		_graffiti(body, size, count, unit, side)
 
@@ -465,6 +494,7 @@ func _kiosk(size: Vector3) -> Node3D:
 	inside.omni_range = 4.0
 	inside.position = Vector3(0, hy - 0.5, 0)
 	root.add_child(inside)
+	_kiosk_outside(root, size)
 	return root
 
 func _lamp_head(height: float) -> Node3D:
@@ -473,20 +503,11 @@ func _lamp_head(height: float) -> Node3D:
 	head.position = Vector3(0, height * 0.5 - 0.1, 0)
 	return head
 
-func _birch(height: float, seed: float) -> Node3D:
-	var root := Node3D.new()
-	var trunk := Greybox.mesh_cylinder(0.1, 0.16, height, Color.WHITE)
-	trunk.material_override = Materials.plain(Color(0.85, 0.84, 0.80), 0.9)
-	root.add_child(trunk)
-	var bark := Materials.plain(FROST, 0.95)   # ветки берёзы в куржаке (Н8)
-	for i in 6:
-		var branch := Greybox.mesh_cylinder(0.02, 0.05, 2.2, Color.WHITE)
-		branch.material_override = bark
-		var angle := seed * 1.7 + i * 1.1
-		branch.position = Vector3(cos(angle) * 0.6, height * (0.05 + i * 0.07), sin(angle) * 0.6)
-		branch.rotation = Vector3(sin(angle) * 0.7, 0, -cos(angle) * 0.7)
-		root.add_child(branch)
-	return root
+## Берёза (CITY-02 E): белый ствол с чечевичками и чёрным низом, подъёмистые сучья, свисающие ветки в куржаке —
+## пакеты EnvDress (мировые координаты base). Узел-заглушка остаётся ребёнком коробки коллизии.
+func _birch(height: float, seed: float, base := Vector3.ZERO) -> Node3D:
+	_env().birch(base, height, seed)
+	return Node3D.new()
 
 ## Указатель на углу: табличка улицы вдоль x и поперёк неё — улицы вдоль z (Layout.STREET_SIGNS). Таблички висят
 ## сбоку от столба, к перекрёстку (side: знаки направления по x и z), и шириной по надписи: столб не закрывает
@@ -638,21 +659,41 @@ func _build_wires() -> void:
 	var yard_top := Vector3(-52.0, 5.9, 100.0)
 	for target in [Vector3(-52.0, 7.5, 108.0), Vector3(-78.0, 7.5, 92.0), Vector3(-78.0, 7.2, 93.0)]:
 		_sag_wire(yard_top, target, 0.5, wire)
+	# Бытовые провода вдоль тротуаров (ART-04, черта 13: «по 4–5 проводов» с провисом; CITY-02 E): между соседними
+	# фонарями одной стороны улицы — три провода на 5,4–6,0 м. Питание киоска — провод от опоры у площадки.
+	var lamps := Layout.street_lamps()
+	for i in lamps.size():
+		for j in range(i + 1, lamps.size()):
+			var a: Vector2 = lamps[i]
+			var b: Vector2 = lamps[j]
+			var d := a.distance_to(b)
+			if (absf(a.x - b.x) > 0.1 and absf(a.y - b.y) > 0.1) or d < 10.0 or d > 30.0:
+				continue
+			for k in 3:
+				var h := 5.4 + 0.3 * k
+				_sag_wire(Vector3(a.x, h, a.y), Vector3(b.x, h, b.y), 0.32 + 0.12 * _rand(i * 7 + k, 2), wire)
+	_sag_wire(Layout.KIOSK + Vector3(2.3, 3.4, -1.8), Vector3(61.0, 6.2, -86.0), 0.6, wire)
 
 ## Контактный провод по точкам (x, z) на высоте CONTACT_Y с провисом между соседними.
 func _wire_run(points: Array[Vector2], material: Material) -> void:
 	for i in range(1, points.size()):
 		_sag_wire(Vector3(points[i - 1].x, CONTACT_Y, points[i - 1].y), Vector3(points[i].x, CONTACT_Y, points[i].y), 0.22, material)
 
-## Провод с провисом: ломаная из 8 отрезков по параболе.
+## Провод с провисом: ломаная из 8 отрезков по параболе; на части пролётов — снежная «гирлянда» поверх провода,
+## у пролётов с заметным провисом — скрутки и изоляторы на концах (CITY-02 E).
 func _sag_wire(from: Vector3, to: Vector3, sag: float, material: Material) -> void:
 	var steps := 8
 	var prev := from
+	var seed := int(absf(from.x * 13.0 + from.z * 7.0 + to.x * 3.0 + to.z * 5.0))
 	for i in range(1, steps + 1):
 		var k := float(i) / steps
 		var p := from.lerp(to, k) - Vector3.UP * sag * 4.0 * k * (1.0 - k)
 		_wire(prev, p, material)
+		_env().wire_snow(prev, p, seed + i)
 		prev = p
+	if sag >= 0.3:
+		_env().wire_twist(from, to, seed)
+		_env().wire_twist(to, from, seed + 1)
 
 ## Отрезок провода — экземпляр общего MultiMesh (единичный цилиндр толщиной 4 см, ось Y — вдоль провода).
 func _wire(from: Vector3, to: Vector3, _material: Material) -> void:
@@ -666,22 +707,15 @@ static func _segment(from: Vector3, to: Vector3, radius_scale: float) -> Transfo
 	var other := side.cross(dir).normalized()
 	return Transform3D(Basis(side * radius_scale, axis, other * radius_scale), (from + to) * 0.5)
 
-## Город за границей карты: только вид, без коллизий; башня «ГОСТИНИЦА» в конце улицы B.
+## Город за границей карты (CITY-02 E): ближний ряд домов, средний слой, силуэты горизонта, мост, краны —
+## skyline.gd. Здесь — башня «ГОСТИНИЦА» в конце улицы B (концепт 05), как была.
 func _build_skyline() -> void:
-	var b := Layout.BOUNDS
-	var index := 100
-	for x in range(-120, 140, 32):
-		for z in [b.position.y - 28.0, b.end.y + 28.0]:
-			_backdrop(Vector3(x, 0, z), Vector3(26, 21.0 + (index % 3) * 6.0, 16), index)
-			index += 1
-	for z in range(-110, 130, 34):
-		for x in [b.position.x - 26.0, b.end.x + 26.0]:
-			_backdrop(Vector3(x, 0, z), Vector3(16, 21.0 + (index % 3) * 6.0, 26), index)
-			index += 1
+	_sky().build_city()
 	var tower := Greybox.mesh_box(Vector3(26, 58, 22), Color.WHITE)
 	tower.material_override = Materials.facade(7.0, true)
 	tower.position = Vector3(70, 29, -205)
 	tower.name = "Landmark"
+	tower.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	add_child(tower)
 	var spire := Greybox.mesh_cylinder(0.0, 4.0, 18.0, Color.WHITE)
 	spire.material_override = Materials.plain(Color(0.45, 0.42, 0.38), 0.6)
@@ -696,47 +730,6 @@ func _build_skyline() -> void:
 	hotel.pixel_size = 0.016
 	hotel.position = Vector3(70, 60.6, -194.2)
 	add_child(hotel)
-	# Высокие башни 16–25 этажей и башенные краны на горизонте (черта 20).
-	for spec in [[Vector3(-150, 0, -40), Vector3(20, 52, 20), 201], [Vector3(160, 0, 70), Vector3(20, 64, 20), 202],
-			[Vector3(-60, 0, 175), Vector3(22, 48, 22), 203], [Vector3(150, 0, -150), Vector3(20, 70, 20), 204]]:
-		_backdrop(spec[0], spec[1], spec[2])
-	_crane(Vector3(-130, 0, -170), 62.0, 0.6)
-	_crane(Vector3(175, 0, 10), 55.0, 2.4)
-
-## Башенный кран силуэтом: решётчатая мачта, стрела и противовес, красный огонь наверху.
-func _crane(at: Vector3, height: float, yaw: float) -> void:
-	var root := Node3D.new()
-	root.name = "Crane"
-	root.position = at
-	root.rotation.y = yaw
-	add_child(root)
-	var steel := Materials.plain(Color(0.55, 0.45, 0.18), 0.7)
-	var mast := Greybox.mesh_box(Vector3(1.6, height, 1.6), Color.WHITE)
-	mast.material_override = steel
-	mast.position.y = height * 0.5
-	root.add_child(mast)
-	var jib := Greybox.mesh_box(Vector3(38, 1.2, 1.2), Color.WHITE)
-	jib.material_override = steel
-	jib.position = Vector3(14, height + 0.6, 0)
-	root.add_child(jib)
-	var weight := Greybox.mesh_box(Vector3(4, 2.2, 2), Color.WHITE)
-	weight.material_override = Materials.plain(Color(0.35, 0.35, 0.36), 0.8)
-	weight.position = Vector3(-8, height + 0.2, 0)
-	root.add_child(weight)
-	var cab := Greybox.mesh_box(Vector3(2.4, 2.4, 2.4), Color.WHITE)
-	cab.material_override = steel
-	cab.position = Vector3(1.5, height - 1.6, 0)
-	root.add_child(cab)
-	var light := Greybox.mesh_sphere(0.5, Color.WHITE)
-	light.material_override = Materials.plain(Color(1.0, 0.1, 0.05), 0.4, Color(1.0, 0.1, 0.05), 6.0)
-	light.position = Vector3(0, height + 3.0, 0)
-	root.add_child(light)
-
-func _backdrop(at: Vector3, size: Vector3, seed: int) -> void:
-	var mesh := Greybox.mesh_box(size, Color.WHITE)
-	mesh.material_override = Materials.facade(float(seed), seed % 4 == 0)
-	mesh.position = at + Vector3.UP * size.y * 0.5
-	add_child(mesh)
 
 # --- ART-05: приметы спального Новосибирска по сверке с фото (ART-04) ---
 
@@ -795,46 +788,14 @@ func _street_pole(collision_height: float, arm: Vector2) -> Node3D:
 		root.add_child(head)
 	return root
 
-## Бумажные объявления на столбе (черта 13).
+## Бумажные объявления в несколько слоёв, распредкоробки и наклейки на столбах (черта 13; CITY-02 E).
 func _notices(body: Node3D, size: Vector3, seed: int) -> void:
-	var paper := [Color(0.86, 0.85, 0.80), Color(0.80, 0.84, 0.88), Color(0.90, 0.86, 0.72)]
-	for i in 2 + seed % 2:
-		var note := Greybox.mesh_box(Vector3(0.22, 0.3, 0.01), Color.WHITE)
-		note.material_override = Materials.plain(paper[(seed + i) % paper.size()], 0.95)
-		var angle := float(seed + i * 2) * 1.3
-		note.position = Vector3(sin(angle) * (size.x * 0.5 + 0.01), -size.y * 0.5 + 1.4 + i * 0.32, cos(angle) * (size.z * 0.5 + 0.01))
-		note.rotation.y = angle
-		body.add_child(note)
+	_env().pole_dress(body.position, size, seed)
 
-## Тополь: толстый тёмный ствол и широкая голая крона из сотен веток (черта 8); ветки — в общем MultiMesh.
+## Тополь (CITY-02 E): ствол с наплывом, изогнутые сучья, ветви второго и третьего порядка в куржаке, снег на
+## развилках; каждый третий — кронированный, с волчками (EnvDress.poplar, ART-04, черта 8; ART-06, Н8).
 func _poplar(base: Vector3, seed: int) -> void:
-	var height := 15.0 + 4.0 * _rand(seed * 97, 0)
-	var fork := height * (0.32 + 0.08 * _rand(seed * 97, 1))
-	_branches.append(_segment(base, base + Vector3(0, fork + 0.5, 0), 0.95))
-	var limbs := 5 + int(_rand(seed * 97, 2) * 3.0)
-	for i in limbs:
-		var yaw := TAU * (float(i) + _rand(seed * 97, 10 + i) * 0.6) / limbs
-		var tilt := deg_to_rad(18.0 + 22.0 * _rand(seed * 97, 20 + i))
-		var dir := Vector3(sin(tilt) * cos(yaw), cos(tilt), sin(tilt) * sin(yaw))
-		var start := base + Vector3(0, fork - 0.3 * _rand(seed * 97, 30 + i), 0)
-		var limb_len := (height - fork) * (0.75 + 0.3 * _rand(seed * 97, 40 + i))
-		var end := start + dir * limb_len
-		_branches.append(_segment(start, end, 0.42))
-		for j in 6:
-			var t := 0.3 + 0.7 * float(j) / 6.0
-			var from := start.lerp(end, t)
-			var byaw := yaw + (_rand(seed * 97, 100 + i * 10 + j) - 0.5) * 2.4
-			var btilt := deg_to_rad(25.0 + 35.0 * _rand(seed * 97, 200 + i * 10 + j))
-			var bdir := Vector3(sin(btilt) * cos(byaw), cos(btilt), sin(btilt) * sin(byaw))
-			var blen := 1.6 + 2.4 * _rand(seed * 97, 300 + i * 10 + j) * (1.0 - t * 0.5)
-			var bend := from + bdir * blen
-			_branches.append(_segment(from, bend, 0.14))
-			_frost.append(_segment(from.lerp(bend, 0.35), bend, 0.34))   # куржак: ветка «вдвое толще» и белёсая
-			for q in 3:
-				var tw := from.lerp(bend, 0.4 + 0.3 * q)
-				var tyaw := byaw + (_rand(seed * 97, 400 + i * 30 + j * 3 + q) - 0.5) * 3.0
-				var tdir := Vector3(cos(tyaw) * 0.6, 0.8, sin(tyaw) * 0.6).normalized()
-				_frost.append(_segment(tw, tw + tdir * (0.9 + 0.8 * _rand(seed * 97, 500 + q + j)), 0.26))   # с расстояния камеры тоньше не видно
+	_env().poplar(base, seed)
 
 ## Натоптанные тропинки в рыхлом снегу (черта 12): от подъезда к проезду, через двор по пути Илюши,
 ## от тротуара к окну киоска, по газонам улицы A.
@@ -861,17 +822,12 @@ func _build_trails() -> void:
 		mesh.rotation.y = atan2(b.x - a.x, b.y - a.y)
 		add_child(mesh)
 
-## Общие MultiMesh: ветки, провода (тени — только у веток); дома — пакеты buildings.gd (CITY-02 B).
+## Общие MultiMesh: провода (без теней); дома — пакеты buildings.gd (CITY-02 B); среда и панорама — EnvDress
+## и Skyline (CITY-02 E).
 func _build_instances() -> void:
 	_houses().build()   # лоджии, рамы, стёкла, снег, крыши, мелочь домов (CITY-02 B)
-	var limb := CylinderMesh.new()
-	limb.top_radius = 0.32
-	limb.bottom_radius = 0.5
-	limb.height = 1.0
-	limb.radial_segments = 6
-	limb.rings = 1
-	_multimesh("PoplarBranches", limb, _branches, [], Materials.plain(BARK, 0.95), true)
-	_multimesh("PoplarFrost", limb, _frost, [], Materials.plain(FROST, 0.95), false)
+	_env().build()      # деревья, бордюры, пятна, люки, снег на проводах, столбы (CITY-02 E)
+	_sky().finish()     # средний слой, огни, мост, краны (CITY-02 E)
 	var wire := CylinderMesh.new()
 	wire.top_radius = 0.02
 	wire.bottom_radius = 0.02
@@ -983,8 +939,9 @@ func _stop_sign(sign_name: String, at: Vector3, yaw: float) -> Node3D:
 
 # --- ART-06: приметы именно Новосибирска ---
 
-## Павильон остановки из профлиста: три стенки, крыша, лавка, объявления, табличка маршрутов (ART-06, Н6).
-## Открыт на −z; к улице его поворачивает _build_solid. Облик ездящего троллейбуса — game/vehicles/trolleybus.gd.
+## Павильон остановки из профлиста (ART-06, Н6; CITY-02 E): угловые стойки и обвязка, три стенки, крыша со снежным
+## напуском и сосульками, лавка на ножках со спинкой, расписание и объявления внутри, световой короб с плакатом
+## снаружи, табличка маршрутов. Открыт на −z; к улице его поворачивает _build_solid.
 func _pavilion(size: Vector3) -> Node3D:
 	var root := Node3D.new()
 	var hx := size.x * 0.5
@@ -996,13 +953,44 @@ func _pavilion(size: Vector3) -> Node3D:
 		_part(root, Vector3(0.05, size.y - 0.2, size.z), Vector3(x, base + (size.y - 0.2) * 0.5, 0), sheet)
 	_part(root, Vector3(size.x + 0.3, 0.1, size.z + 0.4), Vector3(0, base + size.y - 0.05, -0.1), sheet)
 	_part(root, Vector3(size.x + 0.3, 0.16, size.z + 0.4), Vector3(0, base + size.y + 0.08, -0.1), Materials.snow(0.0))
+	var k := EnvDress.kit()
+	var frame := Color(0.20, 0.26, 0.34)
+	for cx: float in [-hx, hx]:
+		for cz: float in [-hz, hz]:
+			EnvDress.kit_box(k, Vector3(0.08, size.y - 0.1, 0.08), Vector3(cx, base + (size.y - 0.1) * 0.5, cz), frame, Color(0, 0.5, 0, 0))
+	EnvDress.kit_box(k, Vector3(size.x + 0.1, 0.1, 0.1), Vector3(0, base + size.y - 0.15, -hz), frame, Color(0, 0.5, 0, 0))
+	# Профлист стенок — рёбра узором (detail, режим 1) поверх гладких листов: видны вблизи.
+	EnvDress.kit_box(k, Vector3(size.x - 0.1, size.y - 0.4, 0.01), Vector3(0, base + (size.y - 0.2) * 0.5, hz - 0.06), Color(0.62, 0.65, 0.70), Color(1.0, 0.5, 0, 0))
+	EnvDress.kit_box(k, Vector3(size.x - 0.1, size.y - 0.4, 0.01), Vector3(0, base + (size.y - 0.2) * 0.5, hz), Color(0.60, 0.63, 0.68), Color(1.0, 0.5, 0, 0))
+	# Снежный напуск над открытой стороной и сосульки.
+	EnvDress.kit_snow(k, Vector3(size.x + 0.3, 0.12, 0.24), Vector3(0, base + size.y + 0.05, -hz - 0.36), Vector3(-0.3, 0, 0))
+	EnvDress.kit_icicles(k, Vector3(-hx - 0.1, base + size.y - 0.08, -hz - 0.32), Vector3(hx + 0.1, base + size.y - 0.08, -hz - 0.32), 0.35, int(size.x * 13.0))
+	# Лавка: доска на двух ножках со спинкой.
 	_part(root, Vector3(size.x - 0.4, 0.06, 0.4), Vector3(0, base + 0.5, hz - 0.3), Materials.plain(Color(0.36, 0.24, 0.15), 0.85))
+	for lx: float in [-hx + 0.5, hx - 0.5]:
+		EnvDress.kit_box(k, Vector3(0.06, 0.48, 0.3), Vector3(lx, base + 0.24, hz - 0.3), Color(0.15, 0.15, 0.16), Color(0, 0.5, 0, 0))
+	EnvDress.kit_box(k, Vector3(size.x - 0.4, 0.14, 0.04), Vector3(0, base + 0.85, hz - 0.1), Color(0.36, 0.24, 0.15), Color(0, 0.85, 0, 0))
+	EnvDress.kit_snow(k, Vector3(size.x - 1.2, 0.03, 0.12), Vector3(-0.3, base + 0.545, hz - 0.42))
 	var paper := [Color(0.86, 0.85, 0.80), Color(0.80, 0.84, 0.88), Color(0.90, 0.86, 0.72), Color(0.84, 0.78, 0.80)]
 	for i in 7:
-		var note := Greybox.mesh_box(Vector3(0.22, 0.3, 0.01), Color.WHITE)
-		note.material_override = Materials.plain(paper[i % paper.size()], 0.95)
-		note.position = Vector3(-hx + 0.4 + i * 0.5, base + 1.1 + (i % 3) * 0.32, hz - 0.06)
-		root.add_child(note)
+		var tilt := (_rand(i, 21) - 0.5) * 0.2
+		EnvDress.kit_box(k, Vector3(0.22, 0.18 if i % 3 == 2 else 0.3, 0.008), Vector3(-hx + 0.4 + i * 0.5, base + 1.1 + (i % 3) * 0.32, hz - 0.065), paper[i % paper.size()], Color(0, 0.95, 0, 0), Vector3(0, 0, tilt))
+	# Расписание внутри на задней стенке.
+	var timetable := Vector3(hx - 0.6, base + 1.55, hz - 0.07)
+	EnvDress.kit_box(k, Vector3(0.62, 0.5, 0.01), timetable, Color(0.94, 0.94, 0.92), Color(0, 0.7, 0, 0))
+	EnvDress.kit_box(k, Vector3(0.62, 0.08, 0.012), timetable + Vector3(0, 0.21, 0), Color(0.10, 0.25, 0.55), Color(0, 0.7, 0, 0))
+	var tt := _label("РАСПИСАНИЕ\nТб 13   5:50 – 23:40\nинтервал 12 – 20 мин", 22, Color(0.10, 0.12, 0.20))
+	tt.pixel_size = 0.003
+	tt.position = timetable + Vector3(0, -0.02, -0.01)
+	tt.rotation.y = PI
+	root.add_child(tt)
+	# Световой короб на наружной задней стенке: плакат без брендов — зимний пейзаж пятнами.
+	var box_at := Vector3(-hx + 1.0, base + 1.35, hz + 0.08)
+	EnvDress.kit_box(k, Vector3(1.2, 1.6, 0.12), box_at, Color(0.18, 0.18, 0.20), Color(0, 0.5, 0, 0))
+	EnvDress.kit_box(k, Vector3(1.08, 1.48, 0.01), box_at + Vector3(0, 0, 0.065), Color(0.55, 0.70, 0.85), Color(0, 0.3, 0.9, 0))
+	EnvDress.kit_box(k, Vector3(1.08, 0.5, 0.012), box_at + Vector3(0, -0.45, 0.067), Color(0.90, 0.92, 0.95), Color(0, 0.3, 0.9, 0))
+	EnvDress.kit_box(k, Vector3(0.5, 0.18, 0.013), box_at + Vector3(0.1, 0.4, 0.068), Color(0.95, 0.75, 0.25), Color(0, 0.3, 0.9, 0))
+	EnvDress.kit_emit(k, root, "PavilionDress")
 	# Табличка маршрутов по видам транспорта.
 	var board := Greybox.mesh_box(Vector3(1.0, 0.55, 0.03), Color.WHITE)
 	board.material_override = Materials.plain(Color(0.92, 0.92, 0.88), 0.6)
@@ -1015,39 +1003,9 @@ func _pavilion(size: Vector3) -> Node3D:
 	root.add_child(routes)
 	return root
 
-## Трубы ТЭЦ: красно-белые, с неподвижным шлейфом пара, на горизонте к северу (ART-06, Н4: снимает «не подтверждено»
-## из ART-04). Только вид.
+## Трубы ТЭЦ (ART-06, Н4; места и высоты приняты в С2–С4) с огнями и паром — skyline.gd.
 func _build_chimneys() -> void:
-	# Туман съедал полосы (итоговая сверка ART-06, С2): материалы без тумана, дымка — в самом цвете
-	# (красный и белый, смешанные с цветом тумана на ~40 %).
-	var red := Materials.far(Color(0.50, 0.21, 0.20))
-	var white := Materials.far(Color(0.62, 0.64, 0.66))
-	var steam := Materials.far(Color(0.66, 0.68, 0.72, 0.55))
-	# Две в перспективе улицы B, левее башни «ГОСТИНИЦА» (x 57–83), и третья на западе — видна от киоска (С4).
-	for spec in [[Vector3(15, 0, -185), 80.0], [Vector3(35, 0, -200), 90.0], [Vector3(-150, 0, -95), 85.0]]:
-		var at: Vector3 = spec[0]
-		var height: float = spec[1]
-		var bands := 10
-		for i in bands:
-			var y0 := height * i / bands
-			var r_low := lerpf(4.0, 2.4, float(i) / bands)
-			var r_high := lerpf(4.0, 2.4, float(i + 1) / bands)
-			var band := Greybox.mesh_cylinder(r_high, r_low, height / bands, Color.WHITE)
-			band.material_override = red if i % 2 == 0 else white
-			band.position = at + Vector3(0, y0 + height / bands * 0.5, 0)
-			add_child(band)
-		var light := Greybox.mesh_sphere(0.8, Color.WHITE)
-		light.material_override = Materials.far(Color(1.0, 0.15, 0.08))
-		light.position = at + Vector3(0, height + 0.8, 0)
-		add_child(light)
-		for k in 7:
-			var puff := Greybox.mesh_sphere(1.0, Color.WHITE)
-			puff.material_override = steam
-			var r := 4.0 + k * 2.2
-			puff.scale = Vector3(r, r * 0.8, r)
-			puff.position = at + Vector3(-k * 6.5, height + 3.0 + k * 1.6, -k * 1.5)   # пологий шлейф на запад, от башни (С2)
-			puff.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-			add_child(puff)
+	_sky().chimneys()
 
 ## Пар из вытяжки на крыше: несколько полупрозрачных клубов, сносимых ветром (ART-06, Н9: `minus-28`).
 func _steam_puff(parent: Node3D, at: Vector3, seed: int) -> void:
@@ -1074,8 +1032,10 @@ func _rod(parent: Node3D, from: Vector3, to: Vector3, radius: float, material: M
 	rod.position = (from + to) * 0.5
 	parent.add_child(rod)
 
-## Детская площадка за оградкой (внутри коллизии Playground): советская металлическая горка, качели на
-## А-образных стойках, песочница под снегом и сугробы у оградки. Начало координат — центр площадки на земле.
+## Детская площадка за оградкой (внутри коллизии Playground): советская металлическая горка с изогнутым жёлобом,
+## качели на А-образных стойках (одно сиденье зимой закинуто на перекладину), песочница с бортиками-сиденьями
+## и грибком в горошек, сугробы у оградки, снег на всех горизонталях (CITY-02 E). Только облик; реакции — BREAK-01.
+## Начало координат — центр площадки на земле.
 func _playground(xz: Vector2, size: Vector3) -> Node3D:
 	var root := Node3D.new()
 	root.name = "PlaygroundDress"
@@ -1083,9 +1043,9 @@ func _playground(xz: Vector2, size: Vector3) -> Node3D:
 	var red := Materials.plain(Color(0.62, 0.14, 0.10), 0.5)
 	var yellow := Materials.plain(Color(0.80, 0.60, 0.12), 0.5)
 	var blue := Materials.plain(Color(0.18, 0.30, 0.55), 0.5)
-	var steel := Materials.plain(Color(0.58, 0.60, 0.62), 0.35)
 	var wood := Materials.plain(Color(0.40, 0.27, 0.16), 0.85)
-	# Горка: лестница с запада, площадка 1,5 м, жёлоб на восток.
+	var k := EnvDress.kit()
+	# Горка: лестница с запада, площадка 1,9 м с дугой-перилами, жёлоб на восток — круто сверху, полого внизу.
 	var s := Vector3(Layout.PLAYGROUND_SLIDE.x - xz.x, 0, Layout.PLAYGROUND_SLIDE.y - xz.y)
 	var top := 1.9
 	for zs in [-0.35, 0.35]:
@@ -1093,50 +1053,90 @@ func _playground(xz: Vector2, size: Vector3) -> Node3D:
 		_rod(root, s + Vector3(-0.6, 0, zs), s + Vector3(-0.6, top + 0.9, zs), 0.04, red)    # задние стойки
 		_rod(root, s + Vector3(-1.0, top, zs), s + Vector3(-1.0, top + 0.9, zs), 0.04, red)  # перила
 		_rod(root, s + Vector3(-1.0, top + 0.9, zs), s + Vector3(-0.6, top + 0.9, zs), 0.04, red)
-	for k in 5:
-		var t := (k + 1) / 6.0 * top / (top + 0.9)   # доля тетивы до площадки
+	for i in 7:   # дуга над площадкой
+		var a0 := PI * i / 7.0
+		var a1 := PI * (i + 1) / 7.0
+		_rod(root, s + Vector3(-0.8, top + 0.9 + sin(a0) * 0.35, -cos(a0) * 0.35), s + Vector3(-0.8, top + 0.9 + sin(a1) * 0.35, -cos(a1) * 0.35), 0.03, blue)
+	for st in 5:
+		var t := (st + 1) / 6.0 * top / (top + 0.9)
 		var a := s + Vector3(-1.9 + 0.9 * t, (top + 0.9) * t, 0)
 		_rod(root, a + Vector3(0, 0, -0.35), a + Vector3(0, 0, 0.35), 0.025, yellow)        # ступени
+		EnvDress.kit_snow(k, Vector3(0.06, 0.03, 0.6), a + Vector3(0, 0.035, 0))
 	_part(root, Vector3(0.5, 0.06, 0.8), s + Vector3(-0.8, top, 0), yellow)                  # площадка
 	_part(root, Vector3(0.5, 0.06, 0.74), s + Vector3(-0.8, top + 0.06, 0), Materials.snow(0.0))
-	var chute_from := s + Vector3(-0.55, top, 0)
-	var chute_to := s + Vector3(2.0, 0.25, 0)
-	var chute := Greybox.mesh_box(Vector3(chute_from.distance_to(chute_to), 0.04, 0.6), Color.WHITE)
-	chute.material_override = steel
-	chute.position = (chute_from + chute_to) * 0.5
-	chute.rotation.z = atan2(chute_to.y - chute_from.y, chute_to.x - chute_from.x)
-	root.add_child(chute)
-	for zs in [-0.31, 0.31]:
-		_rod(root, chute_from + Vector3(0, 0.12, zs), chute_to + Vector3(0, 0.12, zs), 0.025, blue)   # бортики
-	_rod(root, chute_to + Vector3(-0.1, 0, -0.25), chute_to + Vector3(-0.1, -0.25, -0.25), 0.03, blue)
-	_rod(root, chute_to + Vector3(-0.1, 0, 0.25), chute_to + Vector3(-0.1, -0.25, 0.25), 0.03, blue)
-	# Качели: две А-стойки, перекладина 2,2 м, два сиденья на цепях; под качелями снег вытоптан.
+	var curve := [Vector3(-0.55, top, 0), Vector3(0.2, top - 0.75, 0), Vector3(1.0, 0.6, 0), Vector3(1.7, 0.3, 0), Vector3(2.25, 0.28, 0)]
+	for i in curve.size() - 1:
+		var a: Vector3 = s + curve[i]
+		var b: Vector3 = s + curve[i + 1]
+		var chute := Greybox.mesh_box(Vector3(a.distance_to(b) + 0.04, 0.04, 0.6), Color.WHITE)
+		chute.material_override = Materials.plain(Color(0.66, 0.68, 0.70), 0.25)
+		chute.position = (a + b) * 0.5
+		chute.rotation.z = atan2(b.y - a.y, b.x - a.x)
+		root.add_child(chute)
+		for zs in [-0.31, 0.31]:
+			_rod(root, a + Vector3(0, 0.12, zs), b + Vector3(0, 0.12, zs), 0.025, blue)   # бортики
+		# Снег в жёлобе внизу — с горки давно не катались.
+		if i >= 2:
+			EnvDress.kit_snow(k, Vector3(a.distance_to(b), 0.05, 0.5), (a + b) * 0.5 + Vector3(0, 0.04, 0), Vector3(0, 0, atan2(b.y - a.y, b.x - a.x)))
+	for zs in [-0.25, 0.25]:
+		_rod(root, s + Vector3(0.2, top - 0.75, zs), s + Vector3(0.2, 0, zs), 0.03, blue)
+		_rod(root, s + Vector3(1.0, 0.6, zs), s + Vector3(1.0, 0, zs), 0.03, blue)
+		_rod(root, s + Vector3(2.15, 0.28, zs), s + Vector3(2.15, 0, zs), 0.03, blue)
+	# Качели: две А-стойки, перекладина 2,8 м; одно сиденье на цепях, второе закинуто на перекладину.
 	var w := Vector3(Layout.PLAYGROUND_SWINGS.x - xz.x, 0, Layout.PLAYGROUND_SWINGS.y - xz.y)
 	var bar_y := 2.2
 	for xs in [-1.3, 1.3]:
 		for zs in [-0.75, 0.75]:
 			_rod(root, w + Vector3(xs, 0, zs), w + Vector3(xs, bar_y, 0), 0.05, red)
-	_rod(root, w + Vector3(-1.4, bar_y, 0), w + Vector3(1.4, bar_y, 0), 0.05, red)
+		_rod(root, w + Vector3(xs, 0.7, -0.5), w + Vector3(xs, 0.7, 0.5), 0.035, red)   # распорка
+	_rod(root, w + Vector3(-1.45, bar_y, 0), w + Vector3(1.45, bar_y, 0), 0.05, red)
+	EnvDress.kit_snow(k, Vector3(2.8, 0.05, 0.08), w + Vector3(0, bar_y + 0.065, 0))
 	var chain := Materials.plain(Color(0.25, 0.25, 0.26), 0.5)
-	for xs in [-0.6, 0.6]:
-		for zs in [-0.22, 0.22]:
-			_rod(root, w + Vector3(xs + zs, bar_y, 0), w + Vector3(xs + zs, 0.48, 0), 0.012, chain)
-		_part(root, Vector3(0.55, 0.05, 0.25), w + Vector3(xs, 0.46, 0), wood)
-		_part(root, Vector3(0.5, 0.03, 0.2), w + Vector3(xs, 0.5, 0), Materials.snow(0.0))
+	for zs in [-0.22, 0.22]:
+		_rod(root, w + Vector3(-0.6 + zs, bar_y, 0), w + Vector3(-0.6 + zs, 0.48, 0), 0.012, chain)
+	_part(root, Vector3(0.55, 0.05, 0.25), w + Vector3(-0.6, 0.46, 0), wood)
+	_part(root, Vector3(0.5, 0.03, 0.2), w + Vector3(-0.6, 0.5, 0), Materials.snow(0.0))
+	_part(root, Vector3(0.55, 0.05, 0.25), w + Vector3(0.6, bar_y + 0.12, -0.05), wood)   # закинутое сиденье
+	for zs in [-0.2, 0.2]:
+		for q in 3:
+			var a := PI * q / 3.0
+			var b := PI * (q + 1) / 3.0
+			_rod(root, w + Vector3(0.6 + zs, bar_y + sin(a) * 0.1, -cos(a) * 0.1), w + Vector3(0.6 + zs, bar_y + sin(b) * 0.1, -cos(b) * 0.1), 0.012, chain)
+		_rod(root, w + Vector3(0.6 + zs, bar_y - 0.1, 0.06), w + Vector3(0.6 + zs, bar_y - 0.7, 0.04), 0.012, chain)
 	_part(root, Vector3(2.4, 0.01, 1.2), w + Vector3(0, 0.01, 0), Materials.snow(0.9))
-	# Песочница под снегом: деревянная рамка и сугроб внутри.
+	# Песочница под снегом: рамка с треугольными сиденьями по углам и грибок в красный горошек.
 	var b := Vector3(-3.2, 0, -2.6)
 	for e in [[Vector3(2.0, 0.25, 0.1), Vector3(0, 0.125, 0.95)], [Vector3(2.0, 0.25, 0.1), Vector3(0, 0.125, -0.95)],
 			[Vector3(0.1, 0.25, 2.0), Vector3(0.95, 0.125, 0)], [Vector3(0.1, 0.25, 2.0), Vector3(-0.95, 0.125, 0)]]:
 		_part(root, e[0], b + e[1], wood)
+		EnvDress.kit_snow(k, Vector3((e[0] as Vector3).x, 0.04, (e[0] as Vector3).z), b + e[1] + Vector3(0, 0.145, 0))
+	for cx in [-0.8, 0.8]:
+		for cz in [-0.8, 0.8]:
+			EnvDress.kit_box(k, Vector3(0.36, 0.04, 0.36), b + Vector3(cx, 0.27, cz), Color(0.62, 0.42, 0.20), Color(0, 0.9, 0, 0), Vector3(0, PI * 0.25, 0))
 	var heap := _mound(Vector3(1.8, 0.35, 1.8), Materials.snow(0.0))
 	heap.position += b + Vector3(0, 0.175, 0)
 	root.add_child(heap)
+	var post := b + Vector3(0.9, 0, 0.9)
+	_rod(root, post, post + Vector3(0, 1.9, 0), 0.06, Materials.plain(Color(0.86, 0.84, 0.78), 0.6))
+	var cap := Greybox.mesh_cylinder(0.06, 1.0, 0.55, Color.WHITE)
+	cap.material_override = red
+	cap.position = post + Vector3(0, 2.05, 0)
+	root.add_child(cap)
+	for d in 7:
+		var a := TAU * d / 7.0 + 0.3
+		var r := 0.62 if d % 2 == 0 else 0.4
+		var y := 2.05 + (0.5 - r / 1.0) * 0.55 + 0.02
+		EnvDress.kit_put(k, "sph", Transform3D(Basis(Vector3.UP, -a) * Basis.from_scale(Vector3(0.05, 0.12, 0.12)), post + Vector3(cos(a) * r * 1.02, y, sin(a) * r * 1.02)), Color(0.95, 0.95, 0.92), Color(0, 0.6, 0, 0))
+	var snowcap := Greybox.mesh_cylinder(0.02, 0.62, 0.22, Color.WHITE)
+	snowcap.material_override = Materials.snow(0.0)
+	snowcap.position = post + Vector3(0, 2.26, 0)
+	root.add_child(snowcap)
 	# Сугробы вдоль оградки — снег сгребали с дорожек внутрь.
 	for i in 4:
 		var drift := _mound(Vector3(2.2 + 0.6 * _rand(i, 1), 0.3 + 0.2 * _rand(i, 2), 0.9), Materials.snow(0.0))
 		drift.position += Vector3(-4.5 + i * 3.0, 0.2, size.z * 0.5 - 0.6)
 		root.add_child(drift)
+	EnvDress.kit_emit(k, root, "PlaygroundSnow")
 	return root
 
 ## Стойка турника-выбивалки для ковров (кадр двора по ART-04: «выбивалка» у каждого дома). Первая стойка несёт
@@ -1168,7 +1168,9 @@ func _carpet_post(size: Vector3, first: bool) -> Node3D:
 		_part(panel, Vector3(0.035, 0.6, 0.08), Vector3(side * 0.07, -0.55, -0.6), border)
 	return root
 
-## Три мусорных контейнера на бетонной площадке у проезда: крашеный металл, крышки с шапкой снега, ржавые пятна.
+## Три мусорных контейнера на бетонной площадке у проезда: крашеный металл, ручки-цапфы и колёса, крышки с шапкой
+## снега, ржавые пятна; вокруг — мусор: мешки, коробки, бутылки, газеты, у дворовых — старый стул (CITY-02 E).
+## У киоска (короткий ряд) мусор только низкий, до 0,3 м: площадка — зона стелса (ARENA-02, «Что не делать», 1).
 func _trash_bins(size: Vector3) -> Node3D:
 	var root := Node3D.new()
 	var base := -size.y * 0.5
@@ -1176,6 +1178,7 @@ func _trash_bins(size: Vector3) -> Node3D:
 	var colors := [Color(0.20, 0.36, 0.24), Color(0.28, 0.34, 0.42), Color(0.22, 0.38, 0.26)]
 	var rust := Materials.plain(Color(0.42, 0.22, 0.10), 0.9)
 	var unit := size.x / 3.0
+	var k := EnvDress.kit()
 	for i in 3:
 		var x := -size.x * 0.5 + unit * (i + 0.5)
 		var metal := Materials.plain(colors[i], 0.6)
@@ -1192,7 +1195,48 @@ func _trash_bins(size: Vector3) -> Node3D:
 		cap.rotation.x = lid.rotation.x
 		root.add_child(cap)
 		_part(root, Vector3(0.35 + 0.2 * _rand(i, 7), 0.25, 0.02), Vector3(x + 0.2 * (i - 1), base + 0.4, size.z * 0.5 - 0.03), rust)
-	# Сугроб у задней стенки и пакет мусора рядом.
+		for sx: float in [-1.0, 1.0]:
+			EnvDress.kit_put(k, "cyl", Transform3D(Basis.from_euler(Vector3(0, 0, PI * 0.5)) * Basis.from_scale(Vector3(0.14, 0.08, 0.14)), Vector3(x + sx * (unit * 0.5 - 0.05), base + h * 0.7, 0)), colors[i].darkened(0.4), Color(0, 0.6, 0, 0))   # цапфы
+			for sz: float in [-1.0, 1.0]:
+				EnvDress.kit_put(k, "cyl", Transform3D(Basis.from_euler(Vector3(PI * 0.5, 0, 0)) * Basis.from_scale(Vector3(0.12, 0.05, 0.12)), Vector3(x + sx * (unit * 0.5 - 0.2), base + 0.1, sz * (size.z * 0.5 - 0.15))), Color(0.08, 0.08, 0.08), Color(0, 0.8, 0, 0))
+		# Пакет, торчащий из-под приоткрытой крышки.
+		if i == 1:
+			EnvDress.kit_put(k, "sph", Transform3D(Basis.from_scale(Vector3(0.45, 0.25, 0.35)), Vector3(x, base + 0.08 + h + 0.02, size.z * 0.42)), Color(0.10, 0.10, 0.11), Color(0, 0.3, 0, 0))
+	var low := size.x < 3.5
+	var litter := 9 if low else 14
+	for j in litter:
+		var r1 := _rand(j * 7 + int(size.x * 10.0), 1)
+		var r2 := _rand(j * 7 + int(size.x * 10.0), 2)
+		var r3 := _rand(j * 7 + int(size.x * 10.0), 3)
+		var x := -size.x * 0.5 - 0.3 + (size.x + 0.6) * r1
+		var z := size.z * 0.5 + 0.15 + 0.5 * r2
+		var kind := int(r3 * 5.0)
+		match kind:
+			0, 1:   # мешок: чёрный, синий или белый
+				var c: Color = [Color(0.06, 0.06, 0.07), Color(0.14, 0.20, 0.36), Color(0.80, 0.80, 0.78)][j % 3]
+				var hgt := 0.28 if low else 0.3 + 0.2 * r2
+				EnvDress.kit_put(k, "sph", Transform3D(Basis(Vector3.UP, r1 * TAU) * Basis.from_scale(Vector3(0.5, hgt, 0.42)), Vector3(x, base + hgt * 0.45, z)), c, Color(0, 0.3, 0, 0))
+			2:   # коробка, часто сплющенная
+				var flat := r2 < 0.5 or low
+				EnvDress.kit_box(k, Vector3(0.5, 0.04 if flat else 0.35, 0.4), Vector3(x, base + (0.03 if flat else 0.18), z), Color(0.55, 0.42, 0.28).darkened(0.2 * r1), Color(0, 0.95, 0, 0), Vector3(0, r2 * PI, 0.0 if flat else 0.1))
+			3:   # бутылки
+				for q in 3:
+					EnvDress.kit_put(k, "cyl", Transform3D(Basis.from_euler(Vector3(PI * 0.5, r2 * PI + q, 0)) * Basis.from_scale(Vector3(0.07, 0.26, 0.07)), Vector3(x + q * 0.12, base + 0.04, z + q * 0.05)), [Color(0.12, 0.30, 0.12), Color(0.35, 0.20, 0.08), Color(0.70, 0.78, 0.75)][q], Color(0, 0.15, 0, 0))
+			_:   # газеты и снег
+				EnvDress.kit_box(k, Vector3(0.4, 0.01, 0.3), Vector3(x, base + 0.015, z), Color(0.80, 0.78, 0.72), Color(0, 0.95, 0, 0), Vector3(0, r2 * PI, 0))
+				EnvDress.kit_lump(k, Vector3(0.6, 0.12, 0.5), Vector3(x + 0.3, base, z - 0.1))
+	if not low:
+		# Старый стул у контейнеров.
+		var at := Vector3(size.x * 0.5 + 0.5, base, 0.2)
+		var c := Color(0.42, 0.28, 0.16)
+		EnvDress.kit_box(k, Vector3(0.42, 0.04, 0.42), at + Vector3(0, 0.45, 0), c, Color(0, 0.85, 0, 0))
+		for lx: float in [-0.18, 0.18]:
+			for lz: float in [-0.18, 0.18]:
+				EnvDress.kit_box(k, Vector3(0.035, 0.45, 0.035), at + Vector3(lx, 0.22, lz), c, Color(0, 0.85, 0, 0))
+		EnvDress.kit_box(k, Vector3(0.42, 0.45, 0.035), at + Vector3(0, 0.7, -0.2), c, Color(0, 0.85, 0, 0), Vector3(-0.1, 0, 0))
+		EnvDress.kit_snow(k, Vector3(0.38, 0.05, 0.38), at + Vector3(0, 0.49, 0))
+	EnvDress.kit_emit(k, root, "BinsLitter")
+	# Сугроб у задней стенки.
 	var heap := _lumpy_bank(Vector3(size.x, 0.5, 0.8), Materials.snow(0.3), 41)
 	heap.position = Vector3(0, base + 0.25, -size.z * 0.5 - 0.5)
 	root.add_child(heap)
@@ -1368,8 +1412,10 @@ func _kiosk_walls(root: Node3D, size: Vector3) -> void:
 
 # --- ARENA-01: детали вдоль улиц C и D ---
 
-## Павильон «ПРОДУКТЫ 24» у улицы D (ART-04: ночной магазинчик у дороги): сэндвич-панели, витрина в решётке и дверь
-## на запад, к улице, светящийся короб вывески, снег на крыше. Без интерактива; коллизия — коробка Layout.SHOP24.
+## Павильон «ПРОДУКТЫ 24» у улицы D (ART-04: ночной магазинчик у дороги; CITY-02 E): сэндвич-панели, витрина-ниша
+## на запад с подсвеченными полками товара за стеклом и плакатами, решётка, дверь с ручкой и коробом рольставни,
+## крыльцо, кондиционер, светящийся короб вывески, снег на крыше и отливе. Без интерактива; коллизия — коробка
+## Layout.SHOP24 (ниша витрины — внутри неё).
 func _shop24(size: Vector3) -> Node3D:
 	var root := Node3D.new()
 	var hx := size.x * 0.5
@@ -1379,18 +1425,69 @@ func _shop24(size: Vector3) -> Node3D:
 	var panel := Materials.plain(Color(0.80, 0.82, 0.80), 0.7)
 	var trim := Materials.plain(Color(0.20, 0.36, 0.30), 0.6)
 	var iron := Materials.plain(Color(0.15, 0.15, 0.16), 0.5)
-	_part(root, Vector3(size.x, wall_h, size.z), Vector3(0, base + wall_h * 0.5, 0), panel)
-	_part(root, Vector3(size.x + 0.1, 0.3, size.z + 0.1), Vector3(0, base + 0.15, 0), trim)   # цоколь
+	var niche := 0.45
 	var glass_w := size.z - 1.7
 	var glass_z := hz - 0.3 - glass_w * 0.5
-	_part(root, Vector3(0.05, 1.4, glass_w), Vector3(-hx - 0.03, base + 1.5, glass_z), Materials.plain(Color(1.0, 0.86, 0.62), 0.3, WARM, 1.4))
-	for k in 5:
-		_part(root, Vector3(0.04, 1.4, 0.04), Vector3(-hx - 0.08, base + 1.5, glass_z - glass_w * 0.5 + glass_w * k / 4.0), iron)
+	var sill := 0.8
+	var lintel := 2.2
+	# Корпус: глубже ниши — сплошной; западная стена вокруг витрины — полосами.
+	_part(root, Vector3(size.x - niche, wall_h, size.z), Vector3(niche * 0.5, base + wall_h * 0.5, 0), panel)
+	_part(root, Vector3(niche, sill, size.z), Vector3(-hx + niche * 0.5, base + sill * 0.5, 0), panel)
+	_part(root, Vector3(niche, wall_h - lintel, size.z), Vector3(-hx + niche * 0.5, base + (wall_h + lintel) * 0.5, 0), panel)
+	var g0 := glass_z - glass_w * 0.5
+	var g1 := glass_z + glass_w * 0.5
+	_part(root, Vector3(niche, lintel - sill, g0 + hz), Vector3(-hx + niche * 0.5, base + (sill + lintel) * 0.5, (-hz + g0) * 0.5), panel)
+	_part(root, Vector3(niche, lintel - sill, hz - g1), Vector3(-hx + niche * 0.5, base + (sill + lintel) * 0.5, (g1 + hz) * 0.5), panel)
+	_part(root, Vector3(size.x + 0.1, 0.3, size.z + 0.1), Vector3(0, base + 0.15, 0), trim)   # цоколь
+	# Витрина: светлая задняя стенка ниши, две полки с товаром, стекло, решётка снаружи.
+	_part(root, Vector3(0.04, lintel - sill, glass_w), Vector3(-hx + niche - 0.02, base + (sill + lintel) * 0.5, glass_z), Materials.plain(Color(1.0, 0.86, 0.62), 0.3, WARM, 1.4))
+	var k := EnvDress.kit()
+	var goods := [Color(0.85, 0.20, 0.15), Color(0.95, 0.80, 0.20), Color(0.20, 0.45, 0.80), Color(0.92, 0.92, 0.88), Color(0.30, 0.60, 0.25), Color(0.75, 0.45, 0.15)]
+	for shelf in 2:
+		var y := base + sill + 0.12 + shelf * 0.55
+		EnvDress.kit_box(k, Vector3(niche - 0.08, 0.03, glass_w - 0.1), Vector3(-hx + niche * 0.5, y, glass_z), Color(0.85, 0.85, 0.82), Color(3.0, 0.5, 0, 0))
+		var z := g0 + 0.12
+		var j := 0
+		while z < g1 - 0.1:
+			var c: Color = goods[(j * 5 + shelf * 3) % goods.size()]
+			var tall := 0.18 + 0.2 * _rand(j + shelf * 40, 3)
+			if j % 3 == 0:
+				EnvDress.kit_put(k, "cyl", Transform3D(Basis.from_scale(Vector3(0.08, tall + 0.08, 0.08)), Vector3(-hx + niche * 0.5, y + (tall + 0.08) * 0.5 + 0.015, z)), c, Color(0, 0.2, 0.25, 0))
+			else:
+				EnvDress.kit_box(k, Vector3(0.18, tall, 0.12), Vector3(-hx + niche * 0.5, y + tall * 0.5 + 0.015, z), c, Color(0, 0.6, 0.25, 0))
+			z += 0.13 + 0.06 * _rand(j + shelf * 40, 4)
+			j += 1
+	_part(root, Vector3(0.02, lintel - sill, glass_w), Vector3(-hx - 0.01, base + (sill + lintel) * 0.5, glass_z), Materials.glass())
+	for q in 5:
+		_part(root, Vector3(0.04, 1.4, 0.04), Vector3(-hx - 0.08, base + 1.5, glass_z - glass_w * 0.5 + glass_w * q / 4.0), iron)
 	_part(root, Vector3(0.04, 0.04, glass_w), Vector3(-hx - 0.08, base + 1.5, glass_z), iron)
-	_part(root, Vector3(0.06, 2.05, 0.9), Vector3(-hx - 0.03, base + 1.03, -hz + 0.65), Materials.plain(Color(0.30, 0.22, 0.16), 0.6))   # дверь
+	EnvDress.kit_box(k, Vector3(0.18, 0.04, glass_w + 0.1), Vector3(-hx - 0.08, base + sill - 0.02, glass_z), Color(0.60, 0.62, 0.64), Color(3.0, 0.5, 0, 0))   # отлив
+	EnvDress.kit_snow(k, Vector3(0.16, 0.05, glass_w), Vector3(-hx - 0.09, base + sill + 0.02, glass_z))
+	# Плакаты на стекле.
+	for p in [["АКЦИЯ", Color(0.85, 0.12, 0.10), glass_z - glass_w * 0.3, 2.0], ["ХОЛОДНЫЕ\nНАПИТКИ", Color(0.10, 0.30, 0.65), glass_z + glass_w * 0.28, 1.95]]:
+		var at := Vector3(-hx - 0.025, base + p[3], p[2])
+		EnvDress.kit_box(k, Vector3(0.005, 0.26, 0.62), at, Color(0.95, 0.95, 0.90), Color(0, 0.9, 0, 0))
+		var label := _label(p[0], 46, p[1])
+		label.pixel_size = 0.004
+		label.position = at + Vector3(-0.006, 0, 0)
+		label.rotation.y = -PI * 0.5
+		root.add_child(label)
+	# Дверь с ручкой и коробом рольставни, крыльцо.
+	_part(root, Vector3(0.06, 2.05, 0.9), Vector3(-hx - 0.03, base + 1.03, -hz + 0.65), Materials.plain(Color(0.30, 0.22, 0.16), 0.6))
+	EnvDress.kit_box(k, Vector3(0.05, 0.3, 0.04), Vector3(-hx - 0.09, base + 1.0, -hz + 0.95), Color(0.75, 0.75, 0.72), Color(3.0, 0.3, 0, 0))
+	EnvDress.kit_box(k, Vector3(0.28, 0.25, 1.0), Vector3(-hx - 0.14, base + 2.2, -hz + 0.65), Color(0.70, 0.71, 0.70), Color(1.0, 0.5, 0, 0))
+	EnvDress.kit_snow(k, Vector3(0.28, 0.06, 1.0), Vector3(-hx - 0.14, base + 2.35, -hz + 0.65))
 	_part(root, Vector3(0.9, 0.12, 1.4), Vector3(-hx - 0.45, base + 0.06, -hz + 0.65), Materials.plain(Color(0.46, 0.46, 0.45), 0.9))   # крыльцо
+	EnvDress.kit_box(k, Vector3(0.6, 0.015, 0.9), Vector3(-hx - 0.4, base + 0.125, -hz + 0.65), Color(0.25, 0.18, 0.15), Color(0, 0.95, 0, 0))   # коврик
+	# Кондиционер на южной стене, наледь под ним.
+	var ac := Vector3(hx - 1.2, base + 2.2, hz + 0.16)
+	EnvDress.kit_box(k, Vector3(0.8, 0.5, 0.3), ac, Color(0.82, 0.82, 0.80), Color(0, 0.5, 0, 0))
+	EnvDress.kit_put(k, "cyl", Transform3D(Basis.from_euler(Vector3(PI * 0.5, 0, 0)) * Basis.from_scale(Vector3(0.34, 0.02, 0.34)), ac + Vector3(0.12, 0, 0.16)), Color(0.2, 0.2, 0.21), Color(2.0, 0, 0, 0))
+	EnvDress.kit_snow(k, Vector3(0.82, 0.06, 0.32), ac + Vector3(0, 0.28, 0))
+	EnvDress.kit_lump(k, Vector3(0.6, 0.15, 0.5), Vector3(ac.x, base, hz + 0.3))
 	var red := Color(0.50, 0.07, 0.05)
 	_part(root, Vector3(0.22, 0.62, size.z + 0.2), Vector3(-hx - 0.11, base + wall_h + 0.2, 0), Materials.plain(red, 0.5, red, 0.5))
+	EnvDress.kit_snow(k, Vector3(0.24, 0.07, size.z + 0.2), Vector3(-hx - 0.11, base + wall_h + 0.54, 0))
 	var sign := _label("ПРОДУКТЫ 24", 90, Color(1.0, 0.85, 0.35))
 	sign.pixel_size = 0.0042
 	sign.position = Vector3(-hx - 0.23, base + wall_h + 0.2, 0)
@@ -1401,13 +1498,17 @@ func _shop24(size: Vector3) -> Node3D:
 		_part(root, Vector3(0.24, 0.32, 0.01), Vector3(-hx + 0.8 + i * 0.45, base + 1.3 + (i % 2) * 0.3, hz + 0.01), Materials.plain(paper[i], 0.95))
 	_part(root, Vector3(size.x + 0.3, 0.06, size.z + 0.3), Vector3(0, base + wall_h + 0.03, 0), trim)
 	root.add_child(_slab(Vector3(size.x + 0.2, 0, size.z + 0.2), Vector3(0, base + wall_h + 0.15, 0), 0.18))
+	EnvDress.kit_icicles(k, Vector3(-hx - 0.15, base + wall_h, -hz), Vector3(-hx - 0.15, base + wall_h, hz), 0.3, 24)
+	EnvDress.kit_emit(k, root, "Shop24Dress")
 	var heap := _lumpy_bank(Vector3(0.9, 0.6, size.z * 0.8), Materials.snow(0.15), 91)
 	heap.position = Vector3(hx + 0.45, base + 0.3, 0)
 	root.add_child(heap)
 	return root
 
-## Рекламный щит 6 × 3 м на одной опоре с пустым полотном: серо-белое полотно с обрывками старых плакатов, стальная
-## рама, мостик расклейщика, снег на верхней кромке. Коллизия — только опора (Layout.BILLBOARD). Полотно лицом к +z.
+## Рекламный щит 6 × 3 м на одной опоре (CITY-02 E): опора с фланцем на бетонном фундаменте и лестницей в кольцах,
+## консоль-траверса с подкосами, рама-швеллер с рёбрами по периметру, полотна с обрывками старых плакатов, мостик
+## расклейщика с перилами, три прожектора на кронштейнах над каждым полотном (свечение без источника света),
+## снег на верхней кромке и мостике. Коллизия — только опора (Layout.BILLBOARD). Полотно лицом к ±z.
 func _billboard(size: Vector3) -> Node3D:
 	var root := Node3D.new()
 	var base := -size.y * 0.5
@@ -1417,14 +1518,164 @@ func _billboard(size: Vector3) -> Node3D:
 	leg.position = Vector3(0, base + 3.6, 0)
 	root.add_child(leg)
 	var mid := base + 8.7
+	var k := EnvDress.kit()
+	var dark := Color(0.24, 0.25, 0.27)
+	EnvDress.kit_box(k, Vector3(1.4, 0.35, 1.4), Vector3(0, base + 0.12, 0), Color(0.48, 0.48, 0.46), Color(0, 0.95, 0, 0))   # фундамент
+	EnvDress.kit_put(k, "cyl", Transform3D(Basis.from_scale(Vector3(0.9, 0.05, 0.9)), Vector3(0, base + 0.32, 0)), dark, Color(3.0, 0.5, 0, 0))   # фланец
+	for b in 6:
+		var a := TAU * b / 6.0
+		EnvDress.kit_put(k, "cyl", Transform3D(Basis.from_scale(Vector3(0.05, 0.08, 0.05)), Vector3(cos(a) * 0.38, base + 0.37, sin(a) * 0.38)), dark, Color(3.0, 0.5, 0, 0))
+	EnvDress.kit_lump(k, Vector3(1.5, 0.25, 1.5), Vector3(0, base, 0))
+	# Лестница по опоре с ограждением-кольцами.
+	for rx: float in [-0.2, 0.2]:
+		EnvDress.kit_seg(k, Vector3(rx, base + 2.2, 0.32), Vector3(rx, mid - 1.75, 0.32), 0.035, dark, Color(3.0, 0.5, 0, 0))
+	var y := base + 2.4
+	while y < mid - 1.8:
+		EnvDress.kit_seg(k, Vector3(-0.2, y, 0.32), Vector3(0.2, y, 0.32), 0.025, dark, Color(3.0, 0.5, 0, 0))
+		y += 0.3
+	y = base + 4.0
+	while y < mid - 1.8:
+		for q in 8:
+			var a0 := PI * q / 8.0
+			var a1 := PI * (q + 1) / 8.0
+			EnvDress.kit_seg(k, Vector3(cos(a0) * 0.4, y, 0.32 + sin(a0) * 0.4), Vector3(cos(a1) * 0.4, y, 0.32 + sin(a1) * 0.4), 0.025, dark)
+		y += 0.9
+	# Траверса под рамой и подкосы от опоры.
+	EnvDress.kit_box(k, Vector3(4.6, 0.3, 0.3), Vector3(0, mid - 1.62, 0), dark, Color(0, 0.5, 0, 0))
+	for sx: float in [-1.0, 1.0]:
+		EnvDress.kit_seg(k, Vector3(0, base + 6.4, 0), Vector3(sx * 2.0, mid - 1.62, 0), 0.14, dark, Color(0, 0.5, 0, 0), "box")
 	_part(root, Vector3(6.3, 3.3, 0.35), Vector3(0, mid, 0), steel)
-	var canvas := Materials.plain(Color(0.86, 0.86, 0.83), 0.9)
+	var canvas := Materials.plain(Color(0.86, 0.86, 0.83), 0.9, Color(1.0, 0.95, 0.85), 0.12)   # подсвечено прожекторами
 	var scrap := Materials.plain(Color(0.66, 0.64, 0.58), 0.95)
 	for side: float in [-1.0, 1.0]:
 		_part(root, Vector3(6.0, 3.0, 0.02), Vector3(0, mid, side * 0.19), canvas)
 		for i in 4:
 			var r := _rand(i * 7 + int(side + 1.0), 5)
 			_part(root, Vector3(0.25 + 0.6 * r, 0.12 + 0.5 * _rand(i, 9), 0.01), Vector3(-2.4 + i * 1.5 + r * 0.5, mid - 1.0 + 1.8 * _rand(i * 3, 2), side * 0.205), scrap)
+		# Рама-швеллер по периметру полотна.
+		for e in [[Vector3(6.3, 0.12, 0.08), Vector3(0, 1.56, 0)], [Vector3(6.3, 0.12, 0.08), Vector3(0, -1.56, 0)],
+				[Vector3(0.12, 3.3, 0.08), Vector3(3.09, 0, 0)], [Vector3(0.12, 3.3, 0.08), Vector3(-3.09, 0, 0)]]:
+			EnvDress.kit_box(k, e[0], Vector3(0, mid, side * 0.22) + e[1], dark, Color(3.0, 0.5, 0, 0))
+		# Прожекторы: кронштейн от верхней кромки на 1,2 м и корпус-лампа, смотрящий на полотно.
+		for px: float in [-2.0, 0.0, 2.0]:
+			var from := Vector3(px, mid + 1.6, side * 0.2)
+			var to := from + Vector3(0, 0.35, side * 1.15)
+			EnvDress.kit_seg(k, from, to, 0.05, dark, Color(3.0, 0.5, 0, 0))
+			EnvDress.kit_box(k, Vector3(0.36, 0.14, 0.26), to + Vector3(0, -0.05, 0), dark, Color(0, 0.5, 0, 0), Vector3(side * 0.6, 0, 0))
+			EnvDress.kit_box(k, Vector3(0.3, 0.02, 0.2), to + Vector3(0, -0.13, -side * 0.04), Color(1.0, 0.93, 0.80), Color(0, 0.3, 3.0, 0), Vector3(side * 0.6, 0, 0))
 	_part(root, Vector3(6.3, 0.06, 0.9), Vector3(0, mid - 1.75, 0.45), steel)
+	for px in 7:
+		EnvDress.kit_seg(k, Vector3(-3.0 + px, mid - 1.72, 0.88), Vector3(-3.0 + px, mid - 0.75, 0.88), 0.03, dark)
+	EnvDress.kit_seg(k, Vector3(-3.1, mid - 0.75, 0.88), Vector3(3.1, mid - 0.75, 0.88), 0.035, dark)
+	EnvDress.kit_snow(k, Vector3(6.2, 0.05, 0.6), Vector3(0, mid - 1.69, 0.5))
+	EnvDress.kit_icicles(k, Vector3(-3.1, mid - 1.78, 0.9), Vector3(3.1, mid - 1.78, 0.9), 0.3, 77)
+	EnvDress.kit_emit(k, root, "BillboardDress")
 	root.add_child(_slab(Vector3(6.3, 0, 0.35), Vector3(0, mid + 1.72, 0), 0.14))
 	return root
+
+
+## Среда квартала (CITY-02 E): узел пакетов EnvDress создаётся при первом обращении.
+func _env() -> EnvDress:
+	if _environment == null:
+		_environment = EnvDress.new()
+		add_child(_environment)
+	return _environment
+
+## Панорама за краем карты (CITY-02 E): узел Skyline создаётся при первом обращении.
+func _sky() -> Skyline:
+	if _skyline == null:
+		_skyline = Skyline.new()
+		add_child(_skyline)
+	return _skyline
+
+## Позиция в осях гаражного ряда: along — вдоль ряда, y, out — от оси ряда к воротам.
+static func _gpos(long_z: bool, along: float, y: float, out: float) -> Vector3:
+	return Vector3(out, y, along) if long_z else Vector3(along, y, out)
+
+static func _gsize(long_z: bool, along: float, y: float, out: float) -> Vector3:
+	return Vector3(out, y, along) if long_z else Vector3(along, y, out)
+
+## Хлам у ворот гаража: покрышки стопкой, доска у стены, канистра, ведро, поддон, сломанный стул — низко, у самых
+## ворот (до 0,8 м от стены), без коллизий.
+func _garage_clutter(k: Dictionary, long_z: bool, offset: float, face: float, side: float, height: float, seed: int) -> void:
+	var base := -height * 0.5
+	var x0 := offset + (_rand(seed, 1) - 0.5) * 1.6
+	match int(_rand(seed, 2) * 4.0):
+		0:
+			for t in 2 + int(_rand(seed, 3) * 2.0):
+				EnvDress.kit_put(k, "cyl", Transform3D(Basis.from_scale(Vector3(0.62, 0.19, 0.62)), _gpos(long_z, x0, base + 0.1 + t * 0.19, face + side * 0.45)), Color(0.08, 0.08, 0.09), Color(0, 0.9, 0, 0))
+			EnvDress.kit_lump(k, Vector3(0.5, 0.08, 0.5), _gpos(long_z, x0, base + 0.2 + 2 * 0.19, face + side * 0.45))
+		1:
+			EnvDress.kit_box(k, _gsize(long_z, 0.22, 1.7, 0.03), _gpos(long_z, x0, base + 0.82, face + side * 0.2), Color(0.42, 0.32, 0.20), Color(0, 0.95, 0, 0), Vector3(side * 0.18, 0, 0) if long_z else Vector3(0, 0, -side * 0.18))
+			EnvDress.kit_box(k, _gsize(long_z, 0.2, 0.32, 0.12), _gpos(long_z, x0 + 0.4, base + 0.16, face + side * 0.3), Color(0.70, 0.12, 0.08), Color(0, 0.4, 0, 0))
+		2:
+			EnvDress.kit_box(k, _gsize(long_z, 1.1, 0.14, 0.75), _gpos(long_z, x0, base + 0.07, face + side * 0.5), Color(0.50, 0.40, 0.26), Color(1.0, 0.95, 0, 0))
+			EnvDress.kit_lump(k, Vector3(1.0, 0.1, 0.7), _gpos(long_z, x0, base + 0.14, face + side * 0.5))
+			EnvDress.kit_put(k, "cyl", Transform3D(Basis.from_scale(Vector3(0.3, 0.32, 0.3)), _gpos(long_z, x0 + 0.75, base + 0.16, face + side * 0.35)), Color(0.30, 0.40, 0.55), Color(3.0, 0.5, 0, 0))
+		3:
+			var c := Color(0.35, 0.22, 0.14)
+			EnvDress.kit_box(k, _gsize(long_z, 0.42, 0.04, 0.4), _gpos(long_z, x0, base + 0.42, face + side * 0.45), c, Color(0, 0.9, 0, 0), Vector3(0.0, 0.3, 0.25))
+			for lx: float in [-0.18, 0.18]:
+				EnvDress.kit_box(k, _gsize(long_z, 0.035, 0.42, 0.035), _gpos(long_z, x0 + lx, base + 0.21, face + side * 0.3), c, Color(0, 0.9, 0, 0))
+			EnvDress.kit_box(k, _gsize(long_z, 0.4, 0.45, 0.03), _gpos(long_z, x0, base + 0.2, face + side * 0.68), c, Color(0, 0.9, 0, 0), Vector3(1.2, 0, 0) if not long_z else Vector3(0, 0, 1.2))
+
+## Снаружи киоска (CITY-02 E): раздвижные решётки по краям окна, ступенька под окном, кондиционер с наледью на задней
+## стене, телеантенна и кабель, наклейки и рукописный номер (ART-04, черта 15), снежный напуск и сосульки над окном,
+## провод питания к опоре — в _build_wires. Всё на стенах или плоское: площадка киоска — зона стелса (ARENA-02, п. 1).
+func _kiosk_outside(root: Node3D, size: Vector3) -> void:
+	var hx := size.x * 0.5
+	var hy := size.y * 0.5
+	var hz := size.z * 0.5
+	var k := EnvDress.kit()
+	var floor_y := -hy
+	var gh := size.y - 1.7
+	for zs: float in [-1.0, 1.0]:
+		EnvDress.kit_box(k, Vector3(0.04, gh + 0.1, 0.42), Vector3(hx + 0.06, floor_y + 1.0 + gh * 0.5, zs * (hz - 0.3)), Color(0.14, 0.15, 0.16), Color(2.0, 0, 0, 0))
+		EnvDress.kit_box(k, Vector3(0.05, 0.05, 0.5), Vector3(hx + 0.06, floor_y + 1.0 + gh + 0.06, zs * (hz - 0.3)), Color(0.14, 0.15, 0.16), Color(0, 0.5, 0, 0))
+	EnvDress.kit_box(k, Vector3(0.55, 0.14, size.z - 0.5), Vector3(hx + 0.28, floor_y + 0.07, 0), Color(0.46, 0.46, 0.45), Color(0, 0.95, 0, 0))   # ступенька
+	EnvDress.kit_snow(k, Vector3(0.12, 0.05, size.z - 0.5), Vector3(hx + 0.5, floor_y + 0.16, 0))
+	# Полка-прилавок снаружи под окном, со снегом по краю.
+	EnvDress.kit_box(k, Vector3(0.3, 0.04, size.z - 0.3), Vector3(hx + 0.15, floor_y + 1.02, 0), Color(0.62, 0.58, 0.50), Color(3.0, 0.6, 0, 0))
+	# Кондиционер на задней стене, решётка вентилятора, трубка конденсата и сосулька под ней.
+	var ac := Vector3(-hx - 0.16, hy - 0.75, 0.9)
+	EnvDress.kit_box(k, Vector3(0.3, 0.5, 0.8), ac, Color(0.80, 0.80, 0.78), Color(0, 0.5, 0, 0))
+	EnvDress.kit_put(k, "cyl", Transform3D(Basis.from_euler(Vector3(0, 0, PI * 0.5)) * Basis.from_scale(Vector3(0.36, 0.02, 0.36)), ac + Vector3(-0.16, 0, 0.12)), Color(0.20, 0.20, 0.21), Color(2.0, 0, 0, 0))
+	EnvDress.kit_snow(k, Vector3(0.32, 0.06, 0.82), ac + Vector3(0, 0.28, 0))
+	EnvDress.kit_seg(k, ac + Vector3(0, -0.25, -0.3), ac + Vector3(-0.05, -1.2, -0.3), 0.02, Color(0.85, 0.85, 0.85))
+	EnvDress.kit_put(k, "ice", Transform3D(Basis.from_scale(Vector3(0.08, 0.5, 0.08)), ac + Vector3(-0.05, -1.45, -0.3)))
+	EnvDress.kit_lump(k, Vector3(0.5, 0.18, 0.5), Vector3(-hx - 0.35, floor_y, 0.6))   # наледь под капелью
+	# Антенна на крыше: мачта, три перекладины, кабель по задней стене.
+	var mast := Vector3(-hx + 0.4, hy + 0.12, -hz + 0.4)
+	EnvDress.kit_seg(k, mast, mast + Vector3(0, 1.7, 0), 0.04, Color(0.55, 0.57, 0.58), Color(3.0, 0.5, 0, 0))
+	for i in 3:
+		var y := 1.0 + i * 0.28
+		var l := 0.9 - i * 0.2
+		EnvDress.kit_seg(k, mast + Vector3(-l * 0.5, y, 0.1 * i), mast + Vector3(l * 0.5, y, 0.1 * i), 0.02, Color(0.55, 0.57, 0.58), Color(3.0, 0.5, 0, 0))
+	EnvDress.kit_seg(k, mast + Vector3(0, 0.3, 0), Vector3(-hx - 0.05, hy, -hz + 0.4), 0.015, Color(0.08, 0.08, 0.08))
+	EnvDress.kit_seg(k, Vector3(-hx - 0.05, hy, -hz + 0.4), Vector3(-hx - 0.05, floor_y + 1.2, -hz + 0.4), 0.015, Color(0.08, 0.08, 0.08))
+	# Наклейки: яркие полоски на боковых стенах и у окна.
+	var stickers := [[1.0, 1.6, 0.6, 0.22, 0.12, Color(0.92, 0.80, 0.10)], [1.0, -0.2, 0.9, 0.16, 0.16, Color(0.15, 0.45, 0.80)],
+		[-1.0, 0.9, 1.05, 0.3, 0.1, Color(0.85, 0.20, 0.15)], [-1.0, 1.8, 0.55, 0.12, 0.18, Color(0.20, 0.62, 0.30)],
+		[1.0, 2.1, 1.2, 0.14, 0.09, Color(0.95, 0.95, 0.92)]]
+	for st in stickers:
+		EnvDress.kit_box(k, Vector3(st[3], st[4], 0.004), Vector3(-hx + st[1], floor_y + st[2], st[0] * (hz + 0.075)), st[5], Color(0, 0.5, 0, 0))
+	var number := _label("№ 117", 64, Color(0.95, 0.95, 0.92))
+	number.pixel_size = 0.004
+	number.position = Vector3(-hx + 0.9, floor_y + 2.45, hz + 0.08)
+	root.add_child(number)
+	# Снег свисает с козырька над окном, сосульки по кромке.
+	EnvDress.kit_snow(k, Vector3(0.22, 0.12, size.z + 0.5), Vector3(hx + 0.62, hy + 0.12, 0), Vector3(0, 0, -0.35))
+	EnvDress.kit_icicles(k, Vector3(hx + 0.6, hy, -hz - 0.25), Vector3(hx + 0.6, hy, hz + 0.25), 0.4, 117)
+	EnvDress.kit_icicles(k, Vector3(-hx - 0.0, hy, -hz - 0.3), Vector3(hx + 0.6, hy, -hz - 0.3), 0.25, 118, 0.22)
+	EnvDress.kit_emit(k, root, "KioskOutside")
+	# Ценники за стеклом рядом с «Батон 35» (там же, где он).
+	var tags := [["Бородинский\n52 р.", -1.35], ["Кирпичик\n38 р.", 0.95]]
+	for tg in tags:
+		var at := Vector3(hx - 0.07, floor_y + 1.2, tg[1])
+		_part(root, Vector3(0.01, 0.2, 0.36), at, Materials.plain(Color(0.95, 0.94, 0.88), 0.9))
+		var label := _label(tg[0], 34, Color(0.12, 0.10, 0.10))
+		label.pixel_size = 0.0028
+		label.alpha_cut = Label3D.ALPHA_CUT_DISCARD
+		label.position = at + Vector3(0.008, 0, 0)
+		label.rotation.y = PI * 0.5
+		root.add_child(label)
