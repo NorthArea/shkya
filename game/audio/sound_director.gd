@@ -88,6 +88,7 @@ func _setup() -> void:
 	_setup_ambient()   # CITY-01 (A): слои фона, живность, сигналы машин
 	_setup_coins()   # COINS-01: звон монеты
 	_setup_punch()   # PUNCH-01: удар и дроны
+	_setup_knock()   # KNOCK-01: сбитые «Ладой» жители
 
 ## Текст субтитра радио, пока он на экране ("" — нет).
 func radio_text() -> String:
@@ -102,6 +103,7 @@ func _physics_process(delta: float) -> void:
 	_traffic_sounds()
 	_ambient_sounds(delta)   # CITY-01 (A)
 	_drone_sounds()   # PUNCH-01
+	_knock_sounds()   # KNOCK-01
 
 ## Радио один раз за мир: бубнёж из машины и субтитр, пока звучит (плюс хвост на дочитать).
 func _radio(delta: float) -> void:
@@ -594,3 +596,42 @@ func _drone_sounds() -> void:
 			player.stop()
 		var excited: bool = drone.state == &"approach" or drone.state == &"hover"
 		player.pitch_scale = (0.96 + 0.025 * float(drone.index % 4)) * (1.12 if excited else 1.0)
+
+# --- KNOCK-01: сбитые «Ладой» жители ---
+## «Вжух» — разовый 3D в точке удара (Residents.resident_knocked), глухой «пуф» в снег — в точке падения
+## (Residents.resident_landed). Плееры под DemoWorld; полифония — пара сбитых разом не обрывает друг друга.
+## Уровни, RMS файла + volume_db (у источника): вжух −20 − 4 = −24 дБ, пуф −16 − 2 = −18. Звуки — tools/generate_audio.py.
+## played["knock"] — взлёты, played["knock_thud"] — падения.
+const KNOCK_WHOOSH := preload("res://assets/audio/knock_whoosh.wav")
+const KNOCK_THUD := preload("res://assets/audio/knock_thud.wav")
+const KNOCK_WHOOSH_DB := -4.0
+const KNOCK_THUD_DB := -2.0
+
+var knock_whoosh_player: AudioStreamPlayer3D
+var knock_thud_player: AudioStreamPlayer3D
+var _residents_node: Node
+
+func _setup_knock() -> void:
+	played["knock"] = 0
+	played["knock_thud"] = 0
+	knock_whoosh_player = _player_3d(world, KNOCK_WHOOSH_DB, KNOCK_WHOOSH)
+	knock_whoosh_player.name = "KnockWhoosh"
+	knock_whoosh_player.max_polyphony = 3
+	knock_thud_player = _player_3d(world, KNOCK_THUD_DB, KNOCK_THUD)
+	knock_thud_player.name = "KnockThud"
+	knock_thud_player.max_polyphony = 3
+
+## Residents (LevelGeometry/Residents) — по группе; подключается при первом появлении.
+func _knock_sounds() -> void:
+	if knock_whoosh_player == null or (_residents_node != null and is_instance_valid(_residents_node)):
+		return
+	_residents_node = get_tree().get_first_node_in_group(&"residents")
+	if _residents_node == null or not _residents_node.has_signal(&"resident_knocked"):
+		_residents_node = null
+		return
+	_residents_node.resident_knocked.connect(func(resident: Node3D):
+		knock_whoosh_player.global_position = resident.global_position + Vector3.UP * 1.0
+		_one_shot(knock_whoosh_player, KNOCK_WHOOSH, "knock"))
+	_residents_node.resident_landed.connect(func(resident: Node3D):
+		knock_thud_player.global_position = resident.global_position + Vector3.UP * 0.3
+		_one_shot(knock_thud_player, KNOCK_THUD, "knock_thud"))

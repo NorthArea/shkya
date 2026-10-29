@@ -622,6 +622,44 @@ def drone_pop() -> list[float]:
     return to_rms(out, -16.0)
 
 
+def knock_whoosh() -> list[float]:
+    """Сбитый «Ладой» житель взлетает (KNOCK-01): комичный «вжу-ух» — шум в полосе, которая идёт вверх 0,5 → 1,6 кГц
+    и снова вниз к 0,7 кГц, нарастание 0,12 с, мягкий спад; 0,55 с. Ни криков, ни удара — только воздух."""
+    rng = random.Random(149)
+    out, low, high = [], 0.0, 0.0
+    n = samples(0.55)
+    for i in range(n):
+        t = i / RATE
+        u = t / 0.55
+        freq = 500.0 + 1100.0 * math.sin(math.pi * min(u / 0.8, 1.0)) ** 2 + 200.0 * u
+        low += (1.0 - math.exp(-2.0 * math.pi * freq / RATE)) * (rng.uniform(-1, 1) - low)
+        high += (1.0 - math.exp(-2.0 * math.pi * freq * 0.4 / RATE)) * (low - high)
+        env = min(t / 0.12, 1.0) * (1.0 - u) ** 1.5
+        out.append((low - high) * env)
+    return to_rms(out, -20.0)
+
+
+def knock_thud() -> list[float]:
+    """Падение в снег (KNOCK-01): глухой мягкий «пуф» — низкий толчок 75 → 48 Гц (спад 0,09 с) и шорох снега: шум
+    через фильтр 900 Гц со спадом 0,16 с, короткий хруст наста в начале. 0,5 с."""
+    rng = random.Random(151)
+    n = samples(0.5)
+    out = []
+    phase = 0.0
+    for i in range(n):
+        t = i / RATE
+        phase += 2 * math.pi * (48 + 27 * math.exp(-t / 0.05)) / RATE
+        thump = math.sin(phase) * math.exp(-t / 0.09)
+        hiss = rng.uniform(-1, 1) * min(t / 0.008, 1.0) * math.exp(-t / 0.16)
+        crunch = rng.uniform(-1, 1) * math.exp(-t / 0.02)
+        out.append(thump + hiss * 0.55 + crunch * 0.25)
+    out = lowpass(out, 900, 2)
+    fade = samples(0.1)
+    for i in range(fade):
+        out[-1 - i] *= i / fade
+    return to_rms(out, -16.0)
+
+
 def main() -> None:
     rng = random.Random(1)
     for k in range(1, 5):
@@ -668,6 +706,9 @@ def main() -> None:
     write("drone_buzz_loop.wav", drone_buzz_loop())
     write("punch_whoosh.wav", punch_whoosh())
     write("drone_pop.wav", drone_pop())
+    # KNOCK-01: сбитый «Ладой» житель — «вжух» взлёта и глухой «пуф» в снег.
+    write("knock_whoosh.wav", knock_whoosh())
+    write("knock_thud.wav", knock_thud())
 
 
 if __name__ == "__main__":

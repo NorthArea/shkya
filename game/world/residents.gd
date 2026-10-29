@@ -7,6 +7,8 @@ extends Node3D
 ## Узел создаёт LevelGeometry (ребёнок DemoWorld/LevelGeometry/Residents, после Traffic); мир ищется вверх по дереву.
 ## Тела жителей исключены из луча камеры, как тела NPC в Patrols (их слой Car камера и так не видит — на всякий
 ## случай, если слой поменяют). В группу detection_sensors жители не входят: стелс (C7) их не замечает.
+## KNOCK-01: сбитый «Ладой» житель (Resident.knock) — сигналы resident_knocked (взлёт) и resident_landed (упал в снег)
+## для SoundDirector, который находит узел по группе GROUP; knocks — сколько раз сбивали всех за мир.
 
 const Layout = preload("res://game/world/layout.gd")
 const ResidentScript = preload("res://game/npc/resident.gd")
@@ -49,6 +51,11 @@ const SMOKERS := {10: 11, 11: 10}
 const RIDER := 2
 const RIDER_WAIT_POINT := 1
 
+const GROUP := &"residents"
+
+signal resident_knocked(resident: Resident)
+signal resident_landed(resident: Resident)
+
 var residents: Array = []
 var trolley: Node3D
 var horn_glances := 0
@@ -56,6 +63,7 @@ var _sound: Node
 
 func _init() -> void:
 	name = "Residents"
+	add_to_group(GROUP)
 
 func _ready() -> void:
 	var world := _world()
@@ -74,6 +82,8 @@ func _ready() -> void:
 		resident.tint = Color(1.0, 1.0, 1.0)
 		resident.player = player
 		resident.lada = lada
+		resident.knock_launched.connect(func(r: Resident): resident_knocked.emit(r))
+		resident.knock_landed.connect(func(r: Resident): resident_landed.emit(r))
 		residents.append(resident)
 	# Роли — до add_child: _ready курящего начинает с перекура.
 	for f in PAIRS:
@@ -116,7 +126,14 @@ func _world() -> Node:
 		node = node.get_parent()
 	return null
 
-## Для тестов и перезапуска: все на старт.
+## Сколько раз сбивали жителей (с последнего reset_positions()).
+func knocks() -> int:
+	var total := 0
+	for resident in residents:
+		total += resident.knocks
+	return total
+
+## Для тестов и перезапуска: все на старт (сбитые — тоже: облик, тело и счётчики сбивания — как до удара).
 func reset_positions() -> void:
 	for resident in residents:
 		resident.reset_to_start()

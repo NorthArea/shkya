@@ -23,6 +23,18 @@ extends "res://game/npc/npc.gd"
 ## pick_line: hash(SEED, индекс, счётчик реплик), без повтора подряд у жителя; не бабка (babka_voice = false) — только
 ## реплики без возраста и рода (QuestLines.RESIDENT_LINES_ANYONE). Случайности — только свой
 ## RandomNumberGenerator с seed SEED + индекс (реплики его не трогают).
+##
+## KNOCK-01 (решение владельца 29.10, идея Hit & Run, без крови и увечий): «Лада» быстрее KNOCK_MIN_SPEED сбивает
+## жителя — состояние knocked, фазы fly → down → getup → back. Полёт — у узла Resident (парабола от точки удара: по ходу
+## машины и от её центра, высота KNOCK_HEIGHT и дальность по скорости машины, скорость полёта не больше KNOCK_FLY_MAX;
+## перед коробкой Layout.all_solids() полёт укорачивается — flight_distance), облик кувыркается (спрайт: billboard
+## выключен, облик лицом к камере и вращается в плоскости экрана; 3D-тело: вокруг оси поперёк полёта) и ложится на снег:
+## облако снежной пыли, «пуф»; лежит KNOCK_DOWN_SECONDS со снежинками над головой, встаёт KNOCK_RISE_SECONDS,
+## отряхивается, говорит реплику HIT и возвращается на маршрут той же дорогой (back), дальше — как шёл. Тело выключено
+## на fly/down/getup; повторный наезд в эти фазы ничего не делает, после getup — KNOCK_IMMUNE_SECONDS неуязвимости.
+## Пара: сбитый возвращается на своё место, второй тем временем стоит и смотрит на него. Медленнее KNOCK_MIN_SPEED —
+## прежний отход (_dodge_lada). Пассажир у дверей и на переходе (board/alight/transit) и скрытые не сбиваются.
+## Очков, денег и штрафов нет. Звук — сигналы knock_launched/knock_landed (Residents → SoundDirector).
 
 const DialogPanelScript = preload("res://game/ui/dialog_panel.gd")
 const Layout = preload("res://game/world/layout.gd")
@@ -71,6 +83,32 @@ const BUBBLE_PIXEL := 0.0035
 const BUBBLE_PAD := 34.0
 const BUBBLE_TAIL := 56.0
 const BUBBLE_DOWNSCALE := 2.0
+# KNOCK-01: сбивание «Ладой» без вреда.
+const SNOW_PUFF_SHADER := preload("res://game/vehicles/slush_spray.gdshader")   # частицы пыли — как брызги PLAY-03
+const KNOCK_MIN_SPEED := 3.0              # м/с «Лады»: медленнее — прежний отход (_dodge_lada)
+const KNOCK_FULL_AT := 15.0               # м/с «Лады»: полная высота, больше оборотов, дольше лежит
+const KNOCK_FLY_BASE := 1.5               # м/с полёта по горизонтали: BASE + GAIN · скорость машины,
+const KNOCK_FLY_GAIN := 0.7
+const KNOCK_FLY_MAX := 9.0                # но не больше
+const KNOCK_HEIGHT := Vector2(1.5, 3.0)   # м подъёма ног: от KNOCK_MIN_SPEED до KNOCK_FULL_AT
+const KNOCK_TURNS := Vector2(1.0, 1.75)   # оборотов в полёте, плюс четверть — лечь
+const KNOCK_AWAY := 0.6                   # вес направления «от центра машины» к направлению её хода
+const KNOCK_GRAVITY := 9.8
+const KNOCK_SOLID_PAD := 0.2              # м сверх BODY_RADIUS до коробки all_solids(): там полёт кончается
+const KNOCK_DOWN_SECONDS := Vector2(1.5, 2.5)   # лежит: от KNOCK_MIN_SPEED до KNOCK_FULL_AT
+const KNOCK_RISE_SECONDS := 0.8
+const KNOCK_SHAKE_SECONDS := 0.6          # отряхивается: два покачивания
+const KNOCK_SHAKE_ANGLE := 0.16           # рад
+const KNOCK_IMMUNE_SECONDS := 3.0         # после getup
+const KNOCK_DOWN_CENTER := 0.42           # м: центр лежащего спрайта над снегом (3D-тело — KNOCK_DOWN_CENTER_3D)
+const KNOCK_DOWN_CENTER_3D := 0.2
+const KNOCK_HEAD := 0.5                   # м от центра облика до головы
+const KNOCK_STARS := 4                    # снежинки над головой лежащего
+const KNOCK_STAR_RADIUS := 0.3
+const KNOCK_STAR_SPIN := 4.0              # рад/с
+const KNOCK_STAR_LIFT := 0.3              # м над головой
+const KNOCK_SNOW := Color(0.9, 0.93, 0.98)
+const KNOCK_PHASES: Array[StringName] = [&"fly", &"down", &"getup"]   # облик под управлением сбивания
 
 @export var index := 0
 var route: Array = []          # Vector3, замкнутая ломаная
@@ -132,6 +170,36 @@ var _transit_speed := 1.3
 var _transit_yield_leg := -1
 static var _bubble_cache := {}     # текст → ImageTexture
 
+# KNOCK-01
+signal knock_launched(resident: Resident)
+signal knock_landed(resident: Resident)
+var knocks := 0
+var knock_phase: StringName = &""  # &"fly", &"down", &"getup", &"back" (state == &"knocked"); &"" — не сбит
+var knock_roll := 0.0              # угол облика: спрайт — в плоскости экрана, 3D — вокруг оси поперёк полёта, рад
+var knock_from := Vector3.ZERO     # точка удара (на маршруте)
+var knock_to := Vector3.ZERO       # точка приземления
+var knock_car_speed := 0.0         # м/с «Лады» в момент удара
+var knock_peak := 0.0              # м: высшая точка полёта
+var knock_log: Array = []          # [время, фаза, позиция XZ]
+var knock_dust: CPUParticles3D
+var _knock_t := 0.0
+var _knock_time := 1.0             # с полёта
+var _knock_vy := 0.0
+var _knock_dir := Vector3.FORWARD
+var _knock_dist := 0.0
+var _knock_spin := 0.0             # рад за полёт
+var _knock_sign := 1.0             # +1 — летит вправо по экрану
+var _knock_down := 2.0             # с лежит
+var _knock_center := 0.0           # м: центр облика над узлом
+var _knock_squash := Vector2.ONE
+var _knock_immune_until := -INF
+var _knock_path: Array = []        # обратно на маршрут: точки XZ (последняя — на маршруте)
+var _knock_resume := [0, 1]        # target_point, direction — куда шёл до удара
+var _knock_waiting := false        # первый в паре ждёт сбитого второго
+var _knock_stars: Node3D
+var _knock_shadow: MeshInstance3D
+static var _solid_rects: Array = []
+
 func setup(resident_index: int, points: Array, pauses: Array, start: int) -> void:
 	index = resident_index
 	route = points
@@ -177,11 +245,17 @@ func _physics_process(delta: float) -> void:
 	_tick_bubble(delta)
 	if hidden:
 		return   # в троллейбусе или в магазине: ждёт doors_opened
+	_check_knock()
+	if state == &"knocked":
+		_tick_knock(delta)
+		return
 	_react()
 	if leader != null:
+		if leader.state == &"knocked":
+			look_at_target(leader)   # первого сбили: стоит и смотрит, пока тот не вернётся
 		return   # второй в паре: его ставит первый (_mirror)
 	_tick(delta)
-	if follower != null:
+	if follower != null and follower.state != &"knocked":
 		follower._mirror(self)
 
 func _tick(delta: float) -> void:
@@ -192,9 +266,16 @@ func _tick(delta: float) -> void:
 	if state == &"board" or state == &"transit":
 		_tick_transit(delta)
 		return
-	if _lada_touches_pair(global_position, LADA_MARGIN):
+	if _lada_touches_pair(global_position, LADA_MARGIN) and _lada_speed() < KNOCK_MIN_SPEED:
 		_dodge_lada()
 		return
+	if follower != null and follower.state == &"knocked":
+		look_at_target(follower)   # второго сбили: ждёт его на месте
+		_knock_waiting = true
+		return
+	if _knock_waiting:
+		_knock_waiting = false
+		stop_looking()
 	var to_player := _player_distance()
 	if to_player > RELEASE_DISTANCE:
 		_met = false
@@ -316,6 +397,7 @@ func reset_to_start() -> void:
 	_idle_at = clock + _idle_interval()
 	if _bubble_back:
 		_bubble_back.visible = false
+	_knock_reset()
 	if smoke_point == start_point:
 		_start_smoke()
 	if follower != null:
@@ -330,7 +412,27 @@ func loop_length() -> float:
 
 ## «Лада» задела: на ближайшую точку маршрута (шаг 0,5 м), свободную от её габарита на LADA_CLEAR, и дальше — от неё.
 func _dodge_lada() -> void:
-	var here := _flat(global_position)
+	var found := _nearest_free_point(_flat(global_position))
+	var best: Vector3 = found[0]
+	var best_seg: int = found[1]
+	lada_bumps += 1
+	if clock >= _hit_ready_at:
+		_hit_ready_at = clock + BUBBLE_COOLDOWN
+		_speak(&"hit")
+	stop_looking()
+	state = &"walk"
+	if best_seg < 0:
+		direction = 1
+		target_point = _wrap(start_point + 1)
+		place(route[start_point])
+		return
+	place(best)
+	var resume := _resume_from(best, best_seg)
+	target_point = resume[0]
+	direction = resume[1]
+
+## Ближайшая к here точка маршрута (шаг 0,5 м), свободная от габарита «Лады» на LADA_CLEAR: [точка, отрезок] или [INF, −1].
+func _nearest_free_point(here: Vector3) -> Array:
 	var best := Vector3.INF
 	var best_d := INF
 	var best_seg := -1
@@ -347,25 +449,14 @@ func _dodge_lada() -> void:
 				best_d = d
 				best = p
 				best_seg = k
-	lada_bumps += 1
-	if clock >= _hit_ready_at:
-		_hit_ready_at = clock + BUBBLE_COOLDOWN
-		_speak(&"hit")
-	stop_looking()
-	state = &"walk"
-	if best_seg < 0:
-		direction = 1
-		target_point = _wrap(start_point + 1)
-		place(route[start_point])
-		return
-	place(best)
+	return [best, best_seg]
+
+## С точки best на отрезке best_seg — дальше от «Лады»: [target_point, direction].
+func _resume_from(best: Vector3, best_seg: int) -> Array:
 	var away := best - _flat(lada.global_position)
 	if (_flat(route[_wrap(best_seg + 1)]) - best).dot(away) >= 0.0:
-		direction = 1
-		target_point = _wrap(best_seg + 1)
-	else:
-		direction = -1
-		target_point = best_seg
+		return [_wrap(best_seg + 1), 1]
+	return [best_seg, -1]
 
 ## Точка p (XZ) ближе margin + BODY_RADIUS к габариту «Лады».
 func _lada_touches(p: Vector3, margin: float) -> bool:
@@ -740,3 +831,441 @@ func _show() -> void:
 	visible = true
 	if body:
 		body.collision_layer = BODY_LAYER
+
+# =====================================================================================
+# KNOCK-01: сбивание «Ладой» без вреда — полёт, кувырок, лежит, встаёт, обратно на маршрут
+# =====================================================================================
+
+## Скорость «Лады» по земле, м/с.
+func _lada_speed() -> float:
+	if not is_instance_valid(lada):
+		return 0.0
+	var v = lada.get("velocity")
+	return Vector2(v.x, v.z).length() if v is Vector3 else 0.0
+
+## Удар: «Лада» быстрее KNOCK_MIN_SPEED касается жителя (не в полёте, не лежит, не встаёт, не неуязвим).
+func _check_knock() -> void:
+	if knock_phase != &"" and knock_phase != &"back":
+		return
+	if clock < _knock_immune_until or state in [&"board", &"alight", &"transit"] or not is_instance_valid(lada):
+		return
+	if _lada_speed() >= KNOCK_MIN_SPEED and _lada_touches(global_position, LADA_MARGIN):
+		knock()
+
+## Сбить: парабола от точки удара по ходу «Лады» и от её центра; дальность укорочена перед коробками all_solids().
+func knock() -> void:
+	var lv: Vector3 = lada.get("velocity")
+	var v := Vector3(lv.x, 0.0, lv.z)
+	var car_speed := v.length()
+	var f := clampf((car_speed - KNOCK_MIN_SPEED) / (KNOCK_FULL_AT - KNOCK_MIN_SPEED), 0.0, 1.0)
+	var here := _flat(global_position)
+	var away := here - _flat(lada.global_position)
+	var dir := v / car_speed if car_speed > 0.01 else Vector3.ZERO
+	if away.length() > 0.01:
+		dir += away.normalized() * KNOCK_AWAY
+	if dir.length() < 0.01:
+		dir = -_flat(lada.global_basis.z)
+	dir = dir.normalized()
+	if state != &"knocked":
+		_knock_resume = [target_point, direction]
+		_knock_path.clear()
+	if not knock_phase in KNOCK_PHASES:
+		_knock_begin_pose()
+	_knock_path.push_front(here)
+	_knock_vy = sqrt(2.0 * KNOCK_GRAVITY * lerpf(KNOCK_HEIGHT.x, KNOCK_HEIGHT.y, f))
+	_knock_time = 2.0 * _knock_vy / KNOCK_GRAVITY
+	_knock_dir = dir
+	_knock_dist = flight_distance(here, dir, minf(KNOCK_FLY_BASE + KNOCK_FLY_GAIN * car_speed, KNOCK_FLY_MAX) * _knock_time)
+	_knock_spin = (lerpf(KNOCK_TURNS.x, KNOCK_TURNS.y, f) + 0.25) * TAU
+	_knock_down = lerpf(KNOCK_DOWN_SECONDS.x, KNOCK_DOWN_SECONDS.y, f)
+	var camera := get_viewport().get_camera_3d() if is_inside_tree() else null
+	_knock_sign = -1.0 if camera and dir.dot(camera.global_basis.x) < 0.0 else 1.0
+	_knock_t = 0.0
+	_knock_center = _look_center()
+	_knock_squash = Vector2(0.92, 1.08)
+	knock_roll = 0.0
+	knock_from = here
+	knock_to = here + dir * _knock_dist
+	knock_car_speed = car_speed
+	knock_peak = 0.0
+	knocks += 1
+	state = &"knocked"
+	knock_phase = &"fly"
+	stop_looking()
+	body.collision_layer = 0
+	knock_log.append([clock, &"fly", here])
+	knock_launched.emit(self)
+
+func _tick_knock(delta: float) -> void:
+	match knock_phase:
+		&"fly":
+			_knock_t += delta
+			var k := minf(_knock_t / _knock_time, 1.0)
+			var t := k * _knock_time
+			var y := maxf(_knock_vy * t - 0.5 * KNOCK_GRAVITY * t * t, 0.0)
+			knock_peak = maxf(knock_peak, y)
+			global_position = knock_from + _knock_dir * _knock_dist * k + Vector3(0.0, y, 0.0)
+			knock_roll = -_knock_sign * _knock_spin * k
+			_knock_center = lerpf(_look_center(), _down_center(), k)
+			if k >= 1.0:
+				_knock_land()
+		&"down":
+			_wait -= delta
+			var s := clampf((_knock_down - _wait) / 0.25, 0.0, 1.0)   # шлепок: сплющен и выпрямляется
+			_knock_squash = Vector2(lerpf(1.12, 1.0, s), lerpf(0.86, 1.0, s))
+			_place_stars()
+			if _wait <= 0.0:
+				knock_phase = &"getup"
+				_knock_t = 0.0
+				if _knock_stars:
+					_knock_stars.visible = false
+				_hit_ready_at = clock + BUBBLE_COOLDOWN
+				_speak(&"hit")
+				knock_log.append([clock, &"getup", _flat(global_position)])
+		&"getup":
+			_knock_t += delta
+			var lie := -_knock_sign * PI * 0.5
+			if _knock_t < KNOCK_RISE_SECONDS:
+				var r := _knock_t / KNOCK_RISE_SECONDS
+				r = 1.0 - (1.0 - r) * (1.0 - r)
+				knock_roll = lie * (1.0 - r)
+				_knock_center = lerpf(_down_center(), _look_center(), r)
+				_knock_squash = Vector2(lerpf(1.0, 0.95, r), lerpf(1.0, 1.05, r))
+			else:
+				var s := minf((_knock_t - KNOCK_RISE_SECONDS) / KNOCK_SHAKE_SECONDS, 1.0)
+				knock_roll = sin(s * 2.0 * TAU) * KNOCK_SHAKE_ANGLE * (1.0 - s)
+				_knock_center = _look_center()
+				_knock_squash = Vector2.ONE
+			if _knock_t >= KNOCK_RISE_SECONDS + KNOCK_SHAKE_SECONDS:
+				_knock_end_pose()
+				_knock_immune_until = clock + KNOCK_IMMUNE_SECONDS
+				knock_phase = &"back"
+				body.collision_layer = BODY_LAYER
+				_plan_back()
+				knock_log.append([clock, &"back", _flat(global_position)])
+		&"back":
+			_tick_back(delta)
+
+func _knock_land() -> void:
+	global_position = _flat(knock_to)
+	knock_roll = -_knock_sign * PI * 0.5   # лежит головой туда, куда летел
+	_knock_center = _down_center()
+	knock_phase = &"down"
+	_wait = _knock_down
+	_puff()
+	_place_stars()
+	knock_log.append([clock, &"down", _flat(global_position)])
+	knock_landed.emit(self)
+
+## Обратно на маршрут той же дорогой (полёт шёл мимо коробок). Одиночка, если на точке удара стоит «Лада», —
+## на ближайшую свободную точку маршрута, если путь до неё не через коробку. Второй в паре — строго на своё место.
+func _plan_back() -> void:
+	if leader != null or follower != null or not is_instance_valid(lada) or _knock_path.is_empty():
+		return
+	var last: Vector3 = _knock_path[-1]
+	if not _lada_touches(last, LADA_CLEAR):
+		return
+	var found := _nearest_free_point(_flat(global_position))
+	var from: Vector3 = _knock_path[-2] if _knock_path.size() > 1 else _flat(global_position)
+	if found[1] >= 0 and segment_clear(from, found[0]):
+		_knock_path[-1] = found[0]
+		_knock_resume = _resume_from(found[0], found[1])
+
+func _tick_back(delta: float) -> void:
+	if _knock_path.is_empty():
+		_knock_finish()
+		return
+	var here := _flat(global_position)
+	var goal: Vector3 = _knock_path[0]
+	var to := goal - here
+	var dist := to.length()
+	if dist > 0.0001:
+		facing_yaw = atan2(-to.x, -to.z)
+	var step := speed * delta
+	if dist > step:
+		global_position = here + to / dist * step
+		distance_walked += step
+		return
+	global_position = goal
+	distance_walked += dist
+	_knock_path.pop_front()
+	if _knock_path.is_empty():
+		_knock_finish()
+
+## Снова на маршруте: куда шёл до удара (пауза, перекур, ожидание троллейбуса — дойдёт до своей точки и продолжит).
+func _knock_finish() -> void:
+	state = &"walk"
+	knock_phase = &""
+	target_point = _knock_resume[0]
+	direction = _knock_resume[1]
+	knock_log.append([clock, &"route", _flat(global_position)])
+
+## Перезапуск: облик и тело — как до удара, счётчики — с нуля.
+func _knock_reset() -> void:
+	if knock_phase in KNOCK_PHASES:
+		_knock_end_pose()
+	knock_phase = &""
+	knocks = 0
+	knock_roll = 0.0
+	knock_log.clear()
+	_knock_path.clear()
+	_knock_immune_until = -INF
+	_knock_waiting = false
+	if _knock_stars:
+		_knock_stars.visible = false
+	if body:
+		body.collision_layer = BODY_LAYER
+
+## Отрезок a→b (XZ) не задевает коробок all_solids() с запасом BODY_RADIUS + KNOCK_SOLID_PAD.
+static func segment_clear(a: Vector3, b: Vector3) -> bool:
+	var d := _flat(b) - _flat(a)
+	if d.length() < 0.001:
+		return true
+	return flight_distance(a, d.normalized(), d.length()) >= d.length()
+
+## Дальность полёта из from по dir (XZ): dist, а если по пути коробка all_solids() (с запасом BODY_RADIUS +
+## KNOCK_SOLID_PAD) — до неё. Коробки, в запасе которых житель уже стоит, не учитываются.
+static func flight_distance(from: Vector3, dir: Vector3, dist: float) -> float:
+	if _solid_rects.is_empty():
+		for spec in Layout.all_solids():
+			var c: Vector2 = spec[2]
+			var size: Vector3 = spec[3]
+			_solid_rects.append(Rect2(c - Vector2(size.x, size.z) * 0.5, Vector2(size.x, size.z)).grow(BODY_RADIUS + KNOCK_SOLID_PAD))
+	var o := Vector2(from.x, from.z)
+	var d := Vector2(dir.x, dir.z)
+	var best := dist
+	for rect: Rect2 in _solid_rects:
+		if rect.has_point(o):
+			continue
+		var t := _ray_rect(o, d, rect)
+		if t >= 0.0 and t < best:
+			best = t
+	return maxf(best - 0.05, 0.0) if best < dist else dist
+
+## Где луч o + d·t (|d| = 1) входит в прямоугольник; −1 — не входит.
+static func _ray_rect(o: Vector2, d: Vector2, rect: Rect2) -> float:
+	var t_in := -INF
+	var t_out := INF
+	for axis in 2:
+		var lo := rect.position[axis]
+		var hi := rect.end[axis]
+		if absf(d[axis]) < 0.000001:
+			if o[axis] < lo or o[axis] > hi:
+				return -1.0
+			continue
+		var t1 := (lo - o[axis]) / d[axis]
+		var t2 := (hi - o[axis]) / d[axis]
+		t_in = maxf(t_in, minf(t1, t2))
+		t_out = minf(t_out, maxf(t1, t2))
+	if t_out < maxf(t_in, 0.0):
+		return -1.0
+	return maxf(t_in, 0.0)
+
+# --- облик сбитого ---
+
+func _look() -> Node:
+	return visual.get_node_or_null("Look") if visual else null
+
+## Спрайт облика (CharacterSprite) или null — 3D-тело.
+func _look_sprite() -> Sprite3D:
+	var look := _look()
+	var sprite = look.get("sprite") if look else null
+	return sprite as Sprite3D
+
+## Высота центра облика над ногами стоящего, м.
+func _look_center() -> float:
+	var sprite := _look_sprite()
+	return sprite.position.y if sprite else BODY_HEIGHT * 0.5
+
+func _down_center() -> float:
+	return KNOCK_DOWN_CENTER if _look_sprite() else KNOCK_DOWN_CENTER_3D
+
+## Начало полёта: спрайт без billboard и развёрнут к камере лицом (иначе вращение не видно), тень облика — своя на снегу.
+func _knock_begin_pose() -> void:
+	var sprite := _look_sprite()
+	if sprite:
+		sprite.billboard = BaseMaterial3D.BILLBOARD_DISABLED
+		var material = _look().get("look_material")
+		if material is BaseMaterial3D:
+			material.billboard_mode = BaseMaterial3D.BILLBOARD_DISABLED
+		sprite.rotation.y = PI   # облик (−Z) смотрит в камеру → вид front; лицевая сторона квада — тоже к камере
+	elif _look() and _look().has_method("set_walk_speed"):
+		_look().set_walk_speed(0.0)   # 3D-облик CHAR3D-01: в полёте и лёжа ноги не шагают
+	var look_shadow := _look().find_child("Shadow", true, false) if _look() else null
+	if look_shadow is Node3D:
+		look_shadow.visible = false
+	if _knock_shadow == null:
+		_knock_shadow = _make_knock_shadow()
+		add_child(_knock_shadow)
+	_knock_shadow.visible = true
+
+## Конец getup и перезапуск: облик — как у npc.gd (billboard по Y, поворот только по Y), тень облика на месте.
+func _knock_end_pose() -> void:
+	var sprite := _look_sprite()
+	if sprite:
+		sprite.billboard = BaseMaterial3D.BILLBOARD_FIXED_Y
+		var material = _look().get("look_material")
+		if material is BaseMaterial3D:
+			material.billboard_mode = BaseMaterial3D.BILLBOARD_FIXED_Y
+		sprite.rotation = Vector3.ZERO
+	elif _look() and _look().has_method("set_walk_speed"):
+		_look().set_walk_speed(-1.0)
+	var look_shadow := _look().find_child("Shadow", true, false) if _look() else null
+	if look_shadow is Node3D:
+		look_shadow.visible = true
+	if _knock_shadow:
+		_knock_shadow.visible = false
+	if visual:
+		visual.transform = Transform3D(Basis(Vector3.UP, facing_yaw), Vector3.ZERO)
+	knock_roll = 0.0
+	_knock_squash = Vector2.ONE
+
+func _process(delta: float) -> void:
+	if knock_phase in KNOCK_PHASES:
+		_pose_knocked()
+		return
+	super(delta)
+
+## Облик в полёте, лёжа и вставая: вокруг своего центра (_knock_center над узлом) на угол knock_roll.
+func _pose_knocked() -> void:
+	var camera := get_viewport().get_camera_3d()
+	var squash := Basis.from_scale(Vector3(_knock_squash.x, _knock_squash.y, 1.0))
+	var b: Basis
+	if _look_sprite() and camera:
+		b = _knock_screen_basis(camera) * squash * Basis(Vector3.UP, PI)
+	else:
+		var axis := Vector3.UP.cross(_knock_dir).normalized()
+		if axis.length() < 0.5:
+			axis = Vector3.RIGHT
+		# 3D-тело: лицом по полёту, кувырок назад вокруг оси поперёк полёта — ложится на спину.
+		b = Basis(axis, knock_roll * _knock_sign) * Basis(Vector3.UP, atan2(-_knock_dir.x, -_knock_dir.z)) * squash
+	var center := global_position + Vector3.UP * _knock_center
+	var world := Transform3D(b, center - b * Vector3(0.0, _look_center(), 0.0))
+	visual.transform = global_transform.affine_inverse() * world
+	if _knock_shadow:
+		var lift := global_position.y
+		_knock_shadow.global_transform = Transform3D(Basis.from_scale(Vector3.ONE / (1.0 + lift * 0.35)), Vector3(global_position.x, 0.03, global_position.z))
+
+## Плоскость экрана, повёрнутая на knock_roll вокруг взгляда камеры.
+func _knock_screen_basis(camera: Camera3D) -> Basis:
+	return camera.global_basis.orthonormalized() * Basis(Vector3(0, 0, 1), knock_roll)
+
+## Снежинки кружат над головой лежащего (вызывается на шаге физики — детерминированно).
+func _place_stars() -> void:
+	if _knock_stars == null:
+		_knock_stars = _make_stars()
+		add_child(_knock_stars)
+	_knock_stars.visible = true
+	var head := Vector3.UP * (_knock_center + KNOCK_HEAD)
+	var camera := get_viewport().get_camera_3d() if is_inside_tree() else null
+	if _look_sprite() and camera:
+		head = Vector3.UP * _knock_center + _knock_screen_basis(camera) * Vector3(0.0, KNOCK_HEAD, 0.0)
+	elif knock_phase == &"down":
+		head = Vector3.UP * _knock_center - _knock_dir * KNOCK_HEAD   # 3D-тело на спине: голова к машине
+	_knock_stars.global_position = global_position + head + Vector3.UP * KNOCK_STAR_LIFT
+	_knock_stars.global_basis = Basis.IDENTITY
+	var n := _knock_stars.get_child_count()
+	for i in n:
+		var star: Node3D = _knock_stars.get_child(i)
+		var a := clock * KNOCK_STAR_SPIN + TAU * i / n
+		star.position = Vector3(cos(a) * KNOCK_STAR_RADIUS, sin(a * 2.0) * 0.04, sin(a) * KNOCK_STAR_RADIUS)
+		star.rotation = Vector3(0.0, -a * 1.5, 0.0)
+
+## Снежинка — три тонких бруска накрест (шесть лучей), белые без тени и тумана.
+func _make_stars() -> Node3D:
+	var ring := Node3D.new()
+	ring.name = "KnockStars"
+	var material := StandardMaterial3D.new()
+	material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	material.albedo_color = KNOCK_SNOW
+	material.disable_fog = true
+	var bar := BoxMesh.new()
+	bar.size = Vector3(0.22, 0.04, 0.04)
+	bar.material = material
+	for i in KNOCK_STARS:
+		var star := Node3D.new()
+		star.name = "Star%d" % i
+		for k in 3:
+			var ray := MeshInstance3D.new()
+			ray.mesh = bar
+			ray.rotation.z = PI / 3.0 * k
+			ray.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+			star.add_child(ray)
+		ring.add_child(star)
+	ring.visible = false
+	return ring
+
+## Тень на снегу под летящим: мягкое пятно, меньше с высотой.
+func _make_knock_shadow() -> MeshInstance3D:
+	var gradient := Gradient.new()
+	gradient.set_color(0, Color(0, 0, 0, 0.45))
+	gradient.set_color(1, Color(0, 0, 0, 0.0))
+	var texture := GradientTexture2D.new()
+	texture.gradient = gradient
+	texture.fill = GradientTexture2D.FILL_RADIAL
+	texture.fill_from = Vector2(0.5, 0.5)
+	texture.fill_to = Vector2(1.0, 0.5)
+	var material := StandardMaterial3D.new()
+	material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	material.albedo_texture = texture
+	var mesh := PlaneMesh.new()
+	mesh.size = Vector2(1.1, 0.75)
+	mesh.material = material
+	var shadow := MeshInstance3D.new()
+	shadow.name = "KnockShadow"
+	shadow.mesh = mesh
+	shadow.top_level = true
+	shadow.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	shadow.visible = false
+	return shadow
+
+## Облако снежной пыли при падении — частицы как брызги PLAY-03 (тот же шейдер), разово.
+func _puff() -> void:
+	if knock_dust == null:
+		var blob := Gradient.new()
+		blob.set_color(0, Color(1, 1, 1, 1))
+		blob.set_color(1, Color(1, 1, 1, 0))
+		var dot := GradientTexture2D.new()
+		dot.gradient = blob
+		dot.fill = GradientTexture2D.FILL_RADIAL
+		dot.fill_from = Vector2(0.5, 0.5)
+		dot.fill_to = Vector2(1.0, 0.5)
+		dot.width = 32
+		dot.height = 32
+		var look := ShaderMaterial.new()
+		look.shader = SNOW_PUFF_SHADER
+		look.set_shader_parameter("albedo", KNOCK_SNOW)
+		look.set_shader_parameter("texture_albedo", dot)
+		var quad := QuadMesh.new()
+		quad.size = Vector2(0.45, 0.45)
+		quad.material = look
+		var fade := Gradient.new()
+		fade.set_color(0, Color(1, 1, 1, 0.95))
+		fade.set_color(1, Color(1, 1, 1, 0.0))
+		knock_dust = CPUParticles3D.new()
+		knock_dust.name = "KnockDust"
+		knock_dust.top_level = true
+		knock_dust.one_shot = true
+		knock_dust.explosiveness = 0.9
+		knock_dust.amount = 40
+		knock_dust.lifetime = 0.9
+		knock_dust.mesh = quad
+		knock_dust.emission_shape = CPUParticles3D.EMISSION_SHAPE_SPHERE
+		knock_dust.emission_sphere_radius = 0.45
+		knock_dust.direction = Vector3.UP
+		knock_dust.spread = 75.0
+		knock_dust.initial_velocity_min = 1.2
+		knock_dust.initial_velocity_max = 2.8
+		knock_dust.gravity = Vector3(0, -3.0, 0)
+		knock_dust.damping_min = 2.0
+		knock_dust.damping_max = 3.5
+		knock_dust.scale_amount_min = 0.8
+		knock_dust.scale_amount_max = 2.0
+		knock_dust.color_ramp = fade
+		knock_dust.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		knock_dust.emitting = false
+		add_child(knock_dust)
+	knock_dust.global_position = _flat(global_position) + Vector3.UP * 0.15
+	knock_dust.restart()
+	knock_dust.emitting = true
