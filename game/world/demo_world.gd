@@ -142,7 +142,7 @@ func _free_exit_spot() -> Vector3:
 	capsule.height = 1.5
 	var query := PhysicsShapeQueryParameters3D.new()
 	query.shape = capsule
-	query.collision_mask = 1 | 4 | 32   # + Breakable (BREAK-01): не выходить внутрь целого разрушаемого объекта
+	query.collision_mask = 1 | 4 | 32 | 64   # + Breakable (BREAK-01), SnowBank (DRIVE-02): не выходить внутрь объекта или вала
 	var origin := car.global_position + Vector3.UP * 0.8
 	for offset in EXIT_OFFSETS:
 		var spot := car.global_transform * offset

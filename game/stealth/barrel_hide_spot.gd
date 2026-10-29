@@ -28,7 +28,7 @@ const BUMP_COOLDOWN := 4.0
 ## Выход: кольца точек вокруг бочки (м от центра), капсула Илюши с запасом.
 const EXIT_RINGS: Array[float] = [1.0, 1.4]
 const EXIT_CAPSULE_RADIUS := 0.4
-const EXIT_MASK := 1 | 4                # World | Car
+const EXIT_MASK := 1 | 4 | 64           # World | Car | SnowBank (DRIVE-02: валы — как раньше)
 const GAG_PAGE_SECONDS := 2.5
 const TOAST_SECONDS := 2.0
 const OFFICER_PATH := "LevelGeometry/Patrols/Officer"

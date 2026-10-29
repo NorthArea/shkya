@@ -90,6 +90,7 @@ func _setup() -> void:
 	_setup_punch()   # PUNCH-01: удар и дроны
 	_setup_knock()   # KNOCK-01: сбитые «Ладой» жители
 	_setup_break()   # BREAK-01: разрушаемые объекты, сигнализация, крышки
+	_setup_drive02()   # DRIVE-02: колёса в снегу, скрип при заносе
 
 ## Текст субтитра радио, пока он на экране ("" — нет).
 func radio_text() -> String:
@@ -106,6 +107,7 @@ func _physics_process(delta: float) -> void:
 	_drone_sounds()   # PUNCH-01
 	_knock_sounds()   # KNOCK-01
 	_break_sounds()   # BREAK-01
+	_drive02_sounds()   # DRIVE-02
 
 ## Радио один раз за мир: бубнёж из машины и субтитр, пока звучит (плюс хвост на дочитать).
 func _radio(delta: float) -> void:
@@ -735,3 +737,51 @@ func _break_play(kind: StringName, at: Vector3, pitch: float, volume: float) -> 
 	player.volume_db = volume
 	player.play()
 	return true
+
+# --- DRIVE-02: колёса в рыхлом снегу и скрип шин при заносе ---
+## Шуршание снега — 3D-цикл на «Ладе»: громкость по средней глубине рыхлого снега под колёсами (Lada.snow_depth,
+## полная от DRIVE02_DEPTH_FULL) и скорости (полная от 6 м/с; при буксовании — не ниже 0,7), высота чуть растёт со
+## скоростью. Скрип шин — 3D-цикл на «Ладе» при заносе (Lada.skidding), громкость по боковой скорости 2…6 м/с.
+## Плееры под машиной, как мотор и каша. Уровни, RMS файла + volume_db: снег −18 + 0 = −18 дБ, скрип −20 − 4 = −24.
+## Звуки — tools/generate_audio.py (синтез).
+const SNOW_DRIVE := preload("res://assets/audio/snow_drive_loop.wav")
+const SKID_SQUEAK := preload("res://assets/audio/skid_squeak_loop.wav")
+const SNOW_DRIVE_DB := 0.0
+const SKID_SQUEAK_DB := -4.0
+const DRIVE02_DEPTH_FULL := 0.2
+
+var snow_drive_player: AudioStreamPlayer3D
+var skid_squeak_player: AudioStreamPlayer3D
+
+func _setup_drive02() -> void:
+	played["snow_drive"] = 0
+	played["skid_squeak"] = 0
+	snow_drive_player = _player_3d(world.car, -80.0, SNOW_DRIVE)
+	snow_drive_player.name = "SnowDrive"
+	skid_squeak_player = _player_3d(world.car, -80.0, SKID_SQUEAK)
+	skid_squeak_player.name = "SkidSqueak"
+
+func _drive02_sounds() -> void:
+	if snow_drive_player == null:
+		return
+	var car = world.car
+	var speed := Vector2(car.velocity.x, car.velocity.z).length()
+	var depth := clampf(float(car.get("snow_depth")) / DRIVE02_DEPTH_FULL, 0.0, 1.0)
+	var motion := clampf(speed / 6.0, 0.0, 1.0)
+	if car.get("spinning"):
+		motion = maxf(motion, 0.7)
+	_drive02_loop(snow_drive_player, depth * motion, SNOW_DRIVE_DB, 0.85 + 0.3 * motion, "snow_drive")
+	var squeak := clampf((float(car.lateral_speed) - 2.0) / 4.0, 0.0, 1.0) if car.get("skidding") else 0.0
+	if car.get("skidding"):
+		squeak = maxf(squeak, 0.3)   # ручник на скорости — скрип и без большого бокового сноса
+	_drive02_loop(skid_squeak_player, squeak, SKID_SQUEAK_DB, 0.95 + 0.1 * squeak, "skid_squeak")
+
+func _drive02_loop(player: AudioStreamPlayer3D, level: float, db: float, pitch: float, key: String) -> void:
+	if level > 0.02:
+		player.volume_db = db + linear_to_db(level)
+		player.pitch_scale = pitch
+		if not player.playing:
+			player.play()
+			played[key] += 1
+	elif player.playing:
+		player.stop()

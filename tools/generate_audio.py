@@ -797,6 +797,58 @@ def bin_lid() -> list[float]:
     return to_rms(_fade_out(out, 0.1), -18.0)
 
 
+def snow_drive_loop() -> list[float]:
+    """Колёса в рыхлом снегу (DRIVE-02): глухое шуршание (шум ниже 1,4 кГц) с хрустом — частые зёрна-щелчки через
+    резонанс 1,9 кГц — и низкий гул снега под днищем 70 Гц. Цикл 2 с; громкость и высоту задаёт игра по глубине и
+    скорости."""
+    rng = random.Random(211)
+    cycle = 2.0
+    fade = 0.15
+    n = samples(cycle + fade)
+    hiss = highpass(lowpass([rng.uniform(-1, 1) for _ in range(n)], 1400, stages=2), 120)
+    grains = [0.0] * n
+    i = 0
+    while i < n:
+        i += int(RATE * rng.uniform(0.004, 0.022))
+        if i < n:
+            grains[i] = rng.uniform(-1, 1) * rng.uniform(0.4, 1.0)
+    crunch = resonator(grains, 1900, 900)
+    rumble = resonator(lowpass([rng.uniform(-1, 1) for _ in range(n)], 200), 70, 30)
+    hiss = normalize(hiss, 0.6)
+    crunch = normalize(crunch, 0.7)
+    rumble = normalize(rumble, 0.5)
+    out = []
+    for k in range(n):
+        t = k / RATE
+        swell = 0.8 + 0.2 * math.sin(2 * math.pi * t / 0.5)
+        out.append((hiss[k] * 0.7 + crunch[k] * 0.6 + rumble[k] * 0.5) * swell)
+    return to_rms(loop_crossfade(out, fade), -18.0)
+
+
+def skid_squeak_loop() -> list[float]:
+    """Скрип шин по укатанному снегу при заносе (DRIVE-02, «вкус» аркады): тон 820–1000 Гц с медленным плаванием
+    и дрожанием сцепления 31 Гц, гармоники 2× и 3×, поверх — шорох. Цикл 1,5 с; громкость — по боковой скорости."""
+    rng = random.Random(223)
+    cycle = 1.5
+    fade = 0.15
+    n = samples(cycle + fade)
+    drift = lowpass([rng.uniform(-1, 1) for _ in range(n)], 3, stages=2)
+    drift = normalize(drift, 1.0)
+    noise = highpass(lowpass([rng.uniform(-1, 1) for _ in range(n)], 4000), 900)
+    noise = normalize(noise, 0.5)
+    out = []
+    phase = 0.0
+    for k in range(n):
+        t = k / RATE
+        freq = 910.0 + 90.0 * drift[k]
+        phase += 2 * math.pi * freq / RATE
+        chatter = 0.6 + 0.4 * (0.5 + 0.5 * math.sin(2 * math.pi * 31.0 * t + 1.3 * math.sin(2 * math.pi * 3.0 * t)))
+        tone = math.sin(phase) + 0.35 * math.sin(2 * phase + 0.4) + 0.15 * math.sin(3 * phase + 1.1)
+        out.append(tone * chatter * 0.7 + noise[k] * 0.3)
+    out = lowpass(out, 5000)
+    return to_rms(loop_crossfade(out, fade), -20.0)
+
+
 def main() -> None:
     rng = random.Random(1)
     for k in range(1, 5):
@@ -856,6 +908,9 @@ def main() -> None:
     write("break_snow.wav", knock_thud())
     write("car_alarm.wav", car_alarm())
     write("bin_lid.wav", bin_lid())
+    # DRIVE-02: колёса в рыхлом снегу (цикл, громкость по глубине) и скрип шин при заносе (цикл, по боковой скорости).
+    write("snow_drive_loop.wav", snow_drive_loop())
+    write("skid_squeak_loop.wav", skid_squeak_loop())
 
 
 if __name__ == "__main__":

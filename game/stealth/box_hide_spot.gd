@@ -156,7 +156,7 @@ func _crate_fits(point: Vector3, yaw: float) -> bool:
 	shape.size = SIZE - Vector3(0.05, 0.1, 0.05)
 	var query := PhysicsShapeQueryParameters3D.new()
 	query.shape = shape
-	query.collision_mask = 1 | 4   # World, Car
+	query.collision_mask = 1 | 4 | 64   # World, Car, SnowBank (DRIVE-02: валы — как раньше)
 	query.transform = Transform3D(Basis(Vector3.UP, yaw), point + Vector3.UP * (LIFT + SIZE.y * 0.5 + 0.05))
 	return get_world_3d().direct_space_state.intersect_shape(query, 1).is_empty()
 

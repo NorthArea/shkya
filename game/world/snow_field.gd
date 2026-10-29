@@ -16,8 +16,13 @@ const STEP_U := 0.2          # шаг сетки вдоль вала, м
 const STEP_V := 0.15         # шаг поперёк
 const KINDS := ["snow", "snow_bank"]
 
+const DEPTH_MAX := 0.3       # м: глубина рыхлого слоя под колесом (≈ радиус колеса), DRIVE-02
+const NORMAL_EPS := 0.1      # м: шаг разностей для нормали и уклона
+const CELL := 8.0            # м: ячейка сетки поиска коробок
+
 ## [центр, размер, вдоль x, seed, сторона дороги, прямоугольник с MARGIN] — собирается при первом обращении.
 static var _boxes := []
+static var _cells := {}      # Vector2i → индексы _boxes, чьи прямоугольники задевают ячейку CELL × CELL
 
 static func boxes() -> Array:
 	if _boxes.is_empty():
@@ -29,29 +34,50 @@ static func boxes() -> Array:
 			var xz: Vector2 = spec[2]
 			var size: Vector3 = spec[3]
 			var rect := Rect2(xz - Vector2(size.x, size.z) * 0.5, Vector2(size.x, size.z)).grow(MARGIN)
+			var k := _boxes.size()
 			_boxes.append([xz, size, size.x >= size.z, i, road_side(xz, size), rect])
+			for gx in range(floori(rect.position.x / CELL), floori(rect.end.x / CELL) + 1):
+				for gz in range(floori(rect.position.y / CELL), floori(rect.end.y / CELL) + 1):
+					var key := Vector2i(gx, gz)
+					if not _cells.has(key):
+						_cells[key] = []
+					_cells[key].append(k)
 	return _boxes
+
+## Сбросить кэш (если Layout поменялся в процессе — только для тестов).
+static func rebuild() -> void:
+	_boxes.clear()
+	_cells.clear()
+	boxes()
 
 ## Высота снега над землёй в точке мира (0 — снега нет). Пересечения коробок — максимум.
 static func height_at(x: float, z: float) -> float:
+	var all := boxes()
 	var h := 0.0
 	var p := Vector2(x, z)
-	for b in boxes():
-		if not (b[5] as Rect2).has_point(p):
-			continue
-		h = maxf(h, box_height(b, x, z))
+	for k in _cells.get(Vector2i(floori(x / CELL), floori(z / CELL)), []):
+		var b: Array = all[k]
+		if (b[5] as Rect2).has_point(p):
+			h = maxf(h, box_height(b, x, z))
 	return h
 
-## Глубина снега для сопротивления колесу — толщина снега под точкой.
+## Глубина рыхлого слоя под колесом, м: min(height_at, DEPTH_MAX). Сопротивление «Лады» — SNOW_DRAG · depth.
 static func depth_at(x: float, z: float) -> float:
-	return height_at(x, z)
+	return minf(height_at(x, z), DEPTH_MAX)
 
 ## Нормаль поверхности снега (на земле — вверх).
 static func normal_at(x: float, z: float) -> Vector3:
-	var e := 0.1
-	var dx := height_at(x + e, z) - height_at(x - e, z)
-	var dz := height_at(x, z + e) - height_at(x, z - e)
-	return Vector3(-dx, 2.0 * e, -dz).normalized()
+	var e := NORMAL_EPS
+	var dx := (height_at(x + e, z) - height_at(x - e, z)) / (2.0 * e)
+	var dz := (height_at(x, z + e) - height_at(x, z - e)) / (2.0 * e)
+	return Vector3(-dx, 1.0, -dz).normalized()
+
+## Уклон снега по направлению dir (в плане): подъём на метр пути, > 0 — в гору.
+static func slope_along(x: float, z: float, dir: Vector2) -> float:
+	if dir.length_squared() < 0.000001:
+		return 0.0
+	var d := dir.normalized() * NORMAL_EPS
+	return (height_at(x + d.x, z + d.y) - height_at(x - d.x, z - d.y)) / (2.0 * NORMAL_EPS)
 
 ## Высота над одной коробкой b (элемент boxes()). Оси сетки: u — вдоль (у коробки вдоль z — u = −dz, как поворот
 ## сетки на +90° в _lumpy_bank), v — поперёк (+v — к +z или +x мира).

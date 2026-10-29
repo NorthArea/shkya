@@ -39,6 +39,7 @@ test:
 	$(call godot_test,knock_test,60,KNOCK)
 	$(call godot_test,char3d_test,60,CHAR3D)
 	$(call godot_test,break_test,60,BREAK)
+	$(call godot_test,drive02_snow,60,DRIVE02)
 capture:
 	./tools/run.command --fixed-fps 60 --resolution 1920x1080 --script tools/capture.gd
 pack:

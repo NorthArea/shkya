@@ -36,7 +36,7 @@ const POLL_SECONDS := 0.15
 const ACTIVE_DISTANCE := 40.0
 const EYE_HEIGHT := 1.5
 const TARGET_HEIGHT := 0.9
-const WORLD_MASK := 1
+const WORLD_MASK := 1 | 64   # World и валы снега (DRIVE-02: слой 7 «SnowBank») — заслоняют обзор, как раньше
 const CONE_COLOR := Color(1.0, 0.85, 0.12, 0.11)
 const CONE_RAYS := 32              # лучей на сектор до 180°
 const CONE_RAYS_FULL := 48         # на круг (учебный автобус)
@@ -245,7 +245,8 @@ func _car_in_sight(any_speed := false) -> float:
 ## CAR_TARGET_HEIGHT.
 static func car_targets(car: Node3D) -> Array[Vector3]:
 	var half := Vector2(Lada.SIZE.x * 0.5 - CAR_CORNER_INSET, Lada.SIZE.z * 0.5 - CAR_CORNER_INSET)
-	var base := car.global_position + Vector3.UP * CAR_TARGET_HEIGHT
+	var lift = car.get("snow_lift")   # DRIVE-02: «Лада» на сугробе — кузов выше на подъём облика
+	var base := car.global_position + Vector3.UP * (CAR_TARGET_HEIGHT + (float(lift) if lift != null else 0.0))
 	var right := car.global_basis.x
 	right.y = 0.0
 	right = right.normalized()

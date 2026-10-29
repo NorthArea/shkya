@@ -11,6 +11,8 @@ const Greybox = preload("res://game/world/greybox.gd")
 const InteractableScript = preload("res://game/interaction/interactable.gd")
 const LadaVisual = preload("res://game/vehicles/lada_visual.gd")
 const SlushSpray = preload("res://game/vehicles/slush_spray.gd")
+const LadaFx = preload("res://game/vehicles/lada_fx.gd")
+const SnowField = preload("res://game/world/snow_field.gd")   # DRIVE-02 (C10): форма валов для колёс
 
 const SIZE := Vector3(1.7, 1.4, 4.1)
 ## Темп по замеру эталона PLAY-01 (G02, G03): потолок 28 м/с ≈ 100 км/ч, разгон спадает к максимуму
@@ -42,6 +44,71 @@ var _steer_now := 0.0
 var _lights := -1
 var _breakables: Node   # BREAK-01
 
+# --- DRIVE-02 (C10): сугробы, подвеска, отскок ---
+## Тело CharacterBody3D остаётся на земле (коллизии, зоны, тесты застреваний — как были); на снег поднимается и
+## кренится облик Visual: высота над землёй snow_lift по SnowField, крен/тангаж — по высотам четырёх колёс.
+## Перенос веса (DRIVE-03, вариант A): нос клюёт при торможении, корма приседает при разгоне, крен наружу в повороте —
+## пружина с затуханием поверх наклона по снегу, тоже поворотом Visual. Константы PLAY-02 выше не меняются.
+const WHEEL_TRACK := 0.69       # м: половина колеи (lada_visual, vaz2105)
+const WHEEL_AXLE := 1.21        # м: от центра до оси
+const WHEELS: Array[Vector2] = [Vector2(-0.69, -1.21), Vector2(0.69, -1.21), Vector2(-0.69, 1.21), Vector2(0.69, 1.21)]   # (x, z) ЛП, ПП, ЛЗ, ПЗ; перед — −Z
+const SNOW_DRAG := 4.0          # 1/(м·с): замедление SNOW_DRAG · глубина · max(|v|, SNOW_DRAG_MIN_SPEED)
+const SNOW_DRAG_MIN_SPEED := 1.0
+const MAX_CLIMB := 0.6109       # рад (35°): склон круче под ведущими колёсами — газ не тянет, буксует
+const SPIN_STALL := 0.25        # с: столько буксует на месте (скорость → 0), потом колёса прокапываются
+const SPIN_DIG := 0.25          # с: за столько тяга возвращается полностью — из кармана у вала выезд всегда есть
+const SNOW_GRAVITY := 9.8       # м/с²: скатывание по тангажу на снегу
+const BELLY := 0.25             # м: на узком гребне корпус садится «на брюхо» — центр не ниже height − BELLY
+const LAUNCH_MAX := 1.2         # м/с: вертикальная скорость отрыва на гребне не больше этой
+const AIR_GAP := 0.05           # м над снегом — «в полёте»
+const TILT_MAX := 0.45          # рад: предел крена/тангажа по снегу
+const TILT_SHARPNESS := 14.0
+const LANDING_HEAVE := 0.35     # доля скорости приземления → проседание пружины
+const PITCH_PER_ACCEL := 0.003  # рад на м/с² продольного ускорения (торможение 24 м/с² → нос −4°)
+const ROLL_PER_ACCEL := 0.004   # рад на м/с² бокового ускорения (крен наружу)
+const SUSP_PITCH_MAX := 0.07
+const SUSP_ROLL_MAX := 0.07
+const SUSP_FREQ := 10.0         # рад/с: частота пружины подвески
+const SUSP_DAMP := 0.3          # доля критического затухания — «покачивание» в одно-два колебания
+const SKID_SLIDE := 2.0         # м/с боковой скорости — занос (дым, след, скрип)
+const SKID_MIN_SPEED := 3.0     # м/с: медленнее нет дыма и следа заноса
+const BOUNCE_MIN := 3.0         # м/с скорости в препятствие: медленнее — без отскока
+const BOUNCE := 0.35            # доля скорости удара — обратно
+const BOUNCE_FRONTAL := 0.5     # доля скорости «в лоб» (удар круче 30°); вскользь — без отскока
+const SHAKE_SECONDS := 0.35
+const SHAKE := 0.12             # м: тряска камеры при сильном ударе
+const CAMERA_LIFT_SHARPNESS := 8.0
+
+var snow_lift := 0.0            # м: облик над землёй
+var snow_vy := 0.0              # м/с: вертикальная скорость облика (отрыв на гребне, падение)
+var airborne := false
+var snow_depth := 0.0           # м: средняя глубина рыхлого снега под колёсами
+var spinning := false           # буксует: склон круче MAX_CLIMB, газ не тянет
+var _spin_time := 0.0
+var skidding := false           # занос или ручник на скорости — дым и след шин
+var snow_pitch := 0.0           # рад: наклон облика по снегу
+var snow_roll := 0.0
+var susp_pitch := 0.0           # рад: перенос веса
+var susp_roll := 0.0
+var heave := 0.0                # м: проседание пружины
+var impacts := 0                # отскоков (для проверок)
+var landings := 0               # приземлений после полёта
+var max_air := 0.0              # м: наибольший зазор над снегом с последнего reset_to (для проверок)
+var _wheel_h: Array[float] = [0.0, 0.0, 0.0, 0.0]
+var _center_h := 0.0
+var _susp_pitch_v := 0.0
+var _susp_roll_v := 0.0
+var _heave_v := 0.0
+var _last_speed := 0.0
+var _last_yaw := 0.0
+var _shake_left := 0.0
+var _shake_power := 0.0
+var _camera_offset := Vector2.ZERO
+var _camera_lift := 0.0
+var _clock := 0.0
+var fx: Node3D
+var _spray: Node3D
+
 func _ready() -> void:
 	collision_layer = 4  # Car
 	collision_mask = 1 | 32   # World, Breakable (BREAK-01: разрушаемые объекты, Breakables.LAYER)
@@ -59,6 +126,10 @@ func _ready() -> void:
 	var spray := SlushSpray.new()  # брызги каши из-под колёс — PLAY-03
 	spray.name = "SlushSpray"
 	add_child(spray)
+	_spray = spray
+	fx = LadaFx.new()   # DRIVE-02: снежная пыль, след по снегу, дым и следы заноса
+	fx.name = "DriveFx"
+	add_child(fx)
 	enter_zone = InteractableScript.new()
 	enter_zone.name = "EnterZone"
 	enter_zone.interaction_id = &"car"
@@ -88,6 +159,7 @@ func _physics_process(delta: float) -> void:
 	forward = -global_basis.z
 	forward_speed = old_velocity.dot(forward)
 	var lateral := old_velocity - forward * forward_speed
+	var speed_in := forward_speed   # DRIVE-02: до газа и тормоза — для буксования и переноса веса
 	if stopping:
 		forward_speed = move_toward(forward_speed, 0.0, BRAKE * delta)
 	elif handbrake:
@@ -105,7 +177,8 @@ func _physics_process(delta: float) -> void:
 			forward_speed = maxf(forward_speed + ACCELERATION * REVERSE_ACCEL * throttle * delta, -MAX_REVERSE)
 	else:
 		forward_speed = move_toward(forward_speed, 0.0, (ROLL_DRAG + AIR_DRAG * forward_speed * forward_speed) * delta)
-	braking = driver != null and (handbrake or (stopping and absf(forward_speed) > 0.5)
+	forward_speed = _snow_speed(forward_speed, speed_in, forward, throttle, stopping or handbrake, delta)   # DRIVE-02
+	braking =driver != null and (handbrake or (stopping and absf(forward_speed) > 0.5)
 		or (throttle < 0.0 and forward_speed > 0.5) or (throttle > 0.0 and forward_speed < -0.5))
 	_update_lights()
 	lateral *= exp(-(HANDBRAKE_GRIP if handbrake else GRIP) * delta)
@@ -121,6 +194,7 @@ func _physics_process(delta: float) -> void:
 	var before_slide := Vector3(velocity.x, 0.0, velocity.z)
 	move_and_slide()
 	_bump_breakables(before_slide, throttle, delta)
+	_after_slide(before_slide, forward_speed, handbrake, delta)   # DRIVE-02: отскок, снег, подвеска, эффекты
 	if exit_requested and speed_kmh() < EXIT_SPEED_KMH:
 		exit_requested = false
 		var world := get_parent()
@@ -184,3 +258,239 @@ func reset_to(point: Vector3, facing_yaw: float) -> void:
 	_steer_now = 0.0
 	exit_requested = false
 	reset_physics_interpolation()
+	_reset_drive_state()
+
+# --- DRIVE-02 (C10): сугробы, подвеска, отскок ---
+
+## Точка колеса i на земле (в плане, y = 0) в текущем положении тела.
+func wheel_ground(i: int) -> Vector3:
+	var right := Vector3(global_basis.x.x, 0.0, global_basis.x.z).normalized()
+	var back := Vector3(global_basis.z.x, 0.0, global_basis.z.z).normalized()
+	var p := global_position + right * WHEELS[i].x + back * WHEELS[i].y
+	return Vector3(p.x, 0.0, p.z)
+
+## Точка касания колеса i у облика (с подъёмом и наклоном Visual) — для пыли и следа.
+func wheel_contact(i: int) -> Vector3:
+	if visual == null:
+		return wheel_ground(i)
+	return visual.global_transform * Vector3(WHEELS[i].x, 0.0, WHEELS[i].y)
+
+## Высоты снега под колёсами (ЛП, ПП, ЛЗ, ПЗ) с последнего замера.
+func wheel_heights() -> Array[float]:
+	return _wheel_h.duplicate()
+
+## Высота облика над землёй по снегу: средняя по четырём колёсам, на узком гребне — «на брюхе» (центр − BELLY).
+func snow_ride_target() -> float:
+	var mean := (_wheel_h[0] + _wheel_h[1] + _wheel_h[2] + _wheel_h[3]) * 0.25
+	return maxf(maxf(mean, _center_h - BELLY), 0.0)
+
+func _sample_snow() -> void:
+	for i in 4:
+		var w := wheel_ground(i)
+		_wheel_h[i] = SnowField.height_at(w.x, w.z)
+	_center_h = SnowField.height_at(global_position.x, global_position.z)
+
+## Снег под колёсами до движения: сопротивление по глубине, скатывание по тангажу, буксование на крутом склоне.
+## holding — тормоз, ручник или пустая машина: стоящая не скатывается.
+func _snow_speed(forward_speed: float, speed_in: float, forward: Vector3, throttle: float, holding: bool, delta: float) -> float:
+	_sample_snow()
+	var depth := 0.0
+	for h in _wheel_h:
+		depth += minf(h, SnowField.DEPTH_MAX)
+	snow_depth = depth * 0.25
+	spinning = false
+	if (snow_depth <= 0.0 and _center_h <= 0.0) or airborne:
+		return forward_speed
+	var push := signf(throttle)
+	if push != 0.0 and forward_speed * push >= -0.5:
+		var dir := Vector2(forward.x, forward.z) * push
+		var steep := 0.0
+		for i in ([0, 1] if push > 0.0 else [2, 3]):
+			var w := wheel_ground(i)
+			steep = maxf(steep, SnowField.slope_along(w.x, w.z, dir))
+		if steep > tan(MAX_CLIMB):
+			spinning = true
+			_spin_time += delta
+			# Газ не тянет — колёса крутятся в снегу; через SPIN_STALL прокапываются и тянут, к SPIN_DIG — полностью.
+			var traction := clampf((_spin_time - SPIN_STALL) / SPIN_DIG, 0.0, 1.0)
+			if (forward_speed - speed_in) * push > 0.0:
+				forward_speed = speed_in + (forward_speed - speed_in) * traction
+	if not spinning:
+		_spin_time = maxf(_spin_time - delta * 0.5, 0.0)
+	# Скатывание — по уклону высоты облика вдоль хода (энергия на подъём кузова): средний уклон под колёсами,
+	# на узком гребне «на брюхе» — под центром.
+	var along := Vector2(forward.x, forward.z)
+	var grade := 0.0
+	var mean := (_wheel_h[0] + _wheel_h[1] + _wheel_h[2] + _wheel_h[3]) * 0.25
+	if _center_h - BELLY > mean:
+		grade = SnowField.slope_along(global_position.x, global_position.z, along)
+	else:
+		for i in 4:
+			var w := wheel_ground(i)
+			grade += SnowField.slope_along(w.x, w.z, along) * 0.25
+	if not (holding and absf(forward_speed) < 0.5):
+		forward_speed -= SNOW_GRAVITY * grade / sqrt(1.0 + grade * grade) * delta
+	return move_toward(forward_speed, 0.0, SNOW_DRAG * snow_depth * maxf(absf(forward_speed), SNOW_DRAG_MIN_SPEED) * delta)
+
+## После move_and_slide: отскок от машин и разрушаемых, высота и наклон облика по снегу, перенос веса, эффекты.
+func _after_slide(before: Vector3, _planned_speed: float, handbrake: bool, delta: float) -> void:
+	_clock += delta
+	_impact_bounce(before)
+	_sample_snow()
+	var target := snow_ride_target()
+	if snow_lift <= target + 0.0005:
+		# Снег выталкивает облик вверх по профилю; скорость подъёма — для отрыва на гребне (не выше LAUNCH_MAX).
+		snow_vy = minf((target - snow_lift) / delta, LAUNCH_MAX)
+		snow_lift = target
+		airborne = false
+	else:
+		# Поверхность ушла вниз: облик падает с ускорением g — на скорости со склона короткий полёт.
+		snow_vy -= SNOW_GRAVITY * delta
+		snow_lift += snow_vy * delta
+		if snow_lift <= target:
+			if airborne and snow_vy < -1.0:
+				_heave_v += snow_vy * LANDING_HEAVE   # мягкая посадка: пружина проседает и возвращается
+				landings += 1
+			snow_lift = target
+			snow_vy = 0.0
+			airborne = false
+		else:
+			airborne = snow_lift > target + AIR_GAP
+	max_air = maxf(max_air, snow_lift - target)
+	if not airborne:
+		var front := (_wheel_h[0] + _wheel_h[1]) * 0.5
+		var rear := (_wheel_h[2] + _wheel_h[3]) * 0.5
+		var left := (_wheel_h[0] + _wheel_h[2]) * 0.5
+		var right := (_wheel_h[1] + _wheel_h[3]) * 0.5
+		var k := 1.0 - exp(-TILT_SHARPNESS * delta)
+		snow_pitch = lerpf(snow_pitch, clampf(atan2(front - rear, 2.0 * WHEEL_AXLE), -TILT_MAX, TILT_MAX), k)
+		snow_roll = lerpf(snow_roll, clampf(atan2(right - left, 2.0 * WHEEL_TRACK), -TILT_MAX, TILT_MAX), k)
+	# Перенос веса по фактической скорости после упора и отскока.
+	var yaw := global_rotation.y
+	var speed := Vector3(velocity.x, 0.0, velocity.z).dot(-global_basis.z)
+	if _clock <= delta * 1.5:   # первый кадр: курс и скорость могли выставить без reset_to
+		_last_yaw = yaw
+		_last_speed = speed
+	var a_long := clampf((speed - _last_speed) / delta, -40.0, 40.0)
+	var a_lat := speed * clampf(angle_difference(_last_yaw, yaw) / delta, -3.0, 3.0)
+	_last_speed = speed
+	_last_yaw = yaw
+	var pitch_goal := 0.0 if airborne else clampf(a_long * PITCH_PER_ACCEL, -SUSP_PITCH_MAX, SUSP_PITCH_MAX)
+	var roll_goal := 0.0 if airborne else clampf(-a_lat * ROLL_PER_ACCEL, -SUSP_ROLL_MAX, SUSP_ROLL_MAX)
+	var w2 := SUSP_FREQ * SUSP_FREQ
+	var damp := 2.0 * SUSP_DAMP * SUSP_FREQ
+	_susp_pitch_v += (w2 * (pitch_goal - susp_pitch) - damp * _susp_pitch_v) * delta
+	susp_pitch += _susp_pitch_v * delta
+	_susp_roll_v += (w2 * (roll_goal - susp_roll) - damp * _susp_roll_v) * delta
+	susp_roll += _susp_roll_v * delta
+	_heave_v += (-w2 * heave - damp * _heave_v) * delta
+	heave = clampf(heave + _heave_v * delta, -0.15, 0.15)
+	var flat_speed := Vector2(velocity.x, velocity.z).length()
+	skidding = driver != null and not airborne and snow_depth < 0.05 and flat_speed > SKID_MIN_SPEED \
+		and (handbrake or lateral_speed > SKID_SLIDE)
+	_apply_visual()
+	if fx:
+		fx.step(delta)
+	_camera_fx(delta)
+
+func _apply_visual() -> void:
+	if visual == null:
+		return
+	visual.position = Vector3(0.0, snow_lift + heave, 0.0)
+	visual.rotation = Vector3(snow_pitch + susp_pitch, 0.0, snow_roll + susp_roll)
+	if _spray:
+		_spray.position.y = snow_lift
+		_spray.visible = snow_depth < 0.05   # на снегу вместо каши — снежная пыль DriveFx
+
+## Удар о машину или разрушаемый объект быстрее BOUNCE_MIN и круче 30° (BOUNCE_FRONTAL): короткий отскок назад и тряска
+## камеры, без урона. Вскользь — скольжение вдоль, как раньше.
+## Сломанный и пробитый насквозь разрушаемый (скорость в него сохранилась) — без отскока.
+func _impact_bounce(before: Vector3) -> void:
+	var best := 0.0
+	var normal := Vector3.ZERO
+	for i in get_slide_collision_count():
+		var hit := get_slide_collision(i)
+		var n := hit.get_normal()
+		n.y = 0.0
+		if n.length_squared() < 0.01:
+			continue
+		n = n.normalized()
+		var into := before.dot(-n)
+		if into > best and _bounces_off(hit.get_collider()):
+			best = into
+			normal = n
+	if best < BOUNCE_MIN or best < before.length() * BOUNCE_FRONTAL:
+		return   # медленно или вскользь — скользит вдоль, как раньше
+	var horizontal := Vector3(velocity.x, 0.0, velocity.z)
+	if horizontal.dot(-normal) > best * 0.5:
+		return
+	horizontal += normal * best * BOUNCE
+	velocity.x = horizontal.x
+	velocity.z = horizontal.z
+	impacts += 1
+	_shake_left = SHAKE_SECONDS
+	_shake_power = clampf(best / 12.0, 0.25, 1.0)
+	_susp_pitch_v -= best * 0.04   # нос клюёт от удара
+	_heave_v -= best * 0.02
+
+func _bounces_off(collider: Object) -> bool:
+	if not (collider is CollisionObject3D):
+		return false
+	var body := collider as CollisionObject3D
+	if body.collision_layer & 32:   # разрушаемый (BREAK-01, слой 6)
+		return true
+	if body is Trolleybus:
+		return false   # троллейбус — тяжёлый, упор как в стену (и тест STEALTH: проезд мимо киоска упирается в него)
+	if body.is_in_group(&"traffic_vehicles") or body is CityVan:
+		return true
+	var body_name := String(body.name)
+	return body_name.begins_with("ParkedCar") or body_name.begins_with("Zhiguli")
+
+## Камера за «Ладой»: поднимается вслед за обликом на снегу и трясётся после удара (смещения камеры — добавкой,
+## как тряска Breakables). Пружину камеры (CameraRig) не трогаем.
+func _camera_fx(delta: float) -> void:
+	_shake_left = maxf(_shake_left - delta, 0.0)
+	var camera := get_viewport().get_camera_3d() if is_inside_tree() else null
+	if camera == null:
+		return
+	var arm := camera.get_parent()
+	var rig: Node = arm.get_parent() if arm else null
+	var mine: bool = rig != null and rig.get("target") == self
+	_camera_lift = lerpf(_camera_lift, snow_lift if mine else 0.0, 1.0 - exp(-CAMERA_LIFT_SHARPNESS * delta))
+	var want := Vector2(0.0, _camera_lift)
+	if mine and _shake_left > 0.0:
+		want += Vector2(sin(_clock * 67.0), cos(_clock * 49.0)) * SHAKE * _shake_power * (_shake_left / SHAKE_SECONDS)
+	if want.distance_squared_to(_camera_offset) < 0.0000001:
+		return
+	camera.h_offset += want.x - _camera_offset.x
+	camera.v_offset += want.y - _camera_offset.y
+	_camera_offset = want
+
+## Камера трясётся (для проверок): осталось секунд.
+func shake_left() -> float:
+	return _shake_left
+
+func _reset_drive_state() -> void:
+	if not is_inside_tree():
+		return
+	_sample_snow()
+	snow_lift = snow_ride_target()
+	snow_vy = 0.0
+	airborne = false
+	spinning = false
+	_spin_time = 0.0
+	skidding = false
+	max_air = 0.0
+	snow_pitch = clampf(atan2((_wheel_h[0] + _wheel_h[1] - _wheel_h[2] - _wheel_h[3]) * 0.5, 2.0 * WHEEL_AXLE), -TILT_MAX, TILT_MAX)
+	snow_roll = clampf(atan2((_wheel_h[1] + _wheel_h[3] - _wheel_h[0] - _wheel_h[2]) * 0.5, 2.0 * WHEEL_TRACK), -TILT_MAX, TILT_MAX)
+	susp_pitch = 0.0
+	susp_roll = 0.0
+	heave = 0.0
+	_susp_pitch_v = 0.0
+	_susp_roll_v = 0.0
+	_heave_v = 0.0
+	_last_speed = 0.0
+	_last_yaw = global_rotation.y
+	_apply_visual()
+	if fx:
+		fx.reset()
