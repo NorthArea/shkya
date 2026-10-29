@@ -66,7 +66,11 @@ void fragment() {
 	vec2 p = world_pos.xz * scale;
 	float n = noise(p) * 0.6 + noise(p * 3.1) * 0.3 + noise(p * 9.0) * 0.1;
 	float dirt = smoothstep(0.2, 0.85, n);
-	ALBEDO = mix(clean, dirty, clamp(dirt + 0.35, 0.0, 1.0));
+	ALBEDO = mix(clean, dirty * vec3(1.0, 0.97, 0.92), clamp(dirt + 0.55, 0.0, 1.0));
+	// CITY-02 F: середина тропы утоптана плотнее и темнее, у кромки — рыхлый снег (тропа читается издалека).
+	float mid = 1.0 - smoothstep(0.0, 0.4, abs(UV.x - 0.5) * 2.0 * 0.8);
+	float rim = smoothstep(0.26, 0.4, abs(UV.x - 0.5)) * (1.0 - smoothstep(0.42, 0.5, abs(UV.x - 0.5)));
+	ALBEDO *= (1.0 - 0.22 * mid) * (1.0 - 0.3 * rim) * 0.85;   // тень бортика рыхлого снега у кромки
 	ROUGHNESS = 0.85;
 	// Расстояние до края в метрах: поперёк — до боковой кромки, вдоль — до торца; кромка рваная по шуму.
 	float side = (0.5 - abs(UV.x - 0.5)) * width;
