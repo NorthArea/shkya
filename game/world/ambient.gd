@@ -8,12 +8,18 @@ extends Node3D
 ## камеры (маска 1) её не видят. Собака сама отходит от Илюши и «Лады» и не ступает ближе DOG_KEEP к Илюше.
 ## Звук — SoundDirector: слушает сигналы crow_cawed / dog_barked (только слушает, ничем не управляет).
 ## Без случайностей вне seed: расписания лая и карканья — RandomNumberGenerator с фиксированным SEED.
+## PEOPLE-03 (P2): голуби (конёк голубятни Z6, снег у неё, мусор у контейнеров двора) и синицы у кормушки Z2 — тот же
+## класс птицы (Crow, вид species), свои стайки: Илюша пешком или «Лада» ближе своего радиуса — взлетает вся стайка,
+## кружит над местом и садится обратно, когда рядом никого. Голуби на снегу клюют. Сигналы для SoundDirector:
+## pigeon_cooed (воркование сидящего голубя по расписанию) и birds_flushed (хлопанье крыльев стайки при взлёте).
 
 const Layout = preload("res://game/world/layout.gd")
 const Materials = preload("res://game/world/materials.gd")
 
 signal crow_cawed(crow: Node3D)
 signal dog_barked(dog: Node3D)
+signal pigeon_cooed(bird: Node3D)
+signal birds_flushed(bird: Node3D)
 
 const GROUP := &"ambient"
 const SEED := 2910
@@ -39,6 +45,23 @@ const CIRCLE_SPEED := 1.1       # рад/с
 const RETURN_SPEED := 5.0       # м/с
 const CAW_GAP := 0.5            # с: не чаще одного «кар» за полсекунды на всю стаю
 const IDLE_CAW := Vector2(7.0, 16.0)
+
+# --- PEOPLE-03 (P2): голуби и синицы ---
+## Голуби: стайки [насесты]. Конёк голубятни (Layout PropDovecote (88; 110), конёк на высоте 4,65 вдоль x, z 110,2);
+## на снегу перед ней; у контейнеров двора (BINS, z 64,9…66,1) — среди мусора LITTER, южнее.
+const PIGEON_FLOCKS: Array = [
+	[Vector3(87.0, 4.7, 110.2), Vector3(87.7, 4.7, 110.2), Vector3(88.9, 4.7, 110.2)],
+	[Vector3(85.6, 0.0, 107.4), Vector3(86.6, 0.0, 106.9), Vector3(90.4, 0.0, 107.5)],
+	[Vector3(-34.8, 0.0, 67.9), Vector3(-32.9, 0.0, 68.3), Vector3(-30.7, 0.0, 67.8)],
+]
+## Синицы у кормушки Z2 (Props.FEEDER_BIRCH (−66; 98): пакет на берёзе, крыша 1,87): на крыше, у окошка и на верёвке
+## с бельём рядом.
+const TIT_FLOCKS: Array = [[Vector3(-65.75, 1.87, 98.0), Vector3(-65.75, 1.62, 98.1), Vector3(-66.4, 1.99, 98.4)]]
+const PIGEON_FLUSH := 5.0       # м по горизонтали: ближе — взлёт стайки
+const TIT_FLUSH := 4.0
+const BIRD_CALM := 8.0          # м: садятся, только когда рядом с местом никого
+const COO_INTERVAL := Vector2(6.0, 14.0)
+const WINGS_GAP := 0.5          # с: не чаще одного хлопанья крыльев на всех
 
 # --- собака ---
 ## Петля за гаражами киоска (западная стена Garages_Kiosk — x = 42, тополя (36, −68) и (36, −82)); до дорог и
@@ -79,6 +102,13 @@ var cat: Node3D
 var litter: Array = []
 var flushes := {&"player": 0, &"car": 0, &"traffic": 0}
 var clock := 0.0
+var pigeons: Array = []          # PEOPLE-03: голуби (Crow, species &"pigeon")
+var tits: Array = []             # синицы
+var flocks: Array = []           # [птицы, радиус взлёта]
+var bird_flushes := {&"pigeon": 0, &"tit": 0}
+var coos := 0
+var _next_coo := 0.0
+var _wings_cooldown := 0.0
 
 var _rng := RandomNumberGenerator.new()
 var _world: Node
@@ -121,6 +151,7 @@ func _ready() -> void:
 	_build_dog()
 	_build_cat()
 	_build_litter()
+	_build_small_birds()
 	_next_idle_caw = _rng.randf_range(IDLE_CAW.x, IDLE_CAW.y)
 	_next_bark = _rng.randf_range(BARK_INTERVAL.x, BARK_INTERVAL.y)
 	var rig: Node = _world.get_node_or_null("CameraRig") if _world else null
@@ -141,6 +172,7 @@ func _physics_process(delta: float) -> void:
 	clock += delta
 	var threats := _threats()
 	_update_crows(delta, threats)
+	_update_small_birds(delta, threats)
 	_update_dog(delta)
 	_update_cat()
 
@@ -203,8 +235,73 @@ func _caw(crow: Crow) -> void:
 	crow.caws += 1
 	crow_cawed.emit(crow)
 
-## Серая ворона: серое туловище, чёрные голова, крылья и хвост. Ноль коллизий. Перед — −Z, начало — у лап.
+# --- PEOPLE-03 (P2): голуби и синицы ---
+
+func _build_small_birds() -> void:
+	var n := 0
+	for flock_spec in PIGEON_FLOCKS + TIT_FLOCKS:
+		var pigeon: bool = PIGEON_FLOCKS.has(flock_spec)
+		var flock := []
+		for perch: Vector3 in flock_spec:
+			var bird := Crow.new()
+			bird.species = &"pigeon" if pigeon else &"tit"
+			bird.name = "%s%d" % ["Pigeon" if pigeon else "Tit", n]
+			bird.perch = perch
+			bird.perch_yaw = float(n) * 2.1
+			bird.phase = float(n) * 1.3
+			bird.circle_dir = 1.0 if n % 2 == 0 else -1.0
+			bird.rise = (5.0 + float(n % 3)) if pigeon else (2.2 + 0.4 * float(n % 2))
+			bird.radius = (4.5 + float(n % 2)) if pigeon else 1.6
+			add_child(bird)
+			bird.build(1.0 if pigeon else 0.45)
+			bird.land()
+			(pigeons if pigeon else tits).append(bird)
+			flock.append(bird)
+			n += 1
+		flocks.append([flock, PIGEON_FLUSH if pigeon else TIT_FLUSH])
+	_next_coo = _rng.randf_range(COO_INTERVAL.x, COO_INTERVAL.y)
+
+## Стайка взлетает целиком, когда угроза ближе её радиуса к любому насесту; садится каждая, когда рядом никого.
+func _update_small_birds(delta: float, threats: Array) -> void:
+	_wings_cooldown = maxf(_wings_cooldown - delta, 0.0)
+	for f in flocks:
+		var flock: Array = f[0]
+		var near := INF
+		for bird: Crow in flock:
+			near = minf(near, _nearest(bird.perch, _bird_threats(threats))[0])
+		if near < f[1] and flock.any(func(b: Crow) -> bool: return b.state == &"sit"):
+			for bird: Crow in flock:
+				if bird.state == &"sit":
+					bird.take_off()
+			bird_flushes[flock[0].species] = int(bird_flushes[flock[0].species]) + 1
+			if _wings_cooldown <= 0.0:
+				_wings_cooldown = WINGS_GAP
+				birds_flushed.emit(flock[0])
+		for bird: Crow in flock:
+			match bird.state:
+				&"fly":
+					if bird.timer >= FLY_MIN and near >= BIRD_CALM:
+						bird.state = &"return"
+				&"return":
+					if near < f[1]:
+						bird.state = &"fly"
+			bird.step(delta)
+	if clock >= _next_coo:
+		_next_coo = clock + _rng.randf_range(COO_INTERVAL.x, COO_INTERVAL.y)
+		var sitting := pigeons.filter(func(b: Crow) -> bool: return b.state == &"sit")
+		if not sitting.is_empty():
+			coos += 1
+			pigeon_cooed.emit(sitting[_rng.randi() % sitting.size()])
+
+## Птиц у двора пугают только Илюша пешком и «Лада», не транспорт кольца (он далеко от их мест).
+static func _bird_threats(threats: Array) -> Array:
+	return threats.filter(func(t) -> bool: return t[1] != &"traffic")
+
+## Птица (CITY-01: серая ворона; PEOPLE-03: голубь, синица — species). Ноль коллизий. Перед — −Z, начало — у лап.
+## Ворона: серое туловище, чёрные голова, крылья и хвост. Голубь: сизый, тёмная голова, переливчатая шея, полосы на
+## крыльях; на снегу клюёт. Синица: жёлтое брюшко, чёрная голова, белые щёки, зеленоватая спина.
 class Crow extends Node3D:
+	var species := &"crow"
 	var perch := Vector3.ZERO
 	var perch_yaw := 0.0
 	var phase := 0.0
@@ -227,6 +324,24 @@ class Crow extends Node3D:
 	func build(scale_k: float) -> void:
 		var black := Materials.plain(Color(0.05, 0.05, 0.06), 0.55)
 		var grey := Materials.plain(Color(0.46, 0.46, 0.47), 0.8)
+		var head_mat := black
+		var wing_mat := black
+		var tail_mat := black
+		var beak_mat := black
+		var neck_mat: Material = null
+		match species:
+			&"pigeon":
+				grey = Materials.plain(Color(0.56, 0.59, 0.66), 0.8)
+				head_mat = Materials.plain(Color(0.38, 0.40, 0.48), 0.8)
+				wing_mat = Materials.plain(Color(0.50, 0.53, 0.60), 0.8)
+				tail_mat = Materials.plain(Color(0.30, 0.31, 0.36), 0.8)
+				beak_mat = Materials.plain(Color(0.85, 0.66, 0.62), 0.6)
+				neck_mat = Materials.plain(Color(0.30, 0.50, 0.44), 0.4)
+			&"tit":
+				grey = Materials.plain(Color(0.95, 0.82, 0.18), 0.8)
+				wing_mat = Materials.plain(Color(0.40, 0.50, 0.55), 0.8)
+				tail_mat = wing_mat
+				neck_mat = Materials.plain(Color(0.96, 0.96, 0.94), 0.8)   # белые щёки
 		var root := Node3D.new()
 		root.name = "Visual"
 		root.scale = Vector3.ONE * scale_k
@@ -236,25 +351,30 @@ class Crow extends Node3D:
 		_head = Node3D.new()
 		_head.position = Vector3(0, 0.27, -0.15)
 		root.add_child(_head)
-		_mesh(_head, _sphere(0.075), Vector3.ZERO, black)
+		_mesh(_head, _sphere(0.075), Vector3.ZERO, head_mat)
+		if neck_mat:
+			var neck := _mesh(_head, _sphere(0.07), Vector3(0, -0.06, 0.02), neck_mat)
+			neck.scale = Vector3(1.05, 0.8, 0.9)
 		var beak := CylinderMesh.new()
 		beak.top_radius = 0.0
 		beak.bottom_radius = 0.026
 		beak.height = 0.09
 		beak.radial_segments = 6
-		var b := _mesh(_head, beak, Vector3(0, -0.01, -0.1), black)
+		var b := _mesh(_head, beak, Vector3(0, -0.01, -0.1), beak_mat)
 		b.rotation.x = -PI * 0.5
-		var tail := _mesh(root, _box(Vector3(0.1, 0.02, 0.18)), Vector3(0, 0.14, 0.24), black)
+		if species != &"crow":
+			b.scale = Vector3(0.6, 0.6, 0.6)
+		var tail := _mesh(root, _box(Vector3(0.1, 0.02, 0.18)), Vector3(0, 0.14, 0.24), tail_mat)
 		tail.rotation.x = 0.25
 		for x: float in [-1.0, 1.0]:
-			var folded := _mesh(root, _sphere(0.12), Vector3(x * 0.075, 0.19, 0.05), black)
+			var folded := _mesh(root, _sphere(0.12), Vector3(x * 0.075, 0.19, 0.05), wing_mat)
 			folded.scale = Vector3(0.22, 0.42, 1.2)
 			folded.rotation.x = 0.12
 			_folded.append(folded)
 			var pivot := Node3D.new()
 			pivot.position = Vector3(x * 0.07, 0.21, -0.02)
 			root.add_child(pivot)
-			_mesh(pivot, _box(Vector3(0.32, 0.015, 0.17)), Vector3(x * 0.16, 0, 0), black)
+			_mesh(pivot, _box(Vector3(0.32, 0.015, 0.17)), Vector3(x * 0.16, 0, 0), wing_mat)
 			pivot.visible = false
 			_wings.append(pivot)
 			_mesh(root, _box(Vector3(0.012, 0.09, 0.012)), Vector3(x * 0.03, 0.045, 0.0), black)
@@ -316,6 +436,9 @@ class Crow extends Node3D:
 			&"sit":
 				# Голова изредка поворачивается — ворона «смотрит» по сторонам.
 				_head.rotation.y = 0.5 * sin(timer * 0.7 + phase) * float(sin(timer * 0.23 + phase) > 0.3)
+				if species == &"pigeon" and perch.y < 0.1:
+					var k := fmod(timer + phase, 1.3)   # клюёт: голова к снегу
+					_head.rotation.x = -0.9 * sin(clampf(k / 0.35, 0.0, 1.0) * PI)
 				return
 			&"fly":
 				_airborne += delta
@@ -339,7 +462,7 @@ class Crow extends Node3D:
 		_last = position
 
 	func _flap() -> void:
-		var a := sin(timer * TAU * 6.0) * 0.8
+		var a := sin(timer * TAU * (14.0 if species == &"tit" else 6.0)) * 0.8
 		_wings[0].rotation.z = -a
 		_wings[1].rotation.z = a
 
