@@ -19,6 +19,13 @@ uniform int wet_count = 0;
 uniform float wet_gloss = 0.9;
 uniform float wet_darken = 0.55;
 uniform float wet_roughness = 0.16;
+// CITY-02 L: колеи с глубиной. Высота — доля каши (колея ниже наката на rut_depth) плюс мелкие комья каши; нормаль —
+// разностями высоты в мире. В мокрых пятнах колеи залиты водой: дно ровное и гладкое (puddle_roughness), SSR даёт
+// отражения фонарей и окон. Значения задаёт lighting.gd (RUT_*, PUDDLE_*); по умолчанию — те же числа.
+uniform float rut_depth = 0.07;           // м, накат каши над колеёй
+uniform float slush_bump = 0.012;         // м, комья каши
+uniform float puddle_roughness = 0.04;
+uniform float puddle_level = 0.45;        // доля каши, до которой колею в мокром пятне заливает вода
 
 varying vec3 world_pos;
 
@@ -54,38 +61,68 @@ float slushiness_at(float across, float along, float half_w) {
 	return s * mix(0.75, 1.0, wobble);
 }
 
-void fragment() {
+// Доля каши в точке мира xz (прямая плитка или угол кольца).
+float slushiness_xz(vec2 xz) {
 	float half_w = width * 0.5;
-	float slushiness;
 	if (corner > 0.5) {
-		vec2 d = world_pos.xz - corner_point;
+		vec2 d = xz - corner_point;
 		float r = length(d);
 		// 0 — у края, которым плитка примыкает к улице вдоль x; 1 — к улице вдоль z.
 		float t = atan(abs(d.x), abs(d.y) + 1e-4) / (PI * 0.5);
-		float s_x = slushiness_at(corner_sign.x * (r - half_w), world_pos.x, half_w);
-		float s_z = slushiness_at(corner_sign.y * (r - half_w), world_pos.z, half_w);
-		slushiness = mix(s_x, s_z, smoothstep(0.0, 1.0, t));
-	} else {
-		float across = along_x > 0.5 ? world_pos.z - center.y : world_pos.x - center.x;
-		float along = along_x > 0.5 ? world_pos.x : world_pos.z;
-		slushiness = slushiness_at(across, along, half_w);
+		float s_x = slushiness_at(corner_sign.x * (r - half_w), xz.x, half_w);
+		float s_z = slushiness_at(corner_sign.y * (r - half_w), xz.y, half_w);
+		return mix(s_x, s_z, smoothstep(0.0, 1.0, t));
 	}
-	vec3 color = mix(asphalt, slush, slushiness);
-	float roughness = mix(0.08, 0.88, slushiness);   // мокрые колеи отражают фонари, каша — матовая
-	float specular = mix(0.6, 0.3, slushiness);
+	float across = along_x > 0.5 ? xz.y - center.y : xz.x - center.x;
+	float along = along_x > 0.5 ? xz.x : xz.y;
+	return slushiness_at(across, along, half_w);
+}
+
+float wetness(vec2 xz) {
 	float wet = 0.0;
 	for (int i = 0; i < wet_count; i++) {
-		float d = length(world_pos.xz - wet_spots[i].xy) / wet_spots[i].z;
+		float d = length(xz - wet_spots[i].xy) / wet_spots[i].z;
 		wet = max(wet, (1.0 - smoothstep(0.45, 1.0, d)) * wet_spots[i].w);
 	}
 	if (wet > 0.0) {
 		// Пятна и лужи рваные: шум, а не ровный круг.
-		float patches = smoothstep(0.3, 0.65, noise(world_pos.xz * 0.45) * 0.7 + noise(world_pos.xz * 1.7) * 0.3);
+		float patches = smoothstep(0.3, 0.65, noise(xz * 0.45) * 0.7 + noise(xz * 1.7) * 0.3);
 		wet *= mix(0.45, 1.0, patches);
+	}
+	return wet;
+}
+
+// Высота поверхности над асфальтом, м: накат каши и комья; в мокром пятне колею заливает вода до puddle_level.
+float surface_height(vec2 xz, float wet) {
+	float s = slushiness_xz(xz);
+	float h = s * rut_depth + noise(xz * 7.0) * slush_bump * s;
+	return max(h, puddle_level * rut_depth * step(0.05, wet));
+}
+
+void fragment() {
+	vec2 xz = world_pos.xz;
+	float slushiness = slushiness_xz(xz);
+	vec3 color = mix(asphalt, slush, slushiness);
+	float roughness = mix(0.08, 0.88, slushiness);   // мокрые колеи отражают фонари, каша — матовая
+	float specular = mix(0.6, 0.3, slushiness);
+	float wet = wetness(xz);
+	float puddle = 0.0;
+	if (wet > 0.0) {
 		color = mix(color, color * wet_darken, wet * slushiness);
 		roughness = mix(roughness, wet_roughness, wet * wet_gloss);   // не зеркало: блик фонаря — мягкая полоса, не точка
 		specular = mix(specular, 0.45, wet);
+		// Вода в колее: ниже уровня заливки — гладкое зеркало (отражения SSR).
+		puddle = (1.0 - smoothstep(puddle_level - 0.15, puddle_level, slushiness)) * smoothstep(0.2, 0.6, wet);
+		roughness = mix(roughness, puddle_roughness, puddle);
 	}
+	// Глубина колеи: нормаль по разностям высоты (шаг 4 см), вода в луже — ровная.
+	float e = 0.04;
+	float h0 = surface_height(xz, wet);
+	float hx = surface_height(xz + vec2(e, 0.0), wet);
+	float hz = surface_height(xz + vec2(0.0, e), wet);
+	vec3 n = normalize(vec3(-(hx - h0) / e, 1.0, -(hz - h0) / e));
+	n = normalize(mix(n, vec3(0.0, 1.0, 0.0), puddle));
+	NORMAL = normalize((VIEW_MATRIX * vec4(n, 0.0)).xyz);
 	ALBEDO = color;
 	ROUGHNESS = roughness;
 	SPECULAR = specular;

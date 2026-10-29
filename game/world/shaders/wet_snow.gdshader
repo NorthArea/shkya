@@ -17,6 +17,8 @@ uniform vec4 lamps[48];                            // xyz — лампа, w — 
 uniform int lamp_count = 0;
 uniform vec3 lamp_tint : source_color = vec3(1.0, 0.74, 0.10);
 uniform float lamp_gain = 1.6;
+uniform float big_share = 0.0;                     // CITY-02 L: доля крупных (слипшихся) хлопьев
+uniform float big_scale = 1.8;
 
 varying float alpha;
 varying float lit;
@@ -37,7 +39,8 @@ void vertex() {
 	vec3 world = low + mod(p - low, box);
 	vec3 view = (VIEW_MATRIX * vec4(world, 1.0)).xyz;
 	// Плоский хлопок, всегда лицом к камере.
-	VERTEX = view + VERTEX * flake_size * (0.45 + 1.1 * hash(seed.zyx));   // разброс 0,45–1,55: не одинаковые диски
+	float big = hash(seed.xzy + 5.1) < big_share ? big_scale : 1.0;
+	VERTEX = view + VERTEX * flake_size * (0.45 + 1.1 * hash(seed.zyx)) * big;   // разброс 0,45–1,55: не одинаковые диски
 	NORMAL = vec3(0.0, 0.0, 1.0);
 	float dist = length(view);
 	vec3 edge = abs(world - center) / (box * 0.5);
