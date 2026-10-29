@@ -124,6 +124,7 @@ func _run() -> void:
 	main.start_game()
 	await drv.frames(10)
 	world = main.world
+	_free_residents()
 	if not check(world != null and world.get_node_or_null("StealthDirector") is StealthDirector, "DemoWorld has the StealthDirector node (C7)"):
 		_finish()
 		return
@@ -524,6 +525,7 @@ func _part_kiosk_section() -> void:
 	main.start_game()
 	await drv.frames(10)
 	world = main.world
+	_free_residents()
 	var m := world.mission
 	var patrols: Node = world.get_node("LevelGeometry/Patrols")
 	var officer: Node3D = patrols.officer
@@ -771,6 +773,7 @@ func _part_fix2() -> void:
 	main.start_game()
 	await drv.frames(10)
 	world = main.world
+	_free_residents()
 	var m := world.mission
 	var patrols: Node = world.get_node("LevelGeometry/Patrols")
 	var officer: Node3D = patrols.officer
@@ -1010,6 +1013,7 @@ func _part_fix3() -> void:
 	main.start_game()
 	await drv.frames(10)
 	world = main.world
+	_free_residents()
 	var m := world.mission
 	var patrols: Node = world.get_node("LevelGeometry/Patrols")
 	var officer: Node3D = patrols.officer
@@ -1470,6 +1474,7 @@ func _part_fix5() -> void:
 	main.start_game()
 	await drv.frames(10)
 	world = main.world
+	_free_residents()
 	var m := world.mission
 	var patrols: Node = world.get_node("LevelGeometry/Patrols")
 	var officer: Node3D = patrols.officer
@@ -1930,6 +1935,7 @@ func _part_fix6() -> void:
 	main.start_game()
 	await drv.frames(10)
 	world = main.world
+	_free_residents()
 	var m := world.mission
 	var patrols: Node = world.get_node("LevelGeometry/Patrols")
 	var officer: Node3D = patrols.officer
@@ -2309,6 +2315,15 @@ func _flat_d(a: Vector3, b: Vector3) -> float:
 # =====================================================================================
 # Помощники
 # =====================================================================================
+
+## LIFE-01: жители (по цепочкам целей) — движущиеся тела на слое Car, как в STUCK: в стелс они не входят (не в
+## detection_sensors, не укрывают — C7), к постам ближе 8 м и на площадку киоска не ходят (life01_test, данные), но их
+## шаги сдвигали бы тайминг сценариев и фазы второго полицейского (счёт «чистых фаз» прыгал 4 → 7 из 12 без связи
+## со стелсом). Свои наборы — RESIDENTS и LIFE01.
+func _free_residents() -> void:
+	var residents := world.get_node_or_null("LevelGeometry/Residents")
+	if residents:
+		residents.free()
 
 func _place_player(p: Vector3, yaw: float) -> void:
 	world.player.place(p, yaw)

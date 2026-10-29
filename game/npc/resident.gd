@@ -134,6 +134,7 @@ const FOLLOW_SIDE := 0.45                 # м: второй в паре — с�
 const TRAIL_STEP := 0.15                  # м между точками следа первого в паре
 const SIT_DROP := 0.42                    # м: облик сидящего ниже (ноги за лавкой в снегу); сдвиг — Layout.LIFE_SIT
 const SWEEP_SPEED := 0.45                 # м/с: дворник с метлой
+const STEALTH_STAY := 30.0                # м: Илюша ближе к троллейбусу на остановке B — пассажир едет дальше, до A
 const EDGE_RETRY := 3.0                   # с: край карты в кадре — подождать и проверить снова
 const BUSY_KINDS: Array[StringName] = [&"slide"]   # занятие в движении: на Илюшу и гудок не останавливается
 
@@ -1650,7 +1651,12 @@ func _errand_doors_opened(stop: int) -> void:
 		life.release(spot_id, self)
 		_board()
 	elif stop == 1 and state == &"ride":
-		_alight(1)
+		# Илюша у площадки киоска (стелс, C7) — пассажир не выходит у парковки, едет до A.
+		if not (is_instance_valid(player) and player.is_visible_in_tree() \
+				and _flat(player.global_position).distance_to(_flat(trolley.global_position)) < STEALTH_STAY):
+			_alight(1)
+	elif stop == 0 and state == &"ride":
+		_alight(0)
 	elif stop == 0 and state == &"away" and _wait <= 20.0:
 		life.release(spot_id, self)
 		_alight(0)
