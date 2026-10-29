@@ -9,9 +9,17 @@ extends Node3D
 ## случай, если слой поменяют). В группу detection_sensors жители не входят: стелс (C7) их не замечает.
 ## KNOCK-01: сбитый «Ладой» житель (Resident.knock) — сигналы resident_knocked (взлёт) и resident_landed (упал в снег)
 ## для SoundDirector, который находит узел по группе GROUP; knocks — сколько раз сбивали всех за мир.
+## LIFE-01: LIFE = true — все жители живут по цепочкам целей (планировщик life, game/world/life.gd; персоны — Life.PERSONAS):
+## 20 жителей (14 прежних и шесть занятий PEOPLE-03: горка, раскопка, дворник, домино, капот). Пары — второй по следу
+## первого; курящие — первая цель «курилка у подъезда»; троллейбусом ездит любой, чья цепочка ведёт на остановку.
+## Каждый шаг физики узел обновляет для life камеру, Илюшу и машины (переходы, края карты, LOD). Своя простая геометрия
+## занятий (LifeProps): ковёр на выбивалке (виден, пока выбивают), поднятый капот «Жигулей»; столик доминошников и лавки
+## у площадки Z15 — пока их нет среди разрушаемых (PROPS_BREAKABLES не подключены к BREAKABLES), без коллизии.
 
 const Layout = preload("res://game/world/layout.gd")
 const ResidentScript = preload("res://game/npc/resident.gd")
+const LifeScript = preload("res://game/world/life.gd")
+const LIFE := true   # LIFE-01: цепочки целей; false — прежние петли PEOPLE-01/CITY-01
 const ART_DIR := "res://assets/art/characters/"
 
 ## Рисунки части A готовы — true: облик resident_<силуэт>. Пока false — заглушки PLACEHOLDER (рисунки ART-01).
@@ -69,6 +77,7 @@ var bag: RefCounted = LineBagScript.new(ResidentScript.SEED)   # общий «м
 var push_bubbles := 0
 var horn_bubbles := 0
 var _chatter_at := -INF
+var life   # LIFE-01: планировщик (game/world/life.gd)
 var trolley: Node3D
 var horn_glances := 0
 var _sound: Node
@@ -83,6 +92,9 @@ func _ready() -> void:
 	var lada: Node3D = world.get_node_or_null("Car") if world else null
 	var traffic: Node = get_parent().get_node_or_null("Traffic") if get_parent() else null
 	trolley = traffic.get("trolleybus") if traffic else null
+	if LIFE:
+		life = LifeScript.new()
+		life.player = player
 	for i in Layout.RESIDENT_ROUTES.size():
 		var resident: Resident = ResidentScript.new()
 		var look: StringName = Layout.RESIDENT_LOOKS[i]
@@ -98,6 +110,14 @@ func _ready() -> void:
 		resident.lada = lada
 		resident.knock_launched.connect(func(r: Resident): resident_knocked.emit(r))
 		resident.knock_landed.connect(func(r: Resident): resident_landed.emit(r))
+		if LIFE:
+			var persona: Dictionary = LifeScript.PERSONAS[i] if i < LifeScript.PERSONAS.size() else {}
+			resident.errand = true
+			resident.life = life
+			resident.home = persona.get("home", &"")
+			resident.plan = persona.get("plan", [])
+			resident.rider = true
+			resident.trolley = trolley
 		residents.append(resident)
 	# Роли — до add_child: _ready курящего начинает с перекура.
 	for f in PAIRS:
@@ -106,12 +126,20 @@ func _ready() -> void:
 		second.leader = first
 		first.follower = second
 		second.follow_offset = Resident._flat(Layout.RESIDENT_ROUTES[f][0]) - Resident._flat(Layout.RESIDENT_ROUTES[PAIRS[f]][0])
+		# LIFE-01: след первого — сколько позади и сбоку стоит второй (по стартовому сдвигу и первому отрезку первого).
+		var lead_route: Array = Layout.RESIDENT_ROUTES[PAIRS[f]]
+		var s0: int = Layout.RESIDENT_STARTS[PAIRS[f]]
+		var dir := (Resident._flat(lead_route[(s0 + 1) % lead_route.size()]) - Resident._flat(lead_route[s0])).normalized()
+		second.follow_gap = -second.follow_offset.dot(dir)
+		second.follow_side = second.follow_offset.dot(Vector3(-dir.z, 0.0, dir.x))
 	for i in SMOKERS:
-		residents[i].smoke_point = 0
+		if not LIFE:
+			residents[i].smoke_point = 0
 		residents[i].smoke_partner = residents[SMOKERS[i]]
-	residents[RIDER].rider = true
-	residents[RIDER].wait_point = RIDER_WAIT_POINT
-	residents[RIDER].trolley = trolley
+	if not LIFE:
+		residents[RIDER].rider = true
+		residents[RIDER].wait_point = RIDER_WAIT_POINT
+		residents[RIDER].trolley = trolley
 	for resident in residents:
 		add_child(resident)
 	if trolley:
@@ -155,6 +183,9 @@ func knocks() -> int:
 
 ## Для тестов и перезапуска: все на старт (сбитые — тоже: облик, тело и счётчики сбивания — как до удара).
 func reset_positions() -> void:
+	if life:
+		life.reset()
+		_update_life()
 	for resident in residents:
 		resident.reset_to_start()
 	for f in PAIRS:
@@ -195,6 +226,80 @@ func _physics_process(delta: float) -> void:
 	_break_clock += delta
 	if _breakables == null:
 		_connect_breakables()
+	if life:
+		_update_life()
+
+# --- LIFE-01 ---
+
+var _van: Node3D
+var _props_built := false
+
+## Камера, Илюша, машины кольца и автобус ГСУМ — для переходов, краёв карты и LOD; разрушаемые — якоря точек.
+func _update_life() -> void:
+	if not is_inside_tree():
+		return
+	life.camera = get_viewport().get_camera_3d()
+	if _van == null:
+		var patrols := get_parent().get_node_or_null("Patrols") if get_parent() else null
+		_van = patrols.get("van") if patrols else null
+	life.vehicles = get_tree().get_nodes_in_group(PathVehicle.GROUP)
+	if is_instance_valid(_van):
+		life.vehicles.append(_van)
+	if _breakables and life.breakables != _breakables:
+		life.breakables = _breakables
+	if not _props_built and _breakables:
+		_props_built = true
+		_build_life_props()
+
+## Своя простая геометрия занятий: ковёр на выбивалке, поднятый капот; столик и лавки — если их нет среди разрушаемых.
+func _build_life_props() -> void:
+	var root := Node3D.new()
+	root.name = "LifeProps"
+	add_child(root)
+	var carpet := _box(root, "Carpet", Layout.LIFE_CARPET[1], Layout.LIFE_CARPET[0], Color(0.55, 0.12, 0.12))
+	var stripe := _box(carpet, "Stripe", Vector3(0.06, 1.2, 1.7), Vector3.ZERO, Color(0.85, 0.65, 0.25))
+	stripe.position = Vector3(0.002, 0.0, 0.0)
+	carpet.visible = false
+	life.props[&"carpet"] = carpet
+	# Капот «Жигулей» (PARKED у гаражей двора): поднят у северного торца, шарнир у лобового стекла.
+	var car := Layout.LIFE_HOOD_CAR
+	var hood := Node3D.new()
+	hood.name = "Hood"
+	hood.position = Vector3(car.x, 0.98, car.y - 0.95)
+	hood.rotation.x = -1.0
+	root.add_child(hood)
+	_box(hood, "Panel", Vector3(1.45, 0.04, 1.05), Vector3(0.0, 0.0, -0.52), Color(0.42, 0.44, 0.40))
+	_box(hood, "Rod", Vector3(0.03, 0.75, 0.03), Vector3(0.55, -0.35, -0.9), Color(0.2, 0.2, 0.2)).rotation.x = 1.0
+	var have := func(id: StringName) -> bool: return _breakables.has_method(&"get_by_id") and _breakables.get_by_id(id) != null
+	for spec in Layout.PROPS_BREAKABLES:
+		if not spec[0] in [&"Z5_4", &"Z15_9a", &"Z15_9b"] or have.call(spec[0]):
+			continue
+		var c: Vector2 = spec[2]
+		var size: Vector3 = spec[3]
+		if spec[1] == &"domino":
+			# Столик (1,6 × 0,8 м по x, высота 0,8) и две лавки вдоль длинных сторон.
+			_box(root, "DominoTop", Vector3(0.8, 0.06, 1.6), Vector3(c.x, 0.78, c.y), Color(0.42, 0.3, 0.2))
+			_box(root, "DominoLeg", Vector3(0.12, 0.75, 0.12), Vector3(c.x, 0.375, c.y), Color(0.3, 0.3, 0.3))
+			for side in [-1.0, 1.0]:
+				_box(root, "DominoBench", Vector3(0.3, 0.45, 1.6), Vector3(c.x + side * 0.65, 0.225, c.y), Color(0.38, 0.27, 0.18))
+		else:
+			_box(root, "Bench", Vector3(size.x, 0.08, 0.4), Vector3(c.x, 0.45, c.y + 0.05), Color(0.38, 0.27, 0.18))
+			_box(root, "BenchBack", Vector3(size.x, 0.4, 0.06), Vector3(c.x, 0.75, c.y - 0.2), Color(0.38, 0.27, 0.18))
+			for x in [-0.75, 0.75]:
+				_box(root, "BenchLeg", Vector3(0.08, 0.45, 0.4), Vector3(c.x + x * size.x * 0.5, 0.225, c.y + 0.05), Color(0.25, 0.25, 0.27))
+
+func _box(parent: Node3D, box_name: String, size: Vector3, at: Vector3, color: Color) -> MeshInstance3D:
+	var mesh := BoxMesh.new()
+	mesh.size = size
+	var material := StandardMaterial3D.new()
+	material.albedo_color = color
+	mesh.material = material
+	var m := MeshInstance3D.new()
+	m.name = box_name
+	m.mesh = mesh
+	m.position = at
+	parent.add_child(m)
+	return m
 
 ## SoundDirector — сосед LevelGeometry в DemoWorld; если ещё нет — подключимся позже.
 func _connect_sound() -> void:

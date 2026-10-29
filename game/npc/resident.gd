@@ -37,13 +37,28 @@ extends "res://game/npc/npc.gd"
 ## Пара: сбитый возвращается на своё место, второй тем временем стоит и смотрит на него. Медленнее KNOCK_MIN_SPEED —
 ## прежний отход (_dodge_lada). Пассажир у дверей и на переходе (board/alight/transit) и скрытые не сбиваются.
 ## Очков, денег и штрафов нет. Звук — сигналы knock_launched/knock_landed (Residents → SoundDirector).
+##
+## LIFE-01 (решение владельца 29.10, вечер: «у каждого NPC цель и маршрут»): errand = true — житель живёт не по петле,
+## а по цепочке целей. Residents даёт ему планировщик life (game/world/life.gd) и персону (дом и шаги). Маршрут route —
+## текущий отрезок пути (открытая ломаная из life.path) с флагами route_flags: перед переходом проезжей части
+## (&"cross") ждёт на бордюре (wait_cross), пока машины и автобус не дальше CROSS_CLEAR, «Лада» — не ближе и не едет,
+## и идёт не останавливаясь; перед коридором пути игрока (&"route") ждёт, пока Илюша и «Лада» не дальше ROUTE_YIELD.
+## Дошёл — занятие точки (_arrive): подъезд и магазин — скрыт (inside) и выходит из той же двери; окно, контейнеры,
+## «козёл», капот, раскопка, ковёр — стоит лицом к объекту с короткой анимацией облика; лавка — сидит (облик на сиденье,
+## тело выключено); дворник метёт вдоль дома; дети катаются с горки по петле Layout.LIFE_SLIDE_LOOP; остановка — ждёт
+## троллейбус (дальше как пассажир CITY-01: выходит на B и уходит в «ГАСТРОНОМ», откуда выйдет позже); край карты —
+## уходит, когда место вне кадра, и возвращается вне кадра или троллейбусом. Потом — следующий шаг цепочки.
+## Сбит — встаёт, возвращается на точку удара и идёт к той же цели; «Лада» поперёк пути — разворот и новая цель.
+## Второй в паре идёт по следу первого (FOLLOW_GAP позади, сбоку FOLLOW_SIDE). Дальше LOD_DISTANCE и вне кадра —
+## обновление раз в LOD_STEP шагов физики с накопленным временем.
 
 const DialogPanelScript = preload("res://game/ui/dialog_panel.gd")
 const LineBagScript = preload("res://game/npc/line_bag.gd")
 const Layout = preload("res://game/world/layout.gd")
 
-const SPEEDS: Array[float] = [1.2, 1.45, 1.35, 1.6, 1.3, 1.25, 1.5, 1.4, 1.5, 1.4, 1.3, 1.35, 1.25, 1.45]   # м/с, 1,2–1,6; у второго в паре — как у первого
-const PAUSES: Array[float] = [4.0, 2.5, 3.5, 2.0, 3.0, 4.5, 2.5, 5.0, 2.5, 5.0, 3.0, 4.0, 5.0, 3.5]          # с, 2–5
+const SPEEDS: Array[float] = [1.2, 1.45, 1.35, 1.6, 1.3, 1.25, 1.5, 1.4, 1.5, 1.4, 1.3, 1.35, 1.25, 1.45,
+	1.75, 1.4, 1.15, 1.3, 1.45, 1.8]   # м/с; у второго в паре — как у первого; LIFE-01: дети 14 и 19 бегают, дворник не спешит
+const PAUSES: Array[float] = [4.0, 2.5, 3.5, 2.0, 3.0, 4.5, 2.5, 5.0, 2.5, 5.0, 3.0, 4.0, 5.0, 3.5, 2.0, 3.0, 4.0, 3.0, 3.5, 2.0]   # с, 2–5
 const NOTICE_DISTANCE := 3.0
 const RELEASE_DISTANCE := 4.0
 const STARE_SECONDS := 2.0
@@ -70,7 +85,7 @@ const KIND_PRIORITY := {&"hit": 5, &"push": 4, &"break": 3, &"car": 2, &"walk": 
 const EVENT_KINDS: Array[StringName] = [&"hit", &"push", &"break"]
 const PASS_PLAYER_DISTANCE := 1.5                # Илюша вплотную — пузырь walk
 const IDLE_SECONDS := Vector2(25.0, 45.0)        # бубнёж стоящего — раз в столько
-const IDLE_STATES: Array[StringName] = [&"pause", &"smoke", &"wait_trolley"]
+const IDLE_STATES: Array[StringName] = [&"pause", &"smoke", &"wait_trolley", &"activity"]
 const IDLE_SCALE := 0.8                          # тихий пузырь: меньше
 const IDLE_ALPHA := 0.75                         # и бледнее
 const BUBBLE_TIP_Y := 2.1                        # кончик хвостика — над шапкой (рост жителей 1,35–1,83 м)
@@ -117,6 +132,19 @@ const KNOCK_STAR_SPIN := 4.0              # рад/с
 const KNOCK_STAR_LIFT := 0.3              # м над головой
 const KNOCK_SNOW := Color(0.9, 0.93, 0.98)
 const KNOCK_PHASES: Array[StringName] = [&"fly", &"down", &"getup"]   # облик под управлением сбивания
+# LIFE-01: цели и маршруты.
+const ROUTE_YIELD := 20.0                 # м: Илюша или «Лада» ближе к коридору пути игрока — ждать
+const LADA_MOVING := 1.0                  # м/с: «Лада» быстрее — едет
+const LOD_DISTANCE := 60.0                # м от камеры: дальше и вне кадра — упрощённое обновление
+const LOD_STEP := 4                       # раз в столько шагов физики
+const LOD_NEAR := 20.0                    # м: Илюша или «Лада» ближе — полное обновление и вне кадра
+const FOLLOW_SIDE := 0.45                 # м: второй в паре — сбоку от следа первого
+const TRAIL_STEP := 0.15                  # м между точками следа первого в паре
+const SIT_DROP := 0.42                    # м: облик сидящего ниже (ноги за лавкой в снегу); сдвиг — Layout.LIFE_SIT
+const SWEEP_SPEED := 0.45                 # м/с: дворник с метлой
+const STEALTH_STAY := 30.0                # м: Илюша ближе к троллейбусу на остановке B — пассажир едет дальше, до A
+const EDGE_RETRY := 3.0                   # с: край карты в кадре — подождать и проверить снова
+const BUSY_KINDS: Array[StringName] = [&"slide"]   # занятие в движении: на Илюшу и гудок не останавливается
 
 @export var index := 0
 var route: Array = []          # Vector3, замкнутая ломаная
@@ -198,6 +226,27 @@ var knock_car_speed := 0.0         # м/с «Лады» в момент удар
 var knock_peak := 0.0              # м: высшая точка полёта
 var knock_log: Array = []          # [время, фаза, позиция XZ]
 var knock_dust: CPUParticles3D
+# LIFE-01
+var errand := false                # true — цепочка целей (Residents.LIFE), false — прежняя петля
+var life                           # game/world/life.gd
+var home := &""                    # подъезд персоны
+var plan: Array = []               # шаги цепочки
+var plan_i := 0
+var spot_id := &""                 # текущая цель (точка интереса)
+var route_flags: Array = []        # флаг отрезка route[i] → route[i + 1]
+var visits: Array = []             # [время, точка] — дошёл
+var activity_log: Array = []       # [время, вид занятия]
+var goals := 0                     # сколько целей выбрано
+var start_leg: Array = []          # стартовый отрезок (Layout.RESIDENT_ROUTES): после него — первая цель
+var _act_kind := &""               # занятие на месте (activity, smoke, wait_trolley, inside, away)
+var _acting := false
+var _act_t := 0.0
+var _act_i := 0                    # точка петли горки / направление метлы
+var _cross_ok := -1                # отрезок перехода, на который уже разрешено ступить
+var _lod_acc := 0.0
+var _lod_n := 0
+var _trail: Array = []             # след первого в паре (Vector3, новые в конце)
+var _broom: Node3D
 var _knock_t := 0.0
 var _knock_time := 1.0             # с полёта
 var _knock_vy := 0.0
@@ -253,13 +302,20 @@ func _ready() -> void:
 	add_child(body)
 	if smoke_point == start_point and not route.is_empty():
 		_start_smoke()
+	if errand:
+		_errand_begin()
 
 func _physics_process(delta: float) -> void:
 	if route.size() < 2 or delta <= 0.0:
 		return
+	delta = _lod_delta(delta)
+	if delta <= 0.0:
+		return   # LIFE-01: далеко и вне кадра — копит время до следующего обновления
 	clock += delta
 	_tick_bubble(delta)
 	if hidden:
+		if errand and leader == null:
+			_tick_hidden(delta)
 		return   # в троллейбусе или в магазине: ждёт doors_opened
 	_check_knock()
 	if state == &"knocked":
@@ -271,6 +327,8 @@ func _physics_process(delta: float) -> void:
 			look_at_target(leader)   # первого сбили: стоит и смотрит, пока тот не вернётся
 		return   # второй в паре: его ставит первый (_mirror)
 	_tick(delta)
+	if follower != null and errand:
+		_record_trail()
 	if follower != null and follower.state != &"knocked":
 		follower._mirror(self)
 
@@ -303,7 +361,7 @@ func _tick(delta: float) -> void:
 			state = _resume_state
 			_wait = _resume_wait
 		return
-	if to_player < NOTICE_DISTANCE and not _met:
+	if to_player < NOTICE_DISTANCE and not _met and not _busy():
 		if state != &"glance":   # из оглядки — вернуться туда, откуда оглядывался
 			_resume_state = state
 			_resume_wait = _wait
@@ -332,15 +390,26 @@ func _tick(delta: float) -> void:
 			_turn_left = rng.randf_range(SMOKE_TURN_SECONDS.x, SMOKE_TURN_SECONDS.y)
 			facing_yaw = _smoke_yaw()
 		if _wait <= 0.0:
+			if errand:
+				_activity_done()
+				return
 			state = &"walk"
 			target_point = _wrap(target_point + direction)
 		return
 	if state == &"wait_trolley":
 		return   # уходит только по doors_opened (on_doors_opened)
+	if state == &"activity":
+		_tick_activity(delta)
+		return
+	if state == &"wait_cross":
+		_tick_wait_cross()
+		return
 	_walk(delta, to_player)
 
 func _walk(delta: float, to_player: float) -> void:
 	var here := _flat(global_position)
+	if errand and _crossing_ahead(here):
+		return
 	var goal := _flat(route[target_point])
 	var to := goal - here
 	var dist := to.length()
@@ -365,6 +434,9 @@ func _walk(delta: float, to_player: float) -> void:
 	if dist <= step:
 		global_position = goal
 		distance_walked += dist
+		if errand:
+			_on_errand_point()
+			return
 		if target_point == smoke_point:
 			_start_smoke()
 		elif target_point == wait_point and rider and is_instance_valid(trolley):
@@ -386,6 +458,10 @@ func place(point: Vector3) -> void:
 
 ## Перезапуск: на старт, к следующей точке, счётчики — с нуля.
 func reset_to_start() -> void:
+	if errand:
+		_act_stop()
+		route = start_leg.duplicate()
+		route_flags = [&""]
 	state = &"walk"
 	direction = 1
 	_met = false
@@ -418,6 +494,8 @@ func reset_to_start() -> void:
 	_knock_reset()
 	if smoke_point == start_point:
 		_start_smoke()
+	if errand:
+		_errand_reset()
 	if follower != null:
 		follower._mirror(self)
 
@@ -430,6 +508,8 @@ func loop_length() -> float:
 
 ## «Лада» задела: на ближайшую точку маршрута (шаг 0,5 м), свободную от её габарита на LADA_CLEAR, и дальше — от неё.
 func _dodge_lada() -> void:
+	if errand:
+		_act_stop()
 	var found := _nearest_free_point(_flat(global_position))
 	var best: Vector3 = found[0]
 	var best_seg: int = found[1]
@@ -454,7 +534,7 @@ func _nearest_free_point(here: Vector3) -> Array:
 	var best := Vector3.INF
 	var best_d := INF
 	var best_seg := -1
-	for k in route.size():
+	for k in (route.size() - 1 if errand else route.size()):   # LIFE-01: отрезок пути открыт
 		var a := _flat(route[k])
 		var b := _flat(route[_wrap(k + 1)])
 		var n := maxi(1, ceili(a.distance_to(b) / 0.5))
@@ -526,6 +606,9 @@ static func _flat(p: Vector3) -> Vector3:
 
 ## Второй в паре: место первого + сдвиг, то же состояние, тот же взгляд.
 func _mirror(lead: Resident) -> void:
+	if errand and lead.errand:
+		_mirror_trail(lead)
+		return
 	global_position = _flat(lead.global_position) + Vector3(follow_offset.x, 0.0, follow_offset.z)
 	state = lead.state
 	direction = lead.direction
@@ -563,7 +646,7 @@ func _smoke_yaw() -> float:
 func glance_at(target: Node3D, seconds := GLANCE_SECONDS) -> bool:
 	if leader != null:
 		return leader.glance_at(target, seconds)
-	if hidden or not state in [&"walk", &"pause", &"smoke", &"wait_trolley", &"glance"]:
+	if hidden or _busy() or not state in [&"walk", &"pause", &"smoke", &"wait_trolley", &"glance", &"activity", &"wait_cross"]:
 		return false
 	if state != &"glance":
 		_resume_state = state
@@ -762,6 +845,8 @@ static func _tail_inner(p: Vector2, tri: PackedVector2Array, border: float) -> b
 
 ## Откуда приходит троллейбус к месту ожидания — туда смотрит ждущий (на 20 м назад по ходу от остановки A — восток).
 func trolley_from() -> Vector3:
+	if errand:
+		return _flat(global_position) + Vector3(20.0, 0.0, 0.0)
 	return _flat(route[wait_point]) + Vector3(20.0, 0.0, 0.0)
 
 ## Точка у двери door (0 — передняя, 1 — средняя, 2 — задняя) снаружи борта, на земле.
@@ -771,6 +856,9 @@ static func door_point(bus: Node3D, door: int) -> Vector3:
 
 func on_doors_opened(stop: int) -> void:
 	if not rider or not is_instance_valid(trolley):
+		return
+	if errand:
+		_errand_doors_opened(stop)
 		return
 	if stop == 0 and state == &"shop":
 		_alight(0)
@@ -817,7 +905,10 @@ func _alight(stop: int) -> void:
 		body.collision_layer = 0   # у края парковки KIOSK_ZONE: тело выключено, пока не перешёл к первой точке пути
 		state = &"alight"
 		return
-	_start_transit([door_at + out * CURB_BACK, _flat(route[0])], &"route", 0, speed)
+	if errand:
+		_start_transit([door_at + out * CURB_BACK], &"route", 0, speed)
+	else:
+		_start_transit([door_at + out * CURB_BACK, _flat(route[0])], &"route", 0, speed)
 	state = &"transit"
 
 func _tick_alight() -> void:
@@ -874,8 +965,14 @@ func _tick_transit(delta: float) -> void:
 			_hide(&"ride")
 			events.append([clock, &"board", 0])
 		&"shop":
-			_hide(&"shop")
+			if errand:
+				_enter_inside(&"gastro")
+			else:
+				_hide(&"shop")
 		_:
+			if errand:
+				_activity_done()
+				return
 			state = &"walk"
 			direction = 1
 			target_point = _wrap(1)
@@ -930,6 +1027,8 @@ func knock() -> void:
 	if dir.length() < 0.01:
 		dir = -_flat(lada.global_basis.z)
 	dir = dir.normalized()
+	if errand and state != &"knocked":
+		_act_stop()
 	if state != &"knocked":
 		_knock_resume = [target_point, direction]
 		_knock_path.clear()
@@ -1190,6 +1289,8 @@ func _process(delta: float) -> void:
 		_pose_knocked()
 		return
 	super(delta)
+	if errand:
+		_pose_activity()
 
 ## Облик в полёте, лёжа и вставая: вокруг своего центра (_knock_center над узлом) на угол knock_roll.
 func _pose_knocked() -> void:
@@ -1334,3 +1435,495 @@ func _puff() -> void:
 	knock_dust.global_position = _flat(global_position) + Vector3.UP * 0.15
 	knock_dust.restart()
 	knock_dust.emitting = true
+
+# =====================================================================================
+# LIFE-01: цели и маршруты — цепочка точек интереса, путь по графу дорожек, занятия на местах
+# =====================================================================================
+
+var _on_start_leg := false
+var _from_spot := &""
+var _act_yaw := 0.0
+var _act_sit := 0.0       # м: облик сидящего сдвинут по взгляду (минус — за спину), Layout.LIFE_SIT
+var follow_gap := 1.2     # м позади по следу первого (Residents задаёт по стартовому сдвигу)
+var follow_side := 0.45   # м вправо по ходу (минус — влево)
+
+## Начало жизни (из _ready): стартовый отрезок Layout.RESIDENT_ROUTES, первая цель уже выбрана.
+func _errand_begin() -> void:
+	if start_leg.is_empty():
+		start_leg = [_flat(route[start_point]), _flat(route[_wrap(start_point + 1)])]
+	start_point = 0
+	route = start_leg.duplicate()
+	route_flags = [&""]
+	target_point = 1
+	direction = 1
+	_errand_reset()
+
+## Сброс цепочки: стартовый отрезок, первая цель (у второго в паре — нет, его ведёт первый).
+func _errand_reset() -> void:
+	plan_i = 0
+	spot_id = &""
+	visits = []
+	activity_log = []
+	goals = 0
+	_cross_ok = -1
+	_from_spot = &""
+	_lod_acc = 0.0
+	_lod_n = 0
+	_on_start_leg = true
+	state = &"walk"
+	_trail_seed((_flat(start_leg[1]) - _flat(start_leg[0])).normalized())
+	if leader != null or life == null:
+		return
+	spot_id = _choose_next()
+	life.reserve(spot_id, self)
+	goals = 1
+	if _flat(global_position).distance_to(life.spots[spot_id].pos) < 0.3:
+		_on_start_leg = false
+		_arrive()   # стоит на месте первой цели (курящий у подъезда)
+
+## Следующая цель по цепочке: первый шаг, для которого есть свободная точка (кроме except); иначе — домой.
+func _choose_next(except := &"") -> StringName:
+	if plan.is_empty():
+		return home
+	for attempt in plan.size():
+		var step: StringName = plan[plan_i % plan.size()]
+		var id: StringName = life.choose(self, step, home, rng, except, follower != null)
+		if id != &"":
+			return id
+		plan_i += 1
+	return home if home != &"" and home != except else life.spots.keys()[0]
+
+## Идти к точке id: путь по графу от места (или от узла точки, на месте которой стоит).
+func _go_to(id: StringName) -> void:
+	var s: Dictionary = life.spots[id]
+	spot_id = id
+	life.reserve(id, self)
+	state = &"walk"
+	direction = 1
+	_cross_ok = -1
+	_on_start_leg = false
+	var here := _flat(global_position)
+	if here.distance_to(s.pos) < 0.3:
+		route = [here, s.pos]
+		route_flags = [&""]
+		target_point = 1
+		_arrive()
+		return
+	var p: Dictionary = life.path(here, id, _from_spot)
+	route = p["points"]
+	route_flags = p["flags"]
+	if route.size() < 2:
+		route = [here, s.pos]
+		route_flags = [&""]
+	target_point = 1
+	_from_spot = &""
+	facing_yaw = _yaw_to(route[1])
+
+## Дошёл до точки отрезка: конец — цель (или конец стартового отрезка), начало при движении назад — новая цель.
+func _on_errand_point() -> void:
+	if direction > 0 and target_point >= route.size() - 1:
+		if _on_start_leg:
+			_on_start_leg = false
+			_go_to(spot_id)
+		else:
+			_arrive()
+	elif direction < 0 and target_point <= 0:
+		# «Лада» стояла поперёк пути: вернулся к началу отрезка — другая цель.
+		life.release(spot_id, self)
+		plan_i += 1
+		var next := _choose_next(spot_id)
+		goals += 1
+		_go_to(next)
+	else:
+		target_point += direction
+
+## На месте точки: занятие по её виду.
+func _arrive() -> void:
+	var s: Dictionary = life.spots[spot_id]
+	place(s.pos)
+	facing_yaw = s.yaw
+	_act_yaw = s.yaw
+	visits.append([clock, spot_id])
+	activity_log.append([clock, s.kind])
+	var dur: Vector2 = s.dur
+	_wait = rng.randf_range(dur.x, dur.y)
+	_act_kind = s.kind
+	_act_t = 0.0
+	_act_i = 1
+	_acting = true
+	stop_looking()
+	match s.kind:
+		&"door", &"shop":
+			_hide(&"inside")
+		&"stop":
+			if is_instance_valid(trolley):
+				state = &"wait_trolley"
+				facing_yaw = _yaw_to(trolley_from())
+			else:
+				state = &"activity"
+				_wait = 20.0
+		&"smoke":
+			state = &"smoke"
+			_turn_left = rng.randf_range(SMOKE_TURN_SECONDS.x, SMOKE_TURN_SECONDS.y)
+		&"carpet":
+			state = &"activity"
+			life.set_prop(&"carpet", true)
+		_:
+			state = &"activity"
+	_act_sit = Layout.LIFE_SIT.get(spot_id, 0.0)
+	if _act_sit != 0.0 and not hidden:
+		body.collision_layer = 0   # облик на сиденье, место в стороне — Илюша не упирается в пустоту
+
+## Занятие кончилось: следующий шаг цепочки.
+func _activity_done() -> void:
+	_act_stop()
+	life.release(spot_id, self)
+	_from_spot = spot_id
+	plan_i += 1
+	var next := _choose_next(spot_id)
+	goals += 1
+	_go_to(next)
+
+## Снять следы занятия: тело, ковёр, метла, высота горки, облик.
+func _act_stop() -> void:
+	if not _acting:
+		return
+	_acting = false
+	if _act_sit != 0.0 and body and not hidden:
+		body.collision_layer = BODY_LAYER
+	_act_sit = 0.0
+	if _act_kind == &"carpet" and life:
+		life.set_prop(&"carpet", false)
+	if _broom:
+		_broom.visible = false
+	if global_position.y != 0.0:
+		global_position.y = 0.0
+	if visual:
+		visual.position = Vector3.ZERO
+
+func _busy() -> bool:
+	return errand and _acting and state == &"activity" and _act_kind in BUSY_KINDS
+
+func _tick_activity(delta: float) -> void:
+	_act_t += delta
+	if spot_id != &"" and not life.anchor_intact(spot_id):
+		_wait = minf(_wait, 0.0)   # столик или лавку сломали — встаёт
+	var s: Dictionary = life.spots[spot_id]
+	match _act_kind:
+		&"edge":
+			if life.on_screen(s.pos):
+				return   # край карты в кадре — уйдёт, когда камера отвернётся
+			_hide(&"away")
+			_wait = rng.randf_range(s.dur.x, s.dur.y)
+			return
+		&"sweep":
+			if _tick_sweep(delta, s):
+				return
+		&"slide":
+			if _tick_slide(delta):
+				return
+	_wait -= delta
+	if _wait <= 0.0:
+		_activity_done()
+
+## Дворник: вдоль дома от места до Layout.LIFE_SWEEP_END и обратно. true — занятие ещё не может кончиться.
+func _tick_sweep(delta: float, s: Dictionary) -> bool:
+	var a: float = s.pos.x
+	var to: float = Layout.LIFE_SWEEP_END if _act_i > 0 else a
+	var x := move_toward(global_position.x, to, SWEEP_SPEED * delta)
+	distance_walked += absf(x - global_position.x)
+	global_position.x = x
+	facing_yaw = PI * 0.5 if to < x or (to == x and _act_i > 0) else -PI * 0.5
+	if absf(x - to) < 0.001:
+		_act_i = -_act_i
+	_wait -= delta
+	return _wait > 0.0 or absf(global_position.x - a) > 0.05
+
+## Горка: по петле Layout.LIFE_SLIDE_LOOP (лесенка, скат, раскат, обратно). true — занятие ещё не может кончиться.
+func _tick_slide(delta: float) -> bool:
+	var loop: Array = Layout.LIFE_SLIDE_LOOP
+	var prev: Array = loop[_act_i - 1]
+	var next: Array = loop[_act_i]
+	var a := Vector3(prev[0], 0.0, prev[1])
+	var b := Vector3(next[0], 0.0, next[1])
+	var here := _flat(global_position)
+	var flat := move_toward_v(here, b, float(next[3]) * delta)
+	distance_walked += here.distance_to(flat)
+	var span := a.distance_to(b)
+	var k := 1.0 - flat.distance_to(b) / span if span > 0.001 else 1.0
+	global_position = flat + Vector3.UP * lerpf(prev[2], next[2], k)
+	if b.distance_to(flat) > 0.001:
+		var d := b - flat
+		facing_yaw = atan2(-d.x, -d.z)
+	_wait -= delta
+	if flat.distance_to(b) > 0.001:
+		return true
+	_act_i += 1
+	if _act_i < loop.size():
+		return true
+	_act_i = 1   # снова у лесенки
+	return _wait > 0.0
+
+static func move_toward_v(from: Vector3, to: Vector3, step: float) -> Vector3:
+	var d := to - from
+	return to if d.length() <= step else from + d.normalized() * step
+
+## Скрыт в подъезде, магазине или за краем карты: время вышло — выходит там же (край — только вне кадра).
+func _tick_hidden(delta: float) -> void:
+	if state != &"inside" and state != &"away":
+		return   # в троллейбусе: ждёт остановку
+	_wait -= delta
+	if _wait > 0.0:
+		return
+	var s: Dictionary = life.spots[spot_id]
+	if state == &"away" and life.on_screen(s.pos):
+		_wait = EDGE_RETRY
+		return
+	_show()
+	place(s.pos)
+	facing_yaw = s.yaw + PI
+	_trail = [_flat(global_position)]   # второй в паре выходит из той же двери следом
+	_activity_done()
+
+## Вышел из троллейбуса на B и дошёл до «ГАСТРОНОМА»: внутри, выйдет оттуда же.
+func _enter_inside(id: StringName) -> void:
+	_act_stop()
+	life.release(spot_id, self)
+	spot_id = id
+	life.reserve(id, self)
+	var s: Dictionary = life.spots[id]
+	visits.append([clock, id])
+	activity_log.append([clock, s.kind])
+	_act_kind = s.kind
+	_acting = true
+	_wait = rng.randf_range(s.dur.x, s.dur.y)
+	_hide(&"inside")
+	place(s.pos)
+
+## Троллейбус открыл двери: ждущий на остановке A садится, едущий выходит на B, ушедший за край карты (почти пора
+## вернуться) приезжает на A и выходит из задней двери.
+func _errand_doors_opened(stop: int) -> void:
+	if stop == 0 and state == &"wait_trolley":
+		_act_stop()
+		life.release(spot_id, self)
+		_board()
+	elif stop == 1 and state == &"ride":
+		# Илюша у площадки киоска (стелс, C7) — пассажир не выходит у парковки, едет до A.
+		if not (is_instance_valid(player) and player.is_visible_in_tree() \
+				and _flat(player.global_position).distance_to(_flat(trolley.global_position)) < STEALTH_STAY):
+			_alight(1)
+	elif stop == 0 and state == &"ride":
+		_alight(0)
+	elif stop == 0 and state == &"away" and _wait <= 20.0:
+		life.release(spot_id, self)
+		_alight(0)
+
+# --- переходы ---
+
+## Перед отрезком-переходом: ждать (wait_cross), пока нельзя. true — стоит.
+func _crossing_ahead(here: Vector3) -> bool:
+	if direction <= 0 or target_point < 1 or target_point - 1 >= route_flags.size():
+		return false
+	var flag: StringName = route_flags[target_point - 1]
+	if flag == &"" or _cross_ok == target_point or here.distance_to(_flat(route[target_point - 1])) > 0.05:
+		return false
+	if _crossing_clear(_flat(route[target_point - 1]), _flat(route[target_point]), flag):
+		_cross_ok = target_point
+		return false
+	state = &"wait_cross"
+	facing_yaw = _yaw_to(route[target_point])
+	return true
+
+func _tick_wait_cross() -> void:
+	var a := _flat(route[target_point - 1])
+	var b := _flat(route[target_point])
+	if _crossing_clear(a, b, route_flags[target_point - 1]):
+		_cross_ok = target_point
+		state = &"walk"
+
+## Можно идти по отрезку a→b: переход — машины кольца и автобус ГСУМ дальше CROSS_CLEAR от середины; коридор пути
+## игрока — Илюша дальше ROUTE_YIELD; оба — «Лада» с водителем или на ходу не ближе своего радиуса.
+func _crossing_clear(a: Vector3, b: Vector3, flag: StringName) -> bool:
+	var radius := CROSS_CLEAR if flag == &"cross" else ROUTE_YIELD
+	if is_instance_valid(lada) and (_lada_speed() > LADA_MOVING or lada.get("driver") != null):
+		if _segment_distance(_flat(lada.global_position), a, b) < radius:
+			return false
+	if flag == &"cross":
+		var middle := a.lerp(b, 0.5)
+		var cars: Array = life.vehicles if life else []
+		for v in cars:
+			if is_instance_valid(v) and _flat(v.global_position).distance_to(middle) < CROSS_CLEAR:
+				return false
+	elif is_instance_valid(player) and player.is_visible_in_tree():
+		if _segment_distance(_flat(player.global_position), a, b) < ROUTE_YIELD:
+			return false
+	return true
+
+## Занят горкой (лесенка внутри коробки горки — для тестов).
+func on_slide() -> bool:
+	return _acting and _act_kind == &"slide" and state == &"activity"
+
+## Идёт по переходу проезжей части (для тестов: там проезжая часть разрешена).
+func on_crossing() -> bool:
+	if leader != null:
+		return leader.on_crossing()
+	if not errand or state in [&"wait_cross", &"activity", &"inside", &"away"]:
+		return false
+	return target_point >= 1 and target_point - 1 < route_flags.size() and route_flags[target_point - 1] == &"cross"
+
+static func _segment_distance(p: Vector3, a: Vector3, b: Vector3) -> float:
+	var q := Geometry2D.get_closest_point_to_segment(Vector2(p.x, p.z), Vector2(a.x, a.z), Vector2(b.x, b.z))
+	return q.distance_to(Vector2(p.x, p.z))
+
+static func _forward(yaw: float) -> Vector3:
+	return Vector3(-sin(yaw), 0.0, -cos(yaw))
+
+# --- пара: второй идёт по следу первого ---
+
+func _trail_seed(dir: Vector3) -> void:
+	var p := _flat(global_position)
+	if dir.length() < 0.001:
+		dir = _forward(facing_yaw)
+	_trail = [p - dir * 4.0, p]
+
+func _record_trail() -> void:
+	var p := _flat(global_position)
+	if _trail.is_empty() or _trail[-1].distance_to(p) >= TRAIL_STEP:
+		_trail.append(p)
+		if _trail.size() > 60:
+			_trail.pop_front()
+
+## Точка на следе в gap м позади и направление хода там: [точка, направление].
+func trail_point(gap: float) -> Array:
+	var p := _flat(global_position)
+	var remaining := gap
+	var dir := _forward(facing_yaw)
+	for i in range(_trail.size() - 1, -1, -1):
+		var q: Vector3 = _trail[i]
+		var d := p.distance_to(q)
+		if d > 0.0001:
+			dir = (p - q) / d
+			if d >= remaining:
+				return [p.lerp(q, remaining / d), dir]
+			remaining -= d
+		p = q
+	return [p, dir]
+
+func _mirror_trail(lead: Resident) -> void:
+	var at: Array = lead.trail_point(follow_gap)
+	var dir: Vector3 = at[1]
+	# У цели первого и у двери, из которой он вышел, — прямо за ним, без шага вбок: места у стен и киосков тесные.
+	var near := INF
+	if lead.spot_id != &"" and lead.life:
+		near = _flat(lead.global_position).distance_to(lead.life.spots[lead.spot_id].pos)
+	if not lead._trail.is_empty():
+		near = minf(near, _flat(lead.global_position).distance_to(lead._trail[0]))
+	var side := follow_side * clampf(near / 3.0, 0.0, 1.0)
+	global_position = at[0] + Vector3(-dir.z, 0.0, dir.x) * side
+	hidden = lead.hidden
+	visible = lead.visible
+	if body:
+		body.collision_layer = 0 if hidden else BODY_LAYER
+	state = lead.state
+	direction = lead.direction
+	facing_yaw = lead.facing_yaw
+	_look_target = lead._look_target
+	distance_walked = lead.distance_walked
+	stare_count = lead.stare_count
+	lada_bumps = lead.lada_bumps
+	turnarounds = lead.turnarounds
+	spot_id = lead.spot_id
+	visits = lead.visits
+	activity_log = lead.activity_log
+	follow_offset = _flat(global_position) - _flat(lead.global_position)
+
+# --- облик на занятии ---
+
+## Сидит — облик на сиденье за спиной и ниже; «козёл» — стук костяшкой; капот и раскопка — наклоны; ковёр — удары;
+## дворник — метла перед собой качается.
+func _pose_activity() -> void:
+	if visual == null:
+		return
+	var offset := Vector3.ZERO
+	if _acting and not hidden:
+		var t := _act_t + index * 0.37
+		if _act_sit != 0.0:
+			offset = _forward(_act_yaw) * _act_sit + Vector3.DOWN * SIT_DROP
+		match _act_kind:
+			&"domino":
+				var k := fmod(t, 2.9)
+				if k < 0.25:
+					var s := sin(k / 0.25 * PI)
+					offset.y -= 0.07 * s
+					visual.scale.y *= 1.0 - 0.05 * s
+			&"hood", &"dig":
+				visual.scale.y *= 1.0 - 0.09 * (0.5 + 0.5 * sin(t * 1.4))
+			&"carpet":
+				var k := fmod(t, 0.8)
+				if k < 0.16:
+					offset.y = 0.05 * sin(k / 0.16 * PI)
+			&"sweep":
+				if _broom == null:
+					_broom = _make_broom()
+					add_child(_broom)
+				_broom.visible = true
+				var f := _forward(facing_yaw)
+				_broom.position = f * 0.55 + Vector3(-f.z, 0.0, f.x) * 0.15
+				_broom.rotation = Vector3(0.0, facing_yaw + sin(t * 4.0) * 0.45, 0.0)
+	visual.position = offset
+
+## Метла: черенок (наклонён к дворнику) и веник у снега — своя простая геометрия.
+func _make_broom() -> Node3D:
+	var root := Node3D.new()
+	root.name = "Broom"
+	var wood := StandardMaterial3D.new()
+	wood.albedo_color = Color(0.45, 0.32, 0.2)
+	var straw := StandardMaterial3D.new()
+	straw.albedo_color = Color(0.72, 0.6, 0.32)
+	var stick := CylinderMesh.new()
+	stick.top_radius = 0.02
+	stick.bottom_radius = 0.02
+	stick.height = 1.35
+	stick.material = wood
+	var handle := MeshInstance3D.new()
+	handle.mesh = stick
+	handle.rotation.x = -0.6
+	handle.position = Vector3(0.0, 0.58, 0.38)
+	root.add_child(handle)
+	var head_mesh := BoxMesh.new()
+	head_mesh.size = Vector3(0.45, 0.12, 0.16)
+	head_mesh.material = straw
+	var head := MeshInstance3D.new()
+	head.mesh = head_mesh
+	head.position = Vector3(0.0, 0.06, 0.0)
+	root.add_child(head)
+	for m in [handle, head]:
+		m.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	root.visible = false
+	return root
+
+# --- LOD ---
+
+## Дальше LOD_DISTANCE от камеры и вне кадра — обновление раз в LOD_STEP шагов с накопленным временем (0 — пропуск).
+func _lod_delta(delta: float) -> float:
+	if not errand or leader != null or state == &"knocked" or life == null or not is_instance_valid(life.camera):
+		return delta
+	var cam: Camera3D = life.camera
+	var far := cam.global_position.distance_to(global_position) > LOD_DISTANCE and not cam.is_position_in_frustum(global_position + Vector3.UP)
+	for near in [player, lada]:   # Илюша или «Лада» рядом (в тестах их ставят куда угодно) — полное обновление
+		if far and is_instance_valid(near) and _flat(near.global_position).distance_to(_flat(global_position)) < LOD_NEAR:
+			far = false
+	if not far:
+		if _lod_acc > 0.0:
+			delta += _lod_acc
+			_lod_acc = 0.0
+			_lod_n = 0
+		return delta
+	_lod_acc += delta
+	_lod_n += 1
+	if _lod_n < LOD_STEP:
+		return 0.0
+	var d := _lod_acc
+	_lod_acc = 0.0
+	_lod_n = 0
+	return d
