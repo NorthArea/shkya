@@ -52,6 +52,12 @@ var _hide_hint_left := 0.0
 @onready var kiosk_zone: Area3D = $KioskZone
 @onready var quest_flow: Node = $QuestFlow
 
+## DRIVE-03, прототип D: флаг запуска --raycar — «Лада» на raycast-подвеске (наследник Lada). Скрипт меняется до _ready
+## машины, поэтому её узлы, зона входа и сигналы создаются уже новым скриптом; без флага — прежняя «Лада».
+func _enter_tree() -> void:
+	if "--raycar" in OS.get_cmdline_args() + OS.get_cmdline_user_args() and not $Car.is_node_ready():
+		$Car.set_script(load("res://game/vehicles/lada_raycast.gd"))
+
 func _ready() -> void:
 	babka.position = Layout.BABKA
 	babka.rotation.y = 0.0  # лицом на север, к двору
