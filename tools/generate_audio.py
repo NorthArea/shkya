@@ -849,6 +849,124 @@ def skid_squeak_loop() -> list[float]:
     return to_rms(loop_crossfade(out, fade), -20.0)
 
 
+def _impulses(n: int, starts: list[tuple[float, float]], length: float, decay: float, rng: random.Random) -> list[float]:
+    """Шумовые щелчки: [(момент, громкость)], каждый length с со спадом decay с."""
+    out = [0.0] * n
+    for at, gain in starts:
+        start = samples(at)
+        for i in range(samples(length)):
+            if start + i < n:
+                out[start + i] += rng.uniform(-1, 1) * gain * math.exp(-i / samples(decay))
+    return out
+
+
+def domino_clack() -> list[float]:
+    """Костяшка домино об стол (PEOPLE-03): сухой щелчок кости — резонансы 2,3 и 3,6 кГц со спадом 15 мс, глухой стук
+    столешницы 170 Гц и короткий «дребезг» костяшки, легшей через 60 мс. 0,3 с."""
+    rng = random.Random(211)
+    n = samples(0.3)
+    click = _impulses(n, [(0.0, 1.0), (0.06, 0.35)], 0.004, 0.0012, rng)
+    tile = [a * 5.0 + b * 3.5 for a, b in zip(resonator(click, 2300, 300), resonator(click, 3600, 420))]
+    out = []
+    for i in range(n):
+        t = i / RATE
+        table = math.sin(2 * math.pi * 170 * t) * math.exp(-t / 0.035) * 0.6
+        out.append(click[i] * 0.4 + tile[i] + table)
+    return to_rms(_fade_out(highpass(out, 90), 0.05), -22.0)
+
+
+def broom_swish() -> list[float]:
+    """Взмах метлы-голика по снегу (PEOPLE-03): шорох — шум в полосе 1,4–6 кГц, нарастание 70 мс, спад 0,22 с, редкий
+    хруст прутьев (сухие щелчки). 0,42 с."""
+    rng = random.Random(223)
+    n = samples(0.42)
+    noise = highpass(lowpass([rng.uniform(-1, 1) for _ in range(n)], 6000), 1400)
+    twigs = _impulses(n, [(rng.uniform(0.04, 0.3), rng.uniform(0.3, 0.7)) for _ in range(9)], 0.003, 0.0008, rng)
+    out = []
+    for i in range(n):
+        t = i / RATE
+        env = min(1.0, t / 0.07) * math.exp(-max(t - 0.07, 0.0) / 0.22)
+        out.append(noise[i] * env * 2.0 + twigs[i] * env * 0.5)
+    return to_rms(_fade_out(out, 0.06), -24.0)
+
+
+def sled_creak() -> list[float]:
+    """Санки по морозному снегу (PEOPLE-03): скрип полозьев — шум «рывками» (трение с проскальзыванием 55 Гц) через
+    резонансы 1,1 и 2,4 кГц, плавное нарастание и спад. 0,5 с; тот же скрип — у ската ледяной горки."""
+    rng = random.Random(227)
+    n = samples(0.5)
+    source = []
+    for i in range(n):
+        t = i / RATE
+        stick = (0.5 + 0.5 * math.sin(2 * math.pi * (55 + 8 * math.sin(2 * math.pi * 3 * t)) * t)) ** 6
+        source.append(rng.uniform(-1, 1) * stick)
+    out = [a * 4.0 + b * 3.0 for a, b in zip(resonator(source, 1100, 160), resonator(source, 2400, 260))]
+    for i in range(n):
+        t = i / RATE
+        out[i] *= math.sin(math.pi * min(1.0, t / 0.5)) ** 0.7
+    return to_rms(_fade_out(highpass(out, 400), 0.05), -24.0)
+
+
+def hockey_stick() -> list[float]:
+    """Клюшка по шайбе (PEOPLE-03): деревянный «клац» — щелчок 1,5 мс, резонансы крюка 520 и 1350 Гц со спадом 30 мс
+    и звонкий «тик» шайбы по льду 4,2 кГц. 0,25 с; ниже по высоте — шайба в борт."""
+    rng = random.Random(229)
+    n = samples(0.25)
+    click = _impulses(n, [(0.0, 1.0)], 0.0015, 0.0005, rng)
+    wood = [a * 6.0 + b * 4.0 for a, b in zip(resonator(click, 520, 70), resonator(click, 1350, 150))]
+    out = []
+    for i in range(n):
+        t = i / RATE
+        tick = math.sin(2 * math.pi * 4200 * t) * math.exp(-t / 0.012) * 0.15
+        out.append(click[i] * 0.5 + wood[i] + tick)
+    return to_rms(_fade_out(out, 0.05), -20.0)
+
+
+def pigeon_coo(seed: int) -> list[float]:
+    """Воркование голубя (PEOPLE-03): «гу-урр-гу» — три слога, тон 300–380 Гц с подъёмом и спадом, горловое дрожание
+    28 Гц, мягкие гармоники через ФНЧ 1,5 кГц. ≈ 1,2 с."""
+    rng = random.Random(seed)
+    out: list[float] = []
+    for k, (length, f0, rise) in enumerate(((0.22, 330, 0.12), (0.5, 300, 0.25), (0.26, 345, -0.1))):
+        f0 *= rng.uniform(0.95, 1.05)
+        m = samples(length)
+        phase = 0.0
+        for i in range(m):
+            u = i / m
+            freq = f0 * (1.0 + rise * math.sin(math.pi * u))
+            phase += freq / RATE
+            env = math.sin(math.pi * u) ** 1.5
+            trem = 0.7 + 0.3 * math.sin(2 * math.pi * 28 * i / RATE)
+            tone = math.sin(2 * math.pi * phase) + 0.35 * math.sin(4 * math.pi * phase) + 0.15 * math.sin(6 * math.pi * phase)
+            out.append(tone * env * trem + rng.uniform(-1, 1) * 0.03 * env)
+        out += [0.0] * samples(0.05 if k < 2 else 0.08)
+    return to_rms(lowpass(out, 1500), -24.0)
+
+
+def wings_flap(seed: int) -> list[float]:
+    """Стайка взлетает (PEOPLE-03): хлопанье крыльев трёх птиц — шумовые взмахи 35 мс в полосе 0,3–2,5 кГц, по 9–11 у
+    каждой с частотой 9–12 Гц и разбросом, общий спад. 1,1 с."""
+    rng = random.Random(seed)
+    n = samples(1.1)
+    starts = []
+    for _ in range(3):
+        t = rng.uniform(0.0, 0.08)
+        rate = rng.uniform(9.0, 12.0)
+        for _k in range(rng.randint(9, 11)):
+            starts.append((t, math.exp(-t / 0.55)))
+            t += 1.0 / rate * rng.uniform(0.85, 1.15)
+    out = [0.0] * n
+    for at, gain in starts:
+        start = samples(at)
+        m = samples(0.035)
+        for i in range(m):
+            if start + i < n:
+                u = i / m
+                out[start + i] += rng.uniform(-1, 1) * gain * math.sin(math.pi * u) ** 2
+    out = highpass(lowpass(out, 2500, 2), 300)
+    return to_rms(_fade_out(out, 0.1), -20.0)
+
+
 def main() -> None:
     rng = random.Random(1)
     for k in range(1, 5):
@@ -911,6 +1029,14 @@ def main() -> None:
     # DRIVE-02: колёса в рыхлом снегу (цикл, громкость по глубине) и скрип шин при заносе (цикл, по боковой скорости).
     write("snow_drive_loop.wav", snow_drive_loop())
     write("skid_squeak_loop.wav", skid_squeak_loop())
+    # PEOPLE-03: звуки занятий жителей и птиц — стук костяшки домино, взмах метлы, скрип санок (и горки), клюшка по
+    # шайбе, воркование голубей, хлопанье крыльев взлетающей стайки (разовые, 3D у источника).
+    write("domino_clack.wav", domino_clack())
+    write("broom_swish.wav", broom_swish())
+    write("sled_creak.wav", sled_creak())
+    write("hockey_stick.wav", hockey_stick())
+    write("pigeon_coo.wav", pigeon_coo(233))
+    write("wings_flap.wav", wings_flap(239))
 
 
 if __name__ == "__main__":
