@@ -1,6 +1,6 @@
 extends SceneTree
-## Кадры квартала: make capture → builds/screenshots/art02/ (ART-02). Окно 1920×1080, настоящий рендер.
-## Другая папка: tools/run.command … --script tools/capture.gd -- --out=grey01.
+## Кадры квартала с фиксированных точек: make capture → builds/screenshots/art02/ (по умолчанию). Окно 1920×1080, настоящий рендер.
+## Другая папка: tools/run.command … --script tools/capture/capture.gd -- --out=grey01.
 
 const Layout = preload("res://game/world/layout.gd")
 

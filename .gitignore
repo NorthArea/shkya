@@ -7,3 +7,4 @@ tools/local/
 *.tmp
 __pycache__/
 *.pyc
+.mcp.json

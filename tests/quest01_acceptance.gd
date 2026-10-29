@@ -542,7 +542,7 @@ func _step_esc_with_dialog() -> void:
 	await _frames(3)
 	check(world.ui_blocking and flow.is_dialog_open() and not player.input_enabled, "esc: a click on the world does not unblock input")
 	if DisplayServer.get_name() == "headless":
-		print("NOT_RUN: esc: real Input.mouse_mode stays VISIBLE after resume and click (headless DisplayServer has no mouse mode); checked in tests/quest01_capture.gd")
+		print("NOT_RUN: esc: real Input.mouse_mode stays VISIBLE after resume and click (headless DisplayServer has no mouse mode); checked in tools/capture/quest01_capture.gd")
 	else:
 		check(Input.mouse_mode == Input.MOUSE_MODE_VISIBLE, "esc: Input.mouse_mode stays VISIBLE after resume and click")
 

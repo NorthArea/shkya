@@ -1004,7 +1004,7 @@ func _pavilion(size: Vector3) -> Node3D:
 	root.add_child(routes)
 	return root
 
-## Трубы ТЭЦ (ART-06, Н4; места и высоты приняты в С2–С4) с огнями и паром — skyline.gd.
+## Трубы ТЭЦ (ART-06, Н7; места и высоты приняты в С2–С4) с огнями и паром — skyline.gd.
 func _build_chimneys() -> void:
 	_sky().chimneys()
 

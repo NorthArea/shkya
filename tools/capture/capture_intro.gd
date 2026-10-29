@@ -2,7 +2,7 @@ extends SceneTree
 ## INTRO-01: кадры вступительной заставки в настоящем окне → builds/screenshots/INTRO-01/NN_*.png.
 ## Заставка здесь НЕ пропускается (Intro.force_enabled): телефон крупно с заголовком, свайп, последний заголовок,
 ## пузырь «Пойду прогуляюсь», отъезд камеры, первый игровой кадр после заставки и затемнение пропуска по E.
-## Запуск: tools/run.command --fixed-fps 60 --resolution 1920x1080 --script tools/capture_intro.gd
+## Запуск: tools/run.command --fixed-fps 60 --resolution 1920x1080 --script tools/capture/capture_intro.gd
 
 const IntroScript = preload("res://game/ui/intro.gd")
 const OUT := "res://builds/screenshots/INTRO-01"
