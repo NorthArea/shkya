@@ -12,7 +12,9 @@ extends Node3D
 ## вращение ~3 рад/с; один общий меш на все монеты (у нас — MultiMesh); выброс «пачкой» с разлётом, гравитацией и
 ## отскоком, в полёте не подбирается, со временем гаснет; звук — с чередованием (у нас — высоты одного синтеза).
 ## Респавн на чекпоинте монеты не трогает; reset() — для перезапуска (все точки заново, выброшенные исчезают).
-## spawn_burst(position, count) — монеты из сбитых дронов (PUNCH-01: по 5).
+## spawn_burst(position, count) — монеты из сбитых дронов (PUNCH-01: по 5) и из сломанного ударом (BREAK-02, с
+## проверкой места приземления); spawn_to_collector(position, count) — из сломанного «Ладой»: вылетают и сами летят
+## к машине, засчитываются по прилёте или через SUCK_SECONDS (BREAK-02).
 
 signal collected(position: Vector3, total: int)
 
@@ -39,13 +41,17 @@ const BOUNCE := 0.45
 const LOOSE_LIFETIME := 30.0     # с: выброшенная монета живёт столько…
 const LOOSE_BLINK := 5.0         # …и мигает последние секунды
 const MAX_LOOSE := 60
+const SUCK_POP := 0.15           # с: монета из сломанного «Ладой» сначала подпрыгивает…
+const SUCK_SECONDS := 0.5        # …потом летит к машине и засчитывается не позже этого (+ SUCK_STAGGER на монету)
+const SUCK_STAGGER := 0.06       # с: монеты засчитываются по очереди — звон подряд, с ростом высоты
+const BURST_TRIES := 8           # направлений на монету, пока место приземления не подойдёт (spawn_burst с allowed)
 const GLOW := 0.55               # базовая яркость свечения
 
 const GOLD := Color(0.99, 0.79, 0.16)
 const RIM := Color(0.86, 0.56, 0.08)
 const INK := Color(0.52, 0.30, 0.04)
 
-enum { IDLE, MAGNET, POP, GONE, AIR }
+enum { IDLE, MAGNET, POP, GONE, AIR, SUCK }
 
 ## Сколько монет подобрано за мир (выброшенные — тоже).
 var collected_count := 0
@@ -109,8 +115,11 @@ func reset() -> void:
 
 ## PUNCH-01: count монет разлетаются от точки at (сбитый дрон). В полёте не подбираются, после приземления
 ## парят как обычные и гаснут через LOOSE_LIFETIME. Возвращает, сколько выброшено (пул MAX_LOOSE).
-func spawn_burst(at: Vector3, count: int) -> int:
+## BREAK-02: allowed(точка приземления: Vector3) -> bool — где монете можно лечь (не в стене, не на полосе кольца);
+## направление перебирается BURST_TRIES раз, не нашлось — монета падает у точки выброса.
+func spawn_burst(at: Vector3, count: int, allowed := Callable()) -> int:
 	var made := 0
+	var start := Vector3(at.x, maxf(at.y, HOVER), at.z)
 	for i in range(_fixed, _state.size()):
 		if made >= count:
 			break
@@ -118,10 +127,55 @@ func spawn_burst(at: Vector3, count: int) -> int:
 			continue
 		var a := TAU * (float(made) / maxf(1.0, float(count))) + _rng.randf_range(-0.4, 0.4)
 		var speed := BURST_SPEED * _rng.randf_range(0.6, 1.0)
-		_pos[i] = Vector3(at.x, maxf(at.y, HOVER), at.z)
-		_vel[i] = Vector3(cos(a) * speed, BURST_UP * _rng.randf_range(0.8, 1.2), sin(a) * speed)
+		var up := BURST_UP * _rng.randf_range(0.8, 1.2)
+		var vel := Vector3(cos(a) * speed, up, sin(a) * speed)
+		if allowed.is_valid():
+			var ok := false
+			for k in BURST_TRIES:
+				vel = Vector3(cos(a + k * 2.4) * speed, up, sin(a + k * 2.4) * speed)   # шаг ≈ золотой угол
+				if allowed.call(landing(start, vel)):
+					ok = true
+					break
+			if not ok:
+				vel = Vector3(0.0, up, 0.0)
+		_pos[i] = start
+		_vel[i] = vel
 		_age[i] = 0.0
 		_state[i] = AIR
+		made += 1
+	return made
+
+
+## Где ляжет монета, выброшенная из start со скоростью vel (тот же расчёт, что _fly, шагом 1/120 с).
+static func landing(start: Vector3, vel: Vector3) -> Vector3:
+	var p := start
+	var v := vel
+	for step in 600:
+		v.y -= GRAVITY / 120.0
+		p += v / 120.0
+		if p.y <= HOVER and v.y < 0.0:
+			p.y = HOVER
+			v = Vector3(v.x * 0.55, -v.y * BOUNCE, v.z * 0.55)
+			if v.y < 1.0:
+				break
+	return p
+
+
+## BREAK-02: count монет вылетают из at (сломано «Ладой») и сами летят к собирающему: подскок SUCK_POP, затем
+## притяжение; засчитываются по прилёте или не позже SUCK_SECONDS + SUCK_STAGGER × номер. Возвращает, сколько вылетело.
+func spawn_to_collector(at: Vector3, count: int) -> int:
+	var made := 0
+	for i in range(_fixed, _state.size()):
+		if made >= count:
+			break
+		if _state[i] != GONE:
+			continue
+		var a := TAU * (float(made) / maxf(1.0, float(count))) + _rng.randf_range(-0.4, 0.4)
+		_pos[i] = Vector3(at.x, maxf(at.y, HOVER), at.z)
+		_vel[i] = Vector3(cos(a) * 1.5, 3.5, sin(a) * 1.5)
+		_age[i] = -SUCK_STAGGER * made
+		_speed[i] = MAGNET_SPEED
+		_state[i] = SUCK
 		made += 1
 	return made
 
@@ -183,7 +237,27 @@ func _physics_process(delta: float) -> void:
 			AIR:
 				_age_loose(i, delta)
 				_fly(i, delta)
+			SUCK:
+				_suck(i, who, delta)
 	_update_view()
+
+
+## Монета из сломанного «Ладой»: подскок, затем к собирающему с разгоном; засчитывается по прилёте или по сроку.
+func _suck(i: int, who: Dictionary, delta: float) -> void:
+	_age[i] += delta
+	if _age[i] < SUCK_POP:
+		_vel[i].y -= GRAVITY * delta
+		_pos[i] += _vel[i] * delta
+		return
+	var deadline := _age[i] >= SUCK_SECONDS
+	if who.is_empty():
+		if deadline:
+			_collect(i, {"in_car": false})
+		return
+	_speed[i] += MAGNET_ACCEL * 2.0 * delta
+	_pos[i] = _pos[i].move_toward(who["position"] + Vector3.UP * HOVER, _speed[i] * delta)
+	if deadline or _flat(_pos[i], who["position"]) <= who["pickup"] * 0.5:
+		_collect(i, who)
 
 
 func _age_loose(i: int, delta: float) -> void:
@@ -287,7 +361,7 @@ func instance_transform(i: int) -> Transform3D:
 			# Выброшенная монета мигает перед тем, как погаснуть.
 			if i >= _fixed and _age[i] > LOOSE_LIFETIME - LOOSE_BLINK and int(_time * 8.0) % 2 == 0:
 				k = 0.0
-	var spin := _time * SPIN * (4.0 if s == POP else 1.0) + _phase[i]
+	var spin := _time * SPIN * (4.0 if s == POP else (2.0 if s == SUCK else 1.0)) + _phase[i]
 	return Transform3D(Basis(Vector3.UP, spin).scaled(Vector3.ONE * k), at)
 
 

@@ -15,6 +15,11 @@ extends SceneTree
 ## 5. После восстановления коллизия на месте и ни с кем не пересекается; на занятое место (Илюша стоит) не возвращается.
 ## 6. Жители: ближайший ближе 8 м оглядывается и говорит реплику BREAK_LINES, не чаще раза в 15 с на всех, и идёт
 ##    дальше; квестовая Бабка ближе 15 м — пузырь, не диалог; reset_positions() — всё целое.
+## 7. BREAK-02: все 90 записей (BREAKABLES_YARD + PROPS_BREAKABLES) со своим обликом (без заглушки), запечённые сетки —
+##    не больше MM_BUDGET узлов MultiMesh; монеты: «Лада» — засчитываются сами (+N по виду, без остановки, и при
+##    35 ₽ и больше — как у дронов), удар — разлетаются и подбираются проходом; повторно — не раньше COIN_COOLDOWN, со
+##    всех — не больше COIN_WINDOW_CAP за COIN_WINDOW; выброс у каждого объекта ложится вне коробок, полос кольца и
+##    площадки киоска.
 ##
 ## Headless: tools/run.command --headless --fixed-fps 60 --script tests/break_test.gd
 ## Кадры: tools/run.command --fixed-fps 60 --resolution 1920x1080 --script tests/break_test.gd -- --capture
@@ -23,6 +28,7 @@ extends SceneTree
 const Layout = preload("res://game/world/layout.gd")
 const Driver = preload("res://tests/playthrough_driver.gd")
 const OUT := "res://builds/screenshots/BREAK-01"
+const MM_BUDGET := 200     # узлов MultiMesh у Breakables: 90 объектов, 22 вида, части запечены (BREAK-02)
 
 var failures: Array[String] = []
 var checks := 0
@@ -71,6 +77,8 @@ func _run() -> void:
 	await _part_punch()
 	await _part_restore()
 	await _part_residents()
+	await _part_coins()
+	await _part_coin_spots()
 	await _part_reset()
 	_finish()
 
@@ -78,7 +86,8 @@ func _run() -> void:
 
 func _part_margins() -> void:
 	print("--- margins (check.py rules) ---")
-	check(Layout.BREAKABLES.size() == 10, "10 objects in the first step (%d)" % Layout.BREAKABLES.size())
+	check(Layout.BREAKABLES_YARD.size() == 10 and Layout.BREAKABLES.size() == 10 + Layout.PROPS_BREAKABLES.size() and Layout.BREAKABLES.size() == 90,
+		"BREAKABLES = 10 of BREAK-01 + %d of PROPS-01 = %d" % [Layout.PROPS_BREAKABLES.size(), Layout.BREAKABLES.size()])
 	var lines := []   # [имя, точки Vector2, замкнута, запас]
 	lines.append(["ROUTE_WALK", _pts(Layout.ROUTE_WALK), false, 2.0])
 	lines.append(["ROUTE_DRIVE", _pts(Layout.ROUTE_DRIVE), false, 3.5])
@@ -182,15 +191,22 @@ func _part_setup() -> void:
 	var mms := bk.find_children("MM_*", "MultiMeshInstance3D", false, false)
 	var kinds := {}
 	var shadow_bad := []
+	var all_kinds := {}
+	for spec in Layout.BREAKABLES:
+		all_kinds[spec[1]] = true
 	for node: MultiMeshInstance3D in mms:
-		var kind := String(node.name).split("_")[1]
-		kinds[kind] = true
+		kinds[node.get_meta(&"kind", &"")] = true
 	for b: Breakables.Breakable in bk.objects:
 		if b.size.y < 1.0:
 			for node: MultiMeshInstance3D in mms:
-				if String(node.name).begins_with("MM_%s_" % b.kind) and node.cast_shadow != GeometryInstance3D.SHADOW_CASTING_SETTING_OFF:
+				if node.get_meta(&"kind", &"") == b.kind and node.cast_shadow != GeometryInstance3D.SHADOW_CASTING_SETTING_OFF:
 					shadow_bad.append(node.name)
-	check(kinds.size() == 7, "MultiMesh per kind: %s (%d instances nodes)" % [kinds.keys(), mms.size()])
+	var stubs: Array = all_kinds.keys().filter(func(k): return not Breakables.Looks.has_look(k))
+	check(stubs.is_empty() and all_kinds.size() == 22, "every kind of BREAKABLES has its own look, no stub box (%d kinds; stubs %s)" % [all_kinds.size(), stubs])
+	check(kinds.size() == all_kinds.size(), "MultiMesh per kind: %s (%d nodes)" % [kinds.keys(), mms.size()])
+	check(mms.size() <= MM_BUDGET, "baked looks: %d MultiMesh nodes ≤ %d" % [mms.size(), MM_BUDGET])
+	var unbaked := mms.filter(func(n): return not String(n.name).contains("_bake"))
+	check(unbaked.is_empty(), "every MultiMesh draws a baked mesh (%d not)" % unbaked.size())
 	check(shadow_bad.is_empty(), "no shadows on objects lower than 1 m (%s)" % [shadow_bad])
 	var detail_ok := true
 	for node: MultiMeshInstance3D in mms:
@@ -198,16 +214,27 @@ func _part_setup() -> void:
 			detail_ok = false
 	check(detail_ok, "small details fade beyond 60 m (visibility_range_end)")
 	var tall := {}
-	for kind in [&"bin", &"planter", &"snowman", &"seesaw", &"carousel", &"barrier", &"cones"]:
+	for spec in Layout.BREAKABLES:
+		var kind: StringName = spec[1]
 		var top := 0.0
-		for part: Array in Breakables.Looks.parts(kind, _size_of(kind)):
+		var roles := {}
+		for part: Array in Breakables.Looks.parts(kind, spec[3]):
+			roles[part[4]] = true
 			if part[4] == "remnant" or part[4] == "base":
 				var xf: Transform3D = part[1]
 				var half := 0.125 if part[0] == "torus" else 0.5
 				var aabb := xf * AABB(Vector3(-0.5, -half, -0.5), Vector3(1.0, half * 2.0, 1.0))
 				top = maxf(top, aabb.end.y)
-		tall[kind] = snappedf(top, 0.001)
+		tall[kind] = maxf(float(tall.get(kind, 0.0)), snappedf(top, 0.001))
+		if not roles.has("remnant") or not roles.has("body"):
+			check(false, "%s %s: body and remnant parts %s" % [spec[0], kind, roles.keys()])
 	check(tall.values().all(func(t): return t < 0.15), "remnants lower than 0.15 m %s" % [tall])
+	var debris_bad := []
+	for kind in all_kinds:
+		var pieces := Breakables.Looks.debris(kind, Vector3.ONE)
+		if pieces.size() < 6 or pieces.size() > Breakables.DEBRIS_PER_BREAK or (pieces[0][0] as Vector3) == Vector3.ONE * 0.3:
+			debris_bad.append("%s %d" % [kind, pieces.size()])
+	check(debris_bad.is_empty(), "every kind has its own debris, 6…24 pieces (%s)" % [debris_bad])
 	check(bk.debris_count() == 0 and bk._debris.size() == Breakables.DEBRIS_POOL and bk._debris_mm.instance_count == 96, "debris pool: one MultiMesh, 96 instances, empty")
 
 func _size_of(kind: StringName) -> Vector3:
@@ -538,6 +565,169 @@ func _part_residents() -> void:
 			if b.blocks() and b.rect().grow(Resident.BODY_RADIUS).has_point(Vector2(res.global_position.x, res.global_position.z)):
 				stuck.append([res.name, b.id])
 	check(stuck.is_empty(), "no resident inside an intact object (%s)" % [stuck])
+
+# --- 7. Монеты (BREAK-02) ---
+
+func _part_coins() -> void:
+	print("--- coins (BREAK-02) ---")
+	var coins: Node = world.get_node("LevelGeometry/Coins")
+	var mission := world.mission
+	var player := world.player
+	bk.reset_positions()
+	coins.reset()
+	await drv.frames(2)
+	check(Breakables.coin_count(&"fence", false) == 1 and Breakables.coin_count(&"bin", false) == 2 and Breakables.coin_count(&"swing", true) == 5,
+		"coins by kind: fence 1, bin 2, swing 5")
+	var light_ok := true
+	var heavy_ok := true
+	for spec in Layout.BREAKABLES:
+		var n := Breakables.coin_count(spec[1], spec[5] == &"heavy")
+		if spec[5] == &"heavy":
+			heavy_ok = heavy_ok and n >= 3 and n <= 5
+		else:
+			light_ok = light_ok and n >= 1 and n <= 2
+	check(light_ok and heavy_ok, "every light gives 1–2 coins, every heavy 3–5")
+	# «Лада»: монеты летят к машине и засчитываются сами
+	var car: Lada = world.car
+	world.enter_car()
+	await drv.frames(5)
+	var cone: Breakables.Breakable = bk.get_by_id(&"Z7_cone1")
+	var money := mission.money
+	var in_car: int = coins.collected_in_car
+	var res := await _ram(cone, Vector3(0, 0, 1), 5.0)
+	check(res[0] >= 0 and res[1] > 4.8, "car breaks the cone without slowing down (%.2f m/s)" % res[1])
+	var got := await _wait_until(func(): return mission.money == money + 1, 60)
+	check(got and coins.collected_in_car == in_car + 1, "car: the cone's coin flies to the Lada and counts by itself within 1 s (+%d)" % (mission.money - money))
+	if capture:
+		await _capture_at("08_coins_to_car", car.global_position + Vector3(-4, 0, -3), car.global_position)
+	await drv.frames(30)
+	# 35 ₽ уже есть — монеты всё равно летят и засчитываются, как из дрона (Drones.break_drone не смотрит на деньги)
+	mission.add_money(maxi(0, MissionDirector.BREAD_PRICE - mission.money) + 5)
+	var seesaw: Breakables.Breakable = bk.get_by_id(&"Z3_seesaw")
+	money = mission.money
+	in_car = coins.collected_in_car
+	res = await _ram(seesaw, Vector3(0, 0, -1), 5.0, true)
+	got = await _wait_until(func(): return mission.money == money + 3, 90)
+	check(res[0] >= 0 and got and coins.collected_in_car == in_car + 3, "car: heavy seesaw gives 3 coins by itself, also with ≥ 35 ₽ (+%d)" % (mission.money - money))
+	check(bk.coins_dropped == 4 and coins.remaining() == Layout.COIN_POINTS.size(), "no loose coins left after the car breaks (dropped %d)" % bk.coins_dropped)
+	_park()
+	world.exit_car()
+	await drv.frames(5)
+	# удар: монеты разлетаются, как из дрона, и подбираются проходом
+	var bin: Breakables.Breakable = bk.get_by_id(&"Z1_bin")
+	player.place(bin.global_ground() + Vector3(0, 0, -1.0), PI)
+	world.camera_rig.yaw = PI
+	world.camera_rig.snap()
+	await drv.frames(10)
+	money = mission.money
+	var before: int = coins.remaining()
+	player.punch()
+	var broke := await _wait_until(func(): return not bin.is_intact(), 60)
+	check(broke and coins.remaining() == before + 2 and mission.money == money, "punch: the bin bursts into 2 loose coins in the air (%d)" % (coins.remaining() - before))
+	player.place(bin.global_ground() + Vector3(0, 0, -12.0), PI)
+	await drv.frames(60)
+	var loose: Array = coins.active_positions().filter(func(p: Vector3) -> bool: return Vector2(p.x - bin.center.x, p.z - bin.center.y).length() < 4.0)
+	var spread := 0.0
+	var spots_ok := true
+	for p: Vector3 in loose:
+		spread = maxf(spread, Vector2(p.x - bin.center.x, p.z - bin.center.y).length())
+		spots_ok = spots_ok and bk.coin_spot_ok(p, bin)
+	check(loose.size() == 2 and spread > 0.5, "punch: 2 coins landed around the bin (spread %.2f m)" % spread)
+	check(spots_ok, "punch: the coins lie on free spots (not in the bench, wall or lane)")
+	if capture:
+		await _capture_at("09_coins_burst", bin.global_position + Vector3(2.5, 0, -3.0), bin.global_position)
+	for p: Vector3 in loose:
+		player.place(Vector3(p.x, 0, p.z), 0.0)
+		await drv.frames(3)
+	check(mission.money == money + 2, "punch: walking over the coins picks them up (+%d)" % (mission.money - money))
+	# повтор — не раньше COIN_COOLDOWN: восстановленная урна сразу снова не платит
+	var given := bin.coins_given
+	bin.reset()
+	bin.coins_at = bk.clock - 1.0
+	bin.smash(&"punch", Vector3.FORWARD)
+	check(bin.coins_given == 0 and bk.coins_dropped == 6, "restored bin broken again within %.0f s gives no coins" % Breakables.COIN_COOLDOWN)
+	bin.reset()
+	bin.coins_at = bk.clock - Breakables.COIN_COOLDOWN - 1.0
+	player.place(Layout.SPAWN, Layout.SPAWN_YAW)
+	bin.smash(&"punch", Vector3.FORWARD)
+	check(bin.coins_given == 2 and given == 2, "after %.0f s the same bin pays again (+%d)" % [Breakables.COIN_COOLDOWN, bin.coins_given])
+	# окно: палисадник из 19 секций за раз — не больше COIN_WINDOW_CAP монет
+	bk.reset_positions()
+	coins.reset()
+	player.place(Vector3(63, 0, -77), 0.0)
+	await drv.frames(2)
+	for b: Breakables.Breakable in bk.objects:
+		if String(b.id).begins_with("Z9_1_"):
+			b.smash(&"punch", Vector3.FORWARD)
+	check(bk.coins_dropped == Breakables.COIN_WINDOW_CAP, "19 fence sections in a row give %d coins, not 19 (%d)" % [Breakables.COIN_WINDOW_CAP, bk.coins_dropped])
+	for d: Array in bk.coin_drops:
+		d[0] = float(d[0]) - Breakables.COIN_WINDOW - 1.0
+	bk.get_by_id(&"Z9_1k0").smash(&"punch", Vector3.FORWARD)
+	check(bk.coins_dropped == Breakables.COIN_WINDOW_CAP + 1, "after the window the next planter pays again")
+	bk.get_by_id(&"Z9_1k1").smash(&"test", Vector3.FORWARD)
+	check(bk.coins_dropped == Breakables.COIN_WINDOW_CAP + 1, "only the Lada and the punch give coins (test smash — none)")
+	bk.reset_positions()
+	coins.reset()
+	await drv.frames(2)
+
+## Выброс у каждого из 90 объектов: 5 монет с проверкой места ложатся вне коробок all_solids() (+0,3 м), дальше 2,3 м
+## от осей полос кольца, вне KIOSK_SQUARE/ROOF_AREA и в BOUNDS (независимо от Breakables.coin_spot_ok).
+func _part_coin_spots() -> void:
+	print("--- coin spots ---")
+	var coins: Node = world.get_node("LevelGeometry/Coins")
+	world.player.place(Vector3(63, 0, -77), 0.0)   # площадка киоска: ни одного разрушаемого ближе магнита
+	var rects := []
+	for spec in Layout.all_solids():
+		var c: Vector2 = spec[2]
+		var size: Vector3 = spec[3]
+		rects.append([String(spec[0]), Rect2(c - Vector2(size.x, size.z) * 0.5, Vector2(size.x, size.z)).grow(0.3)])
+	var lanes := [_pts(Layout.ring_lane()), _pts(Layout.ring_lane(6.0, 6, true))]
+	var bad := []
+	var landed := 0
+	var centred := 0
+	var batch: Array = []
+	for i in bk.objects.size():
+		var b: Breakables.Breakable = bk.objects[i]
+		var at := b.global_ground() + Vector3.UP * clampf(b.size.y * 0.7, 0.6, 1.4)
+		coins.spawn_burst(at, 5, bk.coin_spot_ok.bind(b))
+		batch.append(b)
+		if batch.size() < 10 and i < bk.objects.size() - 1:
+			continue
+		await drv.frames(45)
+		for p: Vector3 in coins.active_positions():
+			if _is_layout_coin(p):
+				continue
+			landed += 1
+			var xz := Vector2(p.x, p.z)
+			var owner_b: Breakables.Breakable = null
+			for o: Breakables.Breakable in batch:
+				if xz.distance_to(o.center) < 3.0:
+					owner_b = o
+			if owner_b and xz.distance_to(owner_b.center) < 0.05:
+				centred += 1
+			var why := []
+			for r in rects:
+				if (r[1] as Rect2).has_point(xz):
+					why.append(r[0])
+			for lane in lanes:
+				if _rect_poly(Rect2(xz, Vector2.ZERO), lane, true) < 2.3:
+					why.append("lane")
+			if Layout.KIOSK_SQUARE.has_point(xz) or Layout.ROOF_AREA.has_point(xz) or not Layout.BOUNDS.has_point(xz):
+				why.append("kiosk/bounds")
+			if not why.is_empty():
+				bad.append("%s (%.1f; %.1f) %s" % [owner_b.id if owner_b else &"?", p.x, p.z, why])
+		coins.reset()
+		batch.clear()
+		await drv.frames(1)
+	check(landed == bk.objects.size() * 5, "every object bursts 5 coins that land (%d)" % landed)
+	check(bad.is_empty(), "no burst coin in a wall, on a ring lane or on the kiosk square (%d bad %s)" % [bad.size(), bad.slice(0, 8)])
+	print("INFO: coins that found no free direction and fell at the object: %d of %d" % [centred, landed])
+
+func _is_layout_coin(p: Vector3) -> bool:
+	for q: Vector3 in Layout.COIN_POINTS:
+		if Vector2(p.x - q.x, p.z - q.z).length() < 0.2:
+			return true
+	return false
 
 # --- reset ---
 
