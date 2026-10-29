@@ -907,6 +907,7 @@ func _tick_knock(delta: float) -> void:
 			global_position = knock_from + _knock_dir * _knock_dist * k + Vector3(0.0, y, 0.0)
 			knock_roll = -_knock_sign * _knock_spin * k
 			_knock_center = lerpf(_look_center(), _down_center(), k)
+			_flail(1.0 - 0.6 * k * k)   # к земле руки опускаются
 			if k >= 1.0:
 				_knock_land()
 		&"down":
@@ -931,6 +932,11 @@ func _tick_knock(delta: float) -> void:
 				knock_roll = lie * (1.0 - r)
 				_knock_center = lerpf(_down_center(), _look_center(), r)
 				_knock_squash = Vector2(lerpf(1.0, 0.95, r), lerpf(1.0, 1.05, r))
+				if not _look_sprite():
+					# 3D-тело встаёт через присед: сжато по росту в середине подъёма, руки к телу.
+					var crouch := sin(r * PI) * 0.24
+					_knock_squash = Vector2(1.0 + crouch * 0.35, 1.0 - crouch)
+					_flail(0.4 * (1.0 - r))
 			else:
 				var s := minf((_knock_t - KNOCK_RISE_SECONDS) / KNOCK_SHAKE_SECONDS, 1.0)
 				knock_roll = sin(s * 2.0 * TAU) * KNOCK_SHAKE_ANGLE * (1.0 - s)
@@ -1072,13 +1078,28 @@ func _look_sprite() -> Sprite3D:
 	var sprite = look.get("sprite") if look else null
 	return sprite as Sprite3D
 
-## Высота центра облика над ногами стоящего, м.
+## Высота центра облика над ногами стоящего, м (3D-тело — половина роста фигуры).
 func _look_center() -> float:
 	var sprite := _look_sprite()
-	return sprite.position.y if sprite else BODY_HEIGHT * 0.5
+	if sprite:
+		return sprite.position.y
+	var look := _look()
+	var h = look.get("standing_height") if look else null
+	return float(h) * 0.5 if h != null and float(h) > 0.0 else BODY_HEIGHT * 0.5
 
+## Центр лежащего над снегом: спрайт — KNOCK_DOWN_CENTER; 3D-тело на спине — полутолщина фигуры (CHAR3D-02),
+## не меньше KNOCK_DOWN_CENTER_3D.
 func _down_center() -> float:
-	return KNOCK_DOWN_CENTER if _look_sprite() else KNOCK_DOWN_CENTER_3D
+	if _look_sprite():
+		return KNOCK_DOWN_CENTER
+	var look := _look()
+	return maxf(look.lie_center(), KNOCK_DOWN_CENTER_3D) if look and look.has_method("lie_center") else KNOCK_DOWN_CENTER_3D
+
+## 3D-тело: руки и ноги врозь (0…1), у спрайта — ничего.
+func _flail(amount: float) -> void:
+	var look := _look()
+	if look and not _look_sprite() and look.has_method("set_flail"):
+		look.set_flail(amount)
 
 ## Начало полёта: спрайт без billboard и развёрнут к камере лицом (иначе вращение не видно), тень облика — своя на снегу.
 func _knock_begin_pose() -> void:
@@ -1091,6 +1112,7 @@ func _knock_begin_pose() -> void:
 		sprite.rotation.y = PI   # облик (−Z) смотрит в камеру → вид front; лицевая сторона квада — тоже к камере
 	elif _look() and _look().has_method("set_walk_speed"):
 		_look().set_walk_speed(0.0)   # 3D-облик CHAR3D-01: в полёте и лёжа ноги не шагают
+		_flail(1.0)                   # CHAR3D-02: руки и ноги врозь
 	var look_shadow := _look().find_child("Shadow", true, false) if _look() else null
 	if look_shadow is Node3D:
 		look_shadow.visible = false
@@ -1110,6 +1132,7 @@ func _knock_end_pose() -> void:
 		sprite.rotation = Vector3.ZERO
 	elif _look() and _look().has_method("set_walk_speed"):
 		_look().set_walk_speed(-1.0)
+		_flail(0.0)
 	var look_shadow := _look().find_child("Shadow", true, false) if _look() else null
 	if look_shadow is Node3D:
 		look_shadow.visible = true

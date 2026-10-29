@@ -1,27 +1,35 @@
 class_name CharacterBody3DLook
 extends Node3D
-## CHAR3D-01 (прототип, вариант A): объёмный облик персонажа ШКЯ из примитивов по паспорту
-## assets/art/characters/passports.json (tools/character_passports.py из tools/generate_characters.py).
-## Голова и тело — «лофт» по двум силуэтам рисунка (ширина среза по фасу, глубина по боку), руки и ноги —
-## капсулы, обувь — эллипсоиды, воротники — кольцо «фестонов», предметы — скруглённые коробки. Лицо — деколь из
-## трёх SVG (фас/спина/бок, character_look.gdshader). Контур — inverted hull: следующий проход материала
-## (cull front, grow outline_m, чернила INK × tone). Цвета — как у спрайта: без света, × tone × tint, без тумана.
-## Ходьба — маятник ног и рук по пройденному пути (как кадры CharacterSprite), set_walk_speed() — задать скорость
-## снаружи (полёт, кувырок KNOCK-01: 0 — замереть). Дыхание и поворот к собеседнику — снаружи (npc.gd масштабирует
-## и поворачивает родителя Visual), как со спрайтом.
+## CHAR3D-01/02 (вариант A): объёмный облик персонажа ШКЯ по паспорту assets/art/characters/passports.json
+## (tools/character_passports.py: ручные паспорта Илюши, Бабки и полицейского, остальные — авто-паспорта из SVG).
+## Голова, тело, руки и ноги — «лофт» по двум силуэтам рисунка (ширина среза по фасу, глубина по боку), у ручных —
+## ещё капсулы, эллипсоиды, коробки и кольца «фестонов». Всё тело покрыто деколью трёх SVG (фас/спина/бок,
+## character_look.gdshader), так что рисованные детали — пуговицы, лацканы, галстук, стёжка, карманы — на месте.
+## CHAR3D-02: все детали одной группы (тело, рука, нога) — один меш с цветом детали в вершинах, на облик один
+## материал + оболочка-контур (inverted hull: cull front, grow outline_m, чернила INK × tone): 5 групп → ≤10 отрисовок
+## на фигуру. Меши и материалы — общие для всех фигур одного персонажа (статический кэш).
+## Ходьба — маятник ног и рук по пройденному пути; set_walk_speed() — скорость снаружи (кувырок KNOCK-01: 0 —
+## замереть); set_flail() — руки и ноги в стороны (полёт сбитого). Дыхание и поворот к собеседнику — снаружи
+## (npc.gd масштабирует и поворачивает родителя Visual), как со спрайтом.
 ## Совместим с CharacterSprite по полям: character, height_m, walk_stride, shadow_size, tone, tint, view, frame.
-## Переключатель: LOOK_3D в npc.gd/ilyusha.gd, аргумент запуска --look3d или force_3d (тесты) — wanted().
+## Выбор облика — wanted(): по умолчанию 3D (LOOK_3D в npc.gd/ilyusha.gd = true), аргумент --sprites или
+## force_sprites (ART01 — набор про CharacterSprite) возвращают спрайты; --look3d и force_3d оставлены для старых
+## скриптов (включают 3D и при LOOK_3D = false).
 
 const PASSPORTS := "res://assets/art/characters/passports.json"
 const LookShader = preload("res://game/characters/character_look.gdshader")
 const INK := Color(0.078, 0.071, 0.075)   # #141213, чернила генератора
 const WALK_SPEED_MIN := 0.4   # м/с: медленнее — стойка (как CharacterSprite)
-const SEGMENTS := 24          # граней по кругу у лофта и эллипсоида
-const ELLIPSOID_RINGS := 14
+const SEGMENTS := 20          # граней по кругу у лофта и эллипсоида
+const ELLIPSOID_RINGS := 12
 const FLAG := "--look3d"
+const SPRITES_FLAG := "--sprites"
+const GROUPS: Array[String] = ["body", "arm_r", "arm_l", "leg_r", "leg_l"]
+const FLAIL_ARM := 1.25       # рад: руки в стороны в полёте
+const FLAIL_LEG := 0.4        # рад: ноги врозь
 
-## Тесты включают 3D-облик без правки констант и аргументов.
 static var force_3d := false
+static var force_sprites := false
 static var _passports := {}
 static var _loaded := false
 static var _mesh_cache := {}
@@ -39,22 +47,32 @@ static var _material_cache := {}
 var passport: Dictionary
 var model: Node3D        # масштаб паспорт → height_m
 var body: Node3D         # тело, голова и руки: покачивание при ходьбе
-var groups := {}         # body, arm_r, arm_l, leg_r, leg_l
-var parts := {}          # имя детали → MeshInstance3D
+var groups := {}         # body, arm_r, arm_l, leg_r, leg_l → узел-шарнир
+var parts := {}          # имя детали → MeshInstance3D её группы (детали группы в одном меше)
+var meshes := {}         # группа → MeshInstance3D
 var view := &"front"
 var frame := -1          # -1 — стойка, 0..3 — четверть шага (как кадры спрайта)
 var walk_speed := 0.0
 var walk_override := -1.0
+var flail := 0.0         # 0 — стоит/идёт, 1 — руки и ноги врозь (полёт)
+var standing_height := 0.0   # рост фигуры в стойке, м (кэш для KNOCK-01)
+var lie_half := 0.0          # полутолщина фигуры спереди назад в стойке, м
 var _phase := 0.0
 var _blend := 0.0
+var _clock := 0.0
 var _last := Vector3.INF
 
-## Включать ли 3D-облик: константа узла, force_3d или --look3d — и паспорт для этого рисунка есть.
+## Включать ли 3D-облик: константа узла (LOOK_3D), force_3d или --look3d — и не --sprites/force_sprites; паспорт есть.
 static func wanted(flag: bool, name: String) -> bool:
+	if force_sprites or sprites_flag():
+		return false
 	return (flag or force_3d or cmdline_flag()) and has_passport(name)
 
 static func cmdline_flag() -> bool:
 	return FLAG in OS.get_cmdline_args() or FLAG in OS.get_cmdline_user_args()
+
+static func sprites_flag() -> bool:
+	return SPRITES_FLAG in OS.get_cmdline_args() or SPRITES_FLAG in OS.get_cmdline_user_args()
 
 static func passports() -> Dictionary:
 	if not _loaded:
@@ -88,9 +106,23 @@ func _ready() -> void:
 		pivot.position = _v(pivots[group])
 		(body if String(group).begins_with("arm") else model).add_child(pivot)
 		groups[group] = pivot
+	var material := _material()
+	var built := _group_meshes()
+	for group in built:
+		var mi := MeshInstance3D.new()
+		mi.name = "Mesh_" + String(group)
+		mi.mesh = built[group]
+		mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		mi.material_override = material
+		mi.set_instance_shader_parameter("group_offset", Vector3.ZERO if group == "body" else _v(passport["pivots"][group]))
+		(groups[group] as Node3D).add_child(mi)
+		meshes[group] = mi
 	for spec in passport["parts"]:
-		_add_part(spec)
+		parts[spec["name"]] = meshes[_group_of(spec)]
 	add_child(_shadow())
+	var box := _extent()
+	standing_height = box.end.y
+	lie_half = box.size.z * 0.5
 
 func _process(_delta: float) -> void:
 	var camera := get_viewport().get_camera_3d()
@@ -109,6 +141,7 @@ func _process(_delta: float) -> void:
 func _physics_process(delta: float) -> void:
 	if passport.is_empty() or delta <= 0.0:
 		return
+	_clock += delta
 	var at := global_position
 	var moved := 0.0
 	if _last != Vector3.INF:
@@ -136,55 +169,111 @@ func _physics_process(delta: float) -> void:
 func set_walk_speed(speed: float) -> void:
 	walk_override = speed
 
-## Рост фигуры, м: верх всех деталей над подошвами (для сверки с ростом спрайта).
+## Руки и ноги врозь: 0 — обычная поза, 1 — полёт (KNOCK-01); руки ещё машут.
+func set_flail(amount: float) -> void:
+	flail = clampf(amount, 0.0, 1.0)
+	if passport and not passport.is_empty():
+		_apply_pose(passport.get("walk", {}))
+
+## Рост фигуры, м: верх всех мешей над подошвами (для сверки с ростом спрайта).
 func figure_height() -> float:
-	var top := 0.0
-	for mi: MeshInstance3D in parts.values():
-		var aabb: AABB = mi.mesh.get_aabb()
-		var xf := global_transform.affine_inverse() * mi.global_transform
-		for k in 8:
-			top = maxf(top, (xf * aabb.get_endpoint(k)).y)
-	return top
+	return _extent().end.y
+
+## Полутолщина фигуры спереди назад в стойке, м: на столько центр лежащего на спине над снегом.
+func lie_center() -> float:
+	return lie_half
 
 func mesh_count() -> int:
 	return parts.size()
+
+## Отрисовок на фигуру: меши групп × 2 (материал и оболочка-контур).
+func draw_calls() -> int:
+	return meshes.size() * 2
+
+## Габарит мешей в осях облика (без тени).
+func _extent() -> AABB:
+	var box := AABB()
+	var first := true
+	for mi: MeshInstance3D in meshes.values():
+		var aabb: AABB = mi.mesh.get_aabb()
+		var xf := global_transform.affine_inverse() * mi.global_transform
+		for k in 8:
+			var p := xf * aabb.get_endpoint(k)
+			if first:
+				box = AABB(p, Vector3.ZERO)
+				first = false
+			else:
+				box = box.expand(p)
+	return box
 
 func _apply_pose(walk: Dictionary) -> void:
 	var s := sin(_phase) * _blend
 	var leg := deg_to_rad(float(walk.get("leg_swing_deg", 25.0))) * s
 	var arm := deg_to_rad(float(walk.get("arm_swing_deg", 20.0))) * s
+	var flap := sin(_clock * 14.0) * 0.35 * flail
 	if groups.has("leg_r"):
-		groups["leg_r"].rotation.x = leg
+		groups["leg_r"].rotation = Vector3(leg, 0.0, FLAIL_LEG * flail)
 	if groups.has("leg_l"):
-		groups["leg_l"].rotation.x = -leg
+		groups["leg_l"].rotation = Vector3(-leg, 0.0, -FLAIL_LEG * flail)
 	if groups.has("arm_r"):
-		groups["arm_r"].rotation.x = -arm
+		groups["arm_r"].rotation = Vector3(-arm, 0.0, (FLAIL_ARM + flap) * flail)
 	if groups.has("arm_l"):
-		groups["arm_l"].rotation.x = arm
+		groups["arm_l"].rotation = Vector3(arm, 0.0, -(FLAIL_ARM + flap) * flail)
 	body.position.y = float(walk.get("bob_m", 0.02)) * absf(sin(_phase)) * _blend
 
 # --- построение ---
 
-func _add_part(spec: Dictionary) -> void:
+func _group_of(spec: Dictionary) -> String:
 	var group: String = spec.get("group", "body")
-	var parent: Node3D = groups.get(group, body)
-	var pivot := Vector3.ZERO if group == "body" else _v(passport["pivots"][group])
-	var key := "%s/%s" % [character, spec["name"]]
-	if not _mesh_cache.has(key):
-		_mesh_cache[key] = _build_mesh(spec)
-	var built: Array = _mesh_cache[key]   # [mesh, локальное преобразование детали в осях облика]
-	var mi := MeshInstance3D.new()
-	mi.name = String(spec["name"]).capitalize().replace(" ", "")
-	mi.mesh = built[0]
-	var xf: Transform3D = built[1]
-	xf.origin -= pivot
-	mi.transform = xf
-	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	mi.material_override = _material(spec)
-	parent.add_child(mi)
-	parts[spec["name"]] = mi
+	return group if groups.has(group) else "body"
 
-func _build_mesh(spec: Dictionary) -> Array:
+## Меши групп: все детали группы в одном ArrayMesh (вершины в осях шарнира группы). Кэш на персонажа.
+func _group_meshes() -> Dictionary:
+	if _mesh_cache.has(character):
+		return _mesh_cache[character]
+	var acc := {}
+	for spec in passport["parts"]:
+		var group := _group_of(spec)
+		var pivot := Vector3.ZERO if group == "body" else _v(passport["pivots"][group])
+		var built: Array = _build_arrays(spec)
+		var xf: Transform3D = built[1]
+		xf.origin -= pivot
+		if not acc.has(group):
+			acc[group] = [PackedVector3Array(), PackedVector3Array(), PackedColorArray(), PackedVector2Array(), PackedInt32Array()]
+		var a: Array = acc[group]
+		var start: int = (a[0] as PackedVector3Array).size()
+		var src: Array = built[0]
+		var color := Color(String(spec["color"])).srgb_to_linear()
+		var decal = spec.get("decal", false)
+		var flags := Vector2(0.5 if decal is String and decal == "front_back" else (1.0 if decal else 0.0),
+			1.0 if spec.get("top", false) else 0.0)
+		var verts: PackedVector3Array = src[Mesh.ARRAY_VERTEX]
+		var normals: PackedVector3Array = src[Mesh.ARRAY_NORMAL]
+		for i in verts.size():
+			a[0].append(xf * verts[i])
+			a[1].append((xf.basis * normals[i]).normalized())
+			a[2].append(color)
+			a[3].append(flags)
+		for i: int in src[Mesh.ARRAY_INDEX]:
+			a[4].append(start + i)
+	var out := {}
+	for group in acc:
+		var a: Array = acc[group]
+		var arrays := []
+		arrays.resize(Mesh.ARRAY_MAX)
+		arrays[Mesh.ARRAY_VERTEX] = a[0]
+		arrays[Mesh.ARRAY_NORMAL] = a[1]
+		arrays[Mesh.ARRAY_COLOR] = a[2]
+		arrays[Mesh.ARRAY_TEX_UV] = a[3]
+		arrays[Mesh.ARRAY_INDEX] = a[4]
+		var mesh := ArrayMesh.new()
+		mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
+		out[group] = mesh
+	_mesh_cache[character] = out
+	return out
+
+## Массивы детали в её собственных осях и преобразование в оси облика: [arrays, Transform3D].
+func _build_arrays(spec: Dictionary) -> Array:
 	match String(spec["kind"]):
 		"loft":
 			var rings: Array = []
@@ -204,16 +293,16 @@ func _build_mesh(spec: Dictionary) -> Array:
 			var capsule := CapsuleMesh.new()
 			capsule.radius = r
 			capsule.height = maxf(a.distance_to(b) + 2.0 * r, 2.0 * r + 0.001)
-			capsule.radial_segments = 16
+			capsule.radial_segments = 14
 			capsule.rings = 4
 			var dir := (b - a).normalized() if a.distance_to(b) > 0.0001 else Vector3.UP
 			var basis := Basis(Quaternion(Vector3.UP, dir)) if dir.dot(Vector3.UP) > -0.999 else Basis(Vector3.RIGHT, PI)
-			return [_baked(capsule), Transform3D(basis, (a + b) * 0.5)]
+			return [capsule.get_mesh_arrays(), Transform3D(basis, (a + b) * 0.5)]
 		"scallops":
 			return [_scallops(_v(spec["center"]), float(spec["rx"]), float(spec["rz"]), float(spec["r"]), int(spec["n"])),
 				Transform3D.IDENTITY]
 	push_warning("CharacterBody3DLook: неизвестная деталь %s" % spec["kind"])
-	return [BoxMesh.new(), Transform3D.IDENTITY]
+	return [BoxMesh.new().get_mesh_arrays(), Transform3D.IDENTITY]
 
 func _placed(center: Vector3, rot: Array) -> Transform3D:
 	var basis := Basis.IDENTITY
@@ -235,9 +324,9 @@ func _ellipsoid_rings(radii: Vector3, vertical_power: float) -> Array:
 	rings.push_back(PackedFloat32Array([-radii.y, 0.0, 0.0, 0.0, 0.0]))
 	return rings
 
-## Меш по срезам сверху вниз [y, xc, rx, zc, rz]; сечение — суперэллипс степени power (2 — эллипс).
+## Массивы по срезам сверху вниз [y, xc, rx, zc, rz]; сечение — суперэллипс степени power (2 — эллипс).
 ## Вершины общие по кругу (без шва), нормали — сумма нормалей граней, грани — по часовой снаружи (Godot).
-func _loft(rings: Array, power: float) -> ArrayMesh:
+func _loft(rings: Array, power: float) -> Array:
 	var verts := PackedVector3Array()
 	var centers: Array[Vector3] = []
 	var top: PackedFloat32Array = rings[0]
@@ -306,23 +395,15 @@ func _loft(rings: Array, power: float) -> ArrayMesh:
 	arrays[Mesh.ARRAY_VERTEX] = verts
 	arrays[Mesh.ARRAY_NORMAL] = normals
 	arrays[Mesh.ARRAY_INDEX] = tris
-	var mesh := ArrayMesh.new()
-	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
-	return mesh
-
-## Примитив Godot → ArrayMesh (один материал на облик через material_override).
-func _baked(primitive: PrimitiveMesh) -> ArrayMesh:
-	var mesh := ArrayMesh.new()
-	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, primitive.get_mesh_arrays())
-	return mesh
+	return arrays
 
 ## Кольцо «фестонов» — меховой воротник или жабо: n шариков по эллипсу (как scallops генератора).
-func _scallops(center: Vector3, rx: float, rz: float, r: float, n: int) -> ArrayMesh:
+func _scallops(center: Vector3, rx: float, rz: float, r: float, n: int) -> Array:
 	var sphere := SphereMesh.new()
 	sphere.radius = r
 	sphere.height = r * 2.0
-	sphere.radial_segments = 12
-	sphere.rings = 6
+	sphere.radial_segments = 10
+	sphere.rings = 5
 	var src := sphere.get_mesh_arrays()
 	var verts := PackedVector3Array()
 	var normals := PackedVector3Array()
@@ -341,32 +422,29 @@ func _scallops(center: Vector3, rx: float, rz: float, r: float, n: int) -> Array
 	arrays[Mesh.ARRAY_VERTEX] = verts
 	arrays[Mesh.ARRAY_NORMAL] = normals
 	arrays[Mesh.ARRAY_INDEX] = index
-	var mesh := ArrayMesh.new()
-	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
-	return mesh
+	return arrays
 
-func _material(spec: Dictionary) -> Material:
-	var key := "%s/%s/%s/%s/%s" % [character, spec["name"], tone, tint, outline_m]
+## Один материал на облик (деколь трёх рисунков, макушка, стёртые области) + оболочка-контур следующим проходом.
+func _material() -> Material:
+	var key := "%s/%s/%s/%s/%s" % [character, tone, tint, outline_m, height_m]
 	if _material_cache.has(key):
 		return _material_cache[key]
 	var m := ShaderMaterial.new()
 	m.shader = LookShader
-	m.set_shader_parameter("albedo", Color(String(spec["color"])))
 	m.set_shader_parameter("tone_color", Color(tone * tint.r, tone * tint.g, tone * tint.b))
 	m.set_shader_parameter("m_per_unit", float(passport["m_per_unit"]))
 	var canvas: Dictionary = _passports.get("canvas", {})
 	m.set_shader_parameter("axis", float(canvas.get("axis", 200.0)))
 	m.set_shader_parameter("side_axis", float(canvas.get("side_axis", 200.0)))
 	m.set_shader_parameter("feet_y", float(canvas.get("feet_y", 590.0)))
-	var decal_key: String = spec.get("decal", "")
-	if decal_key != "" and passport.get("decals", {}).has(decal_key):
-		var decal: Dictionary = passport["decals"][decal_key]
-		m.set_shader_parameter("use_decal", true)
+	var decal: Dictionary = passport.get("decal", {})
+	if not decal.is_empty():
 		for v in ["front", "back", "side"]:
 			m.set_shader_parameter("tex_" + v, load(decal["textures"][v]))
-			var c: Array = decal[v]
-			m.set_shader_parameter("crop_" + v, Vector4(c[0], c[1], c[2], c[3]))
-		m.set_shader_parameter("top_color", Color(String(decal.get("top", spec["color"]))))
+		var vb: Array = decal.get("view", [0.0, 400.0])
+		m.set_shader_parameter("canvas_view", Vector2(float(vb[0]), float(vb[1])))
+		m.set_shader_parameter("top_color", Color(String(decal.get("top", "#FFFFFF"))))
+		m.set_shader_parameter("top_y", float(decal.get("top_y", 0.0)))
 		var erase: Dictionary = decal.get("erase", {})
 		for slot in [["front", 0, "erase_front_a"], ["front", 1, "erase_front_b"], ["back", 0, "erase_back_a"],
 				["back", 1, "erase_back_b"], ["side", 0, "erase_side_a"], ["side", 1, "erase_side_b"]]:
@@ -374,28 +452,23 @@ func _material(spec: Dictionary) -> Material:
 			if rects.size() > slot[1]:
 				var r: Array = rects[slot[1]]
 				m.set_shader_parameter(slot[2], Vector4(r[0], r[1], r[2], r[3]))
-	var lines: Dictionary = spec.get("lines", {})
-	if not lines.is_empty():
-		var ys: Array = lines.get("y", [])
-		var v := Vector4.ZERO
-		for i in mini(ys.size(), 4):
-			v[i] = float(ys[i])
-		m.set_shader_parameter("lines_y", v)
-		m.set_shader_parameter("line_sag", float(lines.get("sag", 0.0)))
-		m.set_shader_parameter("line_half", float(lines.get("half", 0.3)))
-		var sm: Array = lines.get("seam", [])
-		if sm.size() == 3:
-			m.set_shader_parameter("seam", Vector4(sm[0], sm[1], sm[2], 1.0))
-		m.set_shader_parameter("line_w", float(lines.get("width", 0.008)))
-	if spec.get("outline", true):
-		var hull := StandardMaterial3D.new()
-		hull.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-		hull.cull_mode = BaseMaterial3D.CULL_FRONT
-		hull.grow = true
-		hull.grow_amount = outline_m / maxf(0.01, height_m / float(passport["height_m"]))
-		hull.albedo_color = Color(INK.r * tone, INK.g * tone, INK.b * tone)
-		hull.disable_fog = true
-		m.next_pass = hull
+		var caps: Array = decal.get("caps", {}).get("front", [])
+		var segs := PackedVector4Array([Vector4.ZERO, Vector4.ZERO, Vector4.ZERO, Vector4.ZERO])
+		var radii := Vector4.ZERO
+		for i in mini(caps.size(), 4):
+			var c: Array = caps[i]
+			segs[i] = Vector4(c[0], c[1], c[2], c[3])
+			radii[i] = float(c[4])
+		m.set_shader_parameter("caps_front", segs)
+		m.set_shader_parameter("caps_r", radii)
+	var hull := StandardMaterial3D.new()
+	hull.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	hull.cull_mode = BaseMaterial3D.CULL_FRONT
+	hull.grow = true
+	hull.grow_amount = outline_m / maxf(0.01, height_m / float(passport["height_m"]))
+	hull.albedo_color = Color(INK.r * tone, INK.g * tone, INK.b * tone)
+	hull.disable_fog = true
+	m.next_pass = hull
 	_material_cache[key] = m
 	return m
 

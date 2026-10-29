@@ -1,14 +1,14 @@
 extends Node3D
 ## NPC-заглушка (Бабка, продавщица): фигура, твёрдое тело и зона Interactable.
-## Облик ШКЯ — CharacterSprite (ART-01); диалоги и маркеры — QUEST-01.
+## Облик ШКЯ — объёмный CharacterBody3DLook (CHAR3D-02) или CharacterSprite (ART-01, --sprites); диалоги и маркеры — QUEST-01.
 ## POLISH-02: облик «дышит» (масштаб по высоте ±1,5 %) и на время диалога поворачивается к собеседнику
 ## (look_at_target / stop_looking — вызывает QuestFlow). Поворачивается только облик, не узел и не зона E.
 
 const CharacterSpriteScript = preload("res://game/characters/character_sprite.gd")
 const CharacterBody3DLookScript = preload("res://game/characters/character_body3d.gd")
-## CHAR3D-01: true — объёмный облик (CharacterBody3DLook) для рисунков с паспортом; иначе спрайт. Без правки кода —
-## аргумент запуска --look3d.
-const LOOK_3D := false
+## CHAR3D-02: true — объёмный облик (CharacterBody3DLook) для рисунков с паспортом (по умолчанию — все персонажи);
+## запасной путь — спрайт: аргумент запуска --sprites или false здесь.
+const LOOK_3D := true
 const InteractableScript = preload("res://game/interaction/interactable.gd")
 
 @export var interaction_id: StringName

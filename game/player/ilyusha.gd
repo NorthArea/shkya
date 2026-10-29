@@ -1,7 +1,7 @@
 class_name Ilyusha
 extends CharacterBody3D
 ## Илюша пешком: ходьба относительно камеры, взаимодействие по E (C3).
-## Visual — облик ШКЯ в зимнем костюме (ART-01, CharacterSprite); поворот Visual = взгляд Илюши.
+## Visual — облик ШКЯ в зимнем костюме (CHAR3D-02: объёмный CharacterBody3DLook; --sprites — CharacterSprite ART-01); поворот Visual = взгляд Илюши.
 ## EXT-02 (C7, docs/extension/HIDE_SPOTS.md раздел 9): режим укрытия hide_mode (&"none", &"box", &"snowdrift",
 ## &"barrel") — предел скорости speed_limit(), без прыжка, заметность exposure_factor() для DetectionSensor.
 ## Облик укрытия кладёт HideSpot в hide_visual (дочерний Visual); спрайт Илюши в режиме скрыт, тело и коллизия те же.
@@ -14,8 +14,8 @@ extends CharacterBody3D
 
 const CharacterSpriteScript = preload("res://game/characters/character_sprite.gd")
 const CharacterBody3DLookScript = preload("res://game/characters/character_body3d.gd")
-## CHAR3D-01: true — объёмный облик (CharacterBody3DLook) вместо спрайта; без правки кода — аргумент --look3d.
-const LOOK_3D := false
+## CHAR3D-02: true — объёмный облик (CharacterBody3DLook) вместо спрайта; запасной путь — аргумент --sprites.
+const LOOK_3D := true
 const HideTuning = preload("res://game/stealth/hide_tuning.gd")
 
 const WALK_SPEED := 4.0         # 2,2 роста/с при фигуре 1,8 м, как у эталона (PLAY-02)
