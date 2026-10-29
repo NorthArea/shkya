@@ -639,7 +639,7 @@ const RESIDENT_LOOKS: Array[StringName] = [&"shuba", &"violet", &"ushanka_walk",
 		&"kolpak", &"bow", &"ushanka", &"tourist", &"turban", &"kid",
 		&"kid2", &"ushanka_walk", &"ushanka", &"tourist", &"ushanka_walk", &"kid",   # LIFE-01: 14 горка, 15 рабочий, 16 дворник, 17 домино, 18 капот, 19 горка
 		&"kid2", &"kid", &"kid2", &"beret", &"violet",   # PEOPLE-03 (P2): 20–21 хоккей, 22 снежки, 23 торговка, 24 бабушка с санками
-		&"kolpak", &"bow", &"shuba", &"turban",          # LIFE-02: 25–28 прохожие улиц A и B
+		&"kolpak", &"bow", &"shuba", &"dog",             # LIFE-02: 25–28 прохожие улиц A и B
 		&"ushanka", &"ushanka_walk", &"ushanka"]         # LIFE-02: 29 доминошник, 30–31 рабочие раскопки
 
 # CITY-01 (часть P): посадка в троллейбус. Житель 2 (Residents.RIDER) ждёт у павильона A на точке 1 своего маршрута
@@ -928,7 +928,7 @@ const LIFE_NODES := {
 	&"a_s_e3": Vector2(80.0, 43.3), &"e_a_se": Vector2(96.5, 43.3),
 	# Тротуар A, север: аптека, переход через D, остановка A, «ПРЕССА», проход во внутренний двор, угол A∩B.
 	&"a_n_apt": Vector2(-75.0, 19.2), &"a_n_wp": Vector2(-70.5, 20.0), &"a_n_w": Vector2(-69.5, 22.6),
-	&"a_n_stop": Vector2(-27.0, 23.3),
+	&"a_n_stop": Vector2(-27.0, 23.3), &"a_n_stopw": Vector2(-34.8, 24.2),   # LIFE-02: западнее павильона, до снежной кучи
 	&"a_n_stope": Vector2(-22.5, 20.6), &"a_n_x": Vector2(-11.5, 20.6), &"a_n_pass": Vector2(-7.5, 20.6),
 	&"a_n_e1": Vector2(6.0, 20.6), &"a_n_e2": Vector2(30.0, 20.6), &"a_n_ne": Vector2(52.5, 20.4),
 	&"b_w": Vector2(62.5, 20.4), &"b_ne": Vector2(79.6, 20.4), &"e_a_ne": Vector2(96.5, 21.0),
@@ -978,7 +978,7 @@ const LIFE_EDGES := [
 	[&"a_s_x2", &"a_s_e"], [&"a_s_e", &"a_s_x", &"route"],
 	[&"a_s_e1", &"a_s_shaw"], [&"a_s_shaw", &"a_s_e3"], [&"a_s_e3", &"a_s_bx"], [&"a_s_bx", &"e_a_se"],
 	[&"a_s_cross", &"a_n_w", &"cross"], [&"a_s_x2", &"a_n_x", &"cross"],
-	[&"a_n_apt", &"a_n_wp"], [&"a_n_wp", &"a_n_w"], [&"a_n_stop", &"a_n_stope"], [&"a_n_stope", &"a_n_x"], [&"a_n_x", &"a_n_pass"], [&"a_n_pass", &"a_n_e1"],
+	[&"a_n_apt", &"a_n_wp"], [&"a_n_wp", &"a_n_w"], [&"a_n_stop", &"a_n_stope"], [&"a_n_stop", &"a_n_stopw"], [&"a_n_stope", &"a_n_x"], [&"a_n_x", &"a_n_pass"], [&"a_n_pass", &"a_n_e1"],
 	[&"a_n_e1", &"a_n_e2"], [&"a_n_e2", &"a_n_ne"], [&"a_n_ne", &"b_w", &"route"], [&"b_w", &"b_ne", &"cross"],
 	[&"b_ne", &"b_nx"], [&"b_nx", &"e_a_ne"], [&"b_ne", &"b_1"], [&"b_1", &"b_lk1"], [&"b_lk1", &"b_gastro"], [&"b_gastro", &"b_lk2"], [&"b_lk2", &"b_lk3"], [&"b_lk3", &"b_2"],
 	[&"b_2", &"b_3"],
@@ -1044,9 +1044,9 @@ const LIFE_SPOTS := [
 	[&"smoke_b", &"smoke", &"y_smoke", Vector2(-33.2, 106.95), -PI * 0.5, Vector2(40, 60), 1, &""],
 	# PEOPLE-03 (ARENA-02 «Жизнь», P1): доминошники у столика Z5_4, мужик под капотом «Жигулей» (17; 80), рабочие у
 	# раскопки Z7, дворник вдоль H1 (z 101,2, x −24,5…−14,5), выбивает ковёр у выбивалки (−68; 90…93), дети на горке.
-	[&"domino_w", &"domino", &"y_dom_w", Vector2(6.9, 97.0), -PI * 0.5, Vector2(120, 260), 1, &"Z5_4"],
-	[&"domino_e", &"domino", &"y_east", Vector2(11.1, 97.0), PI * 0.5, Vector2(120, 260), 1, &"Z5_4"],
-	[&"domino_s", &"domino", &"y_dom_w", Vector2(9.0, 99.4), 0.0, Vector2(120, 260), 1, &"Z5_4"],
+	[&"domino_w", &"domino", &"y_dom_w", Vector2(6.9, 97.0), -PI * 0.5, Vector2(150, 300), 1, &"Z5_4"],
+	[&"domino_e", &"domino", &"y_east", Vector2(11.1, 97.0), PI * 0.5, Vector2(150, 300), 1, &"Z5_4"],
+	[&"domino_s", &"domino", &"y_dom_w", Vector2(9.0, 99.4), 0.0, Vector2(150, 300), 1, &"Z5_4"],
 	[&"hood", &"hood", &"y_hood", Vector2(17.0, 76.8), PI, Vector2(60, 150), 1, &""],
 	[&"dig_1", &"dig", &"z7_s", Vector2(20.0, 49.0), PI, Vector2(120, 260), 1, &"Z7_dig"],
 	[&"dig_2", &"dig", &"z7_e", Vector2(25.6, 52.0), PI * 0.5, Vector2(120, 260), 1, &"Z7_dig"],
@@ -1080,10 +1080,13 @@ const LIFE_SPOTS := [
 	[&"chat_b2", &"chat", &"b_gastro", Vector2(81.0, -15.0), PI, Vector2(60, 120), 1, &""],
 	[&"chat_bw1", &"chat", &"bw_1", Vector2(57.0, -8.0), 0.0, Vector2(60, 120), 1, &""],
 	[&"chat_bw2", &"chat", &"bw_1", Vector2(57.0, -9.4), PI, Vector2(60, 120), 1, &""],
-	# LIFE-02: у остановки A — двое разговорились между павильоном и «ПРЕССОЙ», третий читает заголовки на витрине киоска.
-	[&"chat_a1", &"chat", &"a_n_x", Vector2(-16.2, 21.6), -PI * 0.5, Vector2(60, 120), 1, &""],
-	[&"chat_a2", &"chat", &"a_n_x", Vector2(-14.8, 21.6), PI * 0.5, Vector2(60, 120), 1, &""],
+	# LIFE-02: у остановки A — двое разговорились западнее павильона, третий читает заголовки на витрине «ПРЕССЫ».
+	[&"chat_a1", &"chat", &"a_n_stopw", Vector2(-34.8, 22.8), 0.0, Vector2(60, 120), 1, &""],
+	[&"chat_a2", &"chat", &"a_n_stopw", Vector2(-34.8, 21.4), PI, Vector2(60, 120), 1, &""],
 	[&"look_press", &"look", &"a_n_x", Vector2(-14.0, 17.8), -PI * 0.5, Vector2(15, 35), 1, &""],
+	# LIFE-02: ждут у остановки A маршрутку, а не троллейбус (стоят и уходят пешком) — остановка не пустеет разом.
+	[&"wait_a1", &"look", &"a_n_stop", Vector2(-28.7, 24.2), -PI * 0.5, Vector2(30, 70), 1, &""],
+	[&"wait_a2", &"look", &"a_n_stope", Vector2(-23.0, 24.2), -PI * 0.5, Vector2(30, 70), 1, &""],
 ]
 ## Сидячие места: облик сдвинут на столько метров по взгляду (минус — за спину) и опущен на Resident.SIT_DROP; само
 ## место — в стороне от лавки (≥ 0,5 м), тело на время выключено. Лавки Z15 — за спиной; доминошники — лавки у столика

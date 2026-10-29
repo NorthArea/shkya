@@ -26,18 +26,18 @@ const AT_SPOT := 0.5         # м: житель на месте точки — �
 ## Персоны по индексу жителя: подъезд и цепочка шагов. Пустая — второй в паре (его ведёт первый, Residents.PAIRS).
 ## Пары ходят только туда, где вдвоём уместно: магазин, окно, подъезд, контейнеры.
 const PERSONAS := [
-	{"home": &"door_h1e", "plan": [&"bins", &"press", &"bench", &"home", &"shop24", &"home"]},   # 0 бабка в шубе
+	{"home": &"door_h1e", "plan": [&"bins", &"wait_a1", &"press", &"bench", &"home", &"shop24", &"home"]},   # 0 бабка в шубе
 	{"home": &"door_h1w", "plan": [&"carpet", &"home", &"bench", &"shop24", &"home"]},          # 1 фиолетовая: ковёр
-	{"home": &"door_h3w", "plan": [&"stop", &"shaw", &"edge", &"chat", &"press", &"home"]},    # 2 пассажир троллейбуса
+	{"home": &"door_h3w", "plan": [&"wait_a1", &"stop", &"shaw", &"edge", &"chat", &"press", &"home"]},    # 2 пассажир троллейбуса
 	{"home": &"door_h1e", "plan": [&"press", &"slide", &"home", &"hockey", &"shaw"]},           # 3 пацан: горка, хоккей
-	{"home": &"door_h4", "plan": [&"shaw", &"home", &"look_bw1", &"gastro", &"home"]},          # 4 бабка в берете (LIFE-02: на B)
+	{"home": &"door_h4", "plan": [&"shaw", &"look_bw1", &"chat", &"gastro", &"wait_a2", &"home"]},          # 4 бабка в берете (LIFE-02: на B)
 	{"home": &"door_h9b", "plan": [&"gastro", &"chat", &"look_bw2", &"edge", &"look_b3", &"home", &"gastro"]},   # 5 с собачкой: выгул по B (LIFE-02)
 	{"home": &"door_h10w", "plan": [&"shop24", &"home", &"press", &"bins", &"home"]},          # 6 турист, первый пары
 	{"home": &"door_h9a", "plan": [&"shop24", &"home", &"gastro", &"home"]},                   # 7 пацан, первый пары
 	{}, {},                                                                                     # 8, 9 — вторые в парах
 	{"home": &"door_h1e", "plan": [&"smoke", &"domino", &"smoke", &"domino", &"home"]},        # 10 курит, «козёл» (LIFE-02: чаще за столиком)
 	{"home": &"door_h3e", "plan": [&"smoke", &"domino", &"home", &"domino", &"smoke"]},       # 11 курит, «козёл» (LIFE-02: домино сразу после перекура)
-	{"home": &"door_h7", "plan": [&"apteka", &"chat", &"bench", &"shop24", &"home"]},          # 12 бабка в тюрбане (LIFE-02: разговор у остановки)
+	{"home": &"door_h7", "plan": [&"apteka", &"chat", &"stop", &"bench", &"shop24", &"home"]},          # 12 бабка в тюрбане (LIFE-02: разговор у остановки)
 	{"home": &"door_h3w", "plan": [&"snowball", &"home", &"press", &"slide"]},                # 13 пацан: снежки
 	{"home": &"door_h4", "plan": [&"slide", &"home", &"slide", &"shaw"]},                     # 14 пацан: горка
 	{"home": &"door_h1e", "plan": [&"dig", &"dig", &"shaw", &"dig", &"press"]},               # 15 рабочий теплотрассы
@@ -54,11 +54,11 @@ const PERSONAS := [
 	# LIFE-02 (сверка main b4a4d13: «маршрут миссии почти пуст»): прохожие улиц A и B — остановка A (троллейбусом до B
 	# и в «ГАСТРОНОМ»), витрины B, «ПРЕССА», «ШАУРМА», края карты; у киоска только тротуар B восток (мимо). Второй
 	# доминошник и двое рабочих у раскопки (третье место dig_3 — «один копает, двое смотрят»).
-	{"home": &"door_h7", "plan": [&"look_b2", &"chat", &"gastro", &"stop", &"look_press", &"press", &"home"]},                    # 25 бабка в колпаке
-	{"home": &"door_h9b", "plan": [&"stop", &"chat", &"look_bw1", &"shaw", &"edge", &"gastro", &"look_b1", &"home"]},  # 26 бабка с бантом
+	{"home": &"door_h7", "plan": [&"look_b2", &"chat", &"gastro", &"look_b3", &"stop", &"look_press", &"press", &"home"]},                    # 25 бабка в колпаке
+	{"home": &"door_h9b", "plan": [&"look_press", &"chat", &"stop", &"look_bw1", &"shaw", &"edge", &"gastro", &"look_b1", &"home"]},  # 26 бабка с бантом
 	{"home": &"door_h9a", "plan": [&"look_b1", &"gastro", &"chat", &"look_bw2", &"press", &"stop", &"home"]},     # 27 бабка в шубе
-	{"home": &"door_h3e", "plan": [&"stop", &"look_b2", &"chat", &"gastro", &"shaw", &"home"]},                   # 28 бабка в тюрбане
-	{"home": &"door_h1e", "plan": [&"domino", &"smoke", &"domino", &"bins", &"domino"]},                 # 29 дед-доминошник
+	{"home": &"door_h3e", "plan": [&"chat", &"stop", &"look_b2", &"chat", &"gastro", &"shaw", &"home"]},                   # 28 бабка с собачкой
+	{"home": &"door_h1e", "plan": [&"domino", &"smoke", &"domino", &"bins", &"domino"]},                 # 29 доминошник в ушанке
 	{"home": &"door_h1e", "plan": [&"dig", &"dig", &"shaw", &"dig", &"dig", &"home"]},                   # 30 рабочий
 	{"home": &"door_h3e", "plan": [&"dig", &"dig", &"dig", &"press", &"dig"]},                           # 31 рабочий с сигаретой
 ]
