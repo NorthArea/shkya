@@ -245,12 +245,14 @@ func _pass_one() -> bool:
 	if not check(1, await drv.press_button("УЙТИ"), "07: УЙТИ pressed (%s)" % drv.last_error):
 		return false
 	await drv.frames(3)
-	check(3, m.state == &"BUY_BREAD" and not m.has_bread and m.money == 100, "07: УЙТИ buys nothing (state %s, money %d)" % [m.state, m.money])
+	check(3, m.state == &"BUY_BREAD" and not m.has_bread and _spent(w) == 0, "07: УЙТИ buys nothing (state %s, money %d)" % [m.state, m.money])
 	await drv.interact()
 	await drv.frames(5)
 	check(1, _hud_has(w, "Батон? 35 рублей") and not _hud_has(w, "Батон один?"), "07: second approach is the short line, chain not repeated")
 	await _shot("07_vendor_dialog", false)
 	var money_before: int = m.money
+	# COINS-01: стартовых денег нет — 35 ₽ собраны монетами по дороге (двор пешком и ROUTE_DRIVE на «Ладе»).
+	check(1, money_before >= 35, "07: coins collected on the way cover the bread (%d ₽, %d coins)" % [money_before, _coins(w).collected_count])
 	if not check(1, await drv.press_button("КУПИТЬ ХЛЕБ", &"ui_left"), "07: КУПИТЬ ХЛЕБ pressed (%s)" % drv.last_error):
 		return false
 	await drv.frames(2)
@@ -272,7 +274,7 @@ func _pass_one() -> bool:
 	check(6, not _hud_has(w, "E — ПОГОВОРИТЬ"), "08: no vendor prompt after the purchase")
 	await drv.interact()
 	await drv.frames(5)
-	check(6, not _hud_has(w, "Батон? 35 рублей") and m.money == 65 and bread_edges == 1, "08: second purchase impossible (money %d)" % m.money)
+	check(6, not _hud_has(w, "Батон? 35 рублей") and _spent(w) == 35 and bread_edges == 1, "08: second purchase impossible (money %d)" % m.money)
 	await _close_any_dialog(w)
 
 	# 09 — назад к машине и во двор
@@ -368,7 +370,7 @@ func _pass_one() -> bool:
 	check(6, not _hud_has(w, "E — ПОГОВОРИТЬ"), "after: no vendor prompt after completion")
 	await drv.interact()
 	await drv.frames(5)
-	check(6, not _hud_has(w, "Батон? 35 рублей") and not m.has_bread and m.money == 65 and m.state == &"COMPLETE", "after: purchase unavailable after completion")
+	check(6, not _hud_has(w, "Батон? 35 рублей") and not m.has_bread and _spent(w) == 35 and m.state == &"COMPLETE", "after: purchase unavailable after completion")
 	await _close_any_dialog(w)
 	check(3, bread_edges == 1, "pass 1: has_bread was set exactly once in the whole pass (%d)" % bread_edges)
 	_print_transitions("pass 1")
@@ -417,7 +419,7 @@ func _pass_two() -> void:
 	check(3, not _hud_has(w, "E — ПОГОВОРИТЬ"), "no quest: no vendor prompt without the quest")
 	await drv.interact()
 	await drv.frames(5)
-	check(3, not _hud_has(w, "Батон? 35 рублей") and not m.has_bread and m.money == 100, "no quest: bread cannot be bought without the quest")
+	check(3, not _hud_has(w, "Батон? 35 рублей") and not m.has_bread and _spent(w) == 0, "no quest: bread cannot be bought without the quest")
 	await _close_any_dialog(w)
 	check(2, _babka_symbol(w) == "!", "no quest: ! still above Babka")
 	# Назад во двор и принять
@@ -456,8 +458,8 @@ func _pass_two() -> void:
 
 func _check_clean(w: DemoWorld, label: String) -> void:
 	var m := w.mission
-	check(1, m.state == &"NOT_STARTED" and not m.has_bread and m.xp == 0 and m.money == 100,
-		"%s: NOT_STARTED, has_bread false, xp 0, money 100 (got %s, %s, %d, %d)" % [label, m.state, m.has_bread, m.xp, m.money])
+	check(1, m.state == &"NOT_STARTED" and not m.has_bread and m.xp == 0 and m.money == MissionDirector.START_MONEY,
+		"%s: NOT_STARTED, has_bread false, xp 0, money %d (got %s, %s, %d, %d)" % [label, MissionDirector.START_MONEY, m.state, m.has_bread, m.xp, m.money])
 	check(1, _near2(w.player.global_position, Layout.SPAWN, 0.5) and _near2(w.car.global_position, Layout.CAR_SPAWN, 0.5), "%s: Ilyusha and the Lada at their spawn points" % label)
 	check(1, w.control_mode == &"on_foot" and w.player.visible and not paused, "%s: on foot, not paused" % label)
 	check(1, not _hud_has(w, "ЗАДАНИЕ ВЫПОЛНЕНО") and not _hud_has(w, "ХЛЕБ +1") and _hud_has(w, "Подойди к Бабке"), "%s: HUD is back to frame 01" % label)
@@ -649,6 +651,14 @@ func _visible_texts(node: Node) -> Array:
 			elif child is Label3D and (child as Node3D).is_visible_in_tree():
 				out.append(child.text)
 	return out
+
+## COINS-01: монеты мира (LevelGeometry/Coins) и сколько потрачено: деньги — только монеты по 1 ₽ (старт 0),
+## поэтому потрачено = подобрано − деньги (0 до покупки, 35 после).
+func _coins(w: DemoWorld) -> Node:
+	return w.get_node("LevelGeometry/Coins")
+
+func _spent(w: DemoWorld) -> int:
+	return _coins(w).collected_count - w.mission.money
 
 func _hud_has(w: DemoWorld, text: String) -> bool:
 	return _visible_texts(w).has(text)

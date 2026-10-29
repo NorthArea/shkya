@@ -321,6 +321,10 @@ func get_hud_state() -> Dictionary:
 		# EXT-02: режим укрытия и подсказка-отказ (HUD показывает её вместо prompt, пока не пуста).
 		"hide_mode": player.hide_mode,
 		"hide_hint": _hide_hint if _hide_hint_left > 0.0 else "",
+		# COINS-01: деньги и вторая строка карточки («Собери монеты: N/35»); money_goal 0 — батон уже куплен.
+		"money": mission.money,
+		"money_goal": 0 if mission.has_bread or mission.state in [MissionDirector.RETURN_HOME, MissionDirector.COMPLETE] else MissionDirector.BREAD_PRICE,
+		"coins_task": objective.get("coins_task", ""),
 	}
 
 ## Тост после респавна: провал в машине (P1) — про машину, иначе — по has_bread.

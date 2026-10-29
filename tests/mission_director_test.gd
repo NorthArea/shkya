@@ -28,6 +28,8 @@ var log_state_changes: Array = []
 var log_bread := 0
 var log_completed: Array = []
 var made: Array[Node] = []
+## COINS-01: деньги директора в проверках — собранные монетами 35 ₽ (сбор и подбор — tests/coins_test.gd, набор COINS).
+const MONEY := 35
 
 
 func _initialize() -> void:
@@ -65,6 +67,7 @@ func make() -> Node:
 	d.state_changed.connect(func(o, n): log_state_changes.append([o, n]))
 	d.bread_received.connect(func(): log_bread += 1)
 	d.quest_completed.connect(func(x): log_completed.append(x))
+	d.add_money(MONEY)   # монеты — COINS: 35 ₽ собраны по дороге (START_MONEY 0, решение владельца 29.10)
 	return d
 
 
@@ -133,7 +136,8 @@ func test_matrix() -> void:
 func test_happy_path() -> void:
 	var d := make()
 	check(d.state == &"NOT_STARTED" and not d.has_bread and d.xp == 0, "happy: initial state")
-	check(d.money >= 35, "happy: starting money covers price 35")
+	check(Director.START_MONEY == 0, "happy: no starting money (COINS-01)")
+	check(d.money >= 35, "happy: collected money covers price 35")
 	var money0: int = d.money
 	d.interact(&"babka")
 	check(d.state == &"OFFERED", "happy: E at babka -> OFFERED")
@@ -165,7 +169,7 @@ func test_refusals() -> void:
 	var d := make()
 	d.notify_arrived_kiosk()
 	check(not d.can_buy_bread() and not d.buy_bread(), "refuse: buy without quest")
-	check(not d.has_bread and d.money == 100 and d.state == &"NOT_STARTED", "refuse: no-quest buy changes nothing")
+	check(not d.has_bread and d.money == MONEY and d.state == &"NOT_STARTED", "refuse: no-quest buy changes nothing")
 	for s in [&"NOT_STARTED", &"OFFERED", &"GO_TO_CAR", &"DRIVE_TO_KIOSK"]:
 		var e := make()
 		advance_to(e, s)
@@ -227,12 +231,12 @@ func test_reset() -> void:
 	var d := make()
 	advance_to(d, &"COMPLETE")
 	d.reset()
-	check(d.state == &"NOT_STARTED" and not d.has_bread and d.xp == 0 and d.money == 100, "reset: from COMPLETE to initial values")
+	check(d.state == &"NOT_STARTED" and not d.has_bread and d.xp == 0 and d.money == Director.START_MONEY, "reset: from COMPLETE to initial values")
 	check(d.babka_marker() == "!", "reset: ! back")
 	check(d.interact(&"babka") == &"offer_dialog", "reset: mission playable again")
 	advance_to(d, &"RETURN_HOME")
 	d.reset()
-	check(d.state == &"NOT_STARTED" and not d.has_bread and d.money == 100, "reset: mid-mission clears bread and money")
+	check(d.state == &"NOT_STARTED" and not d.has_bread and d.money == Director.START_MONEY, "reset: mid-mission clears bread and money")
 	check(d.babka_marker() == "!", "reset: no ? after reset with bread")
 
 

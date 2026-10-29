@@ -82,6 +82,7 @@ func _run() -> void:
 	await _shot("06_arrive_kiosk")
 
 	# 07: диалог продавщицы — цепочка (EXT-01): кадр первой реплики, потом долистать до покупки
+	world.mission.add_money(world.mission.money_missing())   # монеты — COINS: 35 ₽ собраны
 	await _place(Layout.VENDOR_WINDOW + Vector3(0.6, 0, 0), PI * 0.5, PI * 0.5)
 	await _press_interact()
 	await _frames(60)  # реплика печатается ≈40 знаков/с (POLISH-02) — снимать допечатанной

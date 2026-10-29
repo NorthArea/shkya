@@ -10,12 +10,15 @@ extends Node
 ##   &"turn_in"       — Бабка: сдача задания; RETURN_HOME + has_bread → COMPLETE, +50 XP
 ##   &"babka_idle"    — Бабка: обычная реплика, без изменений
 ##   &"vendor_dialog" — продавщица: диалог «Батон? 35 рублей» (только в BUY_BREAD); покупка — buy_bread()
+##                      (COINS-01: денег меньше 35 — QuestFlow дописывает отказ «Не хватает: ещё N ₽», покупки нет)
 ##   &"none"          — взаимодействие недоступно или id не обрабатывается директором
 ##                      (полицейский и «военком» расширения — диалоги QuestFlow, миссию не меняют)
 
 signal state_changed(old: StringName, new: StringName)
 signal bread_received
 signal quest_completed(xp: int)
+## COINS-01: деньги изменились — подобрана монета (delta > 0), куплен батон (−35) или reset().
+signal money_changed(money: int, delta: int)
 
 const NOT_STARTED := &"NOT_STARTED"
 const OFFERED := &"OFFERED"
@@ -31,8 +34,11 @@ const R_TURN_IN := &"turn_in"
 const R_BABKA_IDLE := &"babka_idle"
 const R_NONE := &"none"
 
+const CoinLines = preload("res://game/mission/coin_lines.gd")
+
 const BREAD_PRICE := 35
-const START_MONEY := 100
+## COINS-01 (решение владельца 29.10): стартовых денег нет — 35 рублей собираются монетами по дороге (Coins).
+const START_MONEY := 0
 const REWARD_XP := 50
 
 const PROMPT_TALK := "E — ПОГОВОРИТЬ"
@@ -119,6 +125,7 @@ func buy_bread() -> bool:
 	if not can_buy_bread():
 		return false
 	money -= BREAD_PRICE
+	money_changed.emit(money, -BREAD_PRICE)
 	has_bread = true
 	_set_state(RETURN_HOME)
 	bread_received.emit()
@@ -130,10 +137,34 @@ func reset() -> void:
 	state = NOT_STARTED
 	has_bread = false
 	xp = 0
+	var old_money := money
 	money = START_MONEY
 	nearby = &""
+	if old_money != money:
+		money_changed.emit(money, money - old_money)
 	if old != NOT_STARTED:
 		state_changed.emit(old, NOT_STARTED)
+
+
+## COINS-01: подобрано n рублей (монеты Coins, по 1 ₽). Состояние FSM не меняет; n ≤ 0 — ничего.
+func add_money(n: int) -> void:
+	if n <= 0:
+		return
+	money += n
+	money_changed.emit(money, n)
+
+
+## Сколько рублей не хватает до батона (0 — хватает).
+func money_missing() -> int:
+	return maxi(0, BREAD_PRICE - money)
+
+
+## Вторая строка карточки задачи: «Собери монеты: N/35», пока денег меньше цены и батон ещё не куплен;
+## сбор возможен с самого начала, до разговора с Бабкой. "" — строки нет.
+func coins_task() -> String:
+	if has_bread or state == RETURN_HOME or state == COMPLETE or money >= BREAD_PRICE:
+		return ""
+	return CoinLines.task(money, BREAD_PRICE)
 
 
 func babka_marker() -> String:
@@ -147,6 +178,12 @@ func babka_marker() -> String:
 ## Тексты HUD по кадрам концептов 01–10: задача меняется и по ситуации — рядом с Бабкой или у окна киоска
 ## (кадры 02, 07, 09). В COMPLETE на карточке остаётся последняя задача, её зачёркивает HUD (кадр 10).
 func objective() -> Dictionary:
+	var o := _objective()
+	o["coins_task"] = coins_task()   # COINS-01: вторая строка карточки HUD, текст задачи «task» не меняется
+	return o
+
+
+func _objective() -> Dictionary:
 	match state:
 		NOT_STARTED:
 			var task := "Поговори с Бабкой" if nearby == &"babka" else "Подойди к Бабке"

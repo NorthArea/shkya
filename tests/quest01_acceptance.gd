@@ -281,16 +281,17 @@ func _step07_vendor_dialog() -> void:
 	player.place(Layout.VENDOR_WINDOW, 0.0)
 	await _frames(4)
 	check(hud.prompt_label.visible and hud.prompt_label.text == "E — ПОГОВОРИТЬ", "07: E prompt at the kiosk window")
-	mission.money = 10  # условно не хватает денег
+	mission.money = 10  # условно не хватает денег (монеты — COINS: не хватает 25 ₽)
 	await _press_interact()
 	check(flow.is_dialog_open() and flow.dialog.text_label.text == "Батон один?", "07: vendor chain starts with 'Батон один?' ('%s')" % flow.dialog.text_label.text)
-	check(flow.dialog.line_count() == 5 and flow.dialog.line_index() == 0 and flow.dialog.buttons.has(&"next"), "07: vendor chain of 5 lines, ДАЛЬШЕ first")
+	check(flow.dialog.line_count() == 6 and flow.dialog.line_index() == 0 and flow.dialog.buttons.has(&"next"), "07: vendor chain of 5 lines + refusal «Не хватает» (COINS-01), ДАЛЬШЕ first")
 	check(hud.task_label.text == "Купи хлеб", "07: task 'Купи хлеб' at the window (frame 07)")
 	check(flow.dialog.is_typing(), "07: vendor line is being typed")
 	await _press_interact()
 	check(not flow.dialog.is_typing() and flow.is_dialog_open() and flow.dialog.line_index() == 0, "07: E while typing completes the line and keeps the dialog")
 	check(flow.dialog.speaker_label.text == "ПРОДАВЩИЦА", "07: speaker ПРОДАВЩИЦА")
-	var expected_chain := [["ИЛЮША", "Один"], ["ПРОДАВЩИЦА", "А вас сколько?"], ["ИЛЮША", "Тоже один"], ["ПРОДАВЩИЦА", "Пока что. 35 рублей"]]
+	var expected_chain := [["ИЛЮША", "Один"], ["ПРОДАВЩИЦА", "А вас сколько?"], ["ИЛЮША", "Тоже один"], ["ПРОДАВЩИЦА", "Пока что. 35 рублей"],
+		["ПРОДАВЩИЦА", "Не хватает: ещё 25 ₽"]]   # COINS-01: при 10 ₽ — отказ с подсказкой последней репликой
 	for i in expected_chain.size():
 		flow.dialog.finish_typing()
 		await _press_interact()  # E после допечатки — следующая реплика
@@ -308,7 +309,7 @@ func _step07_vendor_dialog() -> void:
 	flow.dialog.buttons[&"leave"].pressed.emit()
 	await _frames(3)
 	check(not flow.is_dialog_open() and mission.state == MissionDirector.BUY_BREAD and player.input_enabled, "07: УЙТИ closes the dialog, state unchanged")
-	mission.money = MissionDirector.START_MONEY
+	mission.money = MissionDirector.BREAD_PRICE   # монеты — COINS: собрано ровно на батон
 	await _press_interact()
 	check(flow.is_dialog_open() and flow.dialog.text_label.text == "Батон? 35 рублей" and flow.dialog.line_count() == 1, "07: second approach is the short line, chain not repeated ('%s')" % flow.dialog.text_label.text)
 	buy = flow.dialog.buttons[&"buy"]
@@ -322,7 +323,7 @@ func _step08_09_bread_and_return() -> void:
 	flow.dialog.buttons[&"buy"].pressed.emit()
 	await _frames(2)
 	check(mission.state == MissionDirector.RETURN_HOME and mission.has_bread, "08: purchase gives bread (RETURN_HOME, has_bread)")
-	check(mission.money == MissionDirector.START_MONEY - MissionDirector.BREAD_PRICE, "08: 35 rubles spent")
+	check(mission.money == 0, "08: 35 rubles spent (35 → 0)")
 	check(not flow.is_dialog_open() and player.input_enabled and not world.ui_blocking, "08: dialog closed, input restored")
 	check(flow.toast_text() == "ХЛЕБ +1" and hud.toast_label.visible and hud.toast_label.text == "ХЛЕБ +1", "08: toast ХЛЕБ +1 in the HUD")
 	check(world.get_hud_state()["toast"] == "ХЛЕБ +1", "08: toast comes through get_hud_state() (C6)")
@@ -337,7 +338,7 @@ func _step08_09_bread_and_return() -> void:
 	check(hud.task_label.text == "Вернись к Бабке (самостоятельно)", "09: task 'Вернись к Бабке (самостоятельно)' (EXT-01)")
 	_check_target(Layout.BABKA, "09")
 	await _press_interact()
-	check(not flow.is_dialog_open() and mission.money == 65, "09: E at the kiosk after buying does nothing, no second purchase")
+	check(not flow.is_dialog_open() and mission.money == 0, "09: E at the kiosk after buying does nothing, no second purchase")
 	player.place(Layout.BABKA + Vector3(0, 0, -2.2), 0.0)
 	await _frames(4)
 	check(hud.prompt_label.text == "E — СДАТЬ ЗАДАНИЕ", "09: prompt 'E — СДАТЬ ЗАДАНИЕ' at Babka")
@@ -396,13 +397,14 @@ func _step10_complete() -> void:
 	await _frames(3)
 	check(not flow.is_dialog_open() and not hud.is_end_card_open() and not world.ui_blocking and world.player.input_enabled, "10: ПОГУЛЯТЬ closes the card, input restored")
 	check(_mouse_captured(), "10: mouse captured after closing")
+	var money_before := mission.money   # монеты у Бабки (COINS-01) подобраны раньше
 	for i in 3:
 		await _press_interact()
 		check(flow.is_dialog_open() and flow.dialog.text_label.text == QuestLines.IDLE_DONE, "10: repeated talk %d is a plain line" % (i + 1))
 		flow.dialog.buttons[&"close"].pressed.emit()
 		await _frames(3)
 	check(mission.xp == 50 and mission.state == MissionDirector.COMPLETE and not hud.completion_panel.visible, "10: XP is not awarded twice, panel does not return")
-	check(mission.money == 65, "10: money unchanged by repeated talks")
+	check(mission.money == money_before, "10: money unchanged by repeated talks")
 
 # --- перезапуск ---
 
@@ -578,6 +580,8 @@ func _real_car_pass() -> void:
 	await _frames(6)
 	check(world.control_mode == &"on_foot", "real: E exits the Lada at the kiosk")
 	var parked := car.global_transform
+	# COINS-01: деньги — монеты, подобранные «Ладой» по ROUTE_DRIVE и Илюшей во дворе (без add_money).
+	check(mission.money >= MissionDirector.BREAD_PRICE, "real: coins collected on the way cover the bread (%d ₽)" % mission.money)
 	player.place(Layout.VENDOR_WINDOW, PI * 0.5)
 	await _frames(4)
 	await _press_interact()

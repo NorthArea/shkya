@@ -5,6 +5,12 @@ extends CharacterBody3D
 ## EXT-02 (C7, docs/extension/HIDE_SPOTS.md раздел 9): режим укрытия hide_mode (&"none", &"box", &"snowdrift",
 ## &"barrel") — предел скорости speed_limit(), без прыжка, заметность exposure_factor() для DetectionSensor.
 ## Облик укрытия кладёт HideSpot в hide_visual (дочерний Visual); спрайт Илюши в режиме скрыт, тело и коллизия те же.
+## PUNCH-01: удар (действие punch — F, ЛКМ при захваченной мыши, B геймпада пешком): замах PUNCH_SWING с рывком облика
+## вперёд (пружина, как pop в POLISH-02), в момент PUNCH_HIT_AT — запрос формой: сфера PUNCH_RADIUS в PUNCH_REACH
+## перед Илюшей на высоте PUNCH_CENTER_Y (области — только в полосе PUNCH_LOW…PUNCH_HIGH над землёй); кулдаун
+## PUNCH_COOLDOWN от нажатия. В укрытии, в машине, в диалоге и при провале стелса удара нет. Цели — владельцы
+## задетых объектов: дроны (Area3D слоя 16) и NPC (есть interaction_id); реагируют подписчики punch_landed (Drones).
+## К Илюше узлов не добавляется (инвариант DEMO_ACCEPTANCE 3): запрос — через direct_space_state.
 
 const CharacterSpriteScript = preload("res://game/characters/character_sprite.gd")
 const HideTuning = preload("res://game/stealth/hide_tuning.gd")
@@ -15,9 +21,23 @@ const DECELERATION := 11.0      # остановка за ~0,4 с, как у э�
 const TURN_RATE := 12.0
 const PROBE_RADIUS := 0.5
 const JUMP_VELOCITY := 6.0        # подскок ≈1,8 м: на крышу «Лады» (1,4 м) с запасом — решение владельца 28.10.2026
+# PUNCH-01: удар.
+const PUNCH_SWING := 0.35         # с: весь замах (рывок вперёд и пружина назад)
+const PUNCH_HIT_AT := 0.14        # с от нажатия: пик рывка — момент попадания
+const PUNCH_COOLDOWN := 0.5       # с между ударами (от нажатия)
+const PUNCH_RADIUS := 1.2
+const PUNCH_REACH := 1.0          # м: центр сферы перед Илюшей
+const PUNCH_CENTER_Y := 1.55      # м: середина полосы 0,8…2,3
+const PUNCH_LOW := 0.8
+const PUNCH_HIGH := 2.3
+const PUNCH_LUNGE := 0.38         # м: рывок облика вперёд
+const PUNCH_MASK := 1 | 4 | 16    # World (Бабка, патруль), Car (жители), 16 — дроны (Drones.HIT_LAYER)
 
 ## Режим укрытия сменился (old → new). Подписчики — укрытия и HUD; шкалу не трогает.
 signal hide_mode_changed(old: StringName, new: StringName)
+## PUNCH-01: начат замах (звук) и попадание — владельцы задетых целей (дроны, NPC); удар мимо — без punch_landed.
+signal punched
+signal punch_landed(targets: Array)
 
 var input_enabled := true
 var camera_rig: CameraRig
@@ -33,6 +53,15 @@ var hide_visual: Node3D
 var hide_travel := 0.0
 var _look: Node3D
 var _last_input := Vector2.ZERO
+## PUNCH-01: сколько ударов начато и сколько задели цель; цели последнего попадания.
+var punches := 0
+var punch_hits := 0
+var last_punch_targets: Array = []
+var _punch_time := -1.0          # с с начала замаха; < 0 — замаха нет
+var _punch_pending := false      # попадание ещё не считали
+var _punch_cooldown := 0.0
+var _punch_tween: Tween
+var _punch_shape: SphereShape3D
 
 func _ready() -> void:
 	collision_layer = 2       # Player
@@ -62,6 +91,9 @@ func _ready() -> void:
 	probe_shape.position.y = 0.9
 	probe.add_child(probe_shape)
 	add_child(probe)
+	_punch_shape = SphereShape3D.new()
+	_punch_shape.radius = PUNCH_RADIUS
+	visibility_changed.connect(_cancel_punch)   # посадка в машину прячет Илюшу: замах не доигрывается
 
 func _physics_process(delta: float) -> void:
 	var input := Vector2.ZERO
@@ -98,8 +130,12 @@ func _physics_process(delta: float) -> void:
 		if direction.length_squared() > 0.01:
 			camera_rig.follow_heading = atan2(-direction.x, -direction.z)
 		camera_rig.follow_speed = Vector2(velocity.x, velocity.z).length() if input_enabled else 0.0
+	_punch_step(delta)
 
 func _unhandled_input(event: InputEvent) -> void:
+	# ЛКМ при свободной мыши — только захват мыши (Main), не удар; событие не съедаем — Main захватит мышь.
+	if event.is_action_pressed(&"punch") and not (event is InputEventMouseButton and Input.mouse_mode != Input.MOUSE_MODE_CAPTURED):
+		punch()
 	if input_enabled and event.is_action_pressed(&"interact"):
 		var target := current_interactable()
 		if target:
@@ -206,6 +242,111 @@ func _apply_hide_mode(mode: StringName, spot: Node) -> void:
 	velocity.y = minf(velocity.y, 0.0)
 	velocity.z = horizontal.y
 	hide_mode_changed.emit(old, mode)
+	if mode != HideTuning.NONE:
+		_cancel_punch()
+
+# --- PUNCH-01: удар ---
+
+## Можно ли бить сейчас: пешком, ввод включён, не в укрытии, на земле или в прыжке — всё равно; не в машине, без
+## диалога/панели и провала (те же запреты, что у смены укрытия).
+func can_punch() -> bool:
+	return input_enabled and visible and is_physics_processing() and hide_mode == HideTuning.NONE and can_change_hide_mode()
+
+## Начать удар. false — нельзя (кулдаун, идёт замах, запрет can_punch()).
+func punch() -> bool:
+	if _punch_cooldown > 0.0 or _punch_time >= 0.0 or not can_punch():
+		return false
+	punches += 1
+	_punch_time = 0.0
+	_punch_pending = true
+	_punch_cooldown = PUNCH_COOLDOWN
+	punched.emit()
+	_play_lunge()
+	return true
+
+## Идёт замах (от нажатия до конца PUNCH_SWING).
+func is_punching() -> bool:
+	return _punch_time >= 0.0
+
+## Направление взгляда облика в плоскости XZ.
+func facing_dir() -> Vector3:
+	var forward := -visual.global_basis.z
+	forward.y = 0.0
+	return forward.normalized() if forward.length_squared() > 0.0001 else Vector3.FORWARD
+
+## Центр сферы удара в мире.
+func punch_center() -> Vector3:
+	return global_position + facing_dir() * PUNCH_REACH + Vector3.UP * PUNCH_CENTER_Y
+
+func _punch_step(delta: float) -> void:
+	_punch_cooldown = maxf(_punch_cooldown - delta, 0.0)
+	if _punch_time < 0.0:
+		return
+	_punch_time += delta
+	if _punch_pending and _punch_time >= PUNCH_HIT_AT:
+		_punch_pending = false
+		if can_punch():
+			_resolve_punch()
+	if _punch_time >= PUNCH_SWING:
+		_punch_time = -1.0
+
+## Попадание: сфера перед Илюшей, области (дроны) — по высоте в полосе PUNCH_LOW…PUNCH_HIGH. Владельцы целей — без
+## повторов; не цель (дом, «Лада», вал) пропускается.
+func _resolve_punch() -> void:
+	var query := PhysicsShapeQueryParameters3D.new()
+	query.shape = _punch_shape
+	query.transform = Transform3D(Basis.IDENTITY, punch_center())
+	query.collision_mask = PUNCH_MASK
+	query.collide_with_areas = true
+	query.collide_with_bodies = true
+	query.exclude = [get_rid()]
+	var targets: Array = []
+	for hit in get_world_3d().direct_space_state.intersect_shape(query, 32):
+		var collider: Object = hit.get("collider")
+		if not collider is Node3D:
+			continue
+		var target: Node = null
+		if collider is Area3D:
+			var height: float = (collider as Node3D).global_position.y - global_position.y
+			if height < PUNCH_LOW or height > PUNCH_HIGH:
+				continue
+			target = (collider as Node).get_parent()
+			if target == null or not target.has_method("is_flying") or not target.is_flying():
+				continue
+		else:
+			var owner_node := (collider as Node).get_parent()
+			if owner_node == null or owner_node.get("interaction_id") == null:
+				continue
+			target = owner_node
+		if not target in targets:
+			targets.append(target)
+	last_punch_targets = targets
+	if not targets.is_empty():
+		punch_hits += 1
+		punch_landed.emit(targets)
+
+## Рывок облика вперёд и пружина назад (TRANS_BACK, как pop). Сдвигается только Look внутри Visual.
+func _play_lunge() -> void:
+	if _punch_tween and _punch_tween.is_valid():
+		_punch_tween.kill()
+	_look.position = Vector3.ZERO
+	_look.scale = Vector3.ONE
+	var tween := _look.create_tween()
+	_punch_tween = tween
+	tween.tween_property(_look, "position", Vector3(0, 0, -PUNCH_LUNGE), PUNCH_HIT_AT).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+	tween.parallel().tween_property(_look, "scale", Vector3(1.08, 0.95, 1.0), PUNCH_HIT_AT)
+	tween.tween_property(_look, "position", Vector3.ZERO, PUNCH_SWING - PUNCH_HIT_AT).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	tween.parallel().tween_property(_look, "scale", Vector3.ONE, PUNCH_SWING - PUNCH_HIT_AT).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+
+func _cancel_punch() -> void:
+	_punch_time = -1.0
+	_punch_pending = false
+	if _punch_tween and _punch_tween.is_valid():
+		_punch_tween.kill()
+	_punch_tween = null
+	if _look:
+		_look.position = Vector3.ZERO
+		_look.scale = Vector3.ONE
 
 func _build_visual() -> Node3D:
 	var root := Node3D.new()

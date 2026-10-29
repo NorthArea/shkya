@@ -86,6 +86,8 @@ func _setup() -> void:
 		if flow.dialog.has_signal("advanced"):
 			flow.dialog.advanced.connect(func(_i): _one_shot(ui, UI_CLICK, "ui"))
 	_setup_ambient()   # CITY-01 (A): слои фона, живность, сигналы машин
+	_setup_coins()   # COINS-01: звон монеты
+	_setup_punch()   # PUNCH-01: удар и дроны
 
 ## Текст субтитра радио, пока он на экране ("" — нет).
 func radio_text() -> String:
@@ -99,6 +101,7 @@ func _physics_process(delta: float) -> void:
 	_radio(delta)
 	_traffic_sounds()
 	_ambient_sounds(delta)   # CITY-01 (A)
+	_drone_sounds()   # PUNCH-01
 
 ## Радио один раз за мир: бубнёж из машины и субтитр, пока звучит (плюс хвост на дочитать).
 func _radio(delta: float) -> void:
@@ -498,3 +501,96 @@ func barrel_bump() -> void:
 	if not played.has("barrel_bump"):
 		played["barrel_bump"] = 0
 	_one_shot(barrel_bump_player, BARREL_BUMP, "barrel_bump")
+
+# --- COINS-01: звон подобранной монеты ---
+## Один синтез coin_pickup.wav (tools/generate_audio.py) с чередованием высоты, как три звона подряд в аркадах:
+## монеты подряд (не реже COIN_RUN_GAP) идут вверх по COIN_PITCHES, после паузы — снова с первой. Без 3D: звон
+## «в интерфейсе», как счётчик. Полифония — быстрые подборы не обрывают друг друга.
+const COIN_PICKUP := preload("res://assets/audio/coin_pickup.wav")
+const COIN_PITCHES: Array[float] = [1.0, 1.122, 1.26, 1.335, 1.498]   # 0, +2, +4, +5, +7 полутонов
+const COIN_RUN_GAP := 0.7   # с
+var coin_player: AudioStreamPlayer
+## Для проверок: высота последнего звона.
+var coin_pitch := 1.0
+var _coin_step := 0
+var _coin_last := -100.0
+
+func _setup_coins() -> void:
+	played["coin"] = 0
+	coin_player = AudioStreamPlayer.new()
+	coin_player.name = "CoinSound"
+	coin_player.stream = COIN_PICKUP
+	coin_player.volume_db = -10.0
+	coin_player.max_polyphony = 4
+	add_child(coin_player)
+	var coins := world.get_node_or_null("LevelGeometry/Coins")
+	if coins and coins.has_signal("collected"):
+		coins.collected.connect(_on_coin_collected)
+
+func _on_coin_collected(_position: Vector3, _total: int) -> void:
+	var now := float(Engine.get_physics_frames()) / Engine.physics_ticks_per_second   # время игры, не часы
+	_coin_step = (_coin_step + 1) % COIN_PITCHES.size() if now - _coin_last <= COIN_RUN_GAP else 0
+	_coin_last = now
+	coin_pitch = COIN_PITCHES[_coin_step]
+	coin_player.pitch_scale = coin_pitch
+	coin_player.play()
+	played["coin"] += 1
+
+# --- PUNCH-01: удар и дроны ГСУМ ---
+## Взмах — разовый 3D у Илюши (плеер под DemoWorld, не под Илюшей: инвариант DEMO 3) по сигналу Ilyusha.punched.
+## Жужжание — 3D-цикл на каждом дроне (затухание по удалению, до DRONE_BUZZ_DISTANCE), высота чуть разная у дронов и
+## выше при подлёте и осмотре; сбитый дрон молчит. Хлопок — разовый 3D в точке сбитого дрона (Drones.drone_broken).
+## Уровни, RMS файла + volume_db (у источника): жужжание −20 − 12 = −32 дБ, взмах −20 − 4 = −24, хлопок −16 − 2 = −18.
+## Звуки — tools/generate_audio.py (синтез).
+const PUNCH_WHOOSH := preload("res://assets/audio/punch_whoosh.wav")
+const DRONE_BUZZ := preload("res://assets/audio/drone_buzz_loop.wav")
+const DRONE_POP := preload("res://assets/audio/drone_pop.wav")
+const PUNCH_WHOOSH_DB := -4.0
+const DRONE_BUZZ_DB := -12.0
+const DRONE_POP_DB := -2.0
+const DRONE_BUZZ_DISTANCE := 22.0
+
+var punch_player: AudioStreamPlayer3D
+var drone_pop_player: AudioStreamPlayer3D
+var drone_buzz := {}   # Drone → AudioStreamPlayer3D
+var _drones_node: Node
+
+func _setup_punch() -> void:
+	played["punch"] = 0
+	played["drone_pop"] = 0
+	punch_player = _player_3d(world, PUNCH_WHOOSH_DB, PUNCH_WHOOSH)
+	punch_player.name = "PunchWhoosh"
+	drone_pop_player = _player_3d(world, DRONE_POP_DB, DRONE_POP)
+	drone_pop_player.name = "DronePop"
+	drone_pop_player.max_distance = 40.0
+	if world.player.has_signal("punched"):
+		world.player.punched.connect(func():
+			punch_player.global_position = world.player.global_position + Vector3.UP * 1.3
+			_one_shot(punch_player, PUNCH_WHOOSH, "punch"))
+
+## Drones (LevelGeometry/Drones) — по группе; подключается при первом появлении.
+func _drone_sounds() -> void:
+	if punch_player == null:
+		return
+	if _drones_node == null or not is_instance_valid(_drones_node):
+		_drones_node = get_tree().get_first_node_in_group(&"drones")
+		if _drones_node == null:
+			return
+		_drones_node.drone_broken.connect(func(drone: Node3D):
+			drone_pop_player.global_position = drone.global_position
+			_one_shot(drone_pop_player, DRONE_POP, "drone_pop"))
+	for drone in _drones_node.drones:
+		var player: AudioStreamPlayer3D = drone_buzz.get(drone)
+		if player == null:
+			player = _player_3d(drone, DRONE_BUZZ_DB, DRONE_BUZZ)
+			player.name = "Buzz"
+			player.unit_size = 2.0
+			player.max_distance = DRONE_BUZZ_DISTANCE
+			drone_buzz[drone] = player
+		var flying: bool = drone.is_flying()
+		if flying and not player.playing:
+			player.play(fmod(float(drone.index) * 0.37, 1.9))
+		elif not flying and player.playing:
+			player.stop()
+		var excited: bool = drone.state == &"approach" or drone.state == &"hover"
+		player.pitch_scale = (0.96 + 0.025 * float(drone.index % 4)) * (1.12 if excited else 1.0)

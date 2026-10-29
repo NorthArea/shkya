@@ -47,6 +47,15 @@ var end_panel: PanelContainer
 var end_buttons: Dictionary = {}  # id -> Button: &"again", &"menu", &"stay"
 ## Стелс (EXT-01, C7): глаз + «!» справа вверху, подсказка, экран провала и тост — читает снимок мира.
 var suspicion_meter: SuspicionMeter
+## COINS-01: вторая строка карточки «Собери монеты: N/35» и счётчик монет справа от карточки (монета + «N / 35»,
+## после покупки — «N ₽»), пульс при каждом подборе. Только из get_hud_state(): money, money_goal, coins_task.
+var coins_row: HBoxContainer
+var coins_label: Label
+var coin_counter: PanelContainer
+var coin_counter_label: Label
+var _money_seen := -1
+var _counter_enough := false
+var _counter_tween: Tween
 
 signal completion_closed
 ## Карточка «Конец демо»: «ПОГУЛЯТЬ» — вернуть управление (QuestFlow), остальное — main.gd.
@@ -118,6 +127,31 @@ func _process(delta: float) -> void:
 	completion_panel.visible = show_completion
 	_update_map_and_diamond(world, state.get("target_position", null), speed >= 0.0)
 	suspicion_meter.update_from(state, delta)
+	_update_coins(state)
+
+## COINS-01: строка сбора в карточке и счётчик; монета подобрана — счётчик «подпрыгивает».
+func _update_coins(state: Dictionary) -> void:
+	var coins_task: String = state.get("coins_task", "")
+	coins_label.text = coins_task
+	coins_row.visible = coins_task != ""
+	var money: int = state.get("money", 0)
+	var goal: int = state.get("money_goal", 0)
+	coin_counter_label.text = ("%d / %d" % [money, goal]) if goal > 0 else ("%d ₽" % money)
+	var enough := goal > 0 and money >= goal   # хватает на батон — число зелёное
+	if enough != _counter_enough:
+		_counter_enough = enough
+		coin_counter_label.add_theme_color_override("font_color", GREEN if enough else INK)
+	if _money_seen >= 0 and money > _money_seen:
+		pulse_counter()
+	_money_seen = money
+
+func pulse_counter() -> void:
+	if _counter_tween and _counter_tween.is_valid():
+		_counter_tween.kill()
+	coin_counter.pivot_offset = coin_counter.size * 0.5
+	coin_counter.scale = Vector2.ONE * 1.3
+	_counter_tween = create_tween()
+	_counter_tween.tween_property(coin_counter, "scale", Vector2.ONE, 0.25).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
 
 func dismiss_completion() -> void:
 	completion_dismissed = true
@@ -184,7 +218,7 @@ func _update_map_and_diamond(world: Node, target: Variant, in_car := false) -> v
 
 ## Ромб не рисуется поверх карточки задачи, мини-карты и спидометра: сдвигается за их край.
 func _avoid_hud(p: Vector2) -> Vector2:
-	var card_zone := Rect2(20, 12, 600, 190)
+	var card_zone := Rect2(20, 12, 830, 230)   # карточка задачи со строкой монет и счётчик монет (COINS-01)
 	if card_zone.grow(24.0).has_point(p):
 		p.x = card_zone.end.x + 40.0
 	for zone in [Rect2(20, 770, 300, 300), Rect2(1630, 790, 270, 270)]:
@@ -259,7 +293,62 @@ func _build_card() -> void:
 	strike.offset_bottom = 1.5
 	strike.visible = false
 	task_label.add_child(strike)
+	# COINS-01: вторая строка — сбор монет, пока не хватает на батон.
+	coins_row = HBoxContainer.new()
+	coins_row.name = "CoinsRow"
+	coins_row.add_theme_constant_override("separation", 14)
+	coins_row.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	coins_row.visible = false
+	box.add_child(coins_row)
+	var bullet := Control.new()
+	bullet.custom_minimum_size = Vector2(30, 30)
+	bullet.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	bullet.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	bullet.draw.connect(func(): draw_coin(bullet, Vector2(15, 15), 13.0, false))
+	coins_row.add_child(bullet)
+	coins_label = _label(28)
+	coins_label.name = "CoinsTask"
+	coins_label.add_theme_color_override("font_color", INK)
+	coins_row.add_child(coins_label)
 	add_child(card)
+	_build_coin_counter()
+
+## Счётчик монет справа от карточки задачи (COINS-01): бумажная плашка, монета и «N / 35».
+func _build_coin_counter() -> void:
+	coin_counter = PanelContainer.new()
+	coin_counter.name = "CoinCounter"
+	coin_counter.position = Vector2(616, 32)
+	coin_counter.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	coin_counter.add_theme_stylebox_override("panel", DialogPanelScript.paper_style())
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 12)
+	row.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	coin_counter.add_child(row)
+	var icon := Control.new()
+	icon.name = "CoinIcon"
+	icon.custom_minimum_size = Vector2(52, 52)
+	icon.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	icon.draw.connect(func(): draw_coin(icon, Vector2(26, 26), 24.0, true))
+	row.add_child(icon)
+	coin_counter_label = _label(40)
+	coin_counter_label.name = "CoinCount"
+	coin_counter_label.add_theme_color_override("font_color", INK)
+	coin_counter_label.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	row.add_child(coin_counter_label)
+	add_child(coin_counter)
+
+## Монета-пиктограмма: золотой круг с каймой и «₽» (тот же облик, что у монет в мире).
+func draw_coin(canvas: Control, center: Vector2, r: float, with_sign: bool) -> void:
+	canvas.draw_circle(center, r, Color(0.86, 0.56, 0.08))
+	canvas.draw_circle(center, r * 0.86, YELLOW)
+	canvas.draw_arc(center, r * 0.70, 0.0, TAU, 32, Color(0.86, 0.56, 0.08), maxf(1.5, r * 0.07), true)
+	canvas.draw_arc(center, r, 0.0, TAU, 32, INK, maxf(2.0, r * 0.1), true)
+	if with_sign:
+		var font := DialogPanelScript.ui_font()
+		var size := int(r * 1.15)
+		var glyph := font.get_string_size("₽", HORIZONTAL_ALIGNMENT_LEFT, -1, size)
+		canvas.draw_string(font, center + Vector2(-glyph.x * 0.5, glyph.y * 0.32), "₽", HORIZONTAL_ALIGNMENT_LEFT, -1, size, Color(0.52, 0.30, 0.04))
 
 func _build_minimap() -> void:
 	minimap = MinimapScript.new()

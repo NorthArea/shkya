@@ -13,8 +13,14 @@ const KEYS := {
 	"interact": [KEY_E],      # взаимодействие, вход и выход из машины
 	"handbrake": [KEY_SPACE], # ручник в машине
 	"jump": [KEY_SPACE],      # прыжок пешком (та же клавиша: пешком ручника нет)
+	"punch": [KEY_F],         # удар пешком (PUNCH-01); ещё ЛКМ — MOUSE
 	"pause": [KEY_ESCAPE],    # пауза, перезапуск, сброс автомобиля
 	"look_left": [], "look_right": [], "look_up": [], "look_down": [],
+}
+
+## Мышь (PUNCH-01): левая кнопка — удар пешком; при свободной мыши клик только захватывает её (Main, Ilyusha).
+const MOUSE := {
+	"punch": [MOUSE_BUTTON_LEFT],
 }
 
 ## Геймпад Xbox: левый стик — ходьба и руль, правый — камера, A — прыжок, X — действие,
@@ -31,6 +37,7 @@ const JOY := {
 	"interact": [JOY_BUTTON_X],
 	"jump": [JOY_BUTTON_A],
 	"handbrake": [JOY_BUTTON_B],
+	"punch": [JOY_BUTTON_B],   # PUNCH-01: пешком B — удар, в машине — ручник (Илюша в машине ввод не читает)
 	"pause": [JOY_BUTTON_START],
 }
 
@@ -45,6 +52,13 @@ static func install() -> void:
 			var event := InputEventKey.new()
 			event.physical_keycode = code
 			InputMap.action_add_event(action, event)
+	for action in MOUSE:
+		if not InputMap.has_action(action):
+			InputMap.add_action(action, 0.25)
+		for index in MOUSE[action]:
+			var click := InputEventMouseButton.new()
+			click.button_index = index
+			InputMap.action_add_event(action, click)
 	for action in JOY:
 		for spec in JOY[action]:
 			var event: InputEvent

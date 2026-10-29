@@ -6,6 +6,7 @@ const InputSetup = preload("res://game/input_setup.gd")
 const WorldScene = preload("res://game/world/demo_world.tscn")
 const MainMenu = preload("res://game/ui/main_menu.gd")
 const PauseMenu = preload("res://game/ui/pause_menu.gd")
+const IntroScript = preload("res://game/ui/intro.gd")
 const UI_CLICK := preload("res://assets/audio/ui_click.wav")
 
 var world: DemoWorld
@@ -58,6 +59,8 @@ func _swap_world(new_game: bool) -> void:
 		world.process_mode = Node.PROCESS_MODE_PAUSABLE
 		add_child(world)
 		_connect_end_card(world)
+		# INTRO-01: заставка «Ничего не происходит»; в тестах, headless и с --skip-intro её нет — мир как раньше.
+		IntroScript.attach(world)
 		set_paused(false)
 	else:
 		set_paused(false)

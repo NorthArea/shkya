@@ -16,6 +16,7 @@ extends Node
 ## (fix3, P3: защита 5 с — уйти от поста на юг к парковке через его второй угол успевают без провала).
 
 const DialogPanelScript = preload("res://game/ui/dialog_panel.gd")
+const CoinLines = preload("res://game/mission/coin_lines.gd")   # COINS-01: отказ продавщицы при нехватке денег
 const ACCEPT_SOUND := preload("res://assets/audio/quest_accept.wav")
 const PAPER := Color(0.93, 0.87, 0.72)
 const INK := Color(0.12, 0.10, 0.08)
@@ -203,11 +204,14 @@ func _on_interacted(_actor: Node, id: StringName) -> void:
 				{"id": &"buy", "text": QuestLines.BUTTON_BUY, "primary": true, "enabled": mission.can_buy_bread()},
 				{"id": &"leave", "text": QuestLines.BUTTON_LEAVE},
 			]
-			if vendor_chain_shown:
-				_open(QuestLines.VENDOR, QuestLines.VENDOR_AGAIN, specs, &"vendor")
-			else:
+			var lines: Array = [{"speaker": QuestLines.VENDOR, "text": QuestLines.VENDOR_AGAIN, "portrait": &"vendor"}]
+			if not vendor_chain_shown:
 				vendor_chain_shown = true
-				_open_chain(QuestLines.VENDOR_CHAIN, specs, &"vendor")
+				lines = QuestLines.VENDOR_CHAIN.duplicate()
+			# COINS-01: денег меньше цены — последняя реплика продавщицы — отказ с подсказкой, «КУПИТЬ ХЛЕБ» выключена.
+			if mission.money_missing() > 0:
+				lines.append({"speaker": QuestLines.VENDOR, "text": CoinLines.vendor_short(mission.money_missing()), "portrait": &"vendor"})
+			_open_chain(lines, specs, &"vendor")
 		MissionDirector.R_TURN_IN:
 			_turn_in_shown()
 		MissionDirector.R_BABKA_IDLE:

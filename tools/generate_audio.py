@@ -503,6 +503,125 @@ def barrel_bump() -> list[float]:
     return to_rms(out, -16.0)
 
 
+def phone_swipe() -> list[float]:
+    """Свайп по экрану телефона (INTRO-01): касание — тихий щелчок 2,4 кГц, затем короткий «шурх» пальца — шум
+    в полосе, которая скользит вверх 1,2 → 4 кГц, атака 20 мс, спад 60 мс; всего 0,22 с."""
+    rng = random.Random(101)
+    out, low, high = [], 0.0, 0.0
+    for i in range(samples(0.22)):
+        t = i / RATE
+        freq = 1200.0 + 2800.0 * min(t / 0.18, 1.0)
+        low += (1.0 - math.exp(-2.0 * math.pi * freq / RATE)) * (rng.uniform(-1, 1) - low)
+        high += (1.0 - math.exp(-2.0 * math.pi * freq * 0.4 / RATE)) * (low - high)
+        env = (1.0 - math.exp(-t / 0.02)) * math.exp(-t / 0.06)
+        tick = 0.5 * math.sin(2.0 * math.pi * 2400.0 * t) * math.exp(-t / 0.004)
+        out.append((low - high) * env * 6.0 + tick)
+    return normalize(out, 0.5)
+
+
+def coin_pickup() -> list[float]:
+    """Монета (COINS-01): аркадный «дзынь» из двух нот — си 5-й октавы 0,055 с и ми 6-й с затуханием 0,3 с.
+    Мягкий прямоугольник (нечётные гармоники 1, 3, 5 с убыванием) и короткий металлический призвук 3,1 кГц на атаке.
+    Собственный синтез; высоту при подборе подряд меняет SoundDirector (pitch_scale)."""
+    n = samples(0.36)
+    out = [0.0] * n
+    notes = [(987.8, 0.0, 0.055, 0.02), (1318.5, 0.055, 0.30, 0.09)]
+    for freq, start, length, decay in notes:
+        s0 = samples(start)
+        for i in range(samples(length)):
+            if s0 + i >= n:
+                break
+            t = i / RATE
+            env = (1 - math.exp(-t / 0.002)) * math.exp(-t / decay)
+            w = 2 * math.pi * freq * t
+            tone = math.sin(w) + math.sin(3 * w) / 3.0 * 0.6 + math.sin(5 * w) / 5.0 * 0.35
+            out[s0 + i] += tone * env
+    for i in range(samples(0.03)):
+        t = i / RATE
+        out[i] += 0.25 * math.sin(2 * math.pi * 3100 * t) * math.exp(-t / 0.008)
+    fade = samples(0.02)
+    for i in range(fade):
+        out[-1 - i] *= i / fade
+    return to_rms(lowpass(out, 9000), -18.0)
+
+
+def drone_buzz_loop() -> list[float]:
+    """Мини-дрон (PUNCH-01): высокое жужжание четырёх винтов — пилообразные тона 196, 201, 206,5 и 212 Гц (каждый
+    с гармониками до 2 кГц, чуть расстроены — биения «вжжж»), лёгкий шум воздуха выше 1,5 кГц, медленная волна
+    громкости. Цикл 2 с: частоты кратны 0,5 Гц — ровное число периодов; хвост 0,1 с сшит с началом (шум и ФНЧ)."""
+    rng = random.Random(131)
+    seconds = 2.0
+    fade = 0.1
+    n = samples(seconds + fade)
+    rotors = (196.0, 201.0, 206.5, 212.0)
+    out = [0.0] * n
+    for k, f in enumerate(rotors):
+        for h in range(1, 10):
+            amp = 1.0 / h
+            ph = rng.uniform(0, 2 * math.pi)
+            w = 2 * math.pi * f * h / RATE
+            for i in range(n):
+                out[i] += amp * math.sin(w * i + ph) * (0.8 + 0.2 * k / 3)
+    air = highpass([rng.uniform(-1, 1) for _ in range(n)], 1500)
+    for i in range(n):
+        t = i / RATE
+        swell = 0.85 + 0.15 * math.sin(2 * math.pi * t / seconds)   # одна волна за цикл — шов совпадает
+        out[i] = out[i] * swell + air[i] * 0.6
+    out = loop_crossfade(lowpass(out, 4200), fade)
+    return to_rms(out, -20.0)
+
+
+def punch_whoosh() -> list[float]:
+    """Взмах рукой (PUNCH-01): «вжух» — шум в полосе, скользящей вниз 2,2 → 0,6 кГц, нарастание 60 мс, спад 0,18 с,
+    всего 0,3 с; без удара — удар по дрону озвучивает drone_pop."""
+    rng = random.Random(137)
+    out, low, high = [], 0.0, 0.0
+    for i in range(samples(0.3)):
+        t = i / RATE
+        freq = 2200.0 - 1600.0 * min(t / 0.22, 1.0)
+        low += (1.0 - math.exp(-2.0 * math.pi * freq / RATE)) * (rng.uniform(-1, 1) - low)
+        high += (1.0 - math.exp(-2.0 * math.pi * freq * 0.35 / RATE)) * (low - high)
+        env = min(t / 0.06, 1.0) * math.exp(-max(t - 0.06, 0.0) / 0.07)
+        out.append((low - high) * env)
+    return to_rms(out, -20.0)
+
+
+def drone_pop() -> list[float]:
+    """Сбитый дрон (PUNCH-01): сухой пластиковый хлопок (шумовой щелчок 4 мс и короткий тон 900→300 Гц), треск
+    рассыпающегося корпуса (8 мелких щелчков за 0,25 с через резонанс 2,8 кГц) и короткий электрический «пиу» —
+    тон 1600→400 Гц, 0,15 с. Всего 0,6 с."""
+    rng = random.Random(139)
+    n = samples(0.6)
+    out = [0.0] * n
+    phase = 0.0
+    for i in range(n):
+        t = i / RATE
+        phase += 2 * math.pi * (300 + 600 * math.exp(-t / 0.02)) / RATE
+        out[i] += math.sin(phase) * math.exp(-t / 0.035) * 0.9
+        out[i] += rng.uniform(-1, 1) * math.exp(-t / 0.004) * 1.2
+    clicks = [0.0] * n
+    for k in range(8):
+        start = samples(0.03 + k * 0.03 + rng.uniform(-0.01, 0.01))
+        gain = rng.uniform(0.3, 0.7) * (1.0 - k / 10)
+        for j in range(samples(0.012)):
+            if start + j < n:
+                clicks[start + j] += gain * rng.uniform(-1, 1) * math.exp(-j / RATE / 0.002)
+    clicks = resonator(clicks, 2800, 900)
+    clicks = normalize(clicks, 0.5)
+    zap = 0.0
+    for i in range(n):
+        t = i / RATE - 0.05
+        if 0.0 <= t < 0.15:
+            zap += 2 * math.pi * (1600 - 1200 * t / 0.15) / RATE
+            out[i] += 0.25 * (1.0 if math.sin(zap) > 0 else -1.0) * (1.0 - t / 0.15)
+        out[i] += clicks[i]
+    out = lowpass(out, 7000)
+    fade = samples(0.08)
+    for i in range(fade):
+        out[-1 - i] *= i / fade
+    return to_rms(out, -16.0)
+
+
 def main() -> None:
     rng = random.Random(1)
     for k in range(1, 5):
@@ -541,6 +660,14 @@ def main() -> None:
     # EXT-02 (E): бочка — дребезжание качения (цикл, громкость по скорости) и «БУМ» удара о стену.
     write("barrel_roll_loop.wav", barrel_roll_loop())
     write("barrel_bump.wav", barrel_bump())
+    # COINS-01: звон подобранной монеты (высоту чередует SoundDirector).
+    write("coin_pickup.wav", coin_pickup())
+    # INTRO-01: свайп ленты новостей на телефоне во вступительной заставке.
+    write("phone_swipe.wav", phone_swipe())
+    # PUNCH-01: дроны ГСУМ — жужжание (цикл, 3D по удалению), взмах удара и хлопок сбитого дрона.
+    write("drone_buzz_loop.wav", drone_buzz_loop())
+    write("punch_whoosh.wav", punch_whoosh())
+    write("drone_pop.wav", drone_pop())
 
 
 if __name__ == "__main__":

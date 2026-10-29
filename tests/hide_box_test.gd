@@ -492,6 +492,7 @@ func _part_honest_pass() -> void:
 	m.notify_entered_car()
 	m.notify_arrived_kiosk()
 	check(m.state == &"BUY_BREAD", "fresh world at BUY_BREAD")
+	m.add_money(m.money_missing())   # монеты — COINS: 35 ₽ собраны (сбор проверяет tests/coins_test.gd)
 	await _place(Layout.KIOSK_STAGING, PI)
 	await drv.frames(30)
 	var c02: int = box.gag_counts[&"C02"]

@@ -96,6 +96,7 @@ func _run() -> void:
 	mission.notify_arrived_kiosk()
 	# Покупка через настоящую кнопку диалога продавщицы: щелчок не должен оборвать звон.
 	# EXT-01: первый подход — цепочка реплик, «ДАЛЬШЕ» тоже щёлкает; кнопка покупки на последней.
+	mission.add_money(mission.money_missing())   # монеты — COINS: 35 ₽ собраны (сбор проверяет tests/coins_test.gd)
 	world.player.place(Layout.VENDOR_WINDOW, 0.0)
 	await _frames(4)
 	await _press(&"interact")

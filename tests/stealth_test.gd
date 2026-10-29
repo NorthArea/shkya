@@ -443,6 +443,7 @@ func _part_buy_and_fail_after() -> bool:
 	if not check(await drv.walk_path([Vector3(58.5, 0, -57), Vector3(59.3, 0, -66), _vendor_stand()]), "walked from the checkpoint to the kiosk window (%s)" % drv.last_error):
 		return false
 	check(m.state == &"BUY_BREAD", "entering the kiosk square on foot → BUY_BREAD (%s)" % m.state)
+	m.add_money(m.money_missing())   # монеты — COINS: 35 ₽ собраны (сбор проверяет tests/coins_test.gd)
 	await drv.interact()
 	await drv.frames(5)
 	for i in 8:
@@ -690,6 +691,7 @@ func _part_kiosk_section() -> void:
 	await drv.frames(5)
 	var lada_before: Vector3 = world.car.global_position
 	var before_buy := _kiosk_detections
+	m.add_money(m.money_missing())   # монеты — COINS: 35 ₽ собраны (сбор проверяет tests/coins_test.gd)
 	await drv.interact()
 	await drv.frames(5)
 	for i in 8:
@@ -854,6 +856,7 @@ func _part_fix2() -> void:
 	m.notify_arrived_kiosk()
 	await _place_player(_vendor_stand(), 0.0)
 	await drv.frames(260)
+	m.add_money(m.money_missing())   # монеты — COINS
 	if not check(m.buy_bread() and m.has_bread, "bread bought (%s)" % m.state):
 		return
 	await _wait_until(func(): return not officer.is_moving(), 900)
@@ -1281,6 +1284,7 @@ func _part_fix3() -> void:
 	await _place_player(_vendor_stand(), 0.0)
 	await drv.frames(30)
 	var post2: Vector3 = officer2.global_position
+	m.add_money(m.money_missing())   # монеты — COINS
 	if not check(m.buy_bread() and m.has_bread, "fix3: bread bought (%s)" % m.state):
 		return
 	await drv.frames(600)

@@ -16,6 +16,7 @@ endef
 
 test:
 	$(call godot_test,smoke_runner,60,SMOKE)
+	$(call godot_test,intro_test,60,INTRO)
 	$(call godot_test,mission_director_test,60,MISSION)
 	$(call godot_test,grey01_acceptance,60,GREY01)
 	$(call godot_test,drive01_acceptance,60,DRIVE01)
@@ -33,6 +34,8 @@ test:
 	$(call godot_test,hide_box_test,60,HIDE_BOX)
 	$(call godot_test,hide_snow_test,60,HIDE_SNOW)
 	$(call godot_test,hide_barrel_test,60,HIDE_BARREL)
+	$(call godot_test,coins_test,60,COINS)
+	$(call godot_test,punch_test,60,PUNCH)
 capture:
 	./tools/run.command --fixed-fps 60 --resolution 1920x1080 --script tools/capture.gd
 pack:
