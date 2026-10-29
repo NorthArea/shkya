@@ -723,8 +723,9 @@ const DRONE_START_LOOPS: Array[int] = [0, 7, 2, 3, 4, 5]
 ## удара. Облик, обломки и звук — по kind (game/world/breakables.gd). В all_solids() не входят: коллизия — слой 6
 ## «Breakable» (32), её видят только «Лада» и Илюша. Запасы до маршрутов, полос, путей стелса, постов, монет и петель
 ## дронов — как в builds/checks/ARENA-02/scripts/check.py (набор BREAK, п. 1); у heavy нет щелей 0,05…3 м до коробок.
-## Первый шаг BREAK-01 — 10 объектов P1 двора у спавна (Z1, Z3) и выезда (Z7); остальные — PROPS-01.
-const BREAKABLES: Array = [
+## Первый шаг BREAK-01 — 10 объектов P1 двора у спавна (Z1, Z3) и выезда (Z7); остальные — PROPS_BREAKABLES (PROPS-01),
+## подключены BREAK-02: BREAKABLES = BREAKABLES_YARD + PROPS_BREAKABLES.
+const BREAKABLES_YARD: Array = [
 	# Z1 — подъезд H1: урна вплотную к западному торцу лавки, клумба-покрышка вплотную к стене у двери, снеговик
 	# лицом к спавну (на запад).
 	[&"Z1_bin", &"bin", Vector2(-35.75, 105.0), Vector3(0.5, 0.8, 0.5), 0.0, &"light"],
@@ -770,8 +771,8 @@ const PROPS_SOLIDS := [
 ]
 
 ## Разрушаемые P1/P2 плана ARENA-02 вне первого шага BREAK-01 (Layout.BREAKABLES: Z1, Z3, Z7): формат BREAK-01 —
-## [id, kind, центр, размер (по осям мира), yaw, class]. Облик и механика — Breakables (BREAK-01); список
-## подключается к BREAKABLES интегратором (PROPS-01 не правит блок BREAK-01). Запасы — props_check.log.
+## [id, kind, центр, размер (по осям мира), yaw, class]. Облик и механика — Breakables (BREAK-01, облики видов —
+## BREAK-02). Запасы — props_check.log и набор BREAK.
 const PROPS_BREAKABLES := [
 	# P1 двора вне первого шага BREAK-01 (Z1, Z3, Z7 — там): снеговик у проезда, палисадник у H1, столик доминошников, снеговик у выезда.
 	[&"Z4_2", &"snowman", Vector2(-44, 84), Vector3(0.9, 1.7, 0.9), 0.0, &"light"],
@@ -1029,3 +1030,6 @@ const LIFE_SLIDE_LOOP := [
 const LIFE_CARPET := [Vector3(-68.0, 1.45, 91.5), Vector3(0.05, 1.6, 2.2)]
 ## «Жигули» под капотом — машина PARKED (17; 80) вдоль z, капот поднят с севера (к мужику на месте hood).
 const LIFE_HOOD_CAR := Vector2(17.0, 80.0)
+
+## Все разрушаемые (C11): первый шаг BREAK-01 и объекты PROPS-01.
+const BREAKABLES: Array = BREAKABLES_YARD + PROPS_BREAKABLES
