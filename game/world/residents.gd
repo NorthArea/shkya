@@ -244,6 +244,9 @@ func _physics_process(delta: float) -> void:
 
 var _van: Node3D
 var _props_built := false
+## LIFE-02: капот «Жигулей» под мужиком — шарнир у лобового стекла и угол подъёма (плюс — передняя кромка вверх).
+const HOOD_HINGE_Y := 0.98
+const HOOD_OPEN := 1.0
 
 ## Камера, Илюша, машины кольца и автобус ГСУМ — для переходов, краёв карты и LOD; разрушаемые — якоря точек.
 func _update_life() -> void:
@@ -272,15 +275,21 @@ func _build_life_props() -> void:
 	stripe.position = Vector3(0.002, 0.0, 0.0)
 	carpet.visible = false
 	life.props[&"carpet"] = carpet
-	# Капот «Жигулей» (PARKED у гаражей двора): поднят у северного торца, шарнир у лобового стекла.
+	# Капот «Жигулей» (PARKED у гаражей двора): машина передом на север, к мужику (LevelGeometry._zhiguli), капот поднят
+	# у северного торца, шарнир у лобового стекла. LIFE-02: угол +HOOD_OPEN — передняя кромка вверх и наружу (прежний −1
+	# уводил крышку в кузов, сверка: «стоит у багажника, капот не виден»); упор — от кромки моторного отсека к кромке
+	# капота, в мировых координатах.
 	var car := Layout.LIFE_HOOD_CAR
 	var hood := Node3D.new()
 	hood.name = "Hood"
-	hood.position = Vector3(car.x, 0.98, car.y - 0.95)
-	hood.rotation.x = -1.0
+	hood.position = Vector3(car.x, HOOD_HINGE_Y, car.y - 0.95)
+	hood.rotation.x = HOOD_OPEN
 	root.add_child(hood)
 	_box(hood, "Panel", Vector3(1.45, 0.04, 1.05), Vector3(0.0, 0.0, -0.52), Color(0.42, 0.44, 0.40))
-	_box(hood, "Rod", Vector3(0.03, 0.75, 0.03), Vector3(0.55, -0.35, -0.9), Color(0.2, 0.2, 0.2)).rotation.x = 1.0
+	var rod_top := hood.position + Basis(Vector3.RIGHT, HOOD_OPEN) * Vector3(0.55, -0.02, -0.95)
+	var rod_bottom := Vector3(car.x + 0.55, HOOD_HINGE_Y - 0.03, car.y - 1.75)
+	var rod := _box(root, "HoodRod", Vector3(0.03, rod_bottom.distance_to(rod_top), 0.03), (rod_top + rod_bottom) * 0.5, Color(0.2, 0.2, 0.2))
+	rod.rotation.x = atan2(rod_top.z - rod_bottom.z, rod_top.y - rod_bottom.y)
 	var have := func(id: StringName) -> bool: return _breakables.has_method(&"get_by_id") and _breakables.get_by_id(id) != null
 	for spec in Layout.PROPS_BREAKABLES:
 		if not spec[0] in [&"Z5_4", &"Z15_9a", &"Z15_9b"] or have.call(spec[0]):
