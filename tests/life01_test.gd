@@ -41,6 +41,14 @@ const HOCKEY_KIDS: Array[int] = [20, 21]
 const SNOW_KIDS: Array[int] = [13, 22]
 const TRADER := 23
 const SLED_GRAN := 24
+## LIFE-02 (сверка main b4a4d13: «маршрут миссии почти пуст»): плотность за прогон города — в среднем ≥ DENSITY_MIN
+## видимых жителей в радиусе DENSITY_RADIUS у остановки A, на улице B и на тротуаре A у выезда; за домино и у раскопки
+## в среднем ≥ 2 занятых. INFO — угол A∩B и тротуар B у киоска (жители там только проходят мимо).
+const DENSITY_RADIUS := 30.0
+const DENSITY_MIN := 2.0
+const DENSITY_POINTS := {"stop A": Vector2(-27.0, 23.0), "street B": Vector2(70.0, -15.0), "sidewalk A at the yard exit": Vector2(0.0, 43.0)}
+const DENSITY_INFO := {"A×B corner": Vector2(62.0, 36.0), "B sidewalk by the kiosk": Vector2(79.6, -70.0)}
+const DENSITY_SKIP := 20.0   # с от старта: жители ещё на стартовых отрезках
 
 var failures: Array[String] = []
 var checks := 0
@@ -98,6 +106,10 @@ func _run() -> void:
 	_part_data()
 	if not data_only:
 		await _part_city()
+		_part_hood()
+		if OS.get_cmdline_user_args().has("city"):
+			_finish()
+			return
 		await _part_p2()
 		await _part_knock()
 		_part_reset()
@@ -253,6 +265,28 @@ func _part_p2_data(posts: Array) -> void:
 			seen[text] = true
 		check(pool.size() >= 5 and bad.is_empty(), "activity lines %s: %d lines, 1–%d words, ≤ %d chars, no repeats %s" % [kind, pool.size(), LINE_MAX_WORDS, LINE_MAX_CHARS, bad])
 	check(QuestLines.activity_lines(&"domino").has("Рыба!"), "domino players say «Рыба!»")
+	check(QuestLines.activity_lines(&"sweep").size() >= 5, "LIFE-02: the yard keeper sweeping has an own line pool (%d)" % QuestLines.activity_lines(&"sweep").size())
+
+## LIFE-02: «Жигули» под мужиком — передом к месту hood, капот открыт наружу (угол > 0, передняя кромка выше шарнира
+## и над моторным отсеком, а не в кузове).
+func _part_hood() -> void:
+	print("--- LIFE-02 hood ---")
+	var hood: Node3D = residents_node.get_node_or_null("LifeProps/Hood")
+	if not check(hood != null, "hood prop built"):
+		return
+	var edge: Vector3 = hood.global_transform * Vector3(0.0, 0.0, -1.04)
+	check(hood.rotation.x > 0.0 and edge.y > hood.global_position.y + 0.5, "hood opened outwards: angle %.2f rad, front edge %.2f m above the hinge" % [hood.rotation.x, edge.y - hood.global_position.y])
+	var car := Vector3(Layout.LIFE_HOOD_CAR.x, 0.0, Layout.LIFE_HOOD_CAR.y)
+	var spot: Vector3 = life.spots[&"hood"].pos
+	var front := Vector3.ZERO
+	for body in world.get_node("LevelGeometry").get_children():
+		if body is Node3D and Resident._flat(body.global_position).distance_to(car) < 0.1:
+			for child in body.get_children():
+				if child is Node3D and not child is MeshInstance3D and not child is CollisionShape3D:
+					front = -child.global_basis.z
+	var to_spot := (spot - car).normalized()
+	check(front.dot(to_spot) > 0.9, "the hood car faces the man at the hood spot (dot %.2f)" % front.dot(to_spot))
+	check(edge.distance_to(Vector3(spot.x, edge.y, spot.z)) < car.distance_to(spot), "the raised hood is on the man's side of the car")
 
 # =====================================================================================
 # 2. Город: цели, посещения, застревания, дорога, занятия, троллейбус, кадр
@@ -280,8 +314,13 @@ func _part_city() -> void:
 		last[r] = Vector3(r.global_position)
 	var camera := world.get_viewport().get_camera_3d()
 	var frames := int(SIM_SECONDS / dt)
+	var density := {}
+	var samples := 0
 	for frame in frames:
 		await physics_frame
+		if frame % 30 == 0 and frame * dt >= DENSITY_SKIP:
+			samples += 1
+			_sample_density(density)
 		var screen := 0
 		for r in residents:
 			var here := Vector3(r.global_position.x, 0, r.global_position.z)
@@ -338,7 +377,34 @@ func _part_city() -> void:
 	print("INFO: activity lines said %s" % [act_said])
 	check(not act_said.is_empty(), "residents at their activities speak lines from the activity pools %s" % [act_said])
 	check(rides >= 1, "someone rode trolleybus 13 (%d boardings)" % rides)
+	_check_density(density, samples)
 	check(max_screen >= 1 and max_screen <= MAX_ON_SCREEN, "residents on screen within 60 m: max %d (1–%d)" % [max_screen, MAX_ON_SCREEN])
+
+## LIFE-02: один отсчёт плотности — видимые жители у точек DENSITY_*, занятые за домино и у раскопки.
+func _sample_density(density: Dictionary) -> void:
+	var points := DENSITY_POINTS.merged(DENSITY_INFO)
+	for key in points:
+		var c: Vector2 = points[key]
+		var n := 0
+		for r in residents:
+			if not r.hidden and Vector2(r.global_position.x, r.global_position.z).distance_to(c) <= DENSITY_RADIUS:
+				n += 1
+		density[key] = int(density.get(key, 0)) + n
+		if n >= 2:
+			density[key + " ≥2"] = int(density.get(key + " ≥2", 0)) + 1
+	for kind in [&"domino", &"dig"]:
+		density[kind] = int(density.get(kind, 0)) + residents.filter(func(r): return r.is_playing(kind)).size()
+
+func _check_density(density: Dictionary, samples: int) -> void:
+	var avg := func(key) -> float: return float(density.get(key, 0)) / maxf(samples, 1)
+	for key in DENSITY_POINTS.merged(DENSITY_INFO):
+		print("INFO: density %s — ≥ 2 residents within %.0f m in %.0f %% of samples" % [key, DENSITY_RADIUS, 100.0 * avg.call(key + " ≥2")])
+	for key in DENSITY_INFO:
+		print("INFO: density %s — %.2f residents within %.0f m on average" % [key, avg.call(key), DENSITY_RADIUS])
+	for key in DENSITY_POINTS:
+		check(avg.call(key) >= DENSITY_MIN, "density %s: %.2f residents within %.0f m on average (≥ %.1f, %d samples)" % [key, avg.call(key), DENSITY_RADIUS, DENSITY_MIN, samples])
+	check(avg.call(&"domino") >= 2.0, "domino table: %.2f players on average (≥ 2)" % avg.call(&"domino"))
+	check(avg.call(&"dig") >= 2.0, "heating-main dig: %.2f workers on average (≥ 2)" % avg.call(&"dig"))
 
 # =====================================================================================
 # P2. Занятия PEOPLE-03: торговка, хоккей, снежки, санки, птицы, звук, реплики, сбитый хоккеист

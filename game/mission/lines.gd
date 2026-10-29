@@ -530,9 +530,18 @@ const SNOWBALL_LINES := [
 	"Чур, в лицо не кидать!",
 	"Перемирие! Шнурок!",
 ]
+## LIFE-02 (сверка: дворник с метлой говорил «Курить брошу. С понедельника») — свой пул метлы.
+const SWEEP_LINES := [
+	"Ходят тут…",
+	"Опять насорили!",
+	"Урна для кого стоит?",
+	"С шести утра мету!",
+	"Обходи, тут подметено!",
+	"Метёшь, метёшь — а оно опять…",
+]
 ## Вид занятия (Layout.LIFE_SPOTS) → пул.
 const ACTIVITY_LINES := {&"domino": DOMINO_LINES, &"trade": TRADE_LINES, &"sled": SLED_LINES, &"hockey": HOCKEY_LINES,
-	&"snowball": SNOWBALL_LINES}
+	&"snowball": SNOWBALL_LINES, &"sweep": SWEEP_LINES}
 
 ## Пул занятия kind (нет своего — пусто: житель говорит пулы своего голоса).
 static func activity_lines(kind: StringName) -> Array:

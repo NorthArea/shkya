@@ -128,7 +128,7 @@ func _build_solid(index: int, spec: Array) -> void:
 				mesh.material_override = Materials.plain(Color(0.35, 0.25, 0.18))
 		"parked_car":
 			mesh.queue_free()
-			body.add_child(_zhiguli(size, index))
+			body.add_child(_zhiguli(size, index, xz))
 		"kiosk":
 			mesh.queue_free()
 			body.add_child(_kiosk(size))
@@ -360,14 +360,16 @@ func _garage_row(body: Node3D, name: String, size: Vector3) -> void:
 			leaf.material_override = leaf_material
 			leaf.position = _gpos(long_z, along, -size.y * 0.12, side * (depth * 0.5 + 0.03))
 			body.add_child(leaf)
+		var gate_top := -size.y * 0.12 + size.y * 0.36
+		# Номер краской на верху створок (LIFE-02: прежде — над воротами, под козырьком шифера, и кромка с сосульками
+		# срезала верх цифр с игровой камеры).
 		var number := _label(str(i * 3 + 11 + name.length()), 72, Color(0.92, 0.92, 0.88))
-		number.pixel_size = 0.005
-		number.position = _gpos(long_z, offset, size.y * 0.3, side * (depth * 0.5 + 0.06))
+		number.pixel_size = 0.0045
+		number.position = _gpos(long_z, offset, gate_top - 0.3, side * (depth * 0.5 + 0.075))
 		number.rotation.y = (PI * 0.5 if side > 0.0 else -PI * 0.5) if long_z else (0.0 if side > 0.0 else PI)
 		body.add_child(number)
 		var r1 := _rand(i * 31 + name.length(), 1)
 		var r2 := _rand(i * 31 + name.length(), 2)
-		var gate_top := -size.y * 0.12 + size.y * 0.36
 		# Бетонная перемычка над воротами, стальная рама-уголок (CITY-02 E).
 		EnvDress.kit_box(k, _gsize(long_z, unit - 0.1, 0.2, 0.1), _gpos(long_z, offset, gate_top + 0.12, face + side * 0.05), Color(0.55, 0.55, 0.53), Color(0, 0.95, 0, 0))
 		for e: float in [-1.0, 1.0]:
@@ -406,28 +408,42 @@ func _garage_row(body: Node3D, name: String, size: Vector3) -> void:
 		_graffiti(body, size, count, unit, side)
 
 ## Граффити на воротах гаражного ряда улицы C (ARENA-01): мазки баллончиком под углом и короткие надписи,
-## не на каждом боксе. Только вид, ряд вдоль x.
+## не на каждом боксе. Только вид, ряд вдоль x. LIFE-02 (сверка: «жёсткие цветные бруски читаются как парящие доски»):
+## мазок — плоская полоса краски толщиной 4 мм прямо на створках (пакет EnvDress, без тени), не шире ворот и не выше
+## их верха (номер — над мазками), под мазком — потёки краски.
 const SPRAY := [Color(0.92, 0.30, 0.62), Color(0.55, 0.85, 0.20), Color(0.20, 0.70, 0.85), Color(0.95, 0.55, 0.12), Color(0.92, 0.92, 0.90)]
 const TAGS := ["ГОРОД Н", "ЗИМА", "54", "ДИМА + ЛЕНА", "ШКЯ"]   # «НСК» убран ради «города Н.» (решение владельца 28.10, приёмка EXT-01)
+const SPRAY_DEPTH := 0.004     # м: краска на створке
 func _graffiti(body: Node3D, size: Vector3, count: int, unit: float, side: float) -> void:
-	var face := side * (size.z * 0.5 + 0.07)
+	var face := side * (size.z * 0.5 + 0.055 + SPRAY_DEPTH * 0.5)   # лицевая сторона створок — side · (глубина/2 + 0,055)
+	var gate_half := unit * 0.39                                      # створка — unit · 0,39, ворота — две створки
+	var low := -size.y * 0.48 + 0.45                                  # над снегом, наметённым к воротам
+	var high := size.y * 0.24 - 0.55                                  # ниже номера на верху створок
+	var k := EnvDress.kit()
 	for i in count:
 		if _rand(i * 13, 3) > 0.6:
 			continue
 		var offset := -size.x * 0.5 + unit * (i + 0.5)
 		for j in 1 + int(_rand(i * 13, 4) * 3.0):
 			var color: Color = SPRAY[int(_rand(i * 13 + j, 5) * SPRAY.size()) % SPRAY.size()]
-			var strip := Greybox.mesh_box(Vector3(unit * (0.35 + 0.5 * _rand(i + j, 6)), 0.07 + 0.12 * _rand(i * 3 + j, 7), 0.02), Color.WHITE)
-			strip.material_override = Materials.plain(color, 0.7)
-			strip.position = Vector3(offset + (_rand(i * 5 + j, 8) - 0.5) * unit * 0.5, -size.y * 0.5 + 0.5 + 1.6 * _rand(i * 7 + j, 9), face)
-			strip.rotation.z = (_rand(i * 11 + j, 10) - 0.5) * 0.7
-			body.add_child(strip)
+			var length := gate_half * (0.6 + 0.9 * _rand(i + j, 6))
+			var thick := 0.05 + 0.07 * _rand(i * 3 + j, 7)
+			var tilt := (_rand(i * 11 + j, 10) - 0.5) * 0.45
+			var spread := maxf(gate_half * 0.95 - length * 0.5, 0.0)
+			var at := Vector3(offset + (_rand(i * 5 + j, 8) - 0.5) * 2.0 * spread, lerpf(low, high, _rand(i * 7 + j, 9)), face)
+			EnvDress.kit_box(k, Vector3(length, thick, SPRAY_DEPTH), at, color, Color(0, 0.75, 0, 0), Vector3(0, 0, tilt))
+			for d in 2:   # потёки: тонкие струйки вниз от мазка
+				var along := (_rand(i * 17 + j * 3 + d, 14) - 0.5) * length * 0.8
+				var drip := 0.06 + 0.16 * _rand(i * 19 + j * 5 + d, 15)
+				var from := at + Vector3(along * cos(tilt), along * sin(tilt) - thick * 0.5 - drip * 0.5, 0.0)
+				EnvDress.kit_box(k, Vector3(0.012, drip, SPRAY_DEPTH), from, color, Color(0, 0.75, 0, 0))
 		if _rand(i * 13, 11) < 0.45:
 			var tag := _label(TAGS[i % TAGS.size()], 90, SPRAY[(i + 2) % SPRAY.size()])
 			tag.pixel_size = 0.005
-			tag.position = Vector3(offset, -size.y * 0.5 + 1.3 + 0.6 * _rand(i, 12), face + side * 0.01)
+			tag.position = Vector3(offset, lerpf(low, high, 0.3 + 0.5 * _rand(i, 12)), face + side * 0.006)
 			tag.rotation = Vector3(0, 0.0 if side > 0.0 else PI, (_rand(i, 13) - 0.5) * 0.3)
 			body.add_child(tag)
+	EnvDress.kit_emit(k, body, "Graffiti", 60.0)
 
 const LadaVisual = preload("res://game/vehicles/lada_visual.gd")
 ## Припаркованные «Жигули» (POLISH-02, п. 7): облик LadaVisual в цветах советских «Жигулей» —
@@ -436,8 +452,10 @@ const ZHIGULI_COLORS := [Color(0.80, 0.79, 0.74), Color(0.62, 0.12, 0.08), Color
 	Color(0.26, 0.40, 0.24), Color(0.74, 0.62, 0.40), Color(0.08, 0.30, 0.34), Color(0.62, 0.66, 0.70), Color(0.55, 0.40, 0.14)]
 const PLATE_LETTERS := "авекмнорстух"
 
-## Облик на земле внутри коробки коллизии (размер коробки не меняется); перед — в случайную сторону.
-func _zhiguli(size: Vector3, index: int) -> Node3D:
+## Облик на земле внутри коробки коллизии (размер коробки не меняется); перед — в случайную сторону. LIFE-02: машина
+## «мужика под капотом» (Layout.LIFE_HOOD_CAR) — всегда передом (−z облика) на север, к месту hood: поднятый капот
+## (Residents._build_life_props) над моторным отсеком, а не над багажником.
+func _zhiguli(size: Vector3, index: int, xz := Vector2.INF) -> Node3D:
 	var rng := RandomNumberGenerator.new()
 	rng.seed = index * 7919 + 13
 	var color: Color = ZHIGULI_COLORS[index * 4 % ZHIGULI_COLORS.size()]   # шаг 4 из 9: соседние машины разного цвета
@@ -447,7 +465,12 @@ func _zhiguli(size: Vector3, index: int) -> Node3D:
 	var visual := LadaVisual.build(color, plate, false, rng.randf_range(0.4, 1.0), rng.randf_range(0.12, 0.2))
 	visual.position.y = -size.y * 0.5
 	visual.rotation.y = (PI * 0.5 if size.x > size.z else 0.0) + (PI if rng.randf() < 0.5 else 0.0)
+	if xz.distance_to(Layout.LIFE_HOOD_CAR) < 0.1:
+		visual.rotation.y = HOOD_CAR_YAW
 	return visual
+
+## Поворот облика машины под капотом: перед облика — −z, то есть на север, к мужику (Layout.LIFE_SPOTS, hood).
+const HOOD_CAR_YAW := 0.0
 
 func _kiosk(size: Vector3) -> Node3D:
 	# Будка: окно на восток (к улице), внутри тёплый свет, полки с хлебом и продавщица (POLISH-02, п. 2).
