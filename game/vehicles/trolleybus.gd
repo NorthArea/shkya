@@ -114,14 +114,15 @@ func _build_visual() -> Node3D:
 	var cabin := VehicleMesh.instance(body, "Interior", meshes["interior"], {}, false)
 	cabin.visibility_range_end = 60.0
 	VehicleMesh.instance(body, "Snow", meshes["snow"])
-	# Двери: закрытые створки и открытый тёплый проём со ступенькой (видимость переключает _set_doors).
-	var opening_material := Materials.plain(Color(0.16, 0.13, 0.09), 0.9, Color(1.0, 0.72, 0.40), 0.18)
+	# Двери: закрытые створки и открытый проём (видимость переключает _set_doors). Проём — тёмная глубина салона со
+	# светом плафона сверху, ступени с жёлтой кромкой, поручень, сложенные створки по краям (CITY-02 F: был бежевый щит).
 	for door in DOORS:
 		var at := Vector3(HALF_W + 0.012, 0.0, door[0])
 		var panel := VehicleMesh.instance(body, "Door", _door_mesh(door[1]), {}, false)
 		panel.position = at
 		_door_panels.append(panel)
-		var opening := _box(body, "DoorOpening", Vector3(0.03, 2.4, door[1]), Vector3(HALF_W + 0.006, 1.65, door[0]), opening_material, false)
+		var opening := VehicleMesh.instance(body, "DoorOpening", _open_door_mesh(door[1]), {}, false)
+		opening.position = at
 		opening.visible = false
 		_door_openings.append(opening)
 	_labels(body)
@@ -337,6 +338,31 @@ func _door_mesh(width: float) -> ArrayMesh:
 		b.pane("glass", Vector3(0.012, 0.5, zc - leaf * 0.5 + 0.07), Vector3(0.012, 0.5, zc + leaf * 0.5 - 0.07),
 			Vector3(0.012, 1.23, zc + leaf * 0.5 - 0.07), Vector3(0.012, 1.23, zc - leaf * 0.5 + 0.07), Vector3(1, 0, 0), 0.0, 1, 1)
 	mesh = VehicleMesh.finish(b, {"glass": VehicleMesh.glass(0.04, Color(0.06, 0.08, 0.10, 0.62))})
+	return VehicleMesh.store(key, mesh)
+
+## Открытая дверь: тёмный проём (салон за ним — в глубине), плафон над ступенями, две ступени с жёлтой кромкой,
+## жёлтый поручень посередине и сложенные «гармошкой» створки у краёв; начало — середина проёма у борта.
+func _open_door_mesh(width: float) -> ArrayMesh:
+	var key := "trolley_door_open_%s" % VehicleMesh.snf(width)
+	var mesh: ArrayMesh = VehicleMesh.cached(key)
+	if mesh != null:
+		return mesh
+	var b := VehicleMesh.Builder.new()
+	b.box("void", Vector3(0.004, 2.5, width), Vector3(-0.004, 1.6, 0))
+	b.box("glow", Vector3(0.01, 0.05, width - 0.3), Vector3(0.0, 2.78, 0))
+	for k in 2:
+		var y := 0.38 + 0.36 * k
+		b.box("steel", Vector3(0.05 + 0.1 * (1 - k), 0.04, width - 0.12), Vector3(0.0, y, 0))
+		b.box("pole", Vector3(0.012, 0.03, width - 0.12), Vector3(0.03 + 0.05 * (1 - k), y + 0.02, 0))
+	b.tube("pole", Vector3(0.06, 0.45, 0.0), Vector3(0.06, 2.85, 0.0), 0.02, 6)
+	b.tube("pole", Vector3(0.05, 1.05, -width * 0.5 + 0.12), Vector3(0.05, 1.85, -width * 0.5 + 0.12), 0.018, 6)
+	b.tube("pole", Vector3(0.05, 1.05, width * 0.5 - 0.12), Vector3(0.05, 1.85, width * 0.5 - 0.12), 0.018, 6)
+	for e: float in [-1.0, 1.0]:
+		var z := e * (width * 0.5 - 0.1)
+		b.rbox("trim", Vector3(0.05, 2.38, 0.2), Vector3(0.01, 1.65, z), 0.012)
+		b.pane("glass", Vector3(0.04, 1.3, z - 0.07), Vector3(0.04, 1.3, z + 0.07), Vector3(0.04, 2.75, z + 0.07), Vector3(0.04, 2.75, z - 0.07), Vector3(1, 0, 0), 0.0, 1, 1)
+	mesh = VehicleMesh.finish(b, {"void": Materials.plain(Color(0.015, 0.014, 0.013), 0.95), "glow": VehicleMesh.cabin_glow(1.6),
+		"glass": VehicleMesh.glass(0.04, Color(0.06, 0.08, 0.10, 0.62))})
 	return VehicleMesh.store(key, mesh)
 
 ## Круглое стекло фары (или хромированный ободок) в плоскости передка, смотрит вперёд (−Z).
