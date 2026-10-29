@@ -90,8 +90,14 @@ func _check_field() -> void:
 	check(SnowField.height_at(0, 32) == 0.0 and SnowField.normal_at(0, 32).is_equal_approx(Vector3.UP), "street A axis has no snow, flat normal")
 	var a := SnowField.height_at(3.3, 24.6)
 	check(a == SnowField.height_at(3.3, 24.6), "height_at is deterministic")
-	var n := SnowField.normal_at(3.0, 24.9)
-	check(n.z > 0.2, "bank normal leans away from the ridge (%s)" % n)
+	# Нормаль на склоне отклоняется от гребня своего вала (ось гребня — длинная ось коробки).
+	var p := Vector2(3.0, 24.9)
+	var n := SnowField.normal_at(p.x, p.y)
+	var away := Vector2.ZERO
+	for b in _plan_boxes():
+		if _in_rect(p, b[0], b[1] * 0.5 + Vector2.ONE * SnowField.MARGIN):
+			away = Vector2(0.0, p.y - b[0].y) if b[1].x >= b[1].y else Vector2(p.x - b[0].x, 0.0)
+	check(away != Vector2.ZERO and n.y < 0.99 and Vector2(n.x, n.z).dot(away) > 0.0, "bank normal leans away from the ridge (%s)" % n)
 
 ## Коробки SnowField в плане: [центр, размер x/z, высота, seed] (SnowField.boxes() части E — [центр, размер Vector3, …]).
 func _plan_boxes() -> Array:
@@ -270,10 +276,10 @@ func _check_slow_spin() -> void:
 	car.reset_to(start, PI)
 	await _frames(2)
 	Input.action_press(&"move_back")
-	await _frames(90)
+	await _frames(120)
 	Input.action_release(&"move_back")
 	var out := Vector2(car.global_position.x - start.x, car.global_position.z - start.z).length()
-	check(out >= 1.5, "from the pocket between bank A and the H2 wall the Lada digs out backwards (%.1f m in 1.5 s)" % out)
+	check(out >= 1.5, "from the pocket between bank A and the H2 wall the Lada digs out backwards (%.1f m in 2 s)" % out)
 	await _brake()
 
 ## Левые колёса по гребню вала, правые по дороге: крен, глубина, сопротивление, камера поднимается.

@@ -390,9 +390,18 @@ func _geometry_car(by_cat: Dictionary) -> void:
 	var car := world.car
 	var inner := Layout.BOUNDS.grow(-2.5)
 	var total := 0
+	# DRIVE-02 (C10): валы и сугробы «Лада» переезжает (слой SnowBank вне её маски) — упора в них нет; езду по снегу
+	# проверяет DRIVE02. Стыки, где одна из коробок — снег, тоже без упора.
+	var snow_names := {}
+	for box in _boxes():
+		if box.cat == "snow":
+			snow_names[box.name] = true
 	for cat in CATS:
+		if cat == "snow":
+			continue
 		_patrol_bodies(true)
-		var picked := _pick(by_cat[cat], CAR_CAP, func(s):
+		var pool: Array = by_cat[cat].filter(func(s): return not Array(s.name.split("/")).any(func(n): return snow_names.has(n)))
+		var picked := _pick(pool, CAR_CAP, func(s):
 			var p := _car_start(s)
 			return inner.has_point(Vector2(p.x, p.z)) and _free(p, _car_box(0.3), Lada.SIZE.y * 0.5 + 0.1, _yaw(s.dir)))
 		# EXT-01 fix6: полицейские у киоска — люди, как жители (их убирают выше): «Лада», упёртая носом в угол павильона
@@ -903,22 +912,31 @@ func _props_car() -> void:
 				stuck.append(where + " nose/back")
 			car.reset_to(contact, contact_yaw)
 			await _frames(2)
+			# Руль в случайную сторону; не вырулил (угол киоска у стены дома) — с того же упора в другую, как сделал бы игрок.
 			var side_key := &"move_left" if rng.randf() < 0.5 else &"move_right"
-			var other := &"move_right" if side_key == &"move_left" else &"move_left"
 			var farthest := 0.0
-			Input.action_press(&"move_back")
-			Input.action_press(side_key)
-			for f in CAR_ESCAPE:
-				await physics_frame
-				farthest = maxf(farthest, _flat(car.global_position - contact))
-			_release_all()
-			Input.action_press(&"move_forward")
-			Input.action_press(other)
-			for f in CAR_ESCAPE:
-				await physics_frame
-				farthest = maxf(farthest, _flat(car.global_position - contact))
-			_release_all()
-			await _brake_to_stop()
+			for attempt in 2:
+				if attempt == 1:
+					if farthest >= CAR_MANEUVER_MIN and absf(angle_difference(contact_yaw, car.rotation.y)) >= CAR_TURN_MIN:
+						break
+					side_key = &"move_right" if side_key == &"move_left" else &"move_left"
+					car.reset_to(contact, contact_yaw)
+					await _frames(2)
+					farthest = 0.0
+				var other := &"move_right" if side_key == &"move_left" else &"move_left"
+				Input.action_press(&"move_back")
+				Input.action_press(side_key)
+				for f in CAR_ESCAPE:
+					await physics_frame
+					farthest = maxf(farthest, _flat(car.global_position - contact))
+				_release_all()
+				Input.action_press(&"move_forward")
+				Input.action_press(other)
+				for f in CAR_ESCAPE:
+					await physics_frame
+					farthest = maxf(farthest, _flat(car.global_position - contact))
+				_release_all()
+				await _brake_to_stop()
 			if farthest < CAR_MANEUVER_MIN or absf(angle_difference(contact_yaw, car.rotation.y)) < CAR_TURN_MIN:
 				no_turn.append(where + " %.1fm" % farthest)
 			if _car_issue() != "":

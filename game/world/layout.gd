@@ -717,8 +717,8 @@ const BREAKABLES: Array = [
 	[&"Z1_planter", &"planter", Vector2(-37.2, 107.5), Vector3(1.0, 0.4, 1.0), 0.0, &"light"],
 	[&"Z1_snowman", &"snowman", Vector2(-26.0, 99.5), Vector3(0.9, 1.7, 0.9), -PI * 0.5, &"light"],
 	# Z3 — площадка: качели-балансир (доска вдоль x) и карусель-вертушка севернее оградки Playground.
-	[&"Z3_seesaw", &"seesaw", Vector2(-63.0, 90.5), Vector3(3.2, 0.9, 0.5), 0.0, &"heavy"],
-	[&"Z3_carousel", &"carousel", Vector2(-56.0, 91.0), Vector3(2.4, 1.0, 2.4), 0.0, &"heavy"],
+	[&"Z3_seesaw", &"seesaw", Vector2(-63.0, 92.5), Vector3(3.2, 0.9, 0.5), 0.0, &"heavy"],
+	[&"Z3_carousel", &"carousel", Vector2(-56.0, 92.0), Vector3(2.4, 1.0, 2.4), 0.0, &"heavy"],
 	# Z7 — газон у выезда: раскопка теплотрассы (ограждение «ВЕДУТСЯ РАБОТЫ» вокруг ямы с плитами и паром; плиты и пар
 	# остаются после поломки) и четыре конуса по углам.
 	[&"Z7_dig", &"barrier", Vector2(20.0, 52.0), Vector3(6.0, 1.1, 4.0), 0.0, &"light"],
