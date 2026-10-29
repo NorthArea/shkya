@@ -13,6 +13,7 @@ const INK := Color(0.12, 0.10, 0.08)
 var box: VBoxContainer
 var card: PanelContainer
 var _controls: Control
+var _focus_before: Variant = null  # Control или null; без типа: узел мог освободиться
 
 func _ready() -> void:
 	layer = 15
@@ -66,5 +67,17 @@ func add_action(text: String, action: Callable) -> Button:
 
 func _on_visibility_changed() -> void:
 	if visible and is_inside_tree():
+		# PAD-01: фокус до паузы (кнопка открытого диалога, панели финала) вернётся после неё — иначе с геймпада
+		# диалог под паузой оставался без выделенной кнопки и A ничего не нажимала.
+		var focused := get_viewport().gui_get_focus_owner()
+		_focus_before = focused if focused and not is_ancestor_of(focused) else null
 		(box.get_child(1) as Button).grab_focus.call_deferred()
 		DialogPanelScript.pop(card, 0.9)
+	elif not visible:
+		_restore_focus.call_deferred()
+
+func _restore_focus() -> void:
+	var before: Variant = _focus_before
+	_focus_before = null
+	if is_instance_valid(before) and (before as Control).is_visible_in_tree() and (before as Control).focus_mode != Control.FOCUS_NONE:
+		(before as Control).grab_focus()

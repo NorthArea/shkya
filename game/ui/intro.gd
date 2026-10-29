@@ -4,7 +4,7 @@ extends CanvasLayer
 ## *Hit & Run*, без его ассетов; стиль ШКЯ, город Н.). Илюша у подъезда (Layout.SPAWN) смотрит в телефон и свайпит:
 ## на крупной плашке «экрана телефона» листаются заголовки IntroLines.HEADLINES; затем пузырь «Пойду прогуляюсь»,
 ## камера плавно отъезжает за спину Илюши в ракурс концепта 01, над Бабкой появляется «!» — управление включено.
-## Пропуск — E, Esc, A (геймпад): мягкое затемнение и сразу конечное состояние.
+## Пропуск — E, Esc, A/X/B (геймпад): мягкое затемнение и сразу конечное состояние.
 ##
 ## Мир живёт как обычно (стелс, транспорт, жители); на время заставки выключены только ввод Илюши, HUD и маркер «!»
 ## (маркер — слоем отрисовки, его видимость по-прежнему ведёт QuestFlow), камерой управляет заставка
@@ -197,7 +197,7 @@ func _input(event: InputEvent) -> void:
 		get_viewport().set_input_as_handled()
 		skip()
 
-## E, Esc (клавиатура) и A (геймпад). Start на геймпаде — пауза, как всегда.
+## E, Esc (клавиатура) и A, X, B (геймпад; X — как E, PAD-01). Start на геймпаде — пауза, как всегда.
 static func _is_skip_event(event: InputEvent) -> bool:
 	if event is InputEventKey:
 		var key := event as InputEventKey
@@ -205,7 +205,7 @@ static func _is_skip_event(event: InputEvent) -> bool:
 			return false
 		return key.physical_keycode in [KEY_E, KEY_ESCAPE] or key.keycode in [KEY_E, KEY_ESCAPE]
 	if event is InputEventJoypadButton:
-		return event.pressed and (event as InputEventJoypadButton).button_index == JOY_BUTTON_A
+		return event.pressed and (event as InputEventJoypadButton).button_index in [JOY_BUTTON_A, JOY_BUTTON_X, JOY_BUTTON_B]
 	return false
 
 ## Пропустить: затемнение SKIP_FADE_OUT, конечное состояние, просветление SKIP_FADE_IN.

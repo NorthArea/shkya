@@ -25,6 +25,8 @@ const MOUSE := {
 
 ## Геймпад Xbox: левый стик — ходьба и руль, правый — камера, A — прыжок, X — действие,
 ## B — ручник, RT/LT — газ и задний ход, Start — пауза. [действие, кнопка или [ось, направление]].
+## В меню и диалогах (PAD-01): A — выбрать, B — назад (пауза: продолжить; диалог: выход, если он есть), крестовина и левый
+## стик — по пунктам; в диалоге X, как E, листает реплики.
 const JOY := {
 	"move_forward": [[JOY_AXIS_LEFT_Y, -1.0], [JOY_AXIS_TRIGGER_RIGHT, 1.0]],
 	"move_back": [[JOY_AXIS_LEFT_Y, 1.0], [JOY_AXIS_TRIGGER_LEFT, 1.0]],
@@ -72,4 +74,18 @@ static func install() -> void:
 				button.button_index = spec
 				event = button
 			InputMap.action_add_event(action, event)
-	# Меню и диалоги: A подтверждает, B отменяет, крестовина и левый стик ходят по кнопкам (ui_* уже знают геймпад).
+	# Меню и диалоги (PAD-01): во встроенных ui_accept и ui_cancel Godot 4.7 геймпада нет — только Enter/пробел и Esc,
+	# поэтому кнопку меню и диалога с геймпада можно было выделить, но не нажать. A подтверждает, B отменяет.
+	# Крестовина и левый стик в ui_up/ui_down/ui_left/ui_right есть у самого Godot (один толчок — один пункт).
+	for action in UI_JOY:
+		for index in UI_JOY[action]:
+			var button := InputEventJoypadButton.new()
+			button.button_index = index
+			if not InputMap.action_has_event(action, button):
+				InputMap.action_add_event(action, button)
+
+## Геймпад для встроенных действий интерфейса (PAD-01).
+const UI_JOY := {
+	"ui_accept": [JOY_BUTTON_A],
+	"ui_cancel": [JOY_BUTTON_B],
+}
