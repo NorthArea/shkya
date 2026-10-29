@@ -7,6 +7,7 @@ const WorldScene = preload("res://game/world/demo_world.tscn")
 const MainMenu = preload("res://game/ui/main_menu.gd")
 const PauseMenu = preload("res://game/ui/pause_menu.gd")
 const IntroScript = preload("res://game/ui/intro.gd")
+const PadInput = preload("res://game/ui/pad_input.gd")
 const UI_CLICK := preload("res://assets/audio/ui_click.wav")
 
 var world: DemoWorld
@@ -19,6 +20,7 @@ func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
 	get_tree().auto_accept_quit = false
 	InputSetup.install()
+	PadInput.ensure(self)  # PAD-01: последнее устройство (геймпад или клавиатура) для подсказок HUD
 	menu = MainMenu.new()
 	menu.name = "MainMenu"
 	menu.start_requested.connect(start_game)
@@ -105,7 +107,8 @@ func set_paused(paused: bool) -> void:
 func _unhandled_input(event: InputEvent) -> void:
 	if not world:
 		return
-	if event.is_action_pressed(&"pause"):
+	# B геймпада (ui_cancel) на паузе — «продолжить» (PAD-01); Esc — это и pause, и ui_cancel: срабатывает один раз.
+	if event.is_action_pressed(&"pause") or (get_tree().paused and event.is_action_pressed(&"ui_cancel")):
 		set_paused(not get_tree().paused)
 		get_viewport().set_input_as_handled()
 	elif event is InputEventMouseButton and event.pressed and not get_tree().paused and not world.ui_blocking:

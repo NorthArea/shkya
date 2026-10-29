@@ -10,6 +10,7 @@ extends CanvasLayer
 const MinimapScript = preload("res://game/ui/minimap.gd")
 const DialogPanelScript = preload("res://game/ui/dialog_panel.gd")
 const SuspicionMeterScript = preload("res://game/ui/suspicion_meter.gd")
+const PadInput = preload("res://game/ui/pad_input.gd")
 
 const PAPER := Color(0.93, 0.87, 0.72)
 const INK := Color(0.12, 0.10, 0.08)
@@ -99,6 +100,7 @@ func _process(delta: float) -> void:
 	var hide_hint: String = state.get("hide_hint", "")
 	if hide_hint != "":
 		prompt = hide_hint   # EXT-02: подсказка-отказ в укрытии — в той же строке, вместо обычной
+	prompt = PadInput.hint(prompt)   # PAD-01: последним был геймпад — «X — …» вместо «E — …»
 	if prompt != prompt_label.text:
 		prompt_label.text = prompt
 		_center_plate()
@@ -122,7 +124,7 @@ func _process(delta: float) -> void:
 			speed_gauge.queue_redraw()
 	var show_completion: bool = complete and not completion_dismissed
 	if show_completion and not completion_panel.visible:
-		completion_close.grab_focus.call_deferred()  # закрыть можно и E/Enter, не только мышью (QA-01, З2)
+		completion_close.grab_focus.call_deferred()  # закрыть можно и Enter / A геймпада, не только мышью (QA-01, З2; PAD-01)
 		DialogPanelScript.pop(completion_panel, 0.5)
 	completion_panel.visible = show_completion
 	_update_map_and_diamond(world, state.get("target_position", null), speed >= 0.0)
@@ -462,10 +464,11 @@ func _center_plate() -> void:
 	prompt_plate.reset_size()
 
 func _draw_key_cap() -> void:
-	if not prompt_label.text.begins_with("E "):
+	var key := prompt_label.text.left(1)
+	if not (prompt_label.text.begins_with("E ") or prompt_label.text.begins_with("X ")):   # X — геймпад (PAD-01)
 		return
 	var font := prompt_label.get_theme_font("font")
-	var glyph := font.get_string_size("E", HORIZONTAL_ALIGNMENT_LEFT, -1, 36)
+	var glyph := font.get_string_size(key, HORIZONTAL_ALIGNMENT_LEFT, -1, 36)
 	var top := prompt_label.position.y + (prompt_label.size.y - glyph.y) * 0.5
 	var rect := Rect2(prompt_label.position.x - 13.0, top - 4.0, glyph.x + 22.0, glyph.y + 10.0)
 	prompt_plate.draw_style_box(_key_style, rect)

@@ -30,6 +30,9 @@ const VOICES := {
 }
 const VOICE_DB := -6.0
 const NEXT_ID := &"next"
+## B геймпада после допечатки — кнопка выхода, если она есть на реплике (PAD-01). «СДАТЬ ХЛЕБ», «ПРИНЯТЬ» и «КУПИТЬ»
+## сюда не входят: отмена ничего не выбирает за игрока, кроме «уйти».
+const CANCEL_IDS: Array[StringName] = [&"leave", &"close", &"decline"]
 
 var panel: PanelContainer
 var speaker_label: Label
@@ -109,8 +112,8 @@ func open_chain(lines: Array, specs: Array) -> void:
 	_lines = lines
 	_final_specs = specs
 	_line_index = 0
+	visible = true  # до кнопок: фокус берётся на видимой панели (PAD-01)
 	_show_line()
-	visible = true
 	pop(panel)
 
 func _show_line() -> void:
@@ -206,6 +209,9 @@ func _process(delta: float) -> void:
 
 ## Во время печати E, пробел или щелчок только дописывают реплику; кнопки сработают со следующего нажатия.
 ## После допечатки E переключает реплику цепочки (пробел и Enter нажимают кнопку «ДАЛЬШЕ» в фокусе).
+## Геймпад (PAD-01): X — как E; A — как пробел (во время печати дописывает, потом нажимает кнопку в фокусе);
+## B во время печати дописывает, после — выход из разговора, если на реплике есть кнопка выхода (CANCEL_IDS).
+## Esc остаётся паузой: отмена диалога — только кнопкой B геймпада.
 func _input(event: InputEvent) -> void:
 	if not visible:
 		return
@@ -213,8 +219,14 @@ func _input(event: InputEvent) -> void:
 		if event.is_action_pressed(&"interact") and not is_last_line():
 			advance()
 			get_viewport().set_input_as_handled()
+		elif _is_pad_button(event, JOY_BUTTON_B):
+			for id in CANCEL_IDS:
+				if buttons.has(id) and not (buttons[id] as Button).disabled:
+					get_viewport().set_input_as_handled()
+					_on_pressed(id)
+					return
 		return
-	var skip := event.is_action_pressed(&"interact")
+	var skip := event.is_action_pressed(&"interact") or _is_pad_button(event, JOY_BUTTON_A) or _is_pad_button(event, JOY_BUTTON_B)
 	if event is InputEventKey and event.pressed and not event.echo and (event as InputEventKey).physical_keycode == KEY_SPACE:
 		skip = true
 	if event is InputEventMouseButton and event.pressed and (event as InputEventMouseButton).button_index == MOUSE_BUTTON_LEFT:
@@ -222,6 +234,9 @@ func _input(event: InputEvent) -> void:
 	if skip:
 		finish_typing()
 		get_viewport().set_input_as_handled()
+
+static func _is_pad_button(event: InputEvent, index: JoyButton) -> bool:
+	return event is InputEventJoypadButton and event.pressed and (event as InputEventJoypadButton).button_index == index
 
 ## «Выпрыгивание» панели: масштаб от 0,85 до 1 с перелётом (POLISH-02, п. 10).
 static func pop(control: Control, from := 0.85) -> void:
@@ -290,7 +305,7 @@ const CONTROLS := [
 	["Space", "прыжок, в машине — ручник"],
 	["F / ЛКМ", "удар"],
 	["Esc", "пауза"],
-	["Геймпад", "стики — идти и камера, A — прыжок, X — действие, B — удар, в машине — ручник, RT — газ"],
+	["Геймпад", "стики — идти и камера, A — прыжок и выбор, X — действие, B — удар и назад, в машине — ручник, RT/LT — газ и тормоз, Start — пауза"],
 ]
 
 func _on_pressed(id: StringName) -> void:
@@ -327,7 +342,11 @@ static func style_button(button: Button, primary: bool) -> void:
 			"disabled": base = Color(0.62, 0.60, 0.55)
 		style.bg_color = base
 		if state == "focus":
+			# PAD-01: фокус — толстая рамка вокруг кнопки поверх её состояния (нажатие под ней видно),
+			# чтобы с геймпада и клавиатуры было ясно, какой пункт выбран.
+			style.draw_center = false
 			style.set_border_width_all(5)
+			style.set_expand_margin_all(6)
 		button.add_theme_stylebox_override(state, style)
 	button.add_theme_color_override("font_color", INK)
 	button.add_theme_color_override("font_hover_color", INK)
