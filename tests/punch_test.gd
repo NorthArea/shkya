@@ -240,9 +240,9 @@ func _part_input_map() -> void:
 	var buzzing := 0
 	for d in drones.drones:
 		var b: AudioStreamPlayer3D = sound.drone_buzz.get(d)
-		if b and b.playing and b.max_distance <= 25.0:
+		if b and b.playing and b.max_distance <= 35.0:   # PUNCH-02: радиус +50 % (22 → 33 м) по карточке
 			buzzing += 1
-	check(buzzing == drones.drones.size(), "every flying drone buzzes in 3D, fading out by 22 m (%d)" % buzzing)
+	check(buzzing == drones.drones.size(), "every flying drone buzzes in 3D, fading out by 33 m (%d)" % buzzing)
 
 # --- 5. Замах, рывок, кулдаун, звук ---
 

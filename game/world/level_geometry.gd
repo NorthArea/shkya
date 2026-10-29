@@ -77,6 +77,8 @@ func _ready() -> void:
 	add_child(preload("res://game/stealth/hide_spots.gd").new())   # EXT-02: укрытия у киоска (C7а)
 	add_child(preload("res://game/world/coins.gd").new())   # COINS-01: монеты, 35 ₽ до батона
 	add_child(preload("res://game/world/drones.gd").new())   # PUNCH-01: мини-дроны ГСУМ (петли — Layout.DRONE_LOOPS)
+	add_child(preload("res://game/world/props.gd").new())   # PROPS-01: новые объекты арены (ARENA-02)
+	add_child(preload("res://game/world/breakables.gd").new())   # BREAK-01: разрушаемые объекты (Layout.BREAKABLES)
 
 func _exit_tree() -> void:
 	Materials.clear_cache()

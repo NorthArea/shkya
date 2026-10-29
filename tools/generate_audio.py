@@ -622,6 +622,25 @@ def drone_pop() -> list[float]:
     return to_rms(out, -16.0)
 
 
+def drone_beep() -> list[float]:
+    """Дрон ГСУМ заметил Илюшу (PUNCH-02): служебный «бип-бип» — два коротких тона 1,76 кГц по 0,07 с с паузой 0,06 с,
+    второй на кварту выше (2,35 кГц); мягкий прямоугольник (гармоники 1, 3, 5), атака 3 мс, спад 25 мс, всего 0,3 с.
+    Собственный синтез."""
+    n = samples(0.3)
+    out = [0.0] * n
+    for freq, start in ((1760.0, 0.02), (2349.3, 0.15)):
+        s0 = samples(start)
+        length = samples(0.07)
+        for i in range(length):
+            if s0 + i >= n:
+                break
+            t = i / RATE
+            env = min(1.0, t / 0.003) * min(1.0, (length - i) / RATE / 0.025)
+            w = 2 * math.pi * freq * t
+            out[s0 + i] += (math.sin(w) + math.sin(3 * w) / 3.0 * 0.5 + math.sin(5 * w) / 5.0 * 0.3) * env
+    return to_rms(lowpass(out, 7000), -20.0)
+
+
 def knock_whoosh() -> list[float]:
     """Сбитый «Ладой» житель взлетает (KNOCK-01): комичный «вжу-ух» — шум в полосе, которая идёт вверх 0,5 → 1,6 кГц
     и снова вниз к 0,7 кГц, нарастание 0,12 с, мягкий спад; 0,55 с. Ни криков, ни удара — только воздух."""
@@ -658,6 +677,124 @@ def knock_thud() -> list[float]:
     for i in range(fade):
         out[-1 - i] *= i / fade
     return to_rms(out, -16.0)
+
+
+def _fade_out(out: list[float], seconds: float) -> list[float]:
+    fade = samples(seconds)
+    for i in range(min(fade, len(out))):
+        out[-1 - i] *= i / fade
+    return out
+
+
+def break_wood() -> list[float]:
+    """Поломка деревянного (BREAK-01: качели, ограждение раскопки): сухой треск — три-четыре щелчка-излома с
+    резонансами доски 380, 720, 1150 Гц (короткий спад), хруст волокон шумом и глухой стук доски о снег. 0,6 с."""
+    rng = random.Random(161)
+    n = samples(0.6)
+    crack = [0.0] * n
+    for at, gain in ((0.0, 1.0), (0.045, 0.7), (0.11, 0.5), (0.19, 0.35)):
+        start = samples(at)
+        for i in range(samples(0.03)):
+            if start + i < n:
+                crack[start + i] += rng.uniform(-1, 1) * gain * math.exp(-i / samples(0.006))
+    body = [0.0] * n
+    for f, bw, g in ((380, 60, 1.0), (720, 90, 0.7), (1150, 140, 0.45)):
+        for i, y in enumerate(resonator(crack, f, bw)):
+            body[i] += y * g * 6.0
+    out = []
+    phase = 0.0
+    for i in range(n):
+        t = i / RATE
+        fiber = rng.uniform(-1, 1) * math.exp(-t / 0.09) * 0.25
+        thud_t = max(t - 0.28, 0.0)
+        phase += 2 * math.pi * 70 / RATE
+        thud = math.sin(phase) * math.exp(-thud_t / 0.06) * (0.5 if t >= 0.28 else 0.0)
+        out.append(crack[i] * 0.5 + body[i] + fiber + thud)
+    out = lowpass(out, 6000)
+    return to_rms(_fade_out(out, 0.1), -18.0)
+
+
+def break_metal() -> list[float]:
+    """Поломка металлического (BREAK-01: урна, карусель): лязг и звон — удар шумом и негармонический звон тонкого листа
+    и трубы 410, 1030, 1720, 2480, 3300 Гц с разным спадом, второй удар о землю через 0,2 с. 0,9 с."""
+    rng = random.Random(163)
+    n = samples(0.9)
+    out = []
+    partials = ((410, 0.6, 0.35), (1030, 0.45, 0.25), (1720, 0.35, 0.18), (2480, 0.25, 0.12), (3300, 0.15, 0.08))
+    for i in range(n):
+        t = i / RATE
+        ring = sum(a * math.sin(2 * math.pi * f * t + f) * math.exp(-t / d) for f, a, d in partials)
+        t2 = t - 0.2
+        ring2 = 0.0
+        if t2 > 0:
+            ring2 = sum(a * math.sin(2 * math.pi * f * 1.06 * t2) * math.exp(-t2 / (d * 0.7)) for f, a, d in partials) * 0.5
+        hit = rng.uniform(-1, 1) * (math.exp(-t / 0.01) + (0.6 * math.exp(-t2 / 0.01) if t2 > 0 else 0.0))
+        out.append(ring + ring2 + hit * 0.6)
+    out = lowpass(out, 8000)
+    return to_rms(_fade_out(out, 0.15), -18.0)
+
+
+def break_plastic() -> list[float]:
+    """Поломка пластика и резины (BREAK-01: конусы, клумба-покрышка): хруст — частые сухие щелчки шума через
+    полосу 1,2–4 кГц, гулкий «бум» пустого корпуса 160 Гц и шорох обломков. 0,45 с."""
+    rng = random.Random(167)
+    n = samples(0.45)
+    clicks = [0.0] * n
+    t = 0.0
+    while t < 0.3:
+        start = samples(t)
+        gain = math.exp(-t / 0.12)
+        for i in range(samples(0.004)):
+            if start + i < n:
+                clicks[start + i] += rng.uniform(-1, 1) * gain
+        t += rng.uniform(0.008, 0.03)
+    clicks = highpass(lowpass(clicks, 4000), 1200)
+    out = []
+    for i in range(n):
+        tt = i / RATE
+        boom = math.sin(2 * math.pi * 160 * tt) * math.exp(-tt / 0.05) * 0.5
+        rustle = rng.uniform(-1, 1) * math.exp(-tt / 0.15) * 0.08
+        out.append(clicks[i] * 2.5 + boom + rustle)
+    return to_rms(_fade_out(out, 0.08), -18.0)
+
+
+def car_alarm() -> list[float]:
+    """Сигнализация припаркованной машины (BREAK-01, реакция на толчок «Ладой»): двухтональная сирена 880 / 660 Гц,
+    смена тона каждые 0,3 с, звук пищалки (квадрат через фильтр 3 кГц), 6 с с мягким концом."""
+    n = samples(6.0)
+    out = []
+    phase = 0.0
+    for i in range(n):
+        t = i / RATE
+        freq = 880.0 if int(t / 0.3) % 2 == 0 else 660.0
+        phase += 2 * math.pi * freq / RATE
+        square = 1.0 if math.sin(phase) > 0 else -1.0
+        out.append(square * 0.6 + math.sin(phase) * 0.4)
+    out = lowpass(out, 3000, 2)
+    for i in range(samples(0.01)):
+        out[i] *= i / samples(0.01)
+    return to_rms(_fade_out(out, 0.3), -22.0)
+
+
+def bin_lid() -> list[float]:
+    """Хлопок крышек мусорного контейнера (BREAK-01, реакция на толчок «Ладой»): два глухих удара жести 0 и 0,12 с —
+    низкий толчок 90 Гц и звон крышки 240, 530, 910 Гц с коротким спадом. 0,6 с."""
+    rng = random.Random(173)
+    n = samples(0.6)
+    out = []
+    for i in range(n):
+        t = i / RATE
+        s = 0.0
+        for at, g in ((0.0, 1.0), (0.12, 0.7)):
+            u = t - at
+            if u < 0:
+                continue
+            s += g * (math.sin(2 * math.pi * 90 * u) * math.exp(-u / 0.06)
+                      + sum(a * math.sin(2 * math.pi * f * u) * math.exp(-u / d) for f, a, d in ((240, 0.5, 0.12), (530, 0.35, 0.08), (910, 0.2, 0.05)))
+                      + rng.uniform(-1, 1) * math.exp(-u / 0.008) * 0.4)
+        out.append(s)
+    out = lowpass(out, 5000)
+    return to_rms(_fade_out(out, 0.1), -18.0)
 
 
 def main() -> None:
@@ -706,9 +843,19 @@ def main() -> None:
     write("drone_buzz_loop.wav", drone_buzz_loop())
     write("punch_whoosh.wav", punch_whoosh())
     write("drone_pop.wav", drone_pop())
+    # PUNCH-02: «бип-бип» дрона при подлёте к Илюше.
+    write("drone_beep.wav", drone_beep())
     # KNOCK-01: сбитый «Ладой» житель — «вжух» взлёта и глухой «пуф» в снег.
     write("knock_whoosh.wav", knock_whoosh())
     write("knock_thud.wav", knock_thud())
+    # BREAK-01: поломка разрушаемых объектов — треск дерева, лязг металла, хруст пластика, снежный «пуф» (тот же синтез,
+    # что падение сбитого жителя KNOCK-01); реакции без разрушения — сигнализация машины и хлопок крышек контейнера.
+    write("break_wood.wav", break_wood())
+    write("break_metal.wav", break_metal())
+    write("break_plastic.wav", break_plastic())
+    write("break_snow.wav", knock_thud())
+    write("car_alarm.wav", car_alarm())
+    write("bin_lid.wav", bin_lid())
 
 
 if __name__ == "__main__":

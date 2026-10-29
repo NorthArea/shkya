@@ -2,8 +2,8 @@ extends Node3D
 ## Мини-дроны ГСУМ «уточняют маршруты» (PUNCH-01, решение владельца 29.10): идея ос-камер *Hit & Run* без ассетов.
 ## Дрон летит по петле Layout.DRONE_LOOPS (2–3 м/с, 1,6–2,2 м), жужжит (SoundDirector, 3D по удалению). Илюша пешком (не в
 ## укрытии, без диалога) ближе ENGAGE_DISTANCE — один дрон подлетает и зависает в HOVER_DISTANCE перед ним, чуть
-## сбоку, покачиваясь и мигая красным («смотрит»), через HOVER_SECONDS улетает на свою петлю и IGNORE_SECONDS его не
-## замечает. Удар Илюши (Ilyusha.punch_landed) по дрону — дрон рассыпается 4–6 обломками (исчезают за DEBRIS_SECONDS),
+## сбоку, покачиваясь, мигая чаще и светя на него прожектором («смотрит»), через HOVER_SECONDS улетает на свою петлю и
+## IGNORE_SECONDS его не замечает. Удар Илюши (Ilyusha.punch_landed) по дрону — дрон рассыпается 4–6 обломками (исчезают за DEBRIS_SECONDS),
 ## хлопок, 5 монет через Coins.spawn_burst (если узел Coins есть — COINS-01), возрождение через 60–90 с на другой
 ## свободной петле. Удар по патрулю (дети Patrols) — субтитр PATROL_GAG через SoundDirector.show_gag не чаще раза в
 ## GAG_COOLDOWN; по жителям и Бабке — ничего. Провала и подозрения нет.
@@ -11,9 +11,14 @@ extends Node3D
 ## наблюдателей (маска World|Car, без областей), пружина камеры и зонд E их не видят. Дроны не сенсоры: в группе
 ## detection_sensors их нет. Узел создаёт LevelGeometry (DemoWorld/LevelGeometry/Drones). Случайности — только из
 ## RandomNumberGenerator с SEED.
-## Облик — свой, из объёмов Godot, по форме недорогих мини-дронов с защитой винтов (Ryze Tello с кольцами, Eachine
-## E010): плоский корпус 20 см (×DRONE_SCALE в кадре) с камерой-глазком и LED спереди, четыре луча крестом, моторы, винты в
-## кольцах. Без логотипов: мелко «ГСУМ» на крышке.
+## Облик — свой, из объёмов Godot, по пропорциям недорогих мини-дронов с защитой винтов (Ryze Tello, Eachine E010 —
+## только пропорции): плоский корпус с камерой в подвесе под носом, лучи крестом, моторы, винты в кольцах. PUNCH-02
+## (поручение владельца 29.10 «перерисуй дронов в более заметных»): служебная окраска — оранжевый корпус с чёрными
+## полосами и крупным «ГСУМ» на крышке и бортах, красно-синяя мигалка с ореолом (свой шейдер по образцу lamp_halo),
+## светящиеся кольца винтов, антенна, белый прожектор вниз на снег (SpotLight3D — не больше SPOT_COUNT на весь рой:
+## «смотрящий» дрон и ближайшие к камере; у остальных — светящееся пятно-декаль на снегу) и слабый конус луча; при
+## подлёте луч поворачивается на Илюшу. Размер — по просвету петель: над тротуарами низ дрона выше головы Илюши
+## (1,80 м) на петлях 2,0 м (низ петли 1,92) — поэтому корпус 0,40 м, а не больше.
 
 const Layout = preload("res://game/world/layout.gd")
 const Materials = preload("res://game/world/materials.gd")
@@ -26,9 +31,22 @@ const GROUP := &"drones"
 const SEED := 2930
 const HIT_LAYER := 16
 const HIT_RADIUS := 0.35
-## Масштаб облика: модель с корпусом 0,20 м в кадре игровой камеры (4,3 м за Илюшей) читалась палочкой в 50 px
-## (кадр PUNCH-01/01, 29.10) — в кадре корпус 0,30 м, размах 0,54 м.
-const DRONE_SCALE := 1.5
+## Масштаб облика: модель с корпусом 0,21 м. PUNCH-01: ×1,5 (корпус 0,30 м, размах 0,55) терялся на фоне ночного города;
+## PUNCH-02: ×1,9 — корпус 0,40 м, размах колец 0,73 м. Больше нельзя: низ дрона (подвес камеры, 0,10 м под центром
+## с наклоном и покачиванием) над петлями 2,0 м (низ 1,92) должен проходить над головой Илюши 1,80 м (просветы —
+## builds/checks/PUNCH-02/clearance.log).
+const DRONE_SCALE := 1.9
+const LEAN_PER_SPEED := 0.03     # рад на м/с: наклон по скорости (крупный дрон летит ровнее; низ не опускается на голову)
+const LEAN_MAX := 0.09
+const SPOT_COUNT := 2            # SpotLight3D на рой: «смотрящий» дрон первым, затем ближайшие к камере
+const SPOT_REACH := 35.0         # м от камеры: дальше прожектор не включается, остаётся пятно на снегу
+const SPOT_ENERGY := 5.0
+const SPOT_RANGE := 7.0
+const SPOT_ANGLE := 21.0         # градусов; конус луча — того же раствора
+const HALO_SIZE := 1.6           # м, ореол мигалки
+const POOL_SIZE := 1.5           # м, пятно на снегу под дроном без прожектора
+const BEACON_PERIOD := 0.6       # с: красный-красный, синий-синий («стробы» служебной техники)
+const BEACON_PERIOD_WATCH := 0.36
 const WATCH_TILT := 0.35         # рад: при осмотре нос вниз, к Илюше, — крышка с «ГСУМ» видна из-за его спины
 const ENGAGE_DISTANCE := 6.0     # м по горизонтали от Илюши до дрона: ближе — подлёт
 const DISENGAGE_DISTANCE := 12.0 # м: Илюша убежал — дрон бросает и улетает
@@ -46,7 +64,6 @@ const DEBRIS_SECONDS := 1.5
 const COINS_PER_DRONE := 5
 const PATROL_GAG := "Гражданин, руками не размахивайте"
 const GAG_COOLDOWN := 20.0
-const PROP_SPIN := 31.0          # рад/с — винты; размытый диск поверх
 
 var drones: Array = []
 ## Для проверок: сбито, возрождено, монетных россыпей, показано субтитров патруля, удары по жителям/Бабке.
@@ -117,7 +134,39 @@ func _physics_process(delta: float) -> void:
 		_engaged = null
 	for drone: Drone in drones:
 		_update_drone(drone, delta, watcher)
+	_update_lights(delta)
 	_update_debris(delta)
+
+## Прожекторы (PUNCH-02): SpotLight3D включён не больше чем у SPOT_COUNT дронов — у «смотрящего» (_engaged) и ближайших
+## к камере в SPOT_REACH; у остальных — пятно-декаль на снегу. Луч «смотрящего» — на Илюшу (грудь), у прочих — вниз.
+func _update_lights(delta: float) -> void:
+	var camera: Camera3D = get_viewport().get_camera_3d() if is_inside_tree() else null
+	var eye: Vector3 = camera.global_position if camera else (_player.global_position if _player else Vector3.ZERO)
+	var ranked: Array = []
+	for drone: Drone in drones:
+		if drone.state == &"broken":
+			continue
+		var d := -1.0 if drone == _engaged else drone.global_position.distance_to(eye)
+		if d <= SPOT_REACH:
+			ranked.append([d, drone])
+	ranked.sort_custom(func(a: Array, b: Array) -> bool: return a[0] < b[0])
+	var lit := {}
+	for i in mini(SPOT_COUNT, ranked.size()):
+		lit[ranked[i][1]] = true
+	var chest := Vector3.INF
+	if _player and is_instance_valid(_player):
+		chest = _player.global_position + Vector3.UP * 1.1
+	for drone: Drone in drones:
+		var watching := drone == _engaged and (drone.state == &"approach" or drone.state == &"hover")
+		drone.aim(delta, lit.has(drone), chest if watching else Vector3.INF)
+
+## Сколько прожекторов SpotLight3D сейчас включено (для проверок и кадров).
+func active_spots() -> int:
+	var n := 0
+	for drone: Drone in drones:
+		if drone.spot.visible:
+			n += 1
+	return n
 
 ## Илюша, которого можно «осматривать»: пешком, виден, не в укрытии, без диалога и провала. Иначе null.
 func _watchable_player() -> Node3D:
@@ -388,8 +437,62 @@ func _update_debris(delta: float) -> void:
 
 # --- облик ---
 
-## Мини-дрон: корпус 0,20 × 0,11 × 0,05 м (×DRONE_SCALE), лучи крестом к четырём винтам в кольцах (размах 0,36 м), камера-глазок и
-## LED спереди, на крышке — «ГСУМ». Перед — −Z. Ноль тел; только Area3D попадания.
+## Ореол мигалки (PUNCH-02): спрайт лицом к камере, складывается со сценой — по образцу shaders/lamp_halo (CITY-01 L),
+## но цвет и яркость — свои у каждого дрона (instance uniform), не MultiMesh. Сдвинут от камеры за дрон (near_push):
+## оранжевый корпус не заливается красным и синим, свечение — ореолом вокруг силуэта; вблизи камеры (ближе 3,5–9 м) гаснет — там дрон крупный и читается сам.
+const HALO_SHADER := """
+shader_type spatial;
+render_mode unshaded, blend_add, depth_draw_never, cull_disabled, shadows_disabled, fog_disabled, skip_vertex_transform;
+instance uniform vec3 tint = vec3(1.0);
+instance uniform float power = 1.0;
+uniform float energy = 1.6;
+uniform float core = 22.0;
+uniform float wide = 3.5;
+uniform float wide_share = 0.35;
+uniform float near_fade = 3.5;    // м: ближе дрон крупный и читается сам — ореол не заливает корпус
+uniform float near_push = -0.35;  // м: за дроном — корпус закрывает ядро и не окрашивается, свечение вокруг силуэта
+varying float fade;
+void vertex() {
+	float size = length(MODEL_MATRIX[0].xyz);
+	vec3 center = (VIEW_MATRIX * vec4(MODEL_MATRIX[3].xyz, 1.0)).xyz;
+	float dist = length(center);
+	center -= normalize(center) * min(near_push, dist * 0.5);
+	VERTEX = center + VERTEX * size;
+	NORMAL = vec3(0.0, 0.0, 1.0);
+	fade = smoothstep(near_fade, near_fade * 2.5, dist);   // 3,5 → 8,75 м
+}
+void fragment() {
+	vec2 d = UV * 2.0 - 1.0;
+	float r2 = dot(d, d);
+	float glow = exp(-r2 * core) + wide_share * exp(-r2 * wide);
+	glow *= 1.0 - smoothstep(0.75, 1.0, sqrt(r2));
+	ALBEDO = tint * glow * energy * power * fade;
+}
+"""
+## Конус луча прожектора: слабое свечение, к краям конуса и к земле гаснет. Ось меша — Y, вершина (у лампы) — y = +0,5.
+const BEAM_SHADER := """
+shader_type spatial;
+render_mode unshaded, blend_add, depth_draw_never, cull_disabled, shadows_disabled, fog_disabled;
+instance uniform float power = 1.0;
+uniform vec3 color = vec3(0.85, 0.92, 1.0);
+uniform float energy = 0.08;
+varying float along;
+void vertex() {
+	along = clamp(VERTEX.y + 0.5, 0.0, 1.0);
+}
+void fragment() {
+	float edge = abs(dot(normalize(NORMAL), normalize(VIEW)));
+	ALBEDO = color * energy * power * pow(edge, 1.5) * (0.25 + 0.75 * along);
+}
+"""
+const BEACON_RED := Vector3(1.0, 0.12, 0.08)
+const BEACON_BLUE := Vector3(0.22, 0.42, 1.0)
+
+## Дрон ГСУМ (PUNCH-02), размеры модели до ×DRONE_SCALE: корпус 0,12 × 0,05 × 0,21 м, оранжевый с двумя чёрными полосами
+## у кормы; лучи крестом к четырём винтам в светящихся ободах-«стаканах» (размах 0,38 м); подвес камеры под носом; мигалка
+## красный/синий на крышке и антенна у кормы; «ГСУМ» — на крышке (Label3D, читается спереди: при осмотре нос
+## опущен к Илюше) и на бортах (TextMesh). Прожектор, конус луча, ореол и пятно на снегу — вне облика (без наклона).
+## Перед — −Z. Ноль тел; только Area3D попадания.
 class Drone extends Node3D:
 	var index := 0
 	var phase := 0.0
@@ -406,69 +509,122 @@ class Drone extends Node3D:
 	var hover_time := 0.0
 	var hit_area: Area3D
 	var visual: Node3D
-	var led: MeshInstance3D
+	var halo: MeshInstance3D
+	var spot: SpotLight3D
+	var beam: MeshInstance3D
+	var pool: Decal
+	var red_on := false
+	var blue_on := false
 	var _parts: Dictionary
-	var _props: Array[Node3D] = []
-	var _spin := 0.0
+	var _red: MeshInstance3D
+	var _blue: MeshInstance3D
+	var _pivot: Node3D
+	var _beam_arm: Node3D
+	var _beam_dir := Vector3.DOWN
+	var _beam_length := 2.0
 
 	static func shared_parts() -> Dictionary:
 		var body := BoxMesh.new()
-		body.size = Vector3(0.11, 0.045, 0.20)
-		var shell := SphereMesh.new()
-		shell.radius = 0.06
-		shell.height = 0.05
-		shell.radial_segments = 12
-		shell.rings = 4
+		body.size = Vector3(0.12, 0.05, 0.21)
+		var stripe := BoxMesh.new()
+		stripe.size = Vector3(0.124, 0.054, 0.022)
 		var arm := BoxMesh.new()
-		arm.size = Vector3(0.018, 0.012, 0.13)
+		arm.size = Vector3(0.02, 0.014, 2.0 * Vector2(0.12, 0.11).length())
 		var motor := CylinderMesh.new()
-		motor.top_radius = 0.014
-		motor.bottom_radius = 0.016
-		motor.height = 0.026
+		motor.top_radius = 0.016
+		motor.bottom_radius = 0.018
+		motor.height = 0.03
 		motor.radial_segments = 8
-		var ring := TorusMesh.new()
-		ring.inner_radius = 0.058
-		ring.outer_radius = 0.068
-		ring.rings = 16
-		ring.ring_segments = 4
-		var blade := BoxMesh.new()
-		blade.size = Vector3(0.11, 0.003, 0.014)
+		# Защита винта — светящийся обод-«стакан» (как у E010): с ребра камеры читается полосой, сверху — кольцом.
+		var ring := CylinderMesh.new()
+		ring.top_radius = 0.068
+		ring.bottom_radius = 0.066
+		ring.height = 0.026
+		ring.radial_segments = 20
+		ring.rings = 1
+		ring.cap_top = false
+		ring.cap_bottom = false
+		var ring_glow := StandardMaterial3D.new()
+		ring_glow.albedo_color = Color(0.82, 0.93, 1.0)
+		ring_glow.roughness = 0.3
+		ring_glow.cull_mode = BaseMaterial3D.CULL_DISABLED
+		ring_glow.emission_enabled = true
+		ring_glow.emission = Color(0.55, 0.82, 1.0)
+		ring_glow.emission_energy_multiplier = 1.4
 		var disc := CylinderMesh.new()
-		disc.top_radius = 0.056
-		disc.bottom_radius = 0.056
+		disc.top_radius = 0.054
+		disc.bottom_radius = 0.054
 		disc.height = 0.002
 		disc.radial_segments = 16
-		var eye := SphereMesh.new()
-		eye.radius = 0.019
-		eye.height = 0.038
-		eye.radial_segments = 10
-		eye.rings = 5
+		var gimbal := SphereMesh.new()
+		gimbal.radius = 0.02
+		gimbal.height = 0.036
+		gimbal.radial_segments = 10
+		gimbal.rings = 5
 		var lens := SphereMesh.new()
-		lens.radius = 0.009
-		lens.height = 0.018
+		lens.radius = 0.01
+		lens.height = 0.02
 		lens.radial_segments = 8
 		lens.rings = 4
-		var bulb := SphereMesh.new()
-		bulb.radius = 0.008
-		bulb.height = 0.016
-		bulb.radial_segments = 6
-		bulb.rings = 3
+		var beacon := BoxMesh.new()
+		beacon.size = Vector3(0.034, 0.014, 0.02)
+		var antenna := CylinderMesh.new()
+		antenna.top_radius = 0.0022
+		antenna.bottom_radius = 0.003
+		antenna.height = 0.085
+		antenna.radial_segments = 4
+		var mark := TextMesh.new()
+		mark.text = "ГСУМ"
+		mark.font_size = 16
+		mark.pixel_size = 0.0027
+		mark.depth = 0.0
+		var quad := QuadMesh.new()
+		quad.size = Vector2.ONE
+		var halo_shader := Shader.new()
+		halo_shader.code = HALO_SHADER
+		var halo_mat := ShaderMaterial.new()
+		halo_mat.shader = halo_shader
+		var cone := CylinderMesh.new()
+		cone.top_radius = 0.012
+		cone.bottom_radius = tan(deg_to_rad(SPOT_ANGLE))
+		cone.height = 1.0
+		cone.radial_segments = 16
+		cone.rings = 1
+		cone.cap_top = false
+		cone.cap_bottom = false
+		var beam_shader := Shader.new()
+		beam_shader.code = BEAM_SHADER
+		var beam_mat := ShaderMaterial.new()
+		beam_mat.shader = beam_shader
+		var pool_tex := GradientTexture2D.new()
+		var g := Gradient.new()
+		g.set_color(0, Color(1, 1, 1, 1))
+		g.set_color(1, Color(0, 0, 0, 0))
+		g.add_point(0.45, Color(0.55, 0.55, 0.55, 0.55))
+		pool_tex.gradient = g
+		pool_tex.fill = GradientTexture2D.FILL_RADIAL
+		pool_tex.fill_from = Vector2(0.5, 0.5)
+		pool_tex.fill_to = Vector2(1.0, 0.5)
+		pool_tex.width = 64
+		pool_tex.height = 64
 		var blur := StandardMaterial3D.new()
-		blur.albedo_color = Color(0.75, 0.77, 0.80, 0.22)
+		blur.albedo_color = Color(0.80, 0.82, 0.86, 0.16)
 		blur.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 		blur.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 		return {
-			"body": body, "shell": shell, "arm": arm, "motor": motor, "ring": ring, "blade": blade, "disc": disc,
-			"eye": eye, "lens": lens, "bulb": bulb,
+			"body": body, "stripe": stripe, "arm": arm, "motor": motor, "ring": ring, "disc": disc, "gimbal": gimbal,
+			"lens": lens, "beacon": beacon, "antenna": antenna, "mark": mark, "quad": quad, "cone": cone,
+			"halo_mat": halo_mat, "beam_mat": beam_mat, "pool_tex": pool_tex, "blur": blur,
+			# Служебная окраска: оранжевый со слабым самосвечением (световозвращающая плёнка ночью), чёрные полосы.
+			"orange": Materials.plain(Color(1.0, 0.36, 0.0), 0.45, Color(1.0, 0.33, 0.0), 0.3),
+			"black": Materials.plain(Color(0.03, 0.03, 0.04), 0.3),
 			"graphite": Materials.plain(Color(0.17, 0.18, 0.20), 0.45),
-			"shell_mat": Materials.plain(Color(0.86, 0.87, 0.88), 0.35),
-			"guard": Materials.plain(Color(0.95, 0.52, 0.12), 0.6),
-			"black": Materials.plain(Color(0.03, 0.03, 0.04), 0.15),
-			"lens_mat": Materials.plain(Color(0.10, 0.18, 0.30), 0.05, Color(0.35, 0.55, 0.9), 0.6),
-			"blur": blur,
-			"led_green": Materials.plain(Color(0.2, 0.9, 0.3), 0.4, Color(0.2, 1.0, 0.35), 3.0),
-			"led_red": Materials.plain(Color(1.0, 0.15, 0.1), 0.4, Color(1.0, 0.1, 0.05), 4.0),
-			"led_off": Materials.plain(Color(0.12, 0.05, 0.05), 0.4),
+			"ring_glow": ring_glow,
+			"lens_mat": Materials.plain(Color(0.10, 0.18, 0.30), 0.05, Color(0.35, 0.55, 0.9), 0.8),
+			"red_on": Materials.plain(Color(1.0, 0.12, 0.06), 0.4, Color(1.0, 0.06, 0.03), 9.0),
+			"red_off": Materials.plain(Color(0.32, 0.04, 0.03), 0.4, Color(1.0, 0.06, 0.03), 0.25),
+			"blue_on": Materials.plain(Color(0.15, 0.35, 1.0), 0.4, Color(0.10, 0.30, 1.0), 10.0),
+			"blue_off": Materials.plain(Color(0.04, 0.08, 0.32), 0.4, Color(0.10, 0.30, 1.0), 0.25),
 		}
 
 	func build(parts: Dictionary) -> void:
@@ -477,41 +633,82 @@ class Drone extends Node3D:
 		visual.name = "Visual"
 		visual.scale = Vector3.ONE * DRONE_SCALE
 		add_child(visual)
-		_mesh(visual, parts["body"], Vector3.ZERO, parts["graphite"])
-		var shell := _mesh(visual, parts["shell"], Vector3(0, 0.022, 0.01), parts["shell_mat"])
-		shell.scale = Vector3(0.95, 1.0, 1.6)
+		_mesh(visual, parts["body"], Vector3.ZERO, parts["orange"])
+		_mesh(visual, parts["stripe"], Vector3(0, 0, 0.045), parts["black"])
+		_mesh(visual, parts["stripe"], Vector3(0, 0, 0.08), parts["black"])
+		var diag := atan2(0.12, 0.11)
+		for k in 2:
+			var arm := _mesh(visual, parts["arm"], Vector3(0, 0.004, 0), parts["black"])
+			arm.rotation.y = diag if k == 0 else -diag
 		for k in 4:
 			var sx := 1.0 if k % 2 == 0 else -1.0
 			var sz := 1.0 if k < 2 else -1.0
-			var hub := Vector3(sx * 0.115, 0.0, sz * 0.105)
-			var arm := _mesh(visual, parts["arm"], hub * 0.55, parts["graphite"])
-			arm.rotation.y = atan2(hub.x, hub.z)
+			var hub := Vector3(sx * 0.12, 0.0, sz * 0.11)
 			_mesh(visual, parts["motor"], hub + Vector3(0, 0.008, 0), parts["graphite"])
-			_mesh(visual, parts["ring"], hub + Vector3(0, 0.012, 0), parts["guard"])
-			var prop := Node3D.new()
-			prop.position = hub + Vector3(0, 0.024, 0)
-			visual.add_child(prop)
-			_mesh(prop, parts["blade"], Vector3.ZERO, parts["black"])
-			_mesh(prop, parts["disc"], Vector3(0, 0.002, 0), parts["blur"])
-			prop.rotation.y = float(k) * 0.9
-			_props.append(prop)
-		# Камера-глазок на носу и LED над ней.
-		_mesh(visual, parts["eye"], Vector3(0, 0.0, -0.1), parts["black"])
-		_mesh(visual, parts["lens"], Vector3(0, 0.0, -0.116), parts["lens_mat"])
-		led = _mesh(visual, parts["bulb"], Vector3(0.035, 0.026, -0.085), parts["led_green"])
+			_mesh(visual, parts["ring"], hub + Vector3(0, 0.016, 0), parts["ring_glow"])
+			_mesh(visual, parts["disc"], hub + Vector3(0, 0.026, 0), parts["blur"])
+		# Подвес камеры под носом.
+		_mesh(visual, parts["gimbal"], Vector3(0, -0.022, -0.078), parts["black"])
+		_mesh(visual, parts["lens"], Vector3(0, -0.024, -0.097), parts["lens_mat"])
+		# Мигалка на крышке: красный слева, синий справа; антенна у кормы справа.
+		_red = _mesh(visual, parts["beacon"], Vector3(-0.019, 0.032, -0.03), parts["red_off"])
+		_blue = _mesh(visual, parts["beacon"], Vector3(0.019, 0.032, -0.03), parts["blue_off"])
+		_mesh(visual, parts["antenna"], Vector3(0.045, 0.025 + 0.0425, 0.088), parts["black"])
+		# «ГСУМ» на бортах (читается слева направо с каждой стороны) и на крышке.
+		var right := _mesh(visual, parts["mark"], Vector3(0.0605, -0.002, -0.035), parts["black"])
+		right.rotation.y = PI * 0.5
+		var left := _mesh(visual, parts["mark"], Vector3(-0.0605, -0.002, -0.035), parts["black"])
+		left.rotation.y = -PI * 0.5
 		var label := Label3D.new()
 		label.name = "Mark"
 		label.text = "ГСУМ"
-		label.font_size = 32
-		label.pixel_size = 0.0011
+		label.font_size = 40
+		label.pixel_size = 0.001
 		label.outline_size = 0
-		label.modulate = Color(0.95, 0.95, 0.92)
+		label.modulate = Color(0.02, 0.02, 0.03)
 		label.double_sided = false
-		label.rotation = Vector3(-PI * 0.5, 0.0, 0.0)
-		label.position = Vector3(0, 0.049, 0.035)
 		label.shaded = false
 		label.no_depth_test = false
+		# Лицом вверх, верх букв — к корме: читается спереди и сверху (нос опущен к Илюше при осмотре).
+		label.transform = Transform3D(Basis(Vector3(-1, 0, 0), Vector3(0, 0, 1), Vector3(0, 1, 0)), Vector3(0, 0.0258, -0.045))
 		visual.add_child(label)
+		# Ореол мигалки — над крышкой, вне облика (без наклона и масштаба облика).
+		halo = _mesh(self, parts["quad"], Vector3(0, 0.07, -0.05), parts["halo_mat"])
+		halo.name = "Halo"
+		halo.scale = Vector3.ONE * HALO_SIZE
+		halo.set_instance_shader_parameter("power", 0.0)
+		# Прожектор в подвесе: луч вниз, при осмотре — на Илюшу.
+		_pivot = Node3D.new()
+		_pivot.name = "SpotPivot"
+		_pivot.position = Vector3(0, -0.045, -0.15)
+		add_child(_pivot)
+		spot = SpotLight3D.new()
+		spot.name = "Spot"
+		spot.light_color = Color(0.92, 0.96, 1.0)
+		spot.light_energy = SPOT_ENERGY
+		spot.spot_range = SPOT_RANGE
+		spot.spot_angle = SPOT_ANGLE
+		spot.shadow_enabled = false
+		spot.light_specular = 0.25
+		spot.light_volumetric_fog_energy = 0.0   # луч рисует конус-меш; объёмный туман от прожектора — лишняя цена кадра
+		spot.visible = false
+		_pivot.add_child(spot)
+		_beam_arm = Node3D.new()
+		_beam_arm.name = "BeamArm"
+		_pivot.add_child(_beam_arm)
+		beam = _mesh(_beam_arm, parts["cone"], Vector3(0, 0, -0.5), parts["beam_mat"])
+		beam.name = "Beam"
+		beam.rotation.x = PI * 0.5
+		pool = Decal.new()
+		pool.name = "Pool"
+		pool.top_level = true
+		pool.size = Vector3(POOL_SIZE, 0.8, POOL_SIZE)
+		pool.texture_albedo = parts["pool_tex"]
+		pool.texture_emission = parts["pool_tex"]
+		pool.albedo_mix = 0.25
+		pool.emission_energy = 1.4
+		pool.modulate = Color(0.85, 0.92, 1.0)
+		add_child(pool)
 		hit_area = Area3D.new()
 		hit_area.name = "HitArea"
 		hit_area.collision_layer = HIT_LAYER
@@ -534,25 +731,56 @@ class Drone extends Node3D:
 		parent.add_child(mi)
 		return mi
 
-	## Покачивание, наклон по скорости, винты и LED: в патруле — зелёный раз в секунду, при осмотре — частый красный.
-	func animate(delta: float, speed: float) -> void:
-		_spin += PROP_SPIN * delta
-		for i in _props.size():
-			_props[i].rotation.y = _spin * (1.0 if i % 3 == 0 else -1.0) + float(i) * 0.9
+	## Покачивание, наклон по скорости, мигалка: красный дважды, синий дважды за BEACON_PERIOD (при подлёте и осмотре —
+	## чаще), ореол — цветом горящей половины.
+	func animate(_delta: float, speed: float) -> void:
 		var watching := state == &"hover" or state == &"approach"
 		var t := timer + phase
-		var lean := clampf(speed * 0.06, 0.0, 0.25)
-		visual.rotation.x = -lean + 0.05 * sin(t * 2.3) - (WATCH_TILT if state == &"hover" else 0.0)
-		visual.rotation.z = 0.07 * sin(t * 1.7 + 0.4) + (0.18 * sin(t * 2.6) if state == &"hover" else 0.0)
-		visual.position.y = 0.02 * sin(t * 4.1)
-		var blink_on := fmod(t, 0.25) < 0.12 if watching else fmod(t, 1.0) < 0.15
-		var material: Material = _parts["led_red"] if watching else _parts["led_green"]
-		led.material_override = material if blink_on else _parts["led_off"]
+		var lean := clampf(speed * LEAN_PER_SPEED, 0.0, LEAN_MAX)
+		visual.rotation.x = -lean + 0.03 * sin(t * 2.3) - (WATCH_TILT if state == &"hover" else 0.0)
+		visual.rotation.z = 0.05 * sin(t * 1.7 + 0.4) + (0.18 * sin(t * 2.6) if state == &"hover" else 0.0)
+		visual.position.y = 0.01 * sin(t * 4.1)
+		var u := fmod(t / (BEACON_PERIOD_WATCH if watching else BEACON_PERIOD), 1.0)
+		var red := u < 0.1 or (u > 0.17 and u < 0.27)
+		var blue := (u > 0.5 and u < 0.6) or (u > 0.67 and u < 0.77)
+		if red != red_on:
+			red_on = red
+			_red.material_override = _parts["red_on"] if red else _parts["red_off"]
+		if blue != blue_on:
+			blue_on = blue
+			_blue.material_override = _parts["blue_on"] if blue else _parts["blue_off"]
+		halo.set_instance_shader_parameter("tint", BEACON_RED if red else BEACON_BLUE)
+		halo.set_instance_shader_parameter("power", 1.0 if red or blue else 0.1)
+
+	## Прожектор: spot_on — SpotLight3D включён (иначе пятно-декаль на снегу); target — точка, куда светить (Илюша),
+	## Vector3.INF — вниз. Луч доворачивается плавно.
+	func aim(delta: float, spot_on: bool, target: Vector3) -> void:
+		var want := Vector3.DOWN
+		var length := maxf(_pivot.global_position.y, 0.3)
+		var watching := target != Vector3.INF
+		if watching:
+			var to := target - _pivot.global_position
+			if to.length() > 0.2:
+				want = to.normalized()
+				length = clampf(to.length(), 0.5, 5.0)
+		var k := clampf(6.0 * delta, 0.0, 1.0)
+		var mixed := _beam_dir.lerp(want, k)
+		_beam_dir = mixed.normalized() if mixed.length_squared() > 0.0001 else want
+		_beam_length = lerpf(_beam_length, length, k)
+		var up := Vector3.FORWARD if absf(_beam_dir.y) > 0.98 else Vector3.UP
+		_pivot.global_basis = Basis.looking_at(_beam_dir, up)
+		_beam_arm.scale = Vector3.ONE * _beam_length
+		beam.set_instance_shader_parameter("power", (1.8 if watching else 1.0) * (1.0 if spot_on else 0.6))
+		spot.visible = spot_on
+		pool.visible = not spot_on
+		pool.global_position = Vector3(global_position.x, 0.2, global_position.z)
 
 	func set_alive(on: bool) -> void:
 		visible = on
 		hit_area.monitorable = on
 		(hit_area.get_child(0) as CollisionShape3D).disabled = not on
+		if not on:
+			spot.visible = false
 		if on:
 			visual.scale = Vector3.ONE * DRONE_SCALE * 0.3
 			create_tween().tween_property(visual, "scale", Vector3.ONE * DRONE_SCALE, 0.35).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
@@ -560,9 +788,9 @@ class Drone extends Node3D:
 	func is_flying() -> bool:
 		return state != &"broken"
 
-	## Обломки: [меш, материал] — половина корпуса, крышка, кольца, винт, луч.
+	## Обломки: [меш, материал] — корпус, кольца, полоса, луч, мотор.
 	func debris_parts() -> Array:
 		return [
-			[_parts["body"], _parts["graphite"]], [_parts["ring"], _parts["guard"]], [_parts["shell"], _parts["shell_mat"]],
-			[_parts["ring"], _parts["guard"]], [_parts["blade"], _parts["black"]], [_parts["arm"], _parts["graphite"]],
+			[_parts["body"], _parts["orange"]], [_parts["ring"], _parts["ring_glow"]], [_parts["stripe"], _parts["black"]],
+			[_parts["ring"], _parts["ring_glow"]], [_parts["arm"], _parts["black"]], [_parts["motor"], _parts["graphite"]],
 		]

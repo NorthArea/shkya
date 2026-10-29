@@ -642,6 +642,13 @@ func say(text: String, quiet := false) -> void:
 	bubble_text = text
 	bubble_times.append(clock)
 
+## BREAK-01: пузырь из QuestLines.BREAK_LINES по поломке рядом (Residents, не чаще раза в 15 с на всех).
+func speak_break(text: String) -> void:
+	say(text)
+	bubble_kind = &"break"
+	bubble_log.append([clock, &"break", text, state])
+	_bubble_ready_at = clock + BUBBLE_COOLDOWN
+
 func bubble_visible() -> bool:
 	return _bubble_back != null and _bubble_back.visible and is_visible_in_tree()
 
@@ -1024,7 +1031,8 @@ static func segment_clear(a: Vector3, b: Vector3) -> bool:
 	return flight_distance(a, d.normalized(), d.length()) >= d.length()
 
 ## Дальность полёта из from по dir (XZ): dist, а если по пути коробка all_solids() (с запасом BODY_RADIUS +
-## KNOCK_SOLID_PAD) — до неё. Коробки, в запасе которых житель уже стоит, не учитываются.
+## KNOCK_SOLID_PAD) — до неё. Коробки, в запасе которых житель уже стоит, не учитываются. BREAK-01: целые разрушаемые
+## объекты (Breakables.intact_rects) — такое же препятствие.
 static func flight_distance(from: Vector3, dir: Vector3, dist: float) -> float:
 	if _solid_rects.is_empty():
 		for spec in Layout.all_solids():
@@ -1034,7 +1042,7 @@ static func flight_distance(from: Vector3, dir: Vector3, dist: float) -> float:
 	var o := Vector2(from.x, from.z)
 	var d := Vector2(dir.x, dir.z)
 	var best := dist
-	for rect: Rect2 in _solid_rects:
+	for rect: Rect2 in _solid_rects + Breakables.intact_rects(BODY_RADIUS + KNOCK_SOLID_PAD):
 		if rect.has_point(o):
 			continue
 		var t := _ray_rect(o, d, rect)

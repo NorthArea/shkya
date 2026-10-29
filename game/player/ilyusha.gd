@@ -34,7 +34,7 @@ const PUNCH_CENTER_Y := 1.55      # м: середина полосы 0,8…2,3
 const PUNCH_LOW := 0.8
 const PUNCH_HIGH := 2.3
 const PUNCH_LUNGE := 0.38         # м: рывок облика вперёд
-const PUNCH_MASK := 1 | 4 | 16    # World (Бабка, патруль), Car (жители), 16 — дроны (Drones.HIT_LAYER)
+const PUNCH_MASK := 1 | 4 | 16 | 32    # World (Бабка, патруль), Car (жители), 16 — дроны (Drones.HIT_LAYER), 32 — разрушаемые (BREAK-01)
 
 ## Режим укрытия сменился (old → new). Подписчики — укрытия и HUD; шкалу не трогает.
 signal hide_mode_changed(old: StringName, new: StringName)
@@ -68,7 +68,7 @@ var _punch_shape: SphereShape3D
 
 func _ready() -> void:
 	collision_layer = 2       # Player
-	collision_mask = 1 | 4    # World, Car
+	collision_mask = 1 | 4 | 32    # World, Car, Breakable (BREAK-01: целые разрушаемые объекты — препятствие)
 	# Без привязки к полу: квартал плоский, ступеней и спусков нет. Привязка 0,3 м при упоре в вертикальное ребро
 	# коробки (угол дома, торец вала снега) проваливала Илюшу в землю на 0,15–0,30 м (POLISH-01, tests/polish01_stuck.gd).
 	floor_snap_length = 0.0
@@ -318,7 +318,7 @@ func _resolve_punch() -> void:
 				continue
 		else:
 			var owner_node := (collider as Node).get_parent()
-			if owner_node == null or owner_node.get("interaction_id") == null:
+			if owner_node == null or (owner_node.get("interaction_id") == null and not owner_node.is_in_group(&"breakables")):   # BREAK-01: Breakable
 				continue
 			target = owner_node
 		if not target in targets:

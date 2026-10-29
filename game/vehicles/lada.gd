@@ -40,10 +40,11 @@ var braking := false            # тормоз или ручник с водит
 var visual: Node3D
 var _steer_now := 0.0
 var _lights := -1
+var _breakables: Node   # BREAK-01
 
 func _ready() -> void:
 	collision_layer = 4  # Car
-	collision_mask = 1   # World
+	collision_mask = 1 | 32   # World, Breakable (BREAK-01: разрушаемые объекты, Breakables.LAYER)
 	floor_snap_length = 0.5
 	var shape := BoxShape3D.new()
 	shape.size = SIZE
@@ -117,12 +118,26 @@ func _physics_process(delta: float) -> void:
 		velocity.y = 0.0
 	else:
 		velocity.y -= get_gravity().length() * delta
+	var before_slide := Vector3(velocity.x, 0.0, velocity.z)
 	move_and_slide()
+	_bump_breakables(before_slide, throttle, delta)
 	if exit_requested and speed_kmh() < EXIT_SPEED_KMH:
 		exit_requested = false
 		var world := get_parent()
 		if world and world.has_method("exit_car"):
 			world.exit_car()
+
+## BREAK-01: касания за этот move_and_slide решает Breakables (скорость до упора, газ); поломка без замедления или
+## тяжёлая (× 0,8) — горизонтальная скорость поправляется. Нет узла Breakables — ничего.
+func _bump_breakables(before: Vector3, throttle: float, delta: float) -> void:
+	if _breakables == null or not is_instance_valid(_breakables):
+		_breakables = get_tree().get_first_node_in_group(&"breakables_root") if is_inside_tree() else null
+		if _breakables == null:
+			return
+	var after: Vector3 = _breakables.car_contacts(self, before, throttle, delta)
+	if after != Vector3.INF:
+		velocity.x = after.x
+		velocity.z = after.z
 
 ## E в машине: на месте — выход сразу, на ходу — машина тормозит и водитель выходит после остановки.
 ## Второе E во время торможения отменяет выход (итоговая сверка PLAY-02).

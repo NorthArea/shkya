@@ -139,10 +139,16 @@ func reset_positions() -> void:
 		resident.reset_to_start()
 	for f in PAIRS:
 		residents[f]._mirror(residents[PAIRS[f]])
+	_break_ready_at = -INF   # BREAK-01
+	break_glances = 0
+	break_bubbles = 0
 
-func _physics_process(_delta: float) -> void:
+func _physics_process(delta: float) -> void:
 	if _sound == null:
 		_connect_sound()
+	_break_clock += delta
+	if _breakables == null:
+		_connect_breakables()
 
 ## SoundDirector — сосед LevelGeometry в DemoWorld; если ещё нет — подключимся позже.
 func _connect_sound() -> void:
@@ -152,6 +158,42 @@ func _connect_sound() -> void:
 		_sound.horn_sounded.connect(_on_horn)
 	elif _sound and not _sound.has_signal(&"horn_sounded"):
 		_sound = self   # гудков нет — больше не искать
+
+# --- BREAK-01: поломка рядом ---
+## Жители ближе BREAK_GLANCE_DISTANCE оглядываются на сломанный объект (glance_at); ближайший говорит реплику
+## QuestLines.BREAK_LINES (жительская), не чаще BREAK_BUBBLE_COOLDOWN на всех. Свой HIT при наезде это не блокирует.
+const BREAK_GLANCE_DISTANCE := 8.0
+const BREAK_BUBBLE_COOLDOWN := 15.0
+var break_glances := 0
+var break_bubbles := 0
+var _break_clock := 0.0
+var _break_ready_at := -INF
+var _breakables: Node
+
+func _connect_breakables() -> void:
+	_breakables = get_tree().get_first_node_in_group(&"breakables_root") if is_inside_tree() else null
+	if _breakables and _breakables.has_signal(&"broken") and not _breakables.broken.is_connected(_on_broken):
+		_breakables.broken.connect(_on_broken)
+
+func _on_broken(b: Node3D, _by: StringName) -> void:
+	var nearest: Resident = null
+	var best := BREAK_GLANCE_DISTANCE
+	for resident in residents:
+		if resident.hidden or resident.state == &"knocked":
+			continue
+		var to: Vector3 = b.global_position - resident.global_position
+		var d := Vector2(to.x, to.z).length()
+		if d > BREAK_GLANCE_DISTANCE:
+			continue
+		if resident.glance_at(b):
+			break_glances += 1
+		if d <= best:
+			best = d
+			nearest = resident
+	if nearest != null and _break_clock >= _break_ready_at:
+		nearest.speak_break(QuestLines.break_line(&"resident", break_bubbles))
+		break_bubbles += 1
+		_break_ready_at = _break_clock + BREAK_BUBBLE_COOLDOWN
 
 func _on_horn(vehicle: Node3D) -> void:
 	for resident in residents:

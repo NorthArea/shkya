@@ -142,7 +142,7 @@ func _free_exit_spot() -> Vector3:
 	capsule.height = 1.5
 	var query := PhysicsShapeQueryParameters3D.new()
 	query.shape = capsule
-	query.collision_mask = 1 | 4
+	query.collision_mask = 1 | 4 | 32   # + Breakable (BREAK-01): не выходить внутрь целого разрушаемого объекта
 	var origin := car.global_position + Vector3.UP * 0.8
 	for offset in EXIT_OFFSETS:
 		var spot := car.global_transform * offset
@@ -194,7 +194,7 @@ func _car_spot_free(point: Vector3, yaw: float) -> bool:
 	box.size = Lada.SIZE + Vector3(0.4, -0.2, 0.4)
 	var query := PhysicsShapeQueryParameters3D.new()
 	query.shape = box
-	query.collision_mask = 1 | 2
+	query.collision_mask = 1 | 2 | 32   # + Breakable (BREAK-01)
 	query.exclude = [car.get_rid()]
 	query.transform = Transform3D(Basis(Vector3.UP, yaw), point + Vector3.UP * (Lada.SIZE.y * 0.5 + 0.1))
 	return get_world_3d().direct_space_state.intersect_shape(query, 1).is_empty()

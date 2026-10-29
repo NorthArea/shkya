@@ -24,6 +24,7 @@ environment/defaults/default_clear_color=Color(0.16, 0.18, 0.21, 1)
 3d_physics/layer_3="Car"
 3d_physics/layer_4="Interact"
 3d_physics/layer_5="Drone"
+3d_physics/layer_6="Breakable"
 
 [physics]
 common/physics_interpolation=true

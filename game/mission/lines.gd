@@ -199,3 +199,23 @@ const RESIDENT_LINES_ANYONE := [
 ]
 ## Совместимость: прежнее имя набора — реакция на проход вплотную.
 const RESIDENT_LINES := RESIDENT_LINES_PASS
+
+## BREAK-01: реплики на поломку разрушаемого объекта (пузыри, не диалог; контракт ARENA-02, «Реплики»). Черновики на
+## согласование с правообладателем ШКЯ. Бабка — квестовая, ближе 15 м (Breakables); жители — ближайший ближе 8 м, не
+## чаще раза в 15 с на всех (Residents); доминошники — когда появятся (PEOPLE-03).
+const BREAK_LINES := [
+	{"speaker": "БАБКА", "text": "Ты чего натворил? Это ж Валькина клумба!"},
+	{"speaker": "ЖИТЕЛЬ", "text": "Каждую зиму одно и то же"},
+	{"speaker": "ЖИТЕЛЬ", "text": "Ничего-ничего. Весной новую поставят"},
+	{"speaker": "ЖИТЕЛЬ", "text": "Я ничего не видел. Я за хлебом"},   # сквозной гэг
+	{"speaker": "ДОМИНОШНИК", "text": "Рыба! …А, нет, это качели"},
+]
+const BREAK_SPEAKERS := {&"babka": "БАБКА", &"resident": "ЖИТЕЛЬ", &"domino": "ДОМИНОШНИК"}
+
+## Реплика n-й поломки для говорящего who (&"babka", &"resident", &"domino") — по кругу его реплик.
+static func break_line(who: StringName, n: int) -> String:
+	var own: Array[String] = []
+	for line: Dictionary in BREAK_LINES:
+		if line["speaker"] == BREAK_SPEAKERS.get(who, ""):
+			own.append(line["text"])
+	return own[posmod(n, own.size())] if not own.is_empty() else ""

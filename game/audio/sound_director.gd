@@ -89,6 +89,7 @@ func _setup() -> void:
 	_setup_coins()   # COINS-01: звон монеты
 	_setup_punch()   # PUNCH-01: удар и дроны
 	_setup_knock()   # KNOCK-01: сбитые «Ладой» жители
+	_setup_break()   # BREAK-01: разрушаемые объекты, сигнализация, крышки
 
 ## Текст субтитра радио, пока он на экране ("" — нет).
 func radio_text() -> String:
@@ -104,6 +105,7 @@ func _physics_process(delta: float) -> void:
 	_ambient_sounds(delta)   # CITY-01 (A)
 	_drone_sounds()   # PUNCH-01
 	_knock_sounds()   # KNOCK-01
+	_break_sounds()   # BREAK-01
 
 ## Радио один раз за мир: бубнёж из машины и субтитр, пока звучит (плюс хвост на дочитать).
 func _radio(delta: float) -> void:
@@ -542,24 +544,32 @@ func _on_coin_collected(_position: Vector3, _total: int) -> void:
 ## Взмах — разовый 3D у Илюши (плеер под DemoWorld, не под Илюшей: инвариант DEMO 3) по сигналу Ilyusha.punched.
 ## Жужжание — 3D-цикл на каждом дроне (затухание по удалению, до DRONE_BUZZ_DISTANCE), высота чуть разная у дронов и
 ## выше при подлёте и осмотре; сбитый дрон молчит. Хлопок — разовый 3D в точке сбитого дрона (Drones.drone_broken).
-## Уровни, RMS файла + volume_db (у источника): жужжание −20 − 12 = −32 дБ, взмах −20 − 4 = −24, хлопок −16 − 2 = −18.
-## Звуки — tools/generate_audio.py (синтез).
+## Уровни, RMS файла + volume_db (у источника): жужжание −20 − 12 = −32 дБ, взмах −20 − 4 = −24, хлопок −16 − 2 = −18,
+## «бип-бип» −20 − 6 = −26. Звуки — tools/generate_audio.py (синтез).
+## PUNCH-02: жужжание слышно раньше — радиус 22 → 33 м и unit_size 2 → 3 (+50 %: громкость на 33 м — как была на 22);
+## при подлёте к Илюше (patrol → approach) — короткий «бип-бип» 3D на дроне.
 const PUNCH_WHOOSH := preload("res://assets/audio/punch_whoosh.wav")
 const DRONE_BUZZ := preload("res://assets/audio/drone_buzz_loop.wav")
 const DRONE_POP := preload("res://assets/audio/drone_pop.wav")
+const DRONE_BEEP := preload("res://assets/audio/drone_beep.wav")
+const DRONE_BEEP_DB := -6.0
 const PUNCH_WHOOSH_DB := -4.0
 const DRONE_BUZZ_DB := -12.0
 const DRONE_POP_DB := -2.0
-const DRONE_BUZZ_DISTANCE := 22.0
+const DRONE_BUZZ_DISTANCE := 33.0
+const DRONE_BUZZ_UNIT := 3.0
 
 var punch_player: AudioStreamPlayer3D
 var drone_pop_player: AudioStreamPlayer3D
 var drone_buzz := {}   # Drone → AudioStreamPlayer3D
+var drone_beep := {}   # Drone → AudioStreamPlayer3D (PUNCH-02)
+var _drone_state := {} # Drone → состояние в прошлом кадре: «бип» на переходе в approach
 var _drones_node: Node
 
 func _setup_punch() -> void:
 	played["punch"] = 0
 	played["drone_pop"] = 0
+	played["drone_beep"] = 0
 	punch_player = _player_3d(world, PUNCH_WHOOSH_DB, PUNCH_WHOOSH)
 	punch_player.name = "PunchWhoosh"
 	drone_pop_player = _player_3d(world, DRONE_POP_DB, DRONE_POP)
@@ -586,7 +596,7 @@ func _drone_sounds() -> void:
 		if player == null:
 			player = _player_3d(drone, DRONE_BUZZ_DB, DRONE_BUZZ)
 			player.name = "Buzz"
-			player.unit_size = 2.0
+			player.unit_size = DRONE_BUZZ_UNIT
 			player.max_distance = DRONE_BUZZ_DISTANCE
 			drone_buzz[drone] = player
 		var flying: bool = drone.is_flying()
@@ -596,6 +606,16 @@ func _drone_sounds() -> void:
 			player.stop()
 		var excited: bool = drone.state == &"approach" or drone.state == &"hover"
 		player.pitch_scale = (0.96 + 0.025 * float(drone.index % 4)) * (1.12 if excited else 1.0)
+		if drone.state == &"approach" and _drone_state.get(drone, &"") != &"approach":
+			var beep: AudioStreamPlayer3D = drone_beep.get(drone)
+			if beep == null:
+				beep = _player_3d(drone, DRONE_BEEP_DB, DRONE_BEEP)
+				beep.name = "Beep"
+				beep.unit_size = DRONE_BUZZ_UNIT
+				beep.max_distance = DRONE_BUZZ_DISTANCE
+				drone_beep[drone] = beep
+			_one_shot(beep, DRONE_BEEP, "drone_beep")
+		_drone_state[drone] = drone.state
 
 # --- KNOCK-01: сбитые «Ладой» жители ---
 ## «Вжух» — разовый 3D в точке удара (Residents.resident_knocked), глухой «пуф» в снег — в точке падения
@@ -635,3 +655,83 @@ func _knock_sounds() -> void:
 	_residents_node.resident_landed.connect(func(resident: Node3D):
 		knock_thud_player.global_position = resident.global_position + Vector3.UP * 0.3
 		_one_shot(knock_thud_player, KNOCK_THUD, "knock_thud"))
+
+# --- BREAK-01: разрушаемые объекты ---
+## Поломка — разовый 3D в точке объекта по Breakables.broken: break_<материал> по Breakables.SOUND (дерево, металл,
+## пластик, снег); удар по тяжёлому, который его ещё не сломал (Breakables.wobbled), — тот же звук тише и ниже.
+## Реакции без разрушения: сигнализация машины (Breakables.car_alarm, 6 с) и хлопок крышек контейнера (bin_lid).
+## Не чаще одного звука одного вида за BREAK_MIN_GAP. Уровни, RMS файла + volume_db (у источника): поломка
+## −18 − 4 = −22 дБ, сигнализация −22 − 6 = −28, крышки −18 − 4 = −22 — ниже звона квеста. Звуки — tools/generate_audio.py.
+## played["break"] — поломки, played["break_<материал>"], ["car_alarm"], ["bin_lid"], ["break_wobble"].
+const BREAK_STREAMS := {
+	&"wood": preload("res://assets/audio/break_wood.wav"),
+	&"metal": preload("res://assets/audio/break_metal.wav"),
+	&"plastic": preload("res://assets/audio/break_plastic.wav"),
+	&"snow": preload("res://assets/audio/break_snow.wav"),
+}
+const CAR_ALARM := preload("res://assets/audio/car_alarm.wav")
+const BIN_LID := preload("res://assets/audio/bin_lid.wav")
+const BREAK_DB := -4.0
+const BREAK_WOBBLE_DB := -10.0
+const CAR_ALARM_DB := -6.0
+const BIN_LID_DB := -4.0
+const BREAK_MIN_GAP := 0.2   # с
+
+var break_players := {}    # вид звука → AudioStreamPlayer3D
+var _break_last := {}      # вид звука → время, с
+var _breakables_node: Node
+
+func _setup_break() -> void:
+	played["break"] = 0
+	played["break_wobble"] = 0
+	played["car_alarm"] = 0
+	played["bin_lid"] = 0
+	for material: StringName in BREAK_STREAMS:
+		played["break_%s" % material] = 0
+		break_players[material] = _break_player("Break_%s" % material, BREAK_DB, BREAK_STREAMS[material])
+	break_players[&"car_alarm"] = _break_player("CarAlarm", CAR_ALARM_DB, CAR_ALARM)
+	break_players[&"bin_lid"] = _break_player("BinLid", BIN_LID_DB, BIN_LID)
+
+func _break_player(node_name: String, volume: float, stream: AudioStream) -> AudioStreamPlayer3D:
+	var player := _player_3d(world, volume, stream)
+	player.name = node_name
+	player.max_polyphony = 3
+	player.max_distance = 50.0
+	return player
+
+## Breakables (LevelGeometry/Breakables) — по группе; подключается при первом появлении.
+func _break_sounds() -> void:
+	if break_players.is_empty() or (_breakables_node != null and is_instance_valid(_breakables_node)):
+		return
+	_breakables_node = get_tree().get_first_node_in_group(&"breakables_root")
+	if _breakables_node == null or not _breakables_node.has_signal(&"broken"):
+		_breakables_node = null
+		return
+	_breakables_node.broken.connect(func(b: Node3D, _by: StringName):
+		var material: StringName = _breakables_node.SOUND.get(b.kind, &"wood")
+		if _break_play(material, b.global_position + Vector3.UP * 0.5, 1.0, BREAK_DB):
+			played["break"] += 1
+			played["break_%s" % material] += 1)
+	_breakables_node.wobbled.connect(func(b: Node3D):
+		var material: StringName = _breakables_node.SOUND.get(b.kind, &"wood")
+		if _break_play(material, b.global_position + Vector3.UP * 0.5, 0.8, BREAK_WOBBLE_DB):
+			played["break_wobble"] += 1)
+	_breakables_node.car_alarm.connect(func(at: Vector3):
+		if _break_play(&"car_alarm", at, 1.0, CAR_ALARM_DB):
+			played["car_alarm"] += 1)
+	_breakables_node.bin_lid.connect(func(at: Vector3):
+		if _break_play(&"bin_lid", at, 1.0, BIN_LID_DB):
+			played["bin_lid"] += 1)
+
+## Разовый звук вида kind в точке at; false — тот же вид звучал меньше BREAK_MIN_GAP назад.
+func _break_play(kind: StringName, at: Vector3, pitch: float, volume: float) -> bool:
+	var now := Engine.get_physics_frames() / float(Engine.physics_ticks_per_second)
+	if now - float(_break_last.get(kind, -INF)) < BREAK_MIN_GAP:
+		return false
+	_break_last[kind] = now
+	var player: AudioStreamPlayer3D = break_players[kind]
+	player.global_position = at
+	player.pitch_scale = pitch
+	player.volume_db = volume
+	player.play()
+	return true

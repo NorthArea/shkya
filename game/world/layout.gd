@@ -521,7 +521,7 @@ static func decor_solids() -> Array:
 	solids.append(["TrashBinsH10", "bins", H10_BINS[0], H10_BINS[1]])
 	solids.append(["Shop24", "shop24", SHOP24[0], SHOP24[1]])
 	solids.append(["Billboard", "billboard", BILLBOARD, Vector3(0.5, 6.0, 0.5)])
-	return solids
+	return solids + PROPS_SOLIDS   # PROPS-01: в конце — номера прежних коробок не сдвигаются
 
 ## SOLIDS + декор: для геометрии и проверок свободного места.
 static func all_solids() -> Array:
@@ -702,3 +702,143 @@ const DRONE_LOOPS: Array = [
 ]
 ## С каких петель стартуют дроны (по одному на петлю); свободные петли — места возрождения.
 const DRONE_START_LOOPS: Array[int] = [0, 7, 2, 3, 4, 5]
+
+# --- BREAK-01: разрушаемые объекты (ARENA-02, «План по зонам») ---------------------------------------------------
+## [id, kind, центр x/z, размер (x, высота, z) в осях объекта, yaw (рад, поворот вокруг вертикали), class].
+## class: &"light" — «Лада» от 1 м/с или упор с газом дольше 0,3 с, один удар Илюши; &"heavy" — «Лада» от 3 м/с, три
+## удара. Облик, обломки и звук — по kind (game/world/breakables.gd). В all_solids() не входят: коллизия — слой 6
+## «Breakable» (32), её видят только «Лада» и Илюша. Запасы до маршрутов, полос, путей стелса, постов, монет и петель
+## дронов — как в builds/checks/ARENA-02/scripts/check.py (набор BREAK, п. 1); у heavy нет щелей 0,05…3 м до коробок.
+## Первый шаг BREAK-01 — 10 объектов P1 двора у спавна (Z1, Z3) и выезда (Z7); остальные — PROPS-01.
+const BREAKABLES: Array = [
+	# Z1 — подъезд H1: урна вплотную к западному торцу лавки, клумба-покрышка вплотную к стене у двери, снеговик
+	# лицом к спавну (на запад).
+	[&"Z1_bin", &"bin", Vector2(-35.75, 105.0), Vector3(0.5, 0.8, 0.5), 0.0, &"light"],
+	[&"Z1_planter", &"planter", Vector2(-37.2, 107.5), Vector3(1.0, 0.4, 1.0), 0.0, &"light"],
+	[&"Z1_snowman", &"snowman", Vector2(-26.0, 99.5), Vector3(0.9, 1.7, 0.9), -PI * 0.5, &"light"],
+	# Z3 — площадка: качели-балансир (доска вдоль x) и карусель-вертушка севернее оградки Playground.
+	[&"Z3_seesaw", &"seesaw", Vector2(-63.0, 90.5), Vector3(3.2, 0.9, 0.5), 0.0, &"heavy"],
+	[&"Z3_carousel", &"carousel", Vector2(-56.0, 91.0), Vector3(2.4, 1.0, 2.4), 0.0, &"heavy"],
+	# Z7 — газон у выезда: раскопка теплотрассы (ограждение «ВЕДУТСЯ РАБОТЫ» вокруг ямы с плитами и паром; плиты и пар
+	# остаются после поломки) и четыре конуса по углам.
+	[&"Z7_dig", &"barrier", Vector2(20.0, 52.0), Vector3(6.0, 1.1, 4.0), 0.0, &"light"],
+	[&"Z7_cone1", &"cones", Vector2(15.5, 50.0), Vector3(0.4, 0.7, 0.4), 0.0, &"light"],
+	[&"Z7_cone2", &"cones", Vector2(15.5, 54.0), Vector3(0.4, 0.7, 0.4), 0.0, &"light"],
+	[&"Z7_cone3", &"cones", Vector2(24.5, 50.0), Vector3(0.4, 0.7, 0.4), 0.0, &"light"],
+	[&"Z7_cone4", &"cones", Vector2(24.5, 54.0), Vector3(0.4, 0.7, 0.4), 0.0, &"light"],
+]
+
+# --- PROPS-01: новые объекты арены (docs/workflow/tasks/ARENA-02.md, «План по зонам») ------------------------------
+## Неразрушаемые объекты с коллизией (тип b). Коробки — в конце decor_solids(), номера и окраска прежних не сдвигаются;
+## вид строит game/world/props.gd (Props), имена — с «Prop». Щели до любых коробок — 0 или ≥ 3 м (ARENA-02, «Что не
+## делать», 5); запасы до маршрутов, полос, стелса, постов, монет и петель дронов — builds/checks/PROPS-01/props_check.log.
+## Хоккейная коробка: 30 × 15 м (x 47…77, z 90,5…105,5), борта 1,2 м, проходы 4 м посередине длинных бортов (x 60…64).
+const RINK := [Vector2(62, 98), Vector3(30, 1.2, 15)]
+const RINK_GATE := [60.0, 64.0]
+const PROPS_SOLIDS := [
+	["PropRinkBoard", "props", Vector2(53.5, 90.65), Vector3(13, 1.2, 0.3)],   # Z6 хоккейная коробка: северный борт, запад (x 47…60)
+	["PropRinkBoard", "props", Vector2(70.5, 90.65), Vector3(13, 1.2, 0.3)],   # северный борт, восток (x 64…77); проход 4 м x 60…64
+	["PropRinkBoard", "props", Vector2(53.5, 105.35), Vector3(13, 1.2, 0.3)],   # южный борт, запад
+	["PropRinkBoard", "props", Vector2(70.5, 105.35), Vector3(13, 1.2, 0.3)],   # южный борт, восток; проход 4 м x 60…64
+	["PropRinkBoard", "props", Vector2(47.15, 98), Vector3(0.3, 1.2, 15)],   # западный борт (за воротами), стык с длинными — вплотную
+	["PropRinkBoard", "props", Vector2(76.85, 98), Vector3(0.3, 1.2, 15)],   # восточный борт
+	["PropIceSlide", "props", Vector2(36, 90.25), Vector3(2.4, 2.5, 4.5)],   # Z6 ледяная горка: площадка и лесенка (x 34,8…37,2, z 88…92,5); до гаражей двора 4,8 м
+	["PropIceSlideRamp", "props", Vector2(36, 86), Vector3(2.4, 1, 4)],   # скат на снежной насыпи (z 84…88), вплотную к площадке; раскат z 74…84 — без коллизии
+	["PropDovecote", "props", Vector2(88, 110), Vector3(3, 5, 3)],   # Z6 голубятня на сваях
+	["PropShells", "props", Vector2(54.5, 122.25), Vector3(9, 2.2, 5.5)],   # Z6 три «ракушки» вплотную к границе карты (z 125)
+	["PropShawarma", "props", Vector2(60, 47.7), Vector3(3, 2.6, 2.4)],   # Z8 ларёк «ШАУРМА», окно на север к тротуару A; житель 4 (z 43,3) — 3,2 м
+	["PropPress", "props", Vector2(-12, 15.5), Vector3(3, 2.6, 3)],   # Z11 киоск «ПРЕССА» вплотную к H5_East (z 14), окном на юг; житель 3 (z 20,6) — 3,6 м
+	["PropRowan", "props", Vector2(45, 55), Vector3(0.3, 5, 0.3)],   # Z8 рябины (ART-04, черта 8)
+	["PropRowan", "props", Vector2(60, 55), Vector3(0.3, 5, 0.3)],
+	["PropRowan", "props", Vector2(75, 55), Vector3(0.3, 5, 0.3)],
+	["PropRowan", "props", Vector2(90, 55), Vector3(0.3, 5, 0.3)],
+	["PropRowan", "props", Vector2(8, 86), Vector3(0.3, 5, 0.3)],   # Z5 рябина вместо ёлки (решение интегратора 29.10)
+]
+
+## Разрушаемые P1/P2 плана ARENA-02 вне первого шага BREAK-01 (Layout.BREAKABLES: Z1, Z3, Z7): формат BREAK-01 —
+## [id, kind, центр, размер (по осям мира), yaw, class]. Облик и механика — Breakables (BREAK-01); список
+## подключается к BREAKABLES интегратором (PROPS-01 не правит блок BREAK-01). Запасы — props_check.log.
+const PROPS_BREAKABLES := [
+	# P1 двора вне первого шага BREAK-01 (Z1, Z3, Z7 — там): снеговик у проезда, палисадник у H1, столик доминошников, снеговик у выезда.
+	[&"Z4_2", &"snowman", Vector2(-44, 84), Vector3(0.9, 1.7, 0.9), 0.0, &"light"],
+	[&"Z5_1a", &"fence", Vector2(1.2, 105.6), Vector3(2.4, 0.6, 0.1), 0.0, &"light"],
+	[&"Z5_1b", &"fence", Vector2(3.6, 105.6), Vector3(2.4, 0.6, 0.1), 0.0, &"light"],
+	[&"Z5_1c", &"fence", Vector2(6, 105.6), Vector3(2.4, 0.6, 0.1), 0.0, &"light"],
+	[&"Z5_1d", &"fence", Vector2(8.4, 105.6), Vector3(2.4, 0.6, 0.1), 0.0, &"light"],
+	[&"Z5_1e", &"planter", Vector2(2, 107), Vector3(1, 0.4, 1), 0.0, &"light"],
+	[&"Z5_1f", &"planter", Vector2(5, 107), Vector3(1, 0.4, 1), 0.0, &"light"],
+	[&"Z5_1g", &"planter", Vector2(8, 107), Vector3(1, 0.4, 1), 0.0, &"light"],
+	[&"Z5_4", &"domino", Vector2(9, 97), Vector3(1.6, 0.8, 2.2), 0.0, &"heavy"],
+	[&"Z7_1", &"snowman", Vector2(5, 50), Vector3(0.9, 1.7, 0.9), 0.0, &"light"],
+	# P2 и P1 вне двора.
+	[&"Z2_1", &"laundry", Vector2(-75, 98.5), Vector3(1.6, 2.2, 5), 0.0, &"light"],
+	[&"Z3_3a", &"planter", Vector2(-64, 73.5), Vector3(1, 0.4, 1), 0.0, &"light"],
+	[&"Z3_3b", &"planter", Vector2(-60, 73.5), Vector3(1, 0.4, 1), 0.0, &"light"],
+	[&"Z3_3c", &"planter", Vector2(-56, 73.5), Vector3(1, 0.4, 1), 0.0, &"light"],
+	[&"Z3_5", &"fort", Vector2(-69.75, 80), Vector3(3, 1, 3), 0.0, &"light"],
+	[&"Z4_1", &"sofa", Vector2(-37.5, 65.5), Vector3(2, 0.8, 0.9), 0.0, &"light"],
+	[&"Z4_3", &"sand_box", Vector2(-47.5, 92), Vector3(1.2, 0.8, 0.8), 0.0, &"light"],
+	[&"Z6_5", &"carpet", Vector2(40, 112), Vector3(1.6, 2.3, 4), 0.0, &"light"],
+	[&"Z7_2", &"snowman", Vector2(-12, 53), Vector3(0.9, 1.4, 0.9), 0.0, &"light"],
+	[&"Z8_2", &"bin", Vector2(57.2, 45.9), Vector3(0.5, 0.8, 0.5), 0.0, &"light"],
+	[&"Z9_1_00", &"fence", Vector2(-72.6, 46), Vector3(2.4, 0.6, 0.1), 0.0, &"light"],
+	[&"Z9_1_01", &"fence", Vector2(-70.2, 46), Vector3(2.4, 0.6, 0.1), 0.0, &"light"],
+	[&"Z9_1_02", &"fence", Vector2(-67.8, 46), Vector3(2.4, 0.6, 0.1), 0.0, &"light"],
+	[&"Z9_1_03", &"fence", Vector2(-65.4, 46), Vector3(2.4, 0.6, 0.1), 0.0, &"light"],
+	[&"Z9_1_04", &"fence", Vector2(-63, 46), Vector3(2.4, 0.6, 0.1), 0.0, &"light"],
+	[&"Z9_1_05", &"fence", Vector2(-60.6, 46), Vector3(2.4, 0.6, 0.1), 0.0, &"light"],
+	[&"Z9_1_06", &"fence", Vector2(-58.2, 46), Vector3(2.4, 0.6, 0.1), 0.0, &"light"],
+	[&"Z9_1_07", &"fence", Vector2(-55.8, 46), Vector3(2.4, 0.6, 0.1), 0.0, &"light"],
+	[&"Z9_1_08", &"fence", Vector2(-53.4, 46), Vector3(2.4, 0.6, 0.1), 0.0, &"light"],
+	[&"Z9_1_09", &"fence", Vector2(-51, 46), Vector3(2.4, 0.6, 0.1), 0.0, &"light"],
+	[&"Z9_1_10", &"fence", Vector2(-48.6, 46), Vector3(2.4, 0.6, 0.1), 0.0, &"light"],
+	[&"Z9_1_11", &"fence", Vector2(-46.2, 46), Vector3(2.4, 0.6, 0.1), 0.0, &"light"],
+	[&"Z9_1_12", &"fence", Vector2(-43.8, 46), Vector3(2.4, 0.6, 0.1), 0.0, &"light"],
+	[&"Z9_1_13", &"fence", Vector2(-41.4, 46), Vector3(2.4, 0.6, 0.1), 0.0, &"light"],
+	[&"Z9_1_14", &"fence", Vector2(-39, 46), Vector3(2.4, 0.6, 0.1), 0.0, &"light"],
+	[&"Z9_1_15", &"fence", Vector2(-36.6, 46), Vector3(2.4, 0.6, 0.1), 0.0, &"light"],
+	[&"Z9_1_16", &"fence", Vector2(-34.2, 46), Vector3(2.4, 0.6, 0.1), 0.0, &"light"],
+	[&"Z9_1_17", &"fence", Vector2(-31.8, 46), Vector3(2.4, 0.6, 0.1), 0.0, &"light"],
+	[&"Z9_1_18", &"fence", Vector2(-29.4, 46), Vector3(2.4, 0.6, 0.1), 0.0, &"light"],
+	[&"Z9_1k0", &"planter", Vector2(-70, 46.8), Vector3(1, 0.4, 1), 0.0, &"light"],
+	[&"Z9_1k1", &"planter", Vector2(-62, 46.8), Vector3(1, 0.4, 1), 0.0, &"light"],
+	[&"Z9_1k2", &"planter", Vector2(-54, 46.8), Vector3(1, 0.4, 1), 0.0, &"light"],
+	[&"Z9_1k3", &"planter", Vector2(-46, 46.8), Vector3(1, 0.4, 1), 0.0, &"light"],
+	[&"Z9_1k4", &"planter", Vector2(-38, 46.8), Vector3(1, 0.4, 1), 0.0, &"light"],
+	[&"Z9_1k5", &"planter", Vector2(-30, 46.8), Vector3(1, 0.4, 1), 0.0, &"light"],
+	[&"Z11_1", &"bin", Vector2(-27.75, 21), Vector3(0.5, 0.8, 0.5), 0.0, &"light"],
+	[&"Z11_3", &"sign_board", Vector2(-37.5, 15.6), Vector3(0.6, 1, 0.5), 0.0, &"light"],
+	[&"Z15_1", &"swing", Vector2(-20, -50), Vector3(2.8, 2.2, 1.6), 0.0, &"heavy"],
+	[&"Z15_2", &"carousel", Vector2(-12, -50), Vector3(2.4, 1, 2.4), 0.0, &"heavy"],
+	[&"Z15_3", &"slide", Vector2(-28, -50), Vector3(1, 2.6, 4), 0.0, &"heavy"],
+	[&"Z15_4", &"sandpit", Vector2(-20, -42), Vector3(2, 2.2, 2), 0.0, &"heavy"],
+	[&"Z15_5", &"playhouse", Vector2(-12, -42), Vector3(1.8, 1.8, 1.8), 0.0, &"heavy"],
+	[&"Z15_6", &"laundry", Vector2(10, -58), Vector3(1.6, 2.2, 6), 0.0, &"light"],
+	[&"Z15_9a", &"bench", Vector2(-20, -56), Vector3(1.8, 0.5, 0.6), 0.0, &"heavy"],
+	[&"Z15_9b", &"bench", Vector2(-12, -56), Vector3(1.8, 0.5, 0.6), 0.0, &"heavy"],
+	[&"Z17_1", &"crate", Vector2(-44, -42.4), Vector3(1.2, 0.9, 0.8), 0.0, &"light"],
+	[&"Z17_2", &"sign_board", Vector2(-48.3, -44.5), Vector3(0.6, 1, 0.5), 0.0, &"light"],
+	[&"Z17_3", &"bin", Vector2(-47.6, -36.8), Vector3(0.5, 0.8, 0.5), 0.0, &"light"],
+	[&"Z18_1_00", &"fence", Vector2(-84.6, -78), Vector3(0.1, 0.6, 2.4), 0.0, &"light"],
+	[&"Z18_1_01", &"fence", Vector2(-84.6, -75.6), Vector3(0.1, 0.6, 2.4), 0.0, &"light"],
+	[&"Z18_1_02", &"fence", Vector2(-84.6, -73.2), Vector3(0.1, 0.6, 2.4), 0.0, &"light"],
+	[&"Z18_1_03", &"fence", Vector2(-84.6, -70.8), Vector3(0.1, 0.6, 2.4), 0.0, &"light"],
+	[&"Z18_1_04", &"fence", Vector2(-84.6, -68.4), Vector3(0.1, 0.6, 2.4), 0.0, &"light"],
+	[&"Z18_1_05", &"fence", Vector2(-84.6, -66), Vector3(0.1, 0.6, 2.4), 0.0, &"light"],
+	[&"Z18_1_06", &"fence", Vector2(-84.6, -63.6), Vector3(0.1, 0.6, 2.4), 0.0, &"light"],
+	[&"Z18_1_07", &"fence", Vector2(-84.6, -61.2), Vector3(0.1, 0.6, 2.4), 0.0, &"light"],
+	[&"Z18_1_08", &"fence", Vector2(-84.6, -58.8), Vector3(0.1, 0.6, 2.4), 0.0, &"light"],
+	[&"Z18_1_09", &"fence", Vector2(-84.6, -56.4), Vector3(0.1, 0.6, 2.4), 0.0, &"light"],
+	[&"Z18_1_10", &"fence", Vector2(-84.6, -54), Vector3(0.1, 0.6, 2.4), 0.0, &"light"],
+	[&"Z18_1_11", &"fence", Vector2(-84.6, -51.6), Vector3(0.1, 0.6, 2.4), 0.0, &"light"],
+	[&"Z18_1_12", &"fence", Vector2(-84.6, -49.2), Vector3(0.1, 0.6, 2.4), 0.0, &"light"],
+	[&"Z18_1_13", &"fence", Vector2(-84.6, -46.8), Vector3(0.1, 0.6, 2.4), 0.0, &"light"],
+	[&"Z18_1_14", &"fence", Vector2(-84.6, -44.4), Vector3(0.1, 0.6, 2.4), 0.0, &"light"],
+	[&"Z18_1_15", &"fence", Vector2(-84.6, -42), Vector3(0.1, 0.6, 2.4), 0.0, &"light"],
+	[&"Z18_1k0", &"planter", Vector2(-85.3, -78), Vector3(1, 0.4, 1), 0.0, &"light"],
+	[&"Z18_1k1", &"planter", Vector2(-85.3, -69), Vector3(1, 0.4, 1), 0.0, &"light"],
+	[&"Z18_1k2", &"planter", Vector2(-85.3, -60), Vector3(1, 0.4, 1), 0.0, &"light"],
+	[&"Z18_1k3", &"planter", Vector2(-85.3, -51), Vector3(1, 0.4, 1), 0.0, &"light"],
+	[&"Z18_1k4", &"planter", Vector2(-85.3, -42), Vector3(1, 0.4, 1), 0.0, &"light"],
+	[&"Z19_1", &"stall", Vector2(-5, -113.6), Vector3(1.2, 0.8, 0.8), 0.0, &"light"],
+]

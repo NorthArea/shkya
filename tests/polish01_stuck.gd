@@ -59,8 +59,9 @@ func _initialize() -> void:
 func _run() -> void:
 	# Сторож от зависания, не критерий. Время растёт с числом твёрдых коробок (обход углов): ART-05/06
 	# добавили тополя, машины и павильоны, 3000 с перестало хватать; ARENA-01 — улицы C и D и круг по кольцу.
-	create_timer(4500.0, true, false, true).timeout.connect(func():
-		push_error("FAIL: stuck sweep exceeded 4500 simulated seconds")
+	# 4500 → 6000 (BREAK-01, 29.10): сценарии у тяжёлых разрушаемых и коробок PROPS-01 не укладывались в 4500 с.
+	create_timer(6000.0, true, false, true).timeout.connect(func():
+		push_error("FAIL: stuck sweep exceeded 6000 simulated seconds")
 		quit(2)
 	)
 	var started := Time.get_ticks_msec()
@@ -89,9 +90,14 @@ func _run() -> void:
 	var scenarios := _scenarios()
 	await _geometry_walk(scenarios)
 	await _corner_sink_sweep()
+	await _breakable_walk()
+	await _props_walk()   # PROPS-01: новые коробки арены
 	_park_car_away(false)
 	await _sweep_car()
 	await _geometry_car(scenarios)
+	await _breakable_car()
+	await _props_car()
+	await _rink_gates()
 	_patrol_bodies(true)
 	await _ring_lap()
 	print("INFO: stuck test wall time %.1f s" % ((Time.get_ticks_msec() - started) / 1000.0))
@@ -460,6 +466,160 @@ func _geometry_car(by_cat: Dictionary) -> void:
 		check(broken.is_empty(), "Lada stays on the ground, outside solids and in the map at '%s' (%s)" % [cat, broken.slice(0, 3)])
 	print("INFO: car geometry %d scenarios" % total)
 
+# --- часть 2б (BREAK-01): целые тяжёлые разрушаемые объекты ---
+## Layout.BREAKABLES с class heavy — не в all_solids(), поэтому сценарии части 2 их не видят. Илюша идёт в каждую грань
+## и угол и отходит; «Лада» медленно (с 0,3 м: до упора меньше 3 м/с — объект стоит стеной) упирается носом в каждую
+## грань и выезжает назад, затем назад с рулём и вперёд с обратным рулём. Сломанный объект — возвращается целым.
+
+func _heavy_breakables() -> Array:
+	var out := []
+	var root := world.get_node_or_null("LevelGeometry/Breakables")
+	if root == null:
+		return out
+	for b in root.objects:
+		if b.heavy:
+			out.append(b)
+	return out
+
+func _heavy_sides(b) -> Array:
+	var h := Vector2(b.size.x, b.size.z) * 0.5
+	var c: Vector2 = b.center
+	var out := []
+	for n in [Vector2(1, 0), Vector2(-1, 0), Vector2(0, 1), Vector2(0, -1)]:
+		out.append([c + n * (absf(n.x) * h.x + absf(n.y) * h.y), -n])
+	for k in [Vector2(-1, -1), Vector2(-1, 1), Vector2(1, -1), Vector2(1, 1)]:
+		out.append([c + k * h, -k.normalized()])
+	return out
+
+func _breakable_walk() -> void:
+	var player := world.player
+	var heavy := _heavy_breakables()
+	var trapped := []
+	var inside := []
+	var tested := 0
+	for b in heavy:
+		for side in _heavy_sides(b):
+			var dir: Vector2 = side[1]
+			var start := Vector3(side[0].x - dir.x * WALK_RUN, 0.0, side[0].y - dir.y * WALK_RUN)
+			if not _free(start, _capsule(0.4), 0.8):
+				continue
+			tested += 1
+			player.place(start, 0.0)
+			world.camera_rig.yaw = _yaw(dir)
+			await _frames(2)
+			Input.action_press(&"move_forward")
+			await _frames(WALK_PUSH)
+			Input.action_release(&"move_forward")
+			var contact := player.global_position
+			if b.rect().grow(0.2).has_point(Vector2(contact.x, contact.z)) or contact.y < -SINK_TOLERANCE:
+				inside.append("%s@(%.1f,%.1f)" % [b.id, contact.x, contact.z])
+			var escaped := false
+			for e in WALK_ESCAPES:
+				var away: Vector2 = (-dir).rotated(e)
+				player.place(contact, 0.0)
+				world.camera_rig.yaw = _yaw(away)
+				await _frames(2)
+				Input.action_press(&"move_forward")
+				await _frames(WALK_ESCAPE)
+				Input.action_release(&"move_forward")
+				var p := player.global_position
+				if Vector2(p.x - contact.x, p.z - contact.z).dot(away) >= WALK_ESCAPE_MIN:
+					escaped = true
+					break
+			if not escaped:
+				trapped.append("%s@(%.1f,%.1f)" % [b.id, contact.x, contact.z])
+	print("INFO: walk heavy breakables %d objects, %d scenarios, trapped %d, inside %d" % [heavy.size(), tested, trapped.size(), inside.size()])
+	check(heavy.is_empty() or tested >= heavy.size() * 4, "walk scenarios at heavy breakables (%d)" % tested)
+	check(trapped.is_empty(), "Ilyusha walks away from heavy breakables (%s)" % [trapped.slice(0, 3)])
+	check(inside.is_empty(), "Ilyusha never ends inside a heavy breakable (%s)" % [inside.slice(0, 3)])
+
+## Коробка машины на старте не задевает разрушаемых (слой 32; _free их не видит): у качелей и карусели 4,2 м между
+## гранями — машина длиной 4,1 м, поставленная туда носом в одну, стояла бы в другой.
+func _clear_of_breakables(point: Vector3, yaw: float) -> bool:
+	var query := PhysicsShapeQueryParameters3D.new()
+	query.shape = _car_box(0.1)
+	query.collision_mask = 32
+	query.transform = Transform3D(Basis(Vector3.UP, yaw), point + Vector3.UP * (Lada.SIZE.y * 0.5 + 0.1))
+	return world.get_world_3d().direct_space_state.intersect_shape(query, 1).is_empty()
+
+## Выезд тараном: сдать назад до упора, затем газ в тяжёлый объект; true — объект сломан и машина ушла на CAR_ESCAPE_MIN.
+func _car_rams_out(b, contact: Vector3, yaw: float) -> bool:
+	var car := world.car
+	car.reset_to(contact, yaw)
+	await _frames(2)
+	await _drive(&"move_back", &"", 60)
+	await _drive(&"move_forward", &"", CAR_ESCAPE)
+	return not b.is_intact() and _flat(car.global_position - contact) >= CAR_ESCAPE_MIN
+
+func _breakable_car() -> void:
+	var car := world.car
+	if world.control_mode != &"in_car":
+		world.enter_car()
+		await _frames(3)
+	var root := world.get_node_or_null("LevelGeometry/Breakables")
+	var heavy := _heavy_breakables()
+	var stuck := []
+	var no_turn := []
+	var broken := []
+	var rammed_out := []
+	var tested := 0
+	for b in heavy:
+		for side in _heavy_sides(b).slice(0, 4):
+			var dir: Vector2 = side[1]
+			var start := Vector3(side[0].x - dir.x * (Lada.SIZE.z * 0.5 + 0.3), 0.0, side[0].y - dir.y * (Lada.SIZE.z * 0.5 + 0.3))
+			var yaw := _yaw(dir)
+			if not _free(start, _car_box(0.1), Lada.SIZE.y * 0.5 + 0.1, yaw) or not _clear_of_breakables(start, yaw):
+				continue
+			tested += 1
+			car_low = 0.0
+			car.reset_to(start, yaw)
+			await _frames(2)
+			await _drive(&"move_forward", &"", CAR_PUSH)
+			var contact := car.global_position
+			var contact_yaw := car.rotation.y
+			if not b.is_intact():
+				broken.append("%s broke at slow push" % b.id)
+				root.reset_positions()
+			if _car_issue() != "":
+				broken.append("%s@(%.1f,%.1f)%s" % [b.id, contact.x, contact.z, _car_issue()])
+			var rammed := false
+			if not await _car_leaves(contact, contact_yaw, CAR_ESCAPE, CAR_ESCAPE_MIN, [&"move_back"]):
+				# Сзади нет места (полоса между тяжёлым и коробкой уже машины с запасом выезда, например качели/карусель —
+				# оградка Playground, 5,25 / 4,8 м): выход — сдать до упора и разогнаться в объект (≥ 3 м/с — ломается).
+				rammed = await _car_rams_out(b, contact, contact_yaw)
+				if not rammed:
+					stuck.append("%s@(%.1f,%.1f)" % [b.id, contact.x, contact.z])
+				else:
+					rammed_out.append("%s@(%.1f,%.1f)" % [b.id, contact.x, contact.z])
+					root.reset_positions()
+			car.reset_to(contact, contact_yaw)
+			await _frames(2)
+			var side_key := &"move_left" if rng.randf() < 0.5 else &"move_right"
+			var other := &"move_right" if side_key == &"move_left" else &"move_left"
+			var farthest := 0.0
+			Input.action_press(&"move_back")
+			Input.action_press(side_key)
+			for f in CAR_ESCAPE:
+				await physics_frame
+				farthest = maxf(farthest, _flat(car.global_position - contact))
+			_release_all()
+			Input.action_press(&"move_forward")
+			Input.action_press(other)
+			for f in CAR_ESCAPE:
+				await physics_frame
+				farthest = maxf(farthest, _flat(car.global_position - contact))
+			_release_all()
+			await _brake_to_stop()
+			if not rammed and (farthest < CAR_MANEUVER_MIN or absf(angle_difference(contact_yaw, car.rotation.y)) < CAR_TURN_MIN):
+				no_turn.append("%s@(%.1f,%.1f) %.1fm" % [b.id, contact.x, contact.z, farthest])
+			if root:
+				root.reset_positions()   # манёвр с рулём мог разогнаться и сломать объект — следующий сценарий с целым
+	print("INFO: car heavy breakables %d scenarios, stuck %d, no turn %d, broken %d, rammed out %s" % [tested, stuck.size(), no_turn.size(), broken.size(), rammed_out])
+	check(heavy.is_empty() or tested >= heavy.size() * 2, "car scenarios at heavy breakables (%d)" % tested)
+	check(stuck.is_empty(), "Lada backs off from heavy breakables (%s)" % [stuck.slice(0, 3)])
+	check(no_turn.is_empty(), "Lada steers out from heavy breakables (%s)" % [no_turn.slice(0, 3)])
+	check(broken.is_empty(), "slow push leaves heavy breakables intact, Lada on the ground (%s)" % [broken.slice(0, 3)])
+
 # --- часть 4: круг по кольцу (ARENA-01) ---
 
 ## Водитель тестов (quest01_driver.gd) ведёт «Ладу» вводом по точкам оси правой полосы: прямые между дугами углов
@@ -646,3 +806,158 @@ func _patrol_bodies(on: bool) -> void:
 		var body: CollisionObject3D = npc.get_node_or_null("Body")
 		if body:
 			body.collision_layer = 1 if on else 0
+
+# --- часть 2в (PROPS-01): новые неразрушаемые коробки арены ---
+## Layout.PROPS_SOLIDS попадают в общий пул части 2 (категория prop), но выборка там случайная — здесь каждая коробка
+## проверяется сама: Илюша идёт в середину каждой грани и в каждый угол и отходит; «Лада» упирается носом в середину
+## каждой грани (со стартом на CAR_GAP) и выезжает назад, затем назад с рулём и вперёд с обратным рулём, затем задом.
+## Отдельно — въезд в хоккейную коробку через проходы 4 м и выезд задом (щели 0 или ≥ 3 м, ARENA-02).
+
+func _props_sides(spec: Array) -> Array:
+	var c: Vector2 = spec[2]
+	var h := Vector2(spec[3].x, spec[3].z) * 0.5
+	var out := []
+	for n in [Vector2(1, 0), Vector2(-1, 0), Vector2(0, 1), Vector2(0, -1)]:
+		out.append([c + n * (absf(n.x) * h.x + absf(n.y) * h.y), -n, "face"])
+	if minf(h.x, h.y) > 0.3:
+		for k in [Vector2(-1, -1), Vector2(-1, 1), Vector2(1, -1), Vector2(1, 1)]:
+			out.append([c + k * h, -k.normalized(), "corner"])
+	return out
+
+func _props_walk() -> void:
+	var player := world.player
+	var trapped := []
+	var broken := []
+	var tested := 0
+	for spec in Layout.PROPS_SOLIDS:
+		for side in _props_sides(spec):
+			var dir: Vector2 = side[1]
+			var start := Vector3(side[0].x - dir.x * WALK_RUN, 0.0, side[0].y - dir.y * WALK_RUN)
+			if not Layout.BOUNDS.grow(-0.5).has_point(Vector2(start.x, start.z)) or not _free(start, _capsule(0.4), 0.8):
+				continue
+			tested += 1
+			player.place(start, 0.0)
+			world.camera_rig.yaw = _yaw(dir)
+			await _frames(2)
+			Input.action_press(&"move_forward")
+			var low := 0.0
+			for f in WALK_PUSH:
+				await physics_frame
+				low = minf(low, player.global_position.y)
+			Input.action_release(&"move_forward")
+			var contact := player.global_position
+			var where := "%s@(%.1f,%.1f)" % [spec[0], contact.x, contact.z]
+			if low < -SINK_TOLERANCE or not _free(contact, _capsule(0.25), 0.8):
+				broken.append(where)
+			var escaped := false
+			for e in WALK_ESCAPES:
+				var away: Vector2 = (-dir).rotated(e)
+				player.place(contact, 0.0)
+				world.camera_rig.yaw = _yaw(away)
+				await _frames(2)
+				Input.action_press(&"move_forward")
+				await _frames(WALK_ESCAPE)
+				Input.action_release(&"move_forward")
+				var p := player.global_position
+				if Vector2(p.x - contact.x, p.z - contact.z).dot(away) >= WALK_ESCAPE_MIN:
+					escaped = true
+					break
+			if not escaped:
+				trapped.append(where)
+	print("INFO: walk props %d boxes, %d scenarios, trapped %d, broken %d %s %s" % [Layout.PROPS_SOLIDS.size(), tested, trapped.size(), broken.size(), trapped.slice(0, 3), broken.slice(0, 3)])
+	check(tested >= Layout.PROPS_SOLIDS.size() * 3, "walk scenarios at PROPS-01 boxes (%d)" % tested)
+	check(trapped.is_empty(), "Ilyusha walks away from PROPS-01 boxes (%s)" % [trapped.slice(0, 3)])
+	check(broken.is_empty(), "Ilyusha stays on the ground and outside PROPS-01 boxes (%s)" % [broken.slice(0, 3)])
+
+func _props_car() -> void:
+	var car := world.car
+	if world.control_mode != &"in_car":
+		world.enter_car()
+		await _frames(3)
+	var inner := Layout.BOUNDS.grow(-2.5)
+	var stuck := []
+	var no_turn := []
+	var broken := []
+	var tested := 0
+	for spec in Layout.PROPS_SOLIDS:
+		for side in _props_sides(spec):
+			if side[2] != "face":
+				continue
+			var dir: Vector2 = side[1]
+			var p2: Vector2 = side[0] - dir * (CAR_GAP + Lada.SIZE.z * 0.5)
+			var start := Vector3(p2.x, 0.0, p2.y)
+			var yaw := _yaw(dir)
+			if not inner.has_point(p2) or not _free(start, _car_box(0.3), Lada.SIZE.y * 0.5 + 0.1, yaw):
+				continue
+			tested += 1
+			car_low = 0.0
+			car.reset_to(start, yaw)
+			await _frames(2)
+			await _drive(&"move_forward", &"", CAR_PUSH)
+			var contact := car.global_position
+			var contact_yaw := car.rotation.y
+			var where := "%s@(%.1f,%.1f)" % [spec[0], contact.x, contact.z]
+			if _car_issue() != "":
+				broken.append(where + _car_issue())
+			if not await _car_leaves(contact, contact_yaw, CAR_ESCAPE, CAR_ESCAPE_MIN, [&"move_back"]):
+				stuck.append(where + " nose/back")
+			car.reset_to(contact, contact_yaw)
+			await _frames(2)
+			var side_key := &"move_left" if rng.randf() < 0.5 else &"move_right"
+			var other := &"move_right" if side_key == &"move_left" else &"move_left"
+			var farthest := 0.0
+			Input.action_press(&"move_back")
+			Input.action_press(side_key)
+			for f in CAR_ESCAPE:
+				await physics_frame
+				farthest = maxf(farthest, _flat(car.global_position - contact))
+			_release_all()
+			Input.action_press(&"move_forward")
+			Input.action_press(other)
+			for f in CAR_ESCAPE:
+				await physics_frame
+				farthest = maxf(farthest, _flat(car.global_position - contact))
+			_release_all()
+			await _brake_to_stop()
+			if farthest < CAR_MANEUVER_MIN or absf(angle_difference(contact_yaw, car.rotation.y)) < CAR_TURN_MIN:
+				no_turn.append(where + " %.1fm" % farthest)
+			if _car_issue() != "":
+				broken.append(where + " after steer" + _car_issue())
+			car.reset_to(start, yaw + PI)
+			await _frames(2)
+			await _drive(&"move_back", &"", CAR_TAIL_PUSH)
+			var tail := car.global_position
+			if not await _car_leaves(tail, car.rotation.y, CAR_ESCAPE, CAR_ESCAPE_MIN, [&"move_forward"]):
+				stuck.append(where + " tail/forward")
+			if car_low < -SINK_TOLERANCE:
+				broken.append(where + " sunk %.3f" % car_low)
+	print("INFO: car props %d scenarios, stuck %d, no turn %d, broken %d %s %s %s" % [tested, stuck.size(), no_turn.size(), broken.size(), stuck.slice(0, 3), no_turn.slice(0, 3), broken.slice(0, 3)])
+	check(tested >= 30, "car scenarios at PROPS-01 boxes (%d)" % tested)
+	check(stuck.is_empty(), "Lada backs off / pulls away from PROPS-01 boxes (%s)" % [stuck.slice(0, 3)])
+	check(no_turn.is_empty(), "Lada steers out from PROPS-01 boxes (%s)" % [no_turn.slice(0, 3)])
+	check(broken.is_empty(), "Lada stays on the ground and outside solids at PROPS-01 boxes (%s)" % [broken.slice(0, 3)])
+
+## Въезд в хоккейную коробку через каждый проход (Layout.RINK_GATE, x 60…64) и выезд задом тем же путём.
+func _rink_gates() -> void:
+	var car := world.car
+	var c: Vector2 = Layout.RINK[0]
+	var half: float = Layout.RINK[1].z * 0.5
+	var gate_x: float = (Layout.RINK_GATE[0] + Layout.RINK_GATE[1]) * 0.5
+	var failed := []
+	for side: float in [-1.0, 1.0]:   # −1 — северный борт, +1 — южный
+		var outside := Vector3(gate_x, 0.0, c.y + side * (half + 5.0))
+		var yaw := 0.0 if side > 0.0 else PI   # носом к центру коробки
+		car.reset_to(outside, yaw)
+		await _frames(3)
+		await _drive(&"move_forward", &"", 75)
+		await _brake_to_stop()
+		var inside := car.global_position
+		var entered: bool = (inside.z - c.y) * side < half - 2.5
+		await _drive(&"move_back", &"", 110)
+		await _brake_to_stop()
+		var back := car.global_position
+		var left: bool = (back.z - c.y) * side > half + 1.0
+		if not entered or not left or _car_issue() != "":
+			failed.append("gate %s: in (%.1f,%.1f) out (%.1f,%.1f)%s" % ["north" if side < 0.0 else "south", inside.x, inside.z, back.x, back.z, _car_issue()])
+	print("INFO: rink gates %s" % [failed])
+	check(failed.is_empty(), "Lada drives into the hockey rink through both 4 m gates and backs out (%s)" % [failed])
