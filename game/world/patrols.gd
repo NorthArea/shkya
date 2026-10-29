@@ -22,6 +22,9 @@ extends Node3D
 ## EXT-01 fix6 (шестая приёмка): правило близости — в DetectionSensor (3 м / 6 м). Дальность первого — 14 м, как у второго
 ## (вдоль x ≈ 74 в 12,2 м от поста было чисто); после перехода на OFFICER_POST_AFTER — OFFICER_AFTER_RANGE 12 м: стоянка и
 ## место выхода из машины — в 13,0–13,4 м от этого поста, в секторе угла [1]. Второй держит угол [0] OFFICER2_HOLDS 10–12 с.
+## EXT-01 fix7 (седьмая приёмка: подходы с востока чисты без ожидания в 58–88 % фаз): восточный угол первого — 150°
+## (OFFICER_FOVS[2]; на посту после покупки — прежние 100°, OFFICER_AFTER_FOVS: при 150° окно оттуда в 1,7° от края),
+## второй держит восток-юго-восток столько же, сколько запад, — OFFICER2_HOLD_EAST 10–12 с.
 
 const Layout = preload("res://game/world/layout.gd")
 const NpcScript = preload("res://game/npc/npc.gd")
@@ -34,9 +37,13 @@ const OFFICER_AFTER_RANGE := 12.0        # fix6: на посту после по
 const OFFICER_FOV := 100.0
 ## fix5: обзор первого по углам OFFICER_FACING; [1] (пеленг 150°) — 150°: сектор 75°…225° накрывает и среднюю часть прямой
 ## x = 59,5 («в лоб» — провал во всех фазах), и второе колено диагонали с дороги B (при 100° — 18 из 32 / 47 из 96, Layout).
-const OFFICER_FOVS := [100.0, 150.0, 100.0]
+## fix7: [2] (восток, пеленг 90°) — 150°: сектор 15°…165° — подход с дороги B на запад вдоль z −76…−81; окно (пеленг
+## 337…341°) — 34° за его краем, 42° за краем [0].
+const OFFICER_FOVS := [100.0, 150.0, 150.0]
+## fix7: на OFFICER_POST_AFTER (57; −66) окно — пеленг 10…13°, 11,2 м: при 150° у [2] — 1,7…4,7° от края, поэтому 100°.
+const OFFICER_AFTER_FOVS := [100.0, 150.0, 100.0]
 const OFFICER2_FOV := 100.0
-const OFFICER2_HOLD_EAST := Vector2(5.0, 6.0)   # fix5: угол [1] второго; честный SNEAK_WEST за ним — 13,7 м, ~3,6 с
+const OFFICER2_HOLD_EAST := Vector2(10.0, 12.0)  # fix7: угол [1] второго, как запад (fix5 — 5–6 с: дорога B севернее окна в секторе ~29 % цикла)
 const OFFICER2_HOLD_WEST := Vector2(10.0, 12.0)  # fix6: угол [0] — глубокая часть коридора в секторе ~61 % цикла (было 7–9 с, ~54 %)
 const OFFICER2_RANGE := 14.0             # fix4: с (59, −87) до входа с улицы C и до обхода по дороге z = −84
 const OFFICER_HOLD := Vector2(7.0, 9.0)   # с на угол: при 3–4 с осторожный честный проход занимал 14–15 с (норма участка 45–90 с)
@@ -149,6 +156,7 @@ func _on_bread_received() -> void:
 	if _moved:
 		return
 	_moved = true
+	officer.facing_fovs = OFFICER_AFTER_FOVS   # ставится по прибытии (_start_turn), на переходе сенсор выключен
 	officer.move_post(Layout.OFFICER_POST_AFTER)
 	officer.sensor.range_m = OFFICER_AFTER_RANGE
 	van.drive(Layout.VAN_PATH, Layout.VAN_STOP_YAW)
@@ -156,6 +164,7 @@ func _on_bread_received() -> void:
 ## Для тестов и перезапуска: вернуть всех на исходные места.
 func reset_positions() -> void:
 	_moved = false
+	officer.facing_fovs = OFFICER_FOVS
 	officer.place_at(Layout.OFFICER_POST)
 	officer.sensor.range_m = OFFICER_RANGE
 	officer2.place_at(Layout.OFFICER2_POST)

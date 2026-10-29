@@ -45,6 +45,10 @@ extends SceneTree
 ## шесть маршрутов приёмки (dij_south/east/north/west, N1, N2) по 12 фазам цикла первого поста без ожидания — провал в
 ## ≥ 9 из 12; «в лоб», обе диагонали и SNEAK_WEST без ожидания — 12 фаз, число чистых в лог (норма ≤ 4 / ≤ 6); честные
 ## SNEAK_EAST/WEST с ожиданием — проход (время в лог); окно 30 с — 0 кадров; чекпоинт вне.
+## EXT-01 fix7 (седьмая приёмка): у первого восток — 150° (после покупки — 100°), второй держит восток 10–12 с, как запад;
+## окно — ≥ 10° за краями всех секторов обоих постов (и поста после покупки); подходы с востока E_z76/77/78/80 (с дороги B
+## на запад вдоль z) и C_e64…68 (с улицы C) — по 12 фаз цикла каждого поста без ожидания, число чистых в лог, норма — не
+## во всех 12 (не истинная дыра).
 ##
 ## Headless: tools/run.command --headless --fixed-fps 60 --script tests/stealth_test.gd
 ## Кадры: tools/run.command --fixed-fps 60 --resolution 1920x1080 --script tests/stealth_test.gd -- --capture
@@ -67,6 +71,8 @@ const DIAG_LONG := [Vector3(62, 0, -53), Vector3(73.5, 0, -53), Vector3(73.5, 0,
 const DIAG_SHORT := [Vector3(62, 0, -53), Vector3(72, 0, -63), Vector3(72.3, 0, -64.3)]
 ## Где ждать угла 0 на диагонали: восточный край B, дальше дальности первого поста (14,8 м).
 const DIAG_WAIT := Vector3(75, 0, -63)
+## fix7: начало отрезка обхода по дороге x = 74,6 вне дальности первого поста (17,4 м).
+const ROAD_NEAR := Vector3(74.6, 0, -58)
 const FAIL_TEXT := "ВАШ МАРШРУТ УТОЧНЁН"
 const TOAST_TEXT := "МАРШРУТ УТОЧНЁН: ВЫ ВСЁ ЕЩЁ ЗА ХЛЕБОМ"   # до покупки; после — «ВЫ ОСТАЛИСЬ ПЕШЕХОДОМ. ХЛЕБ ПРИ ВАС»
 const HINT_TEXT := "Тебя заметили. Отойди, пока это ни к чему не обязывает"
@@ -705,6 +711,7 @@ func _part_kiosk_section() -> void:
 			cone_while_moving = cone_while_moving or _cone_visible(o_sensor)
 	check(moved and not sensor_while_moving and not cone_while_moving, "patrol walks to the new post with the sensor off and no cone")
 	check(not officer.is_moving() and _near2(officer.global_position, Layout.OFFICER_POST_AFTER, 0.1) and o_sensor.enabled, "patrol at OFFICER_POST_AFTER, sensor on again (%s)" % officer.global_position)
+	check(officer.facing_fovs == PatrolsScript.OFFICER_AFTER_FOVS and is_equal_approx(o_sensor.fov_deg, PatrolsScript.OFFICER_AFTER_FOVS[officer.facing_index()]), "fix7: after the purchase the officer views %s° (east 100°, window 27° outside), sensor %.0f° at facing %d" % [PatrolsScript.OFFICER_AFTER_FOVS, o_sensor.fov_deg, officer.facing_index()])
 	check(_track_max <= 0.3 and _kiosk_detections == before_buy, "10 s at the window after the purchase: suspicion ≤ 0.3 (max %.2f)" % _track_max)
 	# Автобус догоняет «Ладу» на своей полосе и ждёт, не сдвигая её. На B это и полоса встречных машин кольца
 	# (ARENA-01 fix P2-2): между автобусом и «Ладой» может встать машина, которая сама ждёт «Ладу», — тоже очередь за ней.
@@ -1016,7 +1023,7 @@ func _part_fix3() -> void:
 
 	# Пост, настройки, без диалога.
 	check(officer2 != null and officer2.name == "Officer2" and officer2.interaction_id == &"officer2" and officer2.character == "police", "Officer2: second police NPC (id officer2, police art)")
-	check(s2.is_in_group(&"detection_sensors") and s2.show_cone and is_equal_approx(s2.range_m, PatrolsScript.OFFICER2_RANGE) and is_equal_approx(s2.range_m, 14.0) and is_equal_approx(s2.fov_deg, PatrolsScript.OFFICER2_FOV) and is_equal_approx(s2.fov_deg, 100.0) and officer2.turn_every == officer.turn_every and officer2.facing_holds == [PatrolsScript.OFFICER2_HOLD_WEST, PatrolsScript.OFFICER2_HOLD_EAST], "Officer2 sensor: in the group, cone, %.0f m / %.0f°, west %s s (fix6), east-south-east %s s (fix5)" % [s2.range_m, s2.fov_deg, PatrolsScript.OFFICER2_HOLD_WEST, PatrolsScript.OFFICER2_HOLD_EAST])
+	check(s2.is_in_group(&"detection_sensors") and s2.show_cone and is_equal_approx(s2.range_m, PatrolsScript.OFFICER2_RANGE) and is_equal_approx(s2.range_m, 14.0) and is_equal_approx(s2.fov_deg, PatrolsScript.OFFICER2_FOV) and is_equal_approx(s2.fov_deg, 100.0) and officer2.turn_every == officer.turn_every and officer2.facing_holds == [PatrolsScript.OFFICER2_HOLD_WEST, PatrolsScript.OFFICER2_HOLD_EAST], "Officer2 sensor: in the group, cone, %.0f m / %.0f°, west %s s (fix6), east-south-east %s s (fix7)" % [s2.range_m, s2.fov_deg, PatrolsScript.OFFICER2_HOLD_WEST, PatrolsScript.OFFICER2_HOLD_EAST])
 	check(_near2(officer2.global_position, Layout.OFFICER2_POST, 0.05) and Layout.OFFICER2_FACING.size() == 2, "Officer2 at OFFICER2_POST %s, two facings" % Layout.OFFICER2_POST)
 	check(s1.car_area == Layout.KIOSK_SQUARE and s2.car_area == Layout.KIOSK_SQUARE and Layout.KIOSK_SQUARE == Rect2(50, -94, 26, 34), "both officers watch cars on KIOSK_SQUARE x 50…76, z −94…−60")
 	var road_stop := Vector3(66.9, 0, -75.8)
@@ -1207,11 +1214,15 @@ func _part_fix3() -> void:
 	# Сводка для отчёта: удача без ожидания зависит от фазы разворота (как у честных путей), проверки — ниже.
 	print("INFO: road bypass x = 74.6 without waiting from the parking, by Officer2 phase after facing 0: fails %d of %d, fail or max ≥ 0.6 in %d of %d: %s" % [road_fails, road_results.size(), road_seen, road_results.size(), road_results])
 	# В неудобный угол: дойти до (74,6; −78), дождаться, пока второй пост только что встал в угол 1, и идти — провал.
-	await _place_player(Vector3(62, 0, -51), PI * 0.5)
+	# fix7: отрезок x = 74,6 (z −64…−76) — в секторах [1] и [2] первого поста (fix6); к (74,6; −78) — от ROAD_NEAR (17,4 м от
+	# поста, вне дальности) сразу после его поворота на запад-юго-запад (≈5 с ходу при удержании ≥ 7 с), иначе провал от
+	# первого поста ещё до проверки второго (зависело от фазы).
+	await _place_player(ROAD_NEAR, PI)
 	await drv.frames(250)
+	await _sync_officer(0)
 	_reset_track()
 	var before_wrong := _kiosk_detections
-	var got: bool = await drv.walk_path(road_a)
+	var got: bool = await drv.walk_path([road_a[-1]])
 	if not got:   # транспорт кольца мог встать на пути — переждать и дойти
 		print("INFO: road bypass (wrong phase): %s, retry" % drv.last_error)
 		await drv.frames(120)
@@ -1227,12 +1238,13 @@ func _part_fix3() -> void:
 	await _wait_until(func(): return not world.is_stealth_failing(), 300)
 	await drv.frames(250)
 	# С ожиданием: у (74,6; −78) вне конусов дождаться угла 0 (запад) — проходит к окну.
-	await _place_player(Vector3(62, 0, -51), PI * 0.5)
+	await _place_player(ROAD_NEAR, PI)   # fix7: как выше — отрезок x = 74,6 при угле [0] первого поста
 	await drv.frames(250)
+	await _sync_officer(0)
 	_reset_track()
 	var before_ok := _kiosk_detections
 	var t0 := _track_frames
-	var road_ok: bool = await drv.walk_path(road_a)
+	var road_ok: bool = await drv.walk_path([road_a[-1]])
 	if not road_ok:
 		print("INFO: road bypass (wait): %s, retry" % drv.last_error)
 		await drv.frames(120)
@@ -1478,7 +1490,7 @@ func _part_fix5() -> void:
 	var exit_spot: Vector3 = world.player.global_position
 
 	# --- Геометрия: три угла, обзор, восток на диагонали, окно вне всех ---
-	check(Layout.OFFICER_FACING.size() == 3 and officer.facing_fovs == PatrolsScript.OFFICER_FOVS and PatrolsScript.OFFICER_FOVS == [100.0, 150.0, 100.0] and is_equal_approx(s1.range_m, 14.0) and not is_nan(officer.avoid_yaw), "Officer: three facings, 14 m (fix6), view %s°, turns avoid the window (avoid_yaw %.2f)" % [PatrolsScript.OFFICER_FOVS, officer.avoid_yaw])
+	check(Layout.OFFICER_FACING.size() == 3 and officer.facing_fovs == PatrolsScript.OFFICER_FOVS and PatrolsScript.OFFICER_FOVS == [100.0, 150.0, 150.0] and is_equal_approx(s1.range_m, 14.0) and not is_nan(officer.avoid_yaw), "Officer: three facings, 14 m (fix6), view %s°, turns avoid the window (avoid_yaw %.2f)" % [PatrolsScript.OFFICER_FOVS, officer.avoid_yaw])
 	check(is_equal_approx(s1.fov_deg, officer._fov_for(officer.facing_index())), "sensor view follows the facing (%.0f° at facing %d)" % [s1.fov_deg, officer.facing_index()])
 	var diag_pts := [Vector3(68, 0, -69), Vector3(66, 0, -72), Vector3(71, 0, -64.5), Vector3(70, 0, -66)]
 	check(diag_pts.all(func(q): return _in_cone(Layout.OFFICER_POST, Layout.OFFICER_FACING[2], q, officer._fov_for(2), s1.range_m)), "facing 2 (east) covers the diagonal %s" % [diag_pts])
@@ -1765,6 +1777,8 @@ func _part_fix5() -> void:
 var _f6_frame := 0
 var _f6_f0 := -1          # кадр, когда первый пост последний раз встал в угол 0
 var _f6_prev_ok := false
+var _f7_f0 := -1          # fix7: кадр, когда второй пост последний раз встал в угол 0
+var _f7_prev_ok := false
 
 func _f6_monitor() -> void:
 	_track()
@@ -1774,6 +1788,25 @@ func _f6_monitor() -> void:
 	if ok and not _f6_prev_ok:
 		_f6_f0 = _f6_frame
 	_f6_prev_ok = ok
+	var o2: Node3D = world.get_node("LevelGeometry/Patrols").officer2
+	var ok2: bool = o2.facing_index() == 0 and not o2.is_turning()
+	if ok2 and not _f7_prev_ok:
+		_f7_f0 = _f6_frame
+	_f7_prev_ok = ok2
+
+## Кадр последнего поворота на угол 0: sync 1 — первый пост, 2 — второй (fix7).
+func _f0_of(sync: int) -> int:
+	return _f6_f0 if sync == 1 else _f7_f0
+
+## Средний цикл второго поста по nc циклам, кадры (fix7: удержания случайны).
+func _f7_cycle2(nc := 3) -> int:
+	var a := _f7_f0
+	await _wait_until(func(): return _f7_f0 != a, 2400)
+	var b := _f7_f0
+	for i in nc:
+		var c := _f7_f0
+		await _wait_until(func(): return _f7_f0 != c, 2400)
+	return int((_f7_f0 - b) / nc)
 
 ## Идти по точкам (вводом); застрял у вала — прыжок. Стоп — экран провала или max_frames. [дошёл, причина].
 func _f6_walk(points: Array, max_frames := 3600) -> Array:
@@ -1810,13 +1843,13 @@ func _f6_walk(points: Array, max_frames := 3600) -> Array:
 
 ## Путь без ожидания по n фазам цикла первого поста: фаза k — старт через k/n цикла после поворота на угол 0. Фазы идут
 ## в порядке ближайшего старта (без лишнего ожидания). Чистая фаза — дошёл до окна без провала.
-func _f6_phases(label: String, start: Vector3, points: Array, cycle_f: int, n := 12) -> Dictionary:
+func _f6_phases(label: String, start: Vector3, points: Array, cycle_f: int, n := 12, sync := 1) -> Dictionary:
 	var pending := range(n)
 	var res := {"clean": 0, "fails": 0, "other": 0, "maxes": {}, "times": [], "start_seen": 0}
 	while not pending.is_empty():
 		await _place_player(start, _yaw_to(start, points[0]))
 		await drv.frames(250)
-		var since := _f6_frame - _f6_f0
+		var since := _f6_frame - _f0_of(sync)
 		var best := -1
 		var best_wait := 1 << 30
 		for k in pending:
@@ -1826,11 +1859,11 @@ func _f6_phases(label: String, start: Vector3, points: Array, cycle_f: int, n :=
 				best_wait = wait
 				best = k
 		pending.erase(best)
-		var target_f0 := _f6_f0 if int(cycle_f * best / n) >= since else -1
+		var target_f0 := _f0_of(sync) if int(cycle_f * best / n) >= since else -1
 		if target_f0 < 0:
-			var old := _f6_f0
-			await _wait_until(func(): return _f6_f0 != old, cycle_f + 900)
-			target_f0 = _f6_f0
+			var old := _f0_of(sync)
+			await _wait_until(func(): return _f0_of(sync) != old, cycle_f + 900)
+			target_f0 = _f0_of(sync)
 		await _wait_until(func(): return _f6_frame - target_f0 >= int(cycle_f * best / n), cycle_f + 60)
 		if world.is_stealth_failing() or world.stealth.suspicion > 0.0:
 			res["start_seen"] += 1
@@ -1852,7 +1885,7 @@ func _f6_phases(label: String, start: Vector3, points: Array, cycle_f: int, n :=
 			res["times"].append(snappedf(_track_frames / 60.0, 0.1))
 		else:
 			res["other"] += 1
-		print("INFO: fix6 %s phase %d/%d (%.1f s after facing 0; Officer %d, Officer2 %d): %s, %.1f s, max %.2f" % [label, best, n, cycle_f * best / n / 60.0, f1, f2, "FAIL" if failed else ("window" if at_window else r[1]), _track_frames / 60.0, _track_max])
+		print("INFO: fix6 %s phase %d/%d (%.1f s after facing 0 of Officer%s; Officer %d, Officer2 %d): %s, %.1f s, max %.2f" % [label, best, n, cycle_f * best / n / 60.0, "" if sync == 1 else "2", f1, f2, "FAIL" if failed else ("window" if at_window else r[1]), _track_frames / 60.0, _track_max])
 		if failed:
 			await _wait_until(func(): return not world.is_stealth_failing(), 400)
 	var maxes := []
@@ -1903,6 +1936,8 @@ func _part_fix6() -> void:
 	world.stealth.player_detected.connect(func(): _kiosk_detections += 1)
 	_f6_f0 = -1
 	_f6_prev_ok = false
+	_f7_f0 = -1
+	_f7_prev_ok = false
 	drv.on_frame = _f6_monitor
 
 	# --- Константы и посты ---
@@ -1934,6 +1969,19 @@ func _part_fix6() -> void:
 		ring_min[route_name] = snappedf(best, 0.01)
 	print("INFO: fix6 honest paths, nearest approach to a post: %s m" % [ring_min])
 	check(ring_min.values().all(func(v): return v > DetectionSensor.NEAR_RING + 0.1), "honest paths SNEAK_* stay outside the 6 m proximity ring of every post (%s)" % [ring_min])
+	# fix7: восток первого — 150° (после покупки 100°), второй держит восток, как запад; окно — ≥ 10° за краями секторов.
+	check(PatrolsScript.OFFICER_FOVS[2] == 150.0 and PatrolsScript.OFFICER_AFTER_FOVS == [100.0, 150.0, 100.0] and officer.facing_fovs == PatrolsScript.OFFICER_FOVS, "fix7: Officer east view 150° (%s), after the purchase %s" % [PatrolsScript.OFFICER_FOVS, PatrolsScript.OFFICER_AFTER_FOVS])
+	check(PatrolsScript.OFFICER2_HOLD_EAST == PatrolsScript.OFFICER2_HOLD_WEST and PatrolsScript.OFFICER2_HOLD_EAST == Vector2(10.0, 12.0), "fix7: Officer2 holds east as long as west (%s / %s s)" % [PatrolsScript.OFFICER2_HOLD_EAST, PatrolsScript.OFFICER2_HOLD_WEST])
+	var margins := []
+	for q in [_vendor_stand(), Layout.VENDOR_WINDOW]:
+		for post_set in [[Layout.OFFICER_POST, Layout.OFFICER_FACING, PatrolsScript.OFFICER_FOVS], [Layout.OFFICER_POST_AFTER, Layout.OFFICER_FACING, PatrolsScript.OFFICER_AFTER_FOVS],
+				[Layout.OFFICER2_POST, Layout.OFFICER2_FACING, [PatrolsScript.OFFICER2_FOV, PatrolsScript.OFFICER2_FOV]]]:
+			var to := Vector2(q.x - post_set[0].x, q.z - post_set[0].z)
+			for i in post_set[1].size():
+				var yaw: float = post_set[1][i]
+				margins.append(snappedf(rad_to_deg(absf(Vector2(-sin(yaw), -cos(yaw)).angle_to(to))) - post_set[2][i] * 0.5, 0.1))
+	print("INFO: fix7 window outside the sectors by (stand / window × Officer [0..2], after [0..2], Officer2 [0..1]) %s°" % [margins])
+	check(margins.all(func(m): return m >= 10.0), "fix7: kiosk window ≥ 10° outside every sector of both posts and of the post after the purchase (min %.1f°)" % margins.min())
 
 	# --- Правило близости тестовым сенсором (двор, как часть 1): спиной к Илюше ---
 	if not is_instance_valid(sensor) or sensor.get_parent() != world:
@@ -2131,6 +2179,27 @@ func _part_fix6() -> void:
 			var ok: bool = await drv.sneak_route(route)
 			print("INFO: fix6 honest %s #%d: %s, %.1f s, max suspicion %.2f (%s)" % [route_name, attempt, ok, _track_frames / 60.0, _track_max, drv.last_error])
 			check(ok and _kiosk_detections == before_h and not world.is_stealth_failing() and _near2(world.player.global_position, _vendor_stand(), 0.6), "honest %s #%d with the waits: window without a fail (%.1f s, max %.2f)" % [route_name, attempt, _track_frames / 60.0, _track_max])
+			check(_track_frames <= 3600, "fix7: honest %s #%d with the waits ≤ 60 s (%.1f s)" % [route_name, attempt, _track_frames / 60.0])
+
+	# --- fix7: подходы с востока без ожидания — 12 фаз цикла каждого поста ---
+	var cycle2_f: int = await _f7_cycle2(3)
+	print("INFO: fix7 Officer2 mean cycle %.1f s (3 cycles)" % (cycle2_f / 60.0))
+	var east := {}
+	for z in [-76.0, -77.0, -78.0, -80.0]:   # с дороги B (x = 75,3 — вне дальности обоих постов) на запад вдоль z
+		east["E_z%d" % int(-z)] = [Vector3(75.3, 0, -96), [Vector3(75.3, 0, z), Vector3(61.0, 0, z), v]]
+	for x in [64.0, 65.0, 66.0, 67.0, 68.0]:   # с улицы C, 6–10 м восточнее второго поста
+		east["C_e%d" % int(x)] = [Vector3(x, 0, -99), [Vector3(x, 0, -80), Vector3(61.0, 0, -78), v]]
+	table = []
+	var total := [0, 0]
+	for route_name in east:
+		var c := []
+		for sync in [1, 2]:
+			var r := await _f6_phases("%s sync O%d" % [route_name, sync], east[route_name][0], east[route_name][1], cycle_f if sync == 1 else cycle2_f, 12, sync)
+			c.append(r["clean"])
+			total[sync - 1] += r["clean"]
+		table.append("%s %d+%d/24" % [route_name, c[0], c[1]])
+		check(c[0] < 12 and c[1] < 12, "fix7 %s without a wait: not clean in all 12 phases of either post (Officer %d/12, Officer2 %d/12)" % [route_name, c[0], c[1]])
+	print("INFO: fix7 approaches from the east, clean phases (Officer + Officer2 of 24): %s; total %d + %d of %d" % [table, total[0], total[1], east.size() * 24])
 	drv.on_frame = Callable()
 
 func _sync_npc(o: Node3D, index: int) -> void:
