@@ -26,7 +26,7 @@ extends AnimatableBody3D
 ## никого не касается; до того ждёт, пока путь освободят.
 
 const Materials = preload("res://game/world/materials.gd")
-const PAINT := preload("res://game/vehicles/lada_paint.gdshader")
+const VehicleMesh = preload("res://game/vehicles/vehicle_mesh.gd")
 const DetectionSensorScript = preload("res://game/stealth/detection_sensor.gd")
 const Layout = preload("res://game/world/layout.gd")
 const InteractableScript = preload("res://game/interaction/interactable.gd")
@@ -424,84 +424,28 @@ static func _is_obstacle(body: Object) -> bool:
 
 # --- облик (по e02: кабина со скошенным капотом, окна по всему борту, открытая сдвижная дверь) ---
 
+## Облик (CITY-02 V): микроавтобус по духу RAF/«Латвии» с концепта e02 — короткий покатый нос, большое лобовое,
+## скруглённая крыша, окна в чёрных резинках, белый кузов в ржавчине, снег на крыше. Своя геометрия (vehicle_mesh.gd),
+## меш общий; надписи «БЕСПЛАТНЫЙ ПРОЕЗД» и «МАРШРУТ УТОЧНЯЕТСЯ» — как были.
 func _build_visual() -> Node3D:
 	var root := Node3D.new()
 	root.name = "Visual"
-	var lower := _paint(BODY_PAINT, 0.55, 0.6, 0.55)   # белый с ржавчиной по низу (e02), не бурый
-	var upper := _paint(BODY_PAINT, 0.15, 0.3, 0.1)
-	var glass := _glass()
-	var trim := Materials.plain(Color(0.10, 0.10, 0.11), 0.6)
-	var dark_grey := Materials.plain(Color(0.22, 0.22, 0.23), 0.7)
-	var tyre := Materials.plain(Color(0.05, 0.05, 0.05), 0.9)
-	var cloth := Materials.plain(Color(0.36, 0.30, 0.22), 0.95)
-	var cabin := Materials.plain(Color(0.62, 0.52, 0.36), 0.9, Color(1.0, 0.72, 0.40), 0.5)   # тёплый салон
-	var snow := Materials.snow(0.0)
-	var hx := SIZE.x * 0.5
-	# Кузов: нижний пояс, крыша; между ними — остекление и стойки.
-	_box(root, "Body", Vector3(SIZE.x, 1.0, 5.3), Vector3(0, 0.95, 0.05), lower)
-	_box(root, "Hood", Vector3(SIZE.x - 0.1, 0.46, 0.9), Vector3(0, 1.62, -2.25), upper)
-	var windshield := _box(root, "Windshield", Vector3(SIZE.x - 0.3, 0.72, 0.03), Vector3(0, 1.98, -1.73), glass, false)
-	windshield.rotation.x = deg_to_rad(18.0)
-	_box(root, "Roof", Vector3(SIZE.x - 0.1, 0.14, 4.4), Vector3(0, 2.38, 0.5), upper)
-	_box(root, "RoofFront", Vector3(SIZE.x - 0.4, 0.1, 0.6), Vector3(0, 2.36, -1.72), upper)
-	_box(root, "RoofFrontSnow", Vector3(SIZE.x - 0.5, 0.08, 0.5), Vector3(0, 2.45, -1.72), snow)
-	_box(root, "SnowRoof", Vector3(SIZE.x - 0.3, 0.12, 4.2), Vector3(0, 2.5, 0.5), snow)
-	_box(root, "SnowHood", Vector3(SIZE.x - 0.5, 0.06, 0.6), Vector3(0, 1.87, -2.3), snow)
-	# Салон за стёклами: пол, сиденья в два ряда, перегородка кабины — видны в проём двери.
-	_box(root, "CabinFloor", Vector3(SIZE.x - 0.2, 0.04, 3.9), Vector3(0, 1.45, 0.6), cloth, false)
-	_box(root, "CabinCeiling", Vector3(SIZE.x - 0.2, 0.02, 4.2), Vector3(0, 2.3, 0.5), cabin, false)
-	for z in [-0.7, 0.4, 1.5]:
-		for x in [-0.62, 0.55]:
-			_box(root, "Seat", Vector3(0.5, 0.42, 0.44), Vector3(x, 1.66, z), cloth, false)
-			_box(root, "SeatBack", Vector3(0.5, 0.5, 0.08), Vector3(x, 2.0, z + 0.24), cloth, false)
-	_box(root, "Dashboard", Vector3(SIZE.x - 0.3, 0.2, 0.3), Vector3(0, 1.55, -1.55), trim, false)
-	_box(root, "Wheel", Vector3(0.36, 0.04, 0.36), Vector3(-0.6, 1.8, -1.35), trim, false)
-	# Остекление: левый борт — сплошная лента; правый — лента позади двери и кабинное окно впереди.
-	var side_glass := glass.duplicate() as StandardMaterial3D
-	side_glass.cull_mode = BaseMaterial3D.CULL_DISABLED
-	_box(root, "GlassLeft", Vector3(0.03, 0.8, 4.1), Vector3(-hx + 0.02, 1.9, 0.4), side_glass, false)
-	_box(root, "GlassRightRear", Vector3(0.03, 0.8, 1.55), Vector3(hx - 0.02, 1.9, 1.68), side_glass, false)
-	_box(root, "GlassRightCab", Vector3(0.03, 0.8, 0.95), Vector3(hx - 0.02, 1.9, -1.18), side_glass, false)
-	_box(root, "GlassRear", Vector3(SIZE.x - 0.5, 0.7, 0.03), Vector3(0, 1.92, 2.69), glass, false)
-	for z in [-1.68, -0.68, 0.9, 2.45]:
-		for x in [-hx + 0.03, hx - 0.03]:
-			_box(root, "Pillar", Vector3(0.06, 0.82, 0.08), Vector3(x, 1.9, z), upper, false)
-	_box(root, "PillarRearL", Vector3(0.08, 0.82, 0.08), Vector3(-hx + 0.22, 1.9, 2.66), upper, false)
-	_box(root, "PillarRearR", Vector3(0.08, 0.82, 0.08), Vector3(hx - 0.22, 1.9, 2.66), upper, false)
-	_box(root, "Sill", Vector3(SIZE.x + 0.04, 0.06, 4.4), Vector3(0, 1.47, 0.5), upper, false)
-	# Открытая сдвижная дверь: панель отъехала назад и стоит снаружи борта; проём — тёмный с тёплым светом.
-	_box(root, "DoorOpening", Vector3(0.02, 0.95, 1.2), Vector3(hx - 0.01, 1.95, 0.3), cabin, false)
-	_box(root, "DoorStep", Vector3(0.16, 0.05, 1.0), Vector3(hx + 0.06, 0.62, 0.3), trim, false)
-	_box(root, "DoorPanel", Vector3(0.06, 1.75, 1.2), Vector3(hx + 0.08, 1.37, 1.55), lower)
-	_box(root, "DoorGlass", Vector3(0.03, 0.6, 0.9), Vector3(hx + 0.12, 1.85, 1.55), side_glass, false)
-	_box(root, "DoorRail", Vector3(0.04, 0.05, 2.0), Vector3(hx + 0.04, 2.3, 1.2), trim, false)
-	# Перед: решётка, фары, бампер; зад: фонари, бампер, выхлоп.
-	_box(root, "Grille", Vector3(0.9, 0.22, 0.04), Vector3(0, 1.12, -2.76), trim, false)
-	var head := _lamp(Color(1.0, 0.95, 0.80), Color(1.0, 0.90, 0.66), 1.4)
-	var tail := _lamp(Color(0.5, 0.05, 0.03), Color(0.9, 0.08, 0.04), 0.6)
-	var amber := _lamp(Color(0.95, 0.55, 0.10), Color(1.0, 0.6, 0.1), 0.3)
-	for x in [-0.68, 0.68]:
-		_box(root, "Headlight", Vector3(0.3, 0.22, 0.04), Vector3(x, 1.12, -2.77), head, false)
-		_box(root, "Taillight", Vector3(0.16, 0.34, 0.04), Vector3(x * 1.35, 1.1, 2.77), tail, false)
-		_box(root, "Turn", Vector3(0.16, 0.12, 0.04), Vector3(x * 1.35, 1.36, 2.77), amber, false)
-		_box(root, "Mirror", Vector3(0.1, 0.26, 0.14), Vector3(x * 1.65, 1.75, -1.5), trim, false)
-		_box(root, "MirrorArm", Vector3(0.4, 0.03, 0.03), Vector3(x * 1.45, 1.78, -1.5), trim, false)
-	for z in [-2.78, 2.78]:
-		_box(root, "Bumper", Vector3(SIZE.x + 0.1, 0.16, 0.14), Vector3(0, 0.6, z), dark_grey)
-	_box(root, "RearDoorSeam", Vector3(0.02, 1.9, 0.02), Vector3(0, 1.4, 2.71), trim, false)
-	var exhaust := _cylinder(root, "Exhaust", 0.04, 0.2, Vector3(0.6, 0.38, 2.75), dark_grey)
-	exhaust.rotation.x = PI * 0.5
-	_plate(root, -2.8, PI, PLATE)
-	_plate(root, 2.8, 0.0, PLATE)
-	# Колёса.
+	var meshes := _meshes()
+	var overrides := {
+		"head": VehicleMesh.lamp(Color(1.0, 0.95, 0.80), Color(1.0, 0.90, 0.66), 1.4),
+		"tail": VehicleMesh.lamp(Color(0.5, 0.05, 0.03), Color(0.9, 0.08, 0.04), 0.6),
+	}
+	VehicleMesh.instance(root, "BodyMesh", meshes["body"], overrides)
+	VehicleMesh.instance(root, "Glass", meshes["glass"], {}, false)
+	var cabin := VehicleMesh.instance(root, "Interior", meshes["interior"], {}, false)
+	cabin.visibility_range_end = 50.0
+	VehicleMesh.instance(root, "Snow", meshes["snow"])
 	for x in [-0.9, 0.9]:
 		for z in [-1.75, 1.6]:
-			var wheel := _cylinder(root, "Wheel", WHEEL_RADIUS, 0.24, Vector3(x, WHEEL_RADIUS, z), tyre)
-			wheel.rotation.z = PI * 0.5
-			var cap := _cylinder(wheel, "Hubcap", 0.16, 0.26, Vector3.ZERO, Materials.plain(Color(0.45, 0.44, 0.42), 0.5))
-			cap.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-			_wheels.append(wheel)
+			_wheels.append(VehicleMesh.add_wheel(root, Vector3(x, WHEEL_RADIUS, z), WHEEL_RADIUS, 0.24, "truck"))
+	VehicleMesh.exhaust(root, Vector3(0.6, 0.38, 2.82))
 	# Надписи (DIALOGUES_AND_JOKES «Надписи»): красным на боках, сзади на двери.
+	var hx := SIZE.x * 0.5
 	for x in [-1.0, 1.0]:
 		var side := _label("БЕСПЛАТНЫЙ\nПРОЕЗД", 64, Color(0.62, 0.06, 0.05))
 		side.position = Vector3(x * (hx + 0.012), 1.0, 1.0 if x < 0.0 else -0.5)   # справа — перед дверью
@@ -510,6 +454,13 @@ func _build_visual() -> Node3D:
 	var rear := _label("МАРШРУТ\nУТОЧНЯЕТСЯ", 56, Color(0.62, 0.06, 0.05))
 	rear.position = Vector3(0, 1.0, 2.79)
 	root.add_child(rear)
+	for spec in [[Vector3(0, 0.78, -2.812), PI], [Vector3(0, 0.78, 2.812), 0.0]]:
+		var label := _label(PLATE, 48, Color(0.05, 0.05, 0.05))
+		label.pixel_size = 0.0016
+		label.position = spec[0]
+		label.rotation.y = spec[1]
+		label.visibility_range_end = 30.0
+		root.add_child(label)
 	# Тёплый свет в салоне (слабый, без теней) — виден в проём двери и в окна.
 	var lamp := OmniLight3D.new()
 	lamp.name = "CabinLight"
@@ -523,34 +474,130 @@ func _build_visual() -> Node3D:
 	root.add_child(lamp)
 	return root
 
-func _paint(color: Color, dirt: float, rust: float, half_height: float) -> ShaderMaterial:
-	var material := ShaderMaterial.new()
-	material.shader = PAINT
-	material.set_shader_parameter("paint", color)
-	material.set_shader_parameter("rust", Color(0.46, 0.26, 0.12))
-	material.set_shader_parameter("dirt_amount", dirt)
-	material.set_shader_parameter("rust_amount", rust)
-	material.set_shader_parameter("half_height", half_height)
-	return material
+func _meshes() -> Dictionary:
+	var found: Variant = VehicleMesh.cached("city_van")
+	if found != null:
+		return found
+	var b := VehicleMesh.Builder.new()
+	var glass := VehicleMesh.Builder.new()
+	var cabin := VehicleMesh.Builder.new()
+	var snow := VehicleMesh.Builder.new()
+	var hl := SIZE.z * 0.5
+	var hw := SIZE.x * 0.5
+	var belt := 1.47
+	var eave := 2.26
+	# Низ кузова: покатый короткий нос, арки колёс, скруглённые углы.
+	b.loft("paint", VehicleMesh.hull_stations(SIZE.z, hw, [[-hl, 1.05], [-hl + 0.04, 1.13], [-2.45, 1.23], [-2.15, 1.36], [-1.95, belt], [hl, belt]],
+		[[-hl, 0.5], [-hl + 0.15, 0.42], [hl - 0.15, 0.42], [hl, 0.5]], [-1.75, 1.6], WHEEL_RADIUS, WHEEL_RADIUS + 0.08, 0.18, 0.1, 0.02, 0.06, 0.08, 0.1))
+	# Крыша со скруглёнными рёбрами (e02).
+	var roof := [[-1.8, 2.28, 2.36, 0.98, 0.95, 0.01, 0.08], [-1.74, eave, 2.42, 1.02, 1.0, 0.01, 0.15]]
+	var z := -1.5
+	while z < 2.6:
+		roof.append([z, eave, 2.45, hw, hw - 0.02, 0.01, 0.17])
+		z += 0.35
+	roof.append([2.71, eave, 2.44, hw, hw - 0.02, 0.01, 0.16])
+	roof.append([2.75, eave + 0.02, 2.41, hw - 0.03, hw - 0.05, 0.01, 0.13])
+	b.loft("paint", roof)
+	# Лобовое и стойки A.
+	var wsb := Vector2(1.38, -2.12)
+	var wst := Vector2(2.27, -1.76)
+	glass.pane("glass", Vector3(-0.95, wsb.x, wsb.y), Vector3(0.95, wsb.x, wsb.y), Vector3(0.93, wst.x - 0.02, wst.y), Vector3(-0.93, wst.x - 0.02, wst.y),
+		Vector3(0, wst.y - wsb.y, -(wst.x - wsb.x)).normalized(), 0.03, 6, 2)
+	for x0 in [-0.85, -0.05]:
+		b.tube("trim", Vector3(x0, wsb.x + 0.03, wsb.y + 0.02), Vector3(x0 + 0.65, wsb.x + 0.05, wsb.y + 0.03), 0.01, 4)
+	# Оконный пояс: стойки, окна в резинках; справа — проём открытой двери.
+	var bays := {-1.0: [[-1.66, -0.72], [-0.64, 0.86], [0.94, 2.42]], 1.0: [[-1.66, -0.72], [-0.64, -0.36], [0.98, 2.42]]}
+	var posts := {-1.0: [-0.68, 0.9, 2.46], 1.0: [-0.68, -0.33, 0.94, 2.46]}
+	for side in [-1.0, 1.0]:
+		var s: float = side
+		var x := s * (hw - 0.02)
+		b.tube("paint", Vector3(s * (hw - 0.07), wsb.x, wsb.y), Vector3(s * (hw - 0.1), wst.x, wst.y), 0.05, 6)
+		for pz in posts[side]:
+			b.rbox("paint", Vector3(0.07, eave - belt, 0.08), Vector3(s * (hw - 0.035), (belt + eave) * 0.5, pz), 0.02)
+		b.rbox("paint", Vector3(0.22, eave - belt, 0.3), Vector3(s * (hw - 0.11), (belt + eave) * 0.5, hl - 0.15), 0.1)
+		for bay in bays[side]:
+			glass.pane("glass", Vector3(x, belt + 0.03, bay[0]), Vector3(x, belt + 0.03, bay[1]), Vector3(x, eave - 0.03, bay[1]), Vector3(x, eave - 0.03, bay[0]),
+				Vector3(s, 0, 0), 0.0, 1, 1)
+		# Зеркала на длинных кронштейнах, ручка, грязевые щитки.
+		var mirror := Vector3(s * (hw + 0.27), 1.78, -1.95)
+		b.tube("trim", Vector3(s * (hw - 0.03), 1.5, -2.05), mirror + Vector3(0, -0.14, 0), 0.015, 4)
+		b.tube("trim", Vector3(s * (hw - 0.05), 2.0, -1.9), mirror + Vector3(0, 0.14, 0), 0.015, 4)
+		b.rbox("trim", Vector3(0.06, 0.3, 0.18), mirror, 0.03)
+		b.rbox("chrome", Vector3(0.016, 0.03, 0.12), Vector3(s * (hw + 0.01), 1.28, -0.9), 0.008)
+		b.box("dark", Vector3(0.2, 0.26, 0.01), Vector3(s * 0.9, 0.3, 1.6 + 0.5))
+		for axle in [-1.75, 1.6]:
+			b.box("dark", Vector3(0.01, 0.5, 0.85), Vector3(s * 0.74, 0.6, axle))
+	# Открытая сдвижная дверь: тёплый проём, ступенька, панель отъехала назад снаружи борта, направляющая.
+	b.box("warm", Vector3(0.012, 1.65, 1.2), Vector3(hw - 0.002, 1.43, 0.3))   # вровень с бортом: надпись — поверх
+	b.box("trim", Vector3(0.16, 0.05, 1.0), Vector3(hw + 0.06, 0.62, 0.3))
+	b.rbox("paint", Vector3(0.06, 1.72, 1.2), Vector3(hw + 0.08, 1.38, 1.55), 0.025)
+	glass.pane("glass", Vector3(hw + 0.112, 1.55, 1.05), Vector3(hw + 0.112, 1.55, 2.05), Vector3(hw + 0.112, 2.15, 2.05), Vector3(hw + 0.112, 2.15, 1.05),
+		Vector3(1, 0, 0), 0.0, 1, 1)
+	b.box("trim", Vector3(0.04, 0.05, 2.0), Vector3(hw + 0.04, 2.3, 1.2))
+	# Перед: круглые фары в квадратных рамках, решётка с планками, поворотники, чёрный бампер, номер.
+	var fz := -hl
+	b.rbox("trim", Vector3(0.74, 0.2, 0.03), Vector3(0, 0.92, fz - 0.008), 0.02)
+	for y in [0.86, 0.92, 0.98]:
+		b.box("alu", Vector3(0.7, 0.014, 0.012), Vector3(0, y, fz - 0.026))
+	for s in [-1.0, 1.0]:
+		b.rbox("trim", Vector3(0.24, 0.22, 0.03), Vector3(s * 0.56, 0.92, fz - 0.006), 0.02)
+		_disc(b, "head", Vector3(s * 0.56, 0.92, fz - 0.024), 0.085)
+		b.rbox("lens_amber", Vector3(0.08, 0.1, 0.02), Vector3(s * 0.79, 0.92, fz - 0.014), 0.01)
+	for e in [-1.0, 1.0]:
+		b.rbox("trim", Vector3(SIZE.x + 0.1, 0.18, 0.14), Vector3(0, 0.58, e * (hl + 0.04)), 0.04)
+		b.box("trim", Vector3(0.53, 0.122, 0.006), Vector3(0, 0.78, e * (hl + 0.046)))
+		b.box("plate", Vector3(0.52, 0.112, 0.008), Vector3(0, 0.78, e * (hl + 0.052)))
+	# Зад: две створки с окнами, табличка под надписью, вертикальные фонари, ручка, петли, глушитель.
+	b.box("dark", Vector3(1.76, 0.64, 0.01), Vector3(0, 1.88, hl + 0.002))
+	for s in [-1.0, 1.0]:
+		glass.pane("glass", Vector3(s * 0.84, 1.58, hl + 0.008), Vector3(s * 0.1, 1.58, hl + 0.008), Vector3(s * 0.1, 2.18, hl + 0.008), Vector3(s * 0.84, 2.18, hl + 0.008),
+			Vector3(0, 0, 1), 0.0, 1, 1)
+		b.rbox("trim", Vector3(0.17, 0.42, 0.03), Vector3(s * 0.9, 1.2, hl + 0.005), 0.02)
+		b.rbox("tail", Vector3(0.13, 0.24, 0.02), Vector3(s * 0.9, 1.14, hl + 0.018), 0.015)
+		b.rbox("lens_amber", Vector3(0.13, 0.1, 0.02), Vector3(s * 0.9, 1.34, hl + 0.018), 0.015)
+		for y in [0.95, 1.75]:
+			b.rbox("dark", Vector3(0.05, 0.1, 0.03), Vector3(s * 0.98, y, hl + 0.01), 0.01)
+	b.box("dark", Vector3(0.02, 1.85, 0.012), Vector3(0, 1.45, hl + 0.006))
+	b.rbox("plate", Vector3(0.95, 0.44, 0.012), Vector3(0, 1.0, hl + 0.012), 0.02)
+	b.rbox("trim", Vector3(0.1, 0.03, 0.03), Vector3(0.16, 1.36, hl + 0.016), 0.01)
+	b.tube("steel", Vector3(0.6, 0.38, hl - 0.3), Vector3(0.6, 0.38, hl + 0.05), 0.04, 8, true)
+	b.box("dark", Vector3(1.4, 0.08, SIZE.z - 1.0), Vector3(0, 0.4, 0))
+	# Салон: пол, светлый потолок, сиденья в три ряда, торпедо и руль, перегородка.
+	cabin.box("cloth", Vector3(SIZE.x - 0.2, 0.01, 3.9), Vector3(0, belt + 0.006, 0.6))
+	cabin.box("warm", Vector3(SIZE.x - 0.2, 0.01, 4.2), Vector3(0, eave - 0.01, 0.5))
+	for sz in [-0.7, 0.4, 1.5]:
+		for sx in [-0.62, 0.55]:
+			cabin.rbox("cloth", Vector3(0.5, 0.2, 0.44), Vector3(sx, 1.58, sz), 0.05)
+			cabin.rbox("cloth", Vector3(0.5, 0.55, 0.09), Vector3(sx, 1.9, sz + 0.24), 0.04)
+			cabin.rbox("cloth", Vector3(0.26, 0.16, 0.08), Vector3(sx, 2.24, sz + 0.26), 0.035)
+	cabin.rbox("dark", Vector3(SIZE.x - 0.3, 0.2, 0.3), Vector3(0, 1.55, -1.95), 0.04)
+	var wheel_at := Vector3(-0.55, 1.78, -1.62)
+	for k in 12:
+		var t0 := TAU * k / 12.0
+		var t1 := TAU * (k + 1) / 12.0
+		var ay := Vector3(0, 0.55, -0.83)
+		cabin.tube("dark", wheel_at + (Vector3.RIGHT * cos(t0) + ay * sin(t0)) * 0.19, wheel_at + (Vector3.RIGHT * cos(t1) + ay * sin(t1)) * 0.19, 0.015, 4)
+	cabin.box("dark", Vector3(SIZE.x - 0.2, 0.4, 0.03), Vector3(0, 1.67, -1.1))
+	# Снег на крыше и на носу.
+	snow.pillow("snow", Vector3(0, 0, 0.45), SIZE.x - 0.3, 4.3, 0.12, 2.45, 2.45, 11, 9, 9)
+	snow.pillow("snow", Vector3(0, 0, -2.42), SIZE.x - 0.45, 0.42, 0.06, 1.18, 1.33, 12)
+	snow.pillow("snow", Vector3(0, 0, -2.08), SIZE.x - 0.4, 0.12, 0.05, 1.37, 1.38, 13, 7, 3)
+	var warm := Materials.plain(Color(0.62, 0.52, 0.36), 0.9, Color(1.0, 0.72, 0.40), 0.5)   # тёплый салон
+	var meshes := {
+		"body": VehicleMesh.finish(b, {"paint": VehicleMesh.paint(BODY_PAINT, 0.75, 0.7, 0.45, 0.3, Color(0.46, 0.26, 0.12)),
+			"warm": warm, "head": VehicleMesh.mat("lens_white"), "tail": VehicleMesh.mat("lens_red")}),
+		"glass": VehicleMesh.finish(glass, {"glass": VehicleMesh.glass(0.05, Color(0.16, 0.16, 0.20, 0.5))}),
+		"interior": VehicleMesh.finish(cabin, {"warm": warm}),
+		"snow": VehicleMesh.finish(snow),
+	}
+	return VehicleMesh.store("city_van", meshes)
 
-func _glass() -> StandardMaterial3D:
-	var material := StandardMaterial3D.new()
-	material.albedo_color = Color(0.16, 0.16, 0.20, 0.5)
-	material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	material.roughness = 0.08
-	material.metallic = 0.2
-	material.metallic_specular = 0.7
-	material.cull_mode = BaseMaterial3D.CULL_BACK
-	return material
-
-func _lamp(color: Color, glow: Color, energy: float) -> StandardMaterial3D:
-	var material := StandardMaterial3D.new()
-	material.albedo_color = color
-	material.roughness = 0.3
-	material.emission_enabled = true
-	material.emission = glow
-	material.emission_energy_multiplier = energy
-	return material
+## Круглое стекло фары в плоскости передка, смотрит вперёд (−Z).
+static func _disc(b: VehicleMesh.Builder, slot: String, at: Vector3, radius: float) -> void:
+	var keep := b.xf
+	b.xf = b.xf * Transform3D(Basis(Vector3.RIGHT, -PI * 0.5), at)
+	b.lathe(slot, PackedVector2Array([Vector2(radius, -0.004), Vector2(radius * 0.75, 0.012), Vector2(0.001, 0.02)]), 16, Vector3.ZERO)
+	b.xf = keep
 
 func _label(text: String, font_size: int, color: Color) -> Label3D:
 	var label := Label3D.new()
@@ -563,42 +610,3 @@ func _label(text: String, font_size: int, color: Color) -> Label3D:
 	label.double_sided = false
 	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	return label
-
-func _box(parent: Node3D, name: String, size: Vector3, at: Vector3, material: Material, shadow := true) -> MeshInstance3D:
-	var mesh := BoxMesh.new()
-	mesh.size = size
-	var instance := MeshInstance3D.new()
-	instance.name = name
-	instance.mesh = mesh
-	instance.material_override = material
-	instance.position = at
-	if not shadow:
-		instance.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	parent.add_child(instance)
-	return instance
-
-func _cylinder(parent: Node3D, name: String, radius: float, width: float, at: Vector3, material: Material) -> MeshInstance3D:
-	var mesh := CylinderMesh.new()
-	mesh.top_radius = radius
-	mesh.bottom_radius = radius
-	mesh.height = width
-	mesh.radial_segments = 16
-	var instance := MeshInstance3D.new()
-	instance.name = name
-	instance.mesh = mesh
-	instance.material_override = material
-	instance.position = at
-	parent.add_child(instance)
-	return instance
-
-func _plate(parent: Node3D, z: float, yaw: float, text: String) -> void:
-	var holder := Node3D.new()
-	holder.name = "Plate"
-	holder.position = Vector3(0, 0.78, z)
-	holder.rotation.y = yaw
-	parent.add_child(holder)
-	_box(holder, "PlateBase", Vector3(0.52, 0.12, 0.02), Vector3.ZERO, Materials.plain(Color(0.92, 0.92, 0.90), 0.5), false)
-	var label := _label(text, 48, Color(0.05, 0.05, 0.05))
-	label.pixel_size = 0.0016
-	label.position = Vector3(0, 0, 0.012)
-	holder.add_child(label)
