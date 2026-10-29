@@ -164,11 +164,17 @@ func _part_wall() -> void:
 	print("--- wall ---")
 	var garages := _solid("Garages_Yard")
 	var face_x: float = garages[0].x + garages[1].x * 0.5
+	# Полоса у фасада: центр гаражей, иначе ближайшая свободная по z (у центра — скат горки PROPS-01).
 	var z: float = garages[0].y
+	var lane := false
+	for dz in [0.0, -5.0, 5.0, -10.0, 10.0, -14.0, 14.0]:
+		z = garages[0].y + dz
+		lane = true
+		for k in 6:
+			lane = lane and _free(Vector3(face_x + 1.0 + k, 0.0, z), 0.5)
+		if lane:
+			break
 	var start := Vector3(face_x + 6.0, 0.0, z)
-	var lane := true
-	for k in 6:
-		lane = lane and _free(Vector3(face_x + 1.0 + k, 0.0, z), 0.5)
 	check(lane, "6 m east of Garages_Yard face x=%.1f at z=%.1f is free" % [face_x, z])
 	await _place(start, PI * 0.5)   # курс на запад
 	var bumps0: int = barrel.bump_count
