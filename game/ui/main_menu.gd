@@ -1,7 +1,7 @@
 extends CanvasLayer
-## Главное меню: НАЧАТЬ / ВЫХОД.
+## Главное меню: НАЧАТЬ / НАСТРОЙКИ / ВЫХОД.
 ## POLISH-02 (п. 3): за меню — живой двор (тот же квартал LevelGeometry и свет, Бабка и белая «Лада»)
-## с медленной облётной камерой; карточка в бумажном стиле HUD и строка управления по канону (раздел 7).
+## с медленной облётной камерой; карточка в бумажном стиле HUD. Управление — в НАСТРОЙКАХ (владелец 29.10, вечер).
 ## Двор строится, пока меню видно, и освобождается при старте игры — мир миссии создаёт main.gd.
 
 signal start_requested
@@ -13,6 +13,7 @@ const LevelGeometryScript = preload("res://game/world/level_geometry.gd")
 const LightingScript = preload("res://game/world/lighting.gd")
 const NpcScript = preload("res://game/npc/npc.gd")
 const LadaVisual = preload("res://game/vehicles/lada_visual.gd")
+const SettingsPanel = preload("res://game/ui/settings_panel.gd")
 
 const INK := Color(0.12, 0.10, 0.08)
 ## Облёт: камера качается дугой с севера на подъезд, Бабку и «Лада», не заходя в дома.
@@ -26,6 +27,8 @@ var start_button: Button
 var backdrop: Node3D
 var backdrop_camera: Camera3D
 var card: PanelContainer
+var settings: PanelContainer
+var settings_button: Button
 var _orbit_time := 0.0
 
 func _ready() -> void:
@@ -62,7 +65,7 @@ func _ready() -> void:
 	box.alignment = BoxContainer.ALIGNMENT_CENTER
 	box.add_theme_constant_override("separation", 18)
 	card.add_child(box)
-	var title := _text("ШКЯ: НИЧЕГО НЕОБЫЧНОГО", 60)
+	var title := _text("ШКЯ: НИЧЕГО НЕОБЫЧНОГО", 50)
 	box.add_child(title)
 	var rule := ColorRect.new()
 	rule.color = INK
@@ -74,12 +77,16 @@ func _ready() -> void:
 	box.add_child(gap)
 	start_button = _button("НАЧАТЬ", start_requested.emit, true)
 	box.add_child(start_button)
+	settings_button = _button("НАСТРОЙКИ", _open_settings, false)
+	box.add_child(settings_button)
 	box.add_child(_button("ВЫХОД", quit_requested.emit, false))
-	var gap2 := Control.new()
-	gap2.custom_minimum_size = Vector2(0, 6)
-	box.add_child(gap2)
-	box.add_child(_text("УПРАВЛЕНИЕ", 24))
-	box.add_child(DialogPanelScript.controls_row(24))
+	settings = SettingsPanel.new()
+	settings.anchor_top = 0.5
+	settings.anchor_bottom = 0.5
+	settings.offset_left = card.offset_left
+	settings.grow_vertical = Control.GROW_DIRECTION_BOTH
+	settings.back_requested.connect(_close_settings)
+	add_child(settings)
 	visibility_changed.connect(_on_visibility_changed)
 	_on_visibility_changed()
 
@@ -92,8 +99,20 @@ func _process(delta: float) -> void:
 	backdrop_camera.position = at
 	backdrop_camera.look_at(ORBIT_PIVOT + Vector3(0.0, 2.2, 3.0), Vector3.UP)
 
+func _open_settings() -> void:
+	card.hide()
+	settings.open()
+
+func _close_settings() -> void:
+	settings.hide()
+	card.show()
+	settings_button.grab_focus.call_deferred()
+	DialogPanelScript.pop(card, 0.95)
+
 func _on_visibility_changed() -> void:
 	if visible and is_inside_tree():
+		settings.hide()
+		card.show()
 		start_button.grab_focus.call_deferred()
 		if backdrop == null:
 			_build_backdrop()

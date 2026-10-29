@@ -276,36 +276,19 @@ static func key_cap(text: String, font_size := 26, dark := true) -> PanelContain
 	cap.add_child(label)
 	return cap
 
-## Строка управления по канону (раздел 7): колпачки клавиш с подписями.
-static func controls_row(font_size := 24, ink := INK) -> HFlowContainer:
-	var row := HFlowContainer.new()
-	row.alignment = FlowContainer.ALIGNMENT_CENTER
-	row.add_theme_constant_override("h_separation", 22)
-	row.add_theme_constant_override("v_separation", 10)
-	row.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	for item in CONTROLS:
-		var pair := HBoxContainer.new()
-		pair.add_theme_constant_override("separation", 8)
-		pair.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		pair.add_child(key_cap(item[0], font_size))
-		var label := Label.new()
-		label.text = item[1]
-		label.add_theme_font_size_override("font_size", font_size)
-		label.add_theme_color_override("font_color", ink)
-		label.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		pair.add_child(label)
-		row.add_child(pair)
-	return row
-
-## Управление из канона (раздел 7): клавиша и что она делает.
+## Управление (канон, раздел 7, + геймпад — решения владельца 28.10 и PAD-01): действие, клавиатура, геймпад.
+## Показывается в НАСТРОЙКАХ (settings_panel.gd) — из меню и паузы строка управления убрана (владелец 29.10, вечер).
 const CONTROLS := [
-	["WASD", "ходьба и руль"],
-	["Мышь", "камера"],
-	["E", "говорить, сесть и выйти"],
-	["Space", "прыжок, в машине — ручник"],
-	["F / ЛКМ", "удар"],
-	["Esc", "пауза"],
-	["Геймпад", "стики — идти и камера, A — прыжок и выбор, X — действие, B — удар и назад, в машине — ручник, RT/LT — газ и тормоз, Start — пауза"],
+	["Идти, руль", "W A S D", "Левый стик"],
+	["Камера", "Мышь", "Правый стик"],
+	["Говорить, сесть, выйти", "E", "X"],
+	["Прыжок", "Space", "A"],
+	["Удар", "F / ЛКМ", "B"],
+	["Газ, тормоз", "W / S", "RT / LT"],
+	["Ручник", "Space", "B"],
+	["Выбор в меню", "Enter", "A"],
+	["Назад", "Esc", "B"],
+	["Пауза", "Esc", "Start"],
 ]
 
 func _on_pressed(id: StringName) -> void:

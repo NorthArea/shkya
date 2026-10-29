@@ -233,9 +233,9 @@ func _part_input_map() -> void:
 	check(handbrake_b, "gamepad B stays the handbrake in the car")
 	var hint := false
 	for item in preload("res://game/ui/dialog_panel.gd").CONTROLS:
-		if String(item[0]).contains("F") and String(item[1]).contains("удар"):
+		if String(item[0]).contains("Удар") and String(item[1]).contains("F") and String(item[1]).contains("ЛКМ") and String(item[2]) == "B":
 			hint = true
-	check(hint, "controls line shows «F / ЛКМ — удар»")
+	check(hint, "settings controls table shows «Удар — F / ЛКМ — B»")
 	check(sound.DRONE_BUZZ.loop_mode == AudioStreamWAV.LOOP_FORWARD, "drone buzz loops")
 	var buzzing := 0
 	for d in drones.drones:
