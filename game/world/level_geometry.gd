@@ -35,6 +35,7 @@ const ENTRANCE_DOOR_X := Buildings.ENTRANCE_DOOR_X   # дверь по цент�
 var _buildings: Buildings = null
 var _environment: EnvDress = null
 var _skyline: Skyline = null
+var _vent_steam: Array[Vector3] = []   # устья вытяжек на крышах (_steam_puff)
 var _wires: Array[Transform3D] = []
 
 # Надписи: [текст, позиция, поворот y, размер шрифта, цвет].
@@ -829,6 +830,11 @@ func _build_instances() -> void:
 	_houses().build()   # лоджии, рамы, стёкла, снег, крыши, мелочь домов (CITY-02 B)
 	_env().build()      # деревья, бордюры, пятна, люки, снег на проводах, столбы (CITY-02 E)
 	_sky().finish()     # средний слой, огни, мост, краны (CITY-02 E)
+	if not _vent_steam.is_empty():
+		# Пар вытяжек: мелкие клубы, сносимые ветром; дымка по расстоянию — материал без тумана сцены (CITY-02 F).
+		add_child(Skyline.plume("VentSteam", _vent_steam, 7, {"wind": Vector3(3.2, 0, 1.4), "life": 7.0, "rise": 4.0,
+			"size_start": 0.7, "size_end": 3.6, "spread": 0.5, "color": Color(0.66, 0.69, 0.75, 0.42), "haze_dist": 140.0}, 5))
+		_vent_steam.clear()
 	var wire := CylinderMesh.new()
 	wire.top_radius = 0.02
 	wire.bottom_radius = 0.02
@@ -1008,17 +1014,10 @@ func _pavilion(size: Vector3) -> Node3D:
 func _build_chimneys() -> void:
 	_sky().chimneys()
 
-## Пар из вытяжки на крыше: несколько полупрозрачных клубов, сносимых ветром (ART-06, Н9: `minus-28`).
+## Пар из вытяжки на крыше (ART-06, Н9: `minus-28`): точка копится, клубы-билборды строит _build_instances одним
+## MultiMesh (shaders/steam_plume, CITY-02 F) — раньше четыре полупрозрачные сферы с геометрическими краями.
 func _steam_puff(parent: Node3D, at: Vector3, seed: int) -> void:
-	var drift := Vector3(cos(seed * 1.7), 0, sin(seed * 1.7))
-	for k in 4:
-		var puff := Greybox.mesh_sphere(1.0, Color.WHITE)
-		puff.material_override = Materials.steam()
-		var r := 0.6 + k * 0.45
-		puff.scale = Vector3(r, r * 0.8, r)
-		puff.position = at + Vector3.UP * (k * 0.9) + drift * (k * 0.7)
-		puff.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-		parent.add_child(puff)
+	_vent_steam.append(parent.position + at + Vector3(0, 0.1 * (seed % 3), 0))
 
 
 # --- POLISH-02, п. 15: двор — площадка, выбивалка, контейнеры ---
