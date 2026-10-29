@@ -16,6 +16,9 @@ extends Node3D
 ## 7–9 с, car_area — тот же KIOSK_SQUARE; после покупки не двигается. EXT-01 fix4: второй пост к северу от окна,
 ## OFFICER2_RANGE 14 м; первый после диалога отворачивается от Илюши и от парковки (PatrolNpc.away_point). Узел создаёт LevelGeometry (ребёнок DemoWorld/LevelGeometry/Patrols);
 ## мир ищется вверх по дереву, как в DetectionSensor.
+## EXT-01 fix5 (пятая приёмка): у первого три угла Layout.OFFICER_FACING (+ восток), обзор по углу OFFICER_FOVS
+## [100°, 150°, 100°], разворот не через окно (avoid_yaw); у второго восток-юго-восток держится OFFICER2_HOLD_EAST (5–6 с) —
+## западный угол дольше держит глубокую часть коридора у киоска (P2: SNEAK_WEST без ожидания).
 
 const Layout = preload("res://game/world/layout.gd")
 const NpcScript = preload("res://game/npc/npc.gd")
@@ -25,6 +28,11 @@ const CityVanScript = preload("res://game/vehicles/city_van.gd")
 const PROMPT_TALK := "E — ПОГОВОРИТЬ"
 const OFFICER_RANGE := 12.0
 const OFFICER_FOV := 100.0
+## fix5: обзор первого по углам OFFICER_FACING; [1] (пеленг 150°) — 150°: сектор 75°…225° накрывает и среднюю часть прямой
+## x = 59,5 («в лоб» — провал во всех фазах), и второе колено диагонали с дороги B (при 100° — 18 из 32 / 47 из 96, Layout).
+const OFFICER_FOVS := [100.0, 150.0, 100.0]
+const OFFICER2_FOV := 100.0
+const OFFICER2_HOLD_EAST := Vector2(5.0, 6.0)   # fix5: угол [1] второго; честный SNEAK_WEST за ним — 15 м, ~4 с
 const OFFICER2_RANGE := 14.0             # fix4: с (59, −87) до входа с улицы C и до обхода по дороге z = −84
 const OFFICER_HOLD := Vector2(7.0, 9.0)   # с на угол: при 3–4 с осторожный честный проход занимал 14–15 с (норма участка 45–90 с)
 
@@ -50,9 +58,13 @@ func _ready() -> void:
 	officer.facings = Layout.OFFICER_FACING
 	officer.sensor_range = OFFICER_RANGE
 	officer.sensor_fov = OFFICER_FOV
+	officer.facing_fovs = OFFICER_FOVS
 	officer.turn_every = OFFICER_HOLD
 	officer.position = Layout.OFFICER_POST
 	officer.away_point = Layout.ROUTE_DRIVE[-1]   # fix4: после диалога не смотреть туда, куда уходят, — к парковке
+	# fix5: разворот восток → запад-юго-запад и прочие — не через окно киоска (с поста на северо-северо-запад).
+	var to_window1 := Layout.VENDOR_WINDOW - Layout.OFFICER_POST
+	officer.avoid_yaw = atan2(-to_window1.x, -to_window1.z)
 	add_child(officer)
 	officer.sensor.show_cone = true
 	officer.sensor.car_area = Layout.KIOSK_SQUARE
@@ -65,7 +77,8 @@ func _ready() -> void:
 	officer2.body_radius = officer.body_radius
 	officer2.facings = Layout.OFFICER2_FACING
 	officer2.sensor_range = OFFICER2_RANGE
-	officer2.sensor_fov = OFFICER_FOV
+	officer2.sensor_fov = OFFICER2_FOV
+	officer2.facing_holds = [OFFICER_HOLD, OFFICER2_HOLD_EAST]
 	officer2.turn_every = OFFICER_HOLD
 	officer2.position = Layout.OFFICER2_POST
 	# fix4: разворот запад ↔ восток-юго-восток — через север, не через окно киоска на юге.

@@ -15,12 +15,18 @@ extends "res://game/npc/npc.gd"
 ## fix4: avoid_yaw — угол корпуса, через который разворот не проходит (второй пост: окно киоска на юге; кратчайший путь
 ## между западом и востоком-юго-востоком шёл через юг и на 0,3 с открывал окно): разворот идёт длинной дугой, время —
 ## TURN_SECONDS на каждые 90° (не меньше TURN_SECONDS).
+## EXT-01 fix5: facing_holds — удержание по номеру угла (Vector2 с, мин…макс); пусто или без записи — turn_every;
+## facing_fovs — обзор сенсора по номеру угла (град), ставится в начале разворота на угол; без записи — sensor_fov.
 
 const DetectionSensorScript = preload("res://game/stealth/detection_sensor.gd")
 
 ## Углы корпуса в осях узла (yaw: 0 — на север), по кругу.
 @export var facings: Array = [0.0]
 @export var turn_every := Vector2(3.0, 4.0)   # с между разворотами, случайно в этих границах
+## Удержание угла facings[i], с (Vector2 мин…макс), если задано; иначе turn_every (fix5).
+@export var facing_holds: Array = []
+## Обзор сенсора на угле facings[i], град, если задан; иначе sensor_fov (fix5).
+@export var facing_fovs: Array = []
 @export var sensor_range := 9.0
 @export var sensor_fov := 75.0
 ## Куда уходит Илюша после диалога (парковка): turn_away_from не выбирает угол, смотрящий туда. INF — не учитывать.
@@ -57,11 +63,11 @@ func _ready() -> void:
 	_turn_to = _turn_from
 	facing_yaw = _turn_from
 	visual.rotation.y = _turn_from
-	_wait_left = _rng.randf_range(turn_every.x, turn_every.y)
+	_wait_left = _hold()
 	sensor = DetectionSensorScript.new()
 	sensor.name = "DetectionSensor"
 	sensor.range_m = sensor_range
-	sensor.fov_deg = sensor_fov
+	sensor.fov_deg = _fov_for(0)
 	sensor.rotation.y = _turn_from
 	add_child(sensor)
 
@@ -106,7 +112,7 @@ func _physics_process(delta: float) -> void:
 		_turn_from = visual.rotation.y
 		_turn_to = float(facings[_facing_index])
 		_start_turn()
-		_wait_left = _rng.randf_range(turn_every.x, turn_every.y)
+		_wait_left = _hold()
 		sensor.enabled = true
 		return
 	global_position += to.normalized() * step
@@ -116,7 +122,7 @@ func _next_facing() -> void:
 	_turn_from = visual.rotation.y
 	_turn_to = float(facings[_facing_index])
 	_start_turn()
-	_wait_left = _rng.randf_range(turn_every.x, turn_every.y)
+	_wait_left = _hold()
 
 ## После диалога (P2-3, fix4): сразу на угол из facings без target в конусе — из таких дальше всего от away_point;
 ## если target во всех — дальше всего от target. Таймер разворотов заново; grace с — время уйти. Позже — _update_linger.
@@ -131,7 +137,7 @@ func turn_away_from(target: Node3D, grace: float) -> void:
 	_turn_from = visual.rotation.y
 	_turn_to = float(facings[_facing_index])
 	_start_turn()
-	_wait_left = _rng.randf_range(turn_every.x, turn_every.y)
+	_wait_left = _hold()
 
 func _update_linger(delta: float) -> void:
 	if not is_instance_valid(_linger_target):
@@ -166,8 +172,23 @@ func can_talk_to(target: Node3D) -> bool:
 		return true
 	return _angle_to(target, visual.rotation.y) <= TALK_ANGLE
 
+## Обзор сенсора на угле i: facing_fovs[i] или sensor_fov (fix5).
+func _fov_for(i: int) -> float:
+	if i < facing_fovs.size() and (facing_fovs[i] is float or facing_fovs[i] is int):
+		return float(facing_fovs[i])
+	return sensor_fov
+
+## Случайное удержание текущего угла _facing_index: facing_holds[i] или turn_every (fix5).
+func _hold() -> float:
+	var h: Vector2 = turn_every
+	if _facing_index < facing_holds.size() and facing_holds[_facing_index] is Vector2:
+		h = facing_holds[_facing_index]
+	return _rng.randf_range(h.x, h.y)
+
 ## Начать разворот _turn_from → _turn_to: кратчайшей дугой, если она не проходит через avoid_yaw, иначе длинной (fix4).
 func _start_turn() -> void:
+	if sensor:
+		sensor.fov_deg = _fov_for(_facing_index)   # fix5: обзор целевого угла — с начала разворота
 	var d := wrapf(_turn_to - _turn_from, -PI, PI)
 	if not is_nan(avoid_yaw) and absf(d) > 0.001:
 		var a := wrapf(avoid_yaw - _turn_from, -PI, PI)
@@ -185,7 +206,7 @@ func away_facing(p: Vector3) -> int:
 	for i in facings.size():
 		var yaw := float(facings[i])
 		var off := _angle_to_point(p, yaw)
-		if off <= sensor_fov * 0.5:
+		if off <= _fov_for(i) * 0.5:
 			continue
 		var angle := _angle_to_point(away_point, yaw) if away_point != Vector3.INF else off
 		if angle > best_angle:
@@ -238,7 +259,8 @@ func place_at(point: Vector3) -> void:
 	_turn_to = _turn_from
 	_turn_t = 1.0
 	visual.rotation.y = _turn_from
-	_wait_left = _rng.randf_range(turn_every.x, turn_every.y)
+	_wait_left = _hold()
+	sensor.fov_deg = _fov_for(0)
 	sensor.enabled = true
 
 ## Идёт плавный разворот корпуса (между углами facings).

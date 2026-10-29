@@ -157,7 +157,8 @@ func officer() -> Node3D:
 
 ## Дождаться, пока полицейский заново развернётся на угол facings[index] и встанет: если он уже смотрит туда,
 ## сначала дождаться, пока отвернётся (осторожный игрок не знает, сколько ему осталось стоять). false — не дождался.
-func wait_officer_turn(index: int, max_frames := 1500, o: Node3D = null) -> bool:
+## EXT-01 fix5: у первого три угла (цикл до ~29 с) — по умолчанию ждать до 40 с.
+func wait_officer_turn(index: int, max_frames := 2400, o: Node3D = null) -> bool:
 	release_all()
 	if o == null:
 		o = officer()

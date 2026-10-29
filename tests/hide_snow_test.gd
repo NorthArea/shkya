@@ -110,7 +110,8 @@ func _part_geometry() -> void:
 			sensor.rotation.y = facing
 			seen.append(sensor.poll() > 0.0)
 	sensor.enabled = false
-	print("INFO: exit point seen from OFFICER_POST west/south: %s/%s, from OFFICER_POST_AFTER west/south: %s/%s" % seen)
+	var n_f := Layout.OFFICER_FACING.size()
+	print("INFO: exit point seen from OFFICER_POST by facing: %s, from OFFICER_POST_AFTER: %s" % [seen.slice(0, n_f), seen.slice(n_f)])
 	check(not seen[0] or not seen[1], "exit point is out of the officer's view at one of OFFICER_FACING (post)")
 	await _shot("01_snowdrift", Layout.HIDE_SNOWDRIFT + Vector3(-1.5, 0, 4.2), 0.35, -0.22)
 

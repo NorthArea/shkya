@@ -22,6 +22,9 @@ extends Node3D
 ## части B (x ≥ Layout.KIOSK_ROAD_X) машину замечают только после CAR_ROAD_STILL_SECONDS почти полной остановки
 ## (скорость < CAR_ROAD_STILL_SPEED подряд, car_road_still) — «Лада» за троллейбусом на остановке не «у киоска»; на площадке
 ## (x < KIOSK_ROAD_X) — сразу. sees_car_now() (вышел из машины на глазах) — без скорости и выдержки, везде в области.
+## EXT-01 fix5 (пятая приёмка P1-2, по крышам): on_roof — Илюша пешком в Layout.ROOF_AREA (площадка и гаражи) выше
+## Layout.ROOF_HEIGHT над землёй, стоя на чём-то (или в прыжке выше ROOF_JUMP_HEIGHT): включённый сенсор ближе
+## ROOF_SEE_DISTANCE видит его с видимостью 1 — без угла, дальности range_m, луча и множителя укрытия.
 
 const POLL_SECONDS := 0.15
 const ACTIVE_DISTANCE := 40.0
@@ -55,6 +58,8 @@ var cone_wanted := false
 
 var _visible := 0.0
 var _poll_left := 0.0
+## Последний опрос: Илюша на крыше у киоска и этот сенсор его так видит (fix5).
+var on_roof := false
 ## Что перекрыло луч в последнем опросе (имя тела) — для тестов и настройки укрытий; "" — ничего.
 var last_blocker := ""
 ## Геометрия последнего опроса без множителя заметности: дистанция, угол и луч пропускают (в машине — false).
@@ -147,7 +152,12 @@ func _compute() -> float:
 	var car_seen := _car_in_sight()
 	if world != null and world.get("control_mode") == &"in_car":
 		in_view = car_seen > 0.0
+		on_roof = false
 		return car_seen   # машина не прячется: заметность 1
+	on_roof = _sees_on_roof()
+	if on_roof:
+		in_view = true
+		return 1.0   # fix5: на крыше заметен всем ближе ROOF_SEE_DISTANCE
 	var seen := _line_of_sight()
 	in_view = seen > 0.0
 	var player_seen := 0.0
@@ -156,6 +166,27 @@ func _compute() -> float:
 		var player: Node3D = world.player
 		player_seen = clampf(player.exposure_factor(global_position + Vector3.UP * EYE_HEIGHT), 0.0, 1.0) if player.has_method("exposure_factor") else seen
 	return maxf(player_seen, car_seen)
+
+## Илюша пешком на крыше у киоска (fix5): в Layout.ROOF_AREA выше ROOF_HEIGHT, стоит на чём-то или в прыжке выше
+## ROOF_JUMP_HEIGHT (прыжок с земли ≈1,8 м — не крыша).
+static func player_on_roof(player: Node3D) -> bool:
+	if player == null:
+		return false
+	var p := player.global_position
+	if not Layout.ROOF_AREA.has_point(Vector2(p.x, p.z)) or p.y <= Layout.ROOF_HEIGHT:
+		return false
+	var on_floor: bool = (player as CharacterBody3D).is_on_floor() if player is CharacterBody3D else true
+	return on_floor or p.y > Layout.ROOF_JUMP_HEIGHT
+
+## Этот сенсор видит Илюшу на крыше: включён, Илюша пешком на крыше и ближе ROOF_SEE_DISTANCE (в плоскости XZ).
+func _sees_on_roof() -> bool:
+	if not enabled or not is_inside_tree():
+		return false
+	var world := _world()
+	if world == null or world.get("control_mode") == &"in_car":
+		return false
+	var player: Node3D = world.player
+	return player_on_roof(player) and distance_to_player() <= Layout.ROOF_SEE_DISTANCE
 
 ## Машина в car_area видна этому сенсору при любой скорости (fix3: Илюша выходит из неё на площадке — DemoWorld).
 func sees_car_now() -> bool:
