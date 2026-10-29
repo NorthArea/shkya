@@ -277,7 +277,7 @@ func _exit_free(point: Vector3) -> bool:
 	capsule.height = 1.5
 	var query := PhysicsShapeQueryParameters3D.new()
 	query.shape = capsule
-	query.collision_mask = 1 | 4
+	query.collision_mask = 1 | 4 | 64   # DRIVE-02: и валы снега (слой 7), как раньше
 	var exclude: Array[RID] = []
 	if drift:
 		exclude.append(drift.get_rid())

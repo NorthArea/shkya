@@ -142,7 +142,7 @@ func _free_exit_spot() -> Vector3:
 	capsule.height = 1.5
 	var query := PhysicsShapeQueryParameters3D.new()
 	query.shape = capsule
-	query.collision_mask = 1 | 4
+	query.collision_mask = 1 | 4 | 64   # DRIVE-02: не выходить внутрь вала (слой 7 «SnowBank»)
 	var origin := car.global_position + Vector3.UP * 0.8
 	for offset in EXIT_OFFSETS:
 		var spot := car.global_transform * offset

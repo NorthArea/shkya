@@ -110,6 +110,7 @@ func _build_solid(index: int, spec: Array) -> void:
 			_garage_row(body, spec[0], size)
 		"snow", "snow_bank":
 			mesh.queue_free()
+			body.collision_layer = 64   # DRIVE-02 (C10): слой 7 «SnowBank» — стена пешеходам, «Лада» едет по SnowField
 			body.add_child(_lumpy_bank(size, Materials.snow(0.0) if kind == "snow" else Materials.snow_bank(), index))
 		"prop":
 			if spec[0] == "Bench":
