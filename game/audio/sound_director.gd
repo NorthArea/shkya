@@ -91,6 +91,7 @@ func _setup() -> void:
 	_setup_knock()   # KNOCK-01: сбитые «Ладой» жители
 	_setup_break()   # BREAK-01: разрушаемые объекты, сигнализация, крышки
 	_setup_drive02()   # DRIVE-02: колёса в снегу, скрип при заносе
+	_setup_life()   # PEOPLE-03: занятия жителей и птицы
 
 ## Текст субтитра радио, пока он на экране ("" — нет).
 func radio_text() -> String:
@@ -108,6 +109,7 @@ func _physics_process(delta: float) -> void:
 	_knock_sounds()   # KNOCK-01
 	_break_sounds()   # BREAK-01
 	_drive02_sounds()   # DRIVE-02
+	_life_sounds()   # PEOPLE-03
 
 ## Радио один раз за мир: бубнёж из машины и субтитр, пока звучит (плюс хвост на дочитать).
 func _radio(delta: float) -> void:
@@ -789,3 +791,77 @@ func _drive02_loop(player: AudioStreamPlayer3D, level: float, db: float, pitch: 
 			played[key] += 1
 	elif player.playing:
 		player.stop()
+
+# --- PEOPLE-03: звуки занятий жителей и птиц ---
+## Занятия (Residents.activity_sounded): стук костяшки домино, взмах метлы, скрип санок и ската горки, клюшка и шайба
+## о борт; птицы (Ambient): воркование голубя (pigeon_cooed) и хлопанье крыльев взлетевшей стайки (birds_flushed).
+## Разовый 3D в точке источника: тихо, затухание unit_size, дальше max_distance не слышно — и не запускается, если
+## камера дальше (played["life_far"]); один вид не чаще LIFE_MIN_GAP. Уровни, RMS файла + volume_db (у источника):
+## домино −22 − 8 = −30 дБ, метла и санки −24 − 8 = −32, клюшка −25 − 6 = −31, голубь −24 − 8 = −32, крылья
+## −20 − 8 = −28 — тише сигналов квеста (−23 … −25). Звуки — tools/generate_audio.py. played["life_<вид>"].
+const LIFE_SOUNDS := {
+	# вид: [поток, volume_db, unit_size, max_distance, высота тона]
+	&"domino": [preload("res://assets/audio/domino_clack.wav"), -8.0, 3.0, 22.0, 1.0],
+	&"sweep": [preload("res://assets/audio/broom_swish.wav"), -8.0, 3.0, 18.0, 1.0],
+	&"sled": [preload("res://assets/audio/sled_creak.wav"), -8.0, 3.0, 18.0, 1.0],
+	&"slide": [preload("res://assets/audio/sled_creak.wav"), -6.0, 3.0, 25.0, 0.8],
+	&"stick": [preload("res://assets/audio/hockey_stick.wav"), -6.0, 3.0, 30.0, 1.0],
+	&"board": [preload("res://assets/audio/hockey_stick.wav"), -6.0, 3.0, 30.0, 0.55],
+	&"coo": [preload("res://assets/audio/pigeon_coo.wav"), -8.0, 3.0, 25.0, 1.0],
+	&"wings": [preload("res://assets/audio/wings_flap.wav"), -8.0, 4.0, 35.0, 1.0],
+}
+const LIFE_MIN_GAP := 0.15   # с
+
+var life_players := {}   # вид → AudioStreamPlayer3D
+var _life_last := {}     # вид → время, с
+var _life_residents: Node
+var _life_ambient: Node
+
+func _setup_life() -> void:
+	played["life_far"] = 0
+	for kind: StringName in LIFE_SOUNDS:
+		var spec: Array = LIFE_SOUNDS[kind]
+		played["life_%s" % kind] = 0
+		var player := _player_3d(world, spec[1], spec[0])
+		player.name = "Life_%s" % kind
+		player.unit_size = spec[2]
+		player.max_distance = spec[3]
+		player.pitch_scale = spec[4]
+		player.max_polyphony = 3
+		life_players[kind] = player
+
+## Residents и Ambient — по группам; подключаются при первом появлении.
+func _life_sounds() -> void:
+	if life_players.is_empty():
+		return
+	if _life_residents == null or not is_instance_valid(_life_residents):
+		_life_residents = get_tree().get_first_node_in_group(&"residents")
+		if _life_residents and _life_residents.has_signal(&"activity_sounded"):
+			_life_residents.activity_sounded.connect(func(r: Node3D, kind: StringName): life_play(kind, r.global_position + Vector3.UP * 0.6))
+		else:
+			_life_residents = null
+	if _life_ambient == null or not is_instance_valid(_life_ambient):
+		_life_ambient = get_tree().get_first_node_in_group(&"ambient")
+		if _life_ambient and _life_ambient.has_signal(&"pigeon_cooed"):
+			_life_ambient.pigeon_cooed.connect(func(b: Node3D): life_play(&"coo", b.global_position))
+			_life_ambient.birds_flushed.connect(func(b: Node3D): life_play(&"wings", b.global_position))
+		else:
+			_life_ambient = null
+
+## Разовый звук занятия kind в точке at; false — камера дальше его max_distance или тот же вид только что звучал.
+func life_play(kind: StringName, at: Vector3) -> bool:
+	var player: AudioStreamPlayer3D = life_players.get(kind)
+	if player == null:
+		return false
+	var camera := get_viewport().get_camera_3d()
+	if camera and camera.global_position.distance_to(at) > player.max_distance:
+		played["life_far"] += 1
+		return false
+	var now := Engine.get_physics_frames() / float(Engine.physics_ticks_per_second)
+	if now - float(_life_last.get(kind, -INF)) < LIFE_MIN_GAP:
+		return false
+	_life_last[kind] = now
+	player.global_position = at
+	player.play()
+	played["life_%s" % kind] += 1
+	return true

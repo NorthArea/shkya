@@ -18,7 +18,7 @@ extends SceneTree
 ## детерминирован и не повторяет реплику подряд. Касание «Лады» — пузырь hit; Илюша вплотную — walk; за прогон
 ## города стоящие бубнят idle тихим пузырём; у каждого жителя реплики подряд не повторяются, болтовня — не чаще раза
 ## в 15 с (hit, push и break — вне очереди).
-## LIFE-01: жители живут по цепочкам целей (длинный прогон — tests/life01_test.gd). Здесь: 18–22 жителя, скорость
+## LIFE-01: жители живут по цепочкам целей (длинный прогон — tests/life01_test.gd). Здесь: 18–26 жителей (PEOPLE-03: 25), скорость
 ## 1,1–1,9 м/с (дети бегают, дворник не спешит); стартовые отрезки — по тротуарам и газонам LIFE_GROUNDS; прогон —
 ## каждый проходит стартовый отрезок (или уже на месте первой цели) без застреваний, не по проезжей части вне переходов
 ## и не в коробках; второй в паре держится по следу первого; курящий курит 40–60 с и уходит к следующей цели; кто-то
@@ -110,7 +110,7 @@ func _run() -> void:
 
 func _part_roster() -> void:
 	print("--- roster ---")
-	check(residents.size() >= 18 and residents.size() <= 22, "18–22 residents (%d)" % residents.size())
+	check(residents.size() >= 18 and residents.size() <= 26, "18–26 residents (%d)" % residents.size())
 	var looks := {}
 	for look in Layout.RESIDENT_LOOKS:
 		looks[look] = true
@@ -470,7 +470,10 @@ func _check_bubble_logs(where: String) -> void:
 		var entries: Array = r.bubble_log
 		total += entries.size()
 		for k in entries.size():
-			if not QuestLines.street_lines(r.voice, entries[k][1]).has(entries[k][2]):
+			# PEOPLE-03: на занятии idle и walk — из пула занятия (QuestLines.ACTIVITY_LINES).
+			var activity: bool = entries[k][1] in [&"idle", &"walk"] and QuestLines.all_street_lines().has(entries[k][2]) \
+				and QuestLines.ACTIVITY_LINES.values().any(func(pool): return pool.has(entries[k][2]))
+			if not activity and not QuestLines.street_lines(r.voice, entries[k][1]).has(entries[k][2]):
 				bad_set.append([r.name, entries[k]])
 			if k == 0:
 				continue

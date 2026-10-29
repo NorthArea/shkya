@@ -796,10 +796,7 @@ func _feeder_and_laundry() -> void:
 	_box(Vector3(0.122, 0.09, 0.08), Vector3(0.25, 1.7, 0), Color(0.15, 0.30, 0.65), &"detail")
 	_box(Vector3(0.13, 0.08, 0.124), Vector3(0.25, 1.69, 0), Color(0.06, 0.06, 0.07), &"detail")   # окошко
 	_box(Vector3(0.14, 0.03, 0.14), Vector3(0.25, 1.855, 0), SNOW_WHITE, &"snow")
-	for k in 2:   # синицы: жёлтое брюшко, чёрная голова
-		var p := Vector3(0.25 + (k - 0.5) * 0.16, 1.6 - k * 0.02, 0.09)
-		_sph(Vector3(0.07, 0.08, 0.1), p, Color(0.92, 0.80, 0.20), &"detail", &"sph6")
-		_sph(Vector3(0.05, 0.05, 0.05), p + Vector3(0, 0.05, -0.03), Color(0.05, 0.05, 0.06), &"detail", &"sph6")
+	# Синицы — живые, у Ambient (PEOPLE-03): взлетают, когда рядом Илюша или «Лада».
 	_end()
 	# Бельё колом на морозе на верёвке от берёзы к тополю.
 	var a: Vector3 = LAUNDRY_LINE[0]

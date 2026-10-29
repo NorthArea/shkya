@@ -29,7 +29,7 @@ const PERSONAS := [
 	{"home": &"door_h1e", "plan": [&"bins", &"press", &"bench", &"home", &"shop24", &"home"]},   # 0 бабка в шубе
 	{"home": &"door_h1w", "plan": [&"carpet", &"home", &"bench", &"shop24", &"home"]},          # 1 фиолетовая: ковёр
 	{"home": &"door_h3w", "plan": [&"stop", &"shaw", &"edge", &"press", &"home"]},             # 2 пассажир троллейбуса
-	{"home": &"door_h1e", "plan": [&"press", &"slide", &"home", &"slide", &"shaw"]},            # 3 пацан
+	{"home": &"door_h1e", "plan": [&"press", &"slide", &"home", &"hockey", &"shaw"]},           # 3 пацан: горка, хоккей
 	{"home": &"door_h4", "plan": [&"shaw", &"home", &"bench", &"shop24", &"home"]},             # 4 бабка в берете
 	{"home": &"door_h9b", "plan": [&"gastro", &"edge", &"home", &"gastro", &"bench"]},         # 5 с собачкой: выгул
 	{"home": &"door_h10w", "plan": [&"shop24", &"home", &"press", &"bins", &"home"]},          # 6 турист, первый пары
@@ -38,13 +38,19 @@ const PERSONAS := [
 	{"home": &"door_h1e", "plan": [&"smoke", &"domino", &"home", &"smoke", &"press"]},         # 10 курит, «козёл»
 	{"home": &"door_h3e", "plan": [&"smoke", &"home", &"domino", &"bins", &"smoke"]},         # 11 курит, «козёл»
 	{"home": &"door_h7", "plan": [&"apteka", &"bench", &"shop24", &"home"]},                   # 12 бабка в тюрбане
-	{"home": &"door_h3w", "plan": [&"slide", &"home", &"press", &"slide"]},                   # 13 пацан
+	{"home": &"door_h3w", "plan": [&"snowball", &"home", &"press", &"slide"]},                # 13 пацан: снежки
 	{"home": &"door_h4", "plan": [&"slide", &"home", &"slide", &"shaw"]},                     # 14 пацан: горка
 	{"home": &"door_h1e", "plan": [&"dig", &"shaw", &"dig", &"press"]},                       # 15 рабочий теплотрассы
 	{"home": &"door_h1e", "plan": [&"sweep", &"bins", &"sweep", &"home"]},                    # 16 дворник
 	{"home": &"door_h1e", "plan": [&"domino", &"home", &"domino", &"press"]},                 # 17 доминошник
 	{"home": &"door_h1e", "plan": [&"hood", &"home", &"hood", &"shaw"]},                      # 18 мужик под капотом
-	{"home": &"door_h4", "plan": [&"slide", &"shaw", &"slide", &"home"]},                     # 19 пацан: горка
+	{"home": &"door_h4", "plan": [&"slide", &"snowball", &"slide", &"home"]},                 # 19 пацан: горка, снежки
+	# PEOPLE-03 (P2): хоккеисты, снежки, торговка соленьями, бабушка с санками (санки с внуком — всегда при ней, carry).
+	{"home": &"door_h4", "plan": [&"hockey", &"home", &"hockey", &"shaw"]},                   # 20 пацан: хоккей
+	{"home": &"door_h4", "plan": [&"hockey", &"shaw", &"hockey", &"home"]},                   # 21 пацан: хоккей
+	{"home": &"door_h3w", "plan": [&"snowball", &"home", &"snowball", &"slide"]},             # 22 пацан: снежки
+	{"home": &"door_h9a", "plan": [&"trade", &"home", &"trade"]},                             # 23 торговка
+	{"home": &"door_h10w", "plan": [&"sled", &"shop24", &"sled", &"home"], "carry": &"sled"}, # 24 бабушка с санками
 ]
 const PAIR_KINDS: Array[StringName] = [&"door", &"shop", &"window", &"bins", &"edge"]
 
@@ -58,6 +64,12 @@ var breakables: Node       # Breakables (BREAK-01): якоря точек
 var props := {}            # имя → Node3D, видим, пока идёт занятие (ковёр)
 var vehicles: Array = []   # машины кольца и автобус ГСУМ — для переходов
 var _adj := {}       # id → Array [сосед, флаг, длина]
+# PEOPLE-03 (P2): шайба хоккейной коробки — одна на всех (узел props[&"puck"]). У кого она (holder) — ведёт её клюшкой;
+# в полёте (pass, бросок по воротам, отскок) её двигает тот, кто отдал, и по прилёту отдаёт адресату.
+var puck_holder: Node3D
+var puck_flight := {}        # {"from", "to", "t", "time", "to_who" (житель или null — ворота), "by"}
+var hockey_passes := 0
+var hockey_shots := 0
 var _trees := {}     # узел-цель → [dist, next]
 
 func _init() -> void:
@@ -80,6 +92,13 @@ func reset() -> void:
 	reserved.clear()
 	for k in props:
 		props[k].visible = false
+	puck_holder = null
+	puck_flight = {}
+	hockey_passes = 0
+	hockey_shots = 0
+	if props.has(&"puck"):
+		props[&"puck"].visible = true
+		props[&"puck"].global_position = Vector3(Layout.RINK[0].x, PUCK_Y, Layout.RINK[0].y)
 
 # --- выбор точки ---
 
@@ -246,3 +265,92 @@ func _tree(goal: StringName) -> Array:
 
 static func _flat(p: Vector3) -> Vector3:
 	return Vector3(p.x, 0.0, p.z)
+
+# --- PEOPLE-03 (P2): хоккей ---
+
+const PUCK_Y := 0.07          # м: шайба на льду (лёд — 0,05)
+const PUCK_SPEED := 9.0       # м/с: пас и бросок
+const PUCK_LEAD := 0.65       # м впереди игрока — у крюка клюшки
+const PASS_SECONDS := Vector2(1.6, 3.4)   # с: столько ведёт, потом пас или бросок
+const SHOT_SHARE := 0.3       # доля бросков по воротам, когда есть кому отдать
+
+## Кто сейчас занят kind (на месте точки этого вида, не уходит, не скрыт, не сбит): хоккеисты, снежки.
+func players(kind: StringName) -> Array:
+	var out := []
+	for id in reserved:
+		if spots[id].kind != kind:
+			continue
+		for r in reserved[id]:
+			if is_instance_valid(r) and r.is_playing(kind):
+				out.append(r)
+	return out
+
+func hockey_players() -> Array:
+	return players(&"hockey")
+
+## Шаг шайбы от лица игрока r. Возвращает звук события: &"stick" — пас или бросок, &"board" — шайба в борт/ворота,
+## &"" — ничего. Шайба ничья — летит к первому, кто спросил; у r — едет у крюка, а когда пора (r.puck_timer), r отдаёт
+## пас другому игроку или бросает по ближним воротам (один в коробке — только броски).
+func hockey_step(r: Node3D, delta: float, rng: RandomNumberGenerator) -> StringName:
+	if not props.has(&"puck"):
+		return &""
+	var puck: Node3D = props[&"puck"]
+	if not puck_flight.is_empty():
+		if puck_flight.by != r and is_instance_valid(puck_flight.by) and puck_flight.by.is_playing(&"hockey"):
+			return &""
+		puck_flight.by = r   # отдавший ушёл — шайбу ведёт тот, кто спросил
+		puck_flight.t += delta
+		var target: Vector3 = puck_flight.to
+		var who = puck_flight.to_who
+		if who != null and is_instance_valid(who):
+			target = who.stick_point()
+			puck_flight.to = target
+		var k := clampf(puck_flight.t / maxf(puck_flight.time, 0.01), 0.0, 1.0)
+		var at: Vector3 = puck_flight.from.lerp(target, k)
+		puck.global_position = Vector3(at.x, PUCK_Y, at.z)
+		if k < 1.0:
+			return &""
+		puck_flight = {}
+		if who != null and is_instance_valid(who) and who.is_hockey_active():
+			puck_holder = who
+			return &""
+		if who == null:
+			_puck_fly(puck, puck.global_position, r, r)   # отскок от ворот обратно бросавшему
+			return &"board"
+		puck_holder = null
+		return &""
+	if puck_holder == null or not is_instance_valid(puck_holder) or not puck_holder.is_hockey_active():
+		puck_holder = null
+		_puck_fly(puck, puck.global_position, r, r)
+		return &""
+	if puck_holder != r:
+		return &""
+	var p: Vector3 = r.stick_point()
+	puck.global_position = Vector3(p.x, PUCK_Y, p.z)
+	r.puck_timer -= delta
+	if r.puck_timer > 0.0:
+		return &""
+	r.puck_timer = rng.randf_range(PASS_SECONDS.x, PASS_SECONDS.y)
+	var mates := hockey_players().filter(func(m): return m != r)
+	puck_holder = null
+	if mates.is_empty() or rng.randf() < SHOT_SHARE:
+		var goal: Vector2 = Layout.LIFE_RINK_GOALS[0] if p.x < Layout.RINK[0].x else Layout.LIFE_RINK_GOALS[1]
+		_puck_fly(puck, p, null, r, Vector3(goal.x, PUCK_Y, goal.y + rng.randf_range(-0.6, 0.6)))
+		hockey_shots += 1
+	else:
+		_puck_fly(puck, p, mates[rng.randi_range(0, mates.size() - 1)], r)
+		hockey_passes += 1
+	return &"stick"
+
+## Игрок r ушёл из коробки: шайба у него — остаётся лежать на льду.
+func hockey_leave(r: Node3D) -> void:
+	if puck_holder == r:
+		puck_holder = null
+	if not puck_flight.is_empty() and puck_flight.to_who == r:
+		puck_flight = {}
+
+func _puck_fly(puck: Node3D, from: Vector3, to_who, by: Node3D, to := Vector3.INF) -> void:
+	var target: Vector3 = to if to_who == null else to_who.stick_point()
+	var time := maxf(Vector2(from.x, from.z).distance_to(Vector2(target.x, target.z)) / PUCK_SPEED, 0.12)
+	puck_flight = {"from": Vector3(from.x, PUCK_Y, from.z), "to": target, "t": 0.0, "time": time, "to_who": to_who, "by": by}
+	puck.global_position = Vector3(from.x, PUCK_Y, from.z)

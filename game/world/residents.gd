@@ -15,6 +15,9 @@ extends Node3D
 ## Каждый шаг физики узел обновляет для life камеру, Илюшу и машины (переходы, края карты, LOD). Своя простая геометрия
 ## занятий (LifeProps): ковёр на выбивалке (виден, пока выбивают), поднятый капот «Жигулей»; столик доминошников и лавки
 ## у площадки Z15 — пока их нет среди разрушаемых (PROPS_BREAKABLES не подключены к BREAKABLES), без коллизии.
+## PEOPLE-03 (P2): 25 жителей — ещё двое хоккеистов, пацан со снежками, торговка соленьями у гаражей C и бабушка
+## с санками (санки с внуком — Resident.carry). LifeProps: шайба коробки, прилавок торговки (если Z19_1 не среди
+## разрушаемых) и банки на нём. Звуки занятий жителей — сигнал activity_sounded для SoundDirector.
 
 const Layout = preload("res://game/world/layout.gd")
 const ResidentScript = preload("res://game/npc/resident.gd")
@@ -71,6 +74,9 @@ const GROUP := &"residents"
 
 signal resident_knocked(resident: Resident)
 signal resident_landed(resident: Resident)
+## PEOPLE-03: звук занятия жителя (Resident.activity_sound) — для SoundDirector; activity_sounds — счёт по видам.
+signal activity_sounded(resident: Resident, kind: StringName)
+var activity_sounds := {}
 
 var residents: Array = []
 var bag: RefCounted = LineBagScript.new(ResidentScript.SEED)   # общий «мешок» реплик улицы
@@ -118,6 +124,10 @@ func _ready() -> void:
 			resident.plan = persona.get("plan", [])
 			resident.rider = true
 			resident.trolley = trolley
+			resident.carry = persona.get("carry", &"")   # PEOPLE-03: санки с внуком
+		resident.activity_sound.connect(func(r: Resident, kind: StringName):
+			activity_sounds[kind] = int(activity_sounds.get(kind, 0)) + 1
+			activity_sounded.emit(r, kind))
 		residents.append(resident)
 	# Роли — до add_child: _ready курящего начинает с перекура.
 	for f in PAIRS:
@@ -197,6 +207,7 @@ func reset_positions() -> void:
 	push_bubbles = 0
 	horn_bubbles = 0
 	_chatter_at = -INF
+	activity_sounds = {}
 
 # --- TEXT-01: общий лимит пузырей и события ---
 
@@ -287,6 +298,37 @@ func _build_life_props() -> void:
 			_box(root, "BenchBack", Vector3(size.x, 0.4, 0.06), Vector3(c.x, 0.75, c.y - 0.2), Color(0.38, 0.27, 0.18))
 			for x in [-0.75, 0.75]:
 				_box(root, "BenchLeg", Vector3(0.08, 0.45, 0.4), Vector3(c.x + x * size.x * 0.5, 0.225, c.y + 0.05), Color(0.25, 0.25, 0.27))
+	_build_p2_props(root, have)
+
+## PEOPLE-03 (P2): шайба на льду коробки (её водят хоккеисты, life.hockey_step); прилавок-ящик торговки у гаражей C —
+## если Z19_1 нет среди разрушаемых (без коллизии, как столик домино) — и банки с соленьями на нём (видны, пока она
+## торгует). Своя простая геометрия, без теней от мелочи.
+func _build_p2_props(root: Node3D, have: Callable) -> void:
+	var puck := _box(root, "Puck", Vector3(0.076, 0.025, 0.076), Vector3(Layout.RINK[0].x, LifeScript.PUCK_Y, Layout.RINK[0].y), Color(0.05, 0.05, 0.06))
+	puck.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	life.props[&"puck"] = puck
+	for spec in Layout.PROPS_BREAKABLES:
+		if spec[0] != Layout.LIFE_STALL:
+			continue
+		var c: Vector2 = spec[2]
+		var size: Vector3 = spec[3]
+		if not have.call(spec[0]):
+			# Ящик из досок и клеёнка сверху.
+			_box(root, "Stall", Vector3(size.x, size.y - 0.04, size.z), Vector3(c.x, (size.y - 0.04) * 0.5, c.y), Color(0.52, 0.38, 0.24))
+			_box(root, "StallCloth", Vector3(size.x + 0.06, 0.04, size.z + 0.06), Vector3(c.x, size.y - 0.02, c.y), Color(0.82, 0.86, 0.9))
+		var jars := Node3D.new()
+		jars.name = "Jars"
+		jars.position = Vector3(c.x, size.y, c.y)
+		root.add_child(jars)
+		var brine := [Color(0.42, 0.55, 0.22), Color(0.75, 0.22, 0.14), Color(0.86, 0.80, 0.5), Color(0.42, 0.55, 0.22), Color(0.55, 0.36, 0.2)]
+		for k in brine.size():
+			var at := Vector3(-0.42 + k * 0.21, 0.1, 0.12 * (k % 2) - 0.06)
+			var jar := _box(jars, "Jar", Vector3(0.12, 0.2, 0.12), at, brine[k])
+			jar.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+			var lid := _box(jars, "Lid", Vector3(0.13, 0.03, 0.13), at + Vector3(0, 0.11, 0), Color(0.75, 0.62, 0.2))
+			lid.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		jars.visible = false
+		life.props[&"jars"] = jars
 
 func _box(parent: Node3D, box_name: String, size: Vector3, at: Vector3, color: Color) -> MeshInstance3D:
 	var mesh := BoxMesh.new()
