@@ -39,8 +39,16 @@ const SILHOUETTES := {
 	&"turban": ["babka", 2.0],
 }
 
-## Бабки ролика ШКЯ (PEOPLE-02) — голос бабки: все реплики Resident; остальные — только QuestLines.RESIDENT_LINES_ANYONE.
-const BABKA_LOOKS: Array[StringName] = [&"babka", &"woman", &"shuba", &"beret", &"violet", &"dog", &"kolpak", &"bow", &"turban"]
+## Бабки ролика ШКЯ (PEOPLE-02) — голос бабки.
+const BABKA_LOOKS: Array[StringName] = [&"babka", &"shuba", &"beret", &"violet", &"dog", &"kolpak", &"bow", &"turban"]
+## TEXT-01: голос реплик по облику (QuestLines.STREET_LINES); не названный облик — бабкин.
+const VOICE_BY_LOOK := {&"man": &"man", &"ushanka": &"man", &"ushanka_walk": &"man", &"tourist": &"man",
+	&"woman": &"woman", &"boy": &"kid", &"kid": &"kid", &"kid2": &"kid"}
+const LineBagScript = preload("res://game/npc/line_bag.gd")
+## TEXT-01: общий лимит «болтовни» (car, walk, idle) — не больше CHATTER_MAX таких пузырей на экране и не чаще
+## CHATTER_GAP между их началами; hit, push и break — вне лимита (Resident.EVENT_KINDS).
+const CHATTER_MAX := 2
+const CHATTER_GAP := 1.0
 
 ## Пары: второй → первый. Маршрут второго — маршрут первого со сдвигом (Layout, жители 8 и 9).
 const PAIRS := {8: 6, 9: 7}
@@ -57,6 +65,10 @@ signal resident_knocked(resident: Resident)
 signal resident_landed(resident: Resident)
 
 var residents: Array = []
+var bag: RefCounted = LineBagScript.new(ResidentScript.SEED)   # общий «мешок» реплик улицы
+var push_bubbles := 0
+var horn_bubbles := 0
+var _chatter_at := -INF
 var trolley: Node3D
 var horn_glances := 0
 var _sound: Node
@@ -78,7 +90,9 @@ func _ready() -> void:
 		resident.setup(i, Layout.RESIDENT_ROUTES[i], Layout.RESIDENT_PAUSES[i], Layout.RESIDENT_STARTS[i])
 		resident.character = character_for(look)
 		resident.height_m = SILHOUETTES[look][1]
-		resident.babka_voice = BABKA_LOOKS.has(look)
+		resident.voice = voice_for(look)
+		resident.bag = bag
+		resident.chatter = self
 		resident.tint = Color(1.0, 1.0, 1.0)
 		resident.player = player
 		resident.lada = lada
@@ -103,13 +117,19 @@ func _ready() -> void:
 	if trolley:
 		trolley.doors_opened.connect(_on_doors_opened)
 		trolley.doors_closed.connect(_on_doors_closed)
-	for line in QuestLines.RESIDENT_LINES_HIT + QuestLines.RESIDENT_LINES_PASS + QuestLines.RESIDENT_LINES_IDLE:
+	for line in QuestLines.all_street_lines():
 		Resident.bubble_texture(line)   # подложки пузырей — при загрузке, не в момент первой реплики
 	_connect_sound()
+	if player and player.has_signal(&"punch_landed"):
+		player.punch_landed.connect(_on_punch_landed)
 	var rig: Node = world.get_node_or_null("CameraRig") if world else null
 	if rig and rig.has_method("exclude_permanently"):
 		for resident in residents:
 			rig.call_deferred("exclude_permanently", resident.body.get_rid())   # CameraRig готовится позже LevelGeometry
+
+## Голос реплик облика look.
+static func voice_for(look: StringName) -> StringName:
+	return VOICE_BY_LOOK.get(look, QuestLines.VOICE_BABKA)
 
 ## Облик силуэта: рисунок части A, если включён и есть на диске, иначе заглушка.
 static func character_for(look: StringName) -> String:
@@ -142,6 +162,32 @@ func reset_positions() -> void:
 	_break_ready_at = -INF   # BREAK-01
 	break_glances = 0
 	break_bubbles = 0
+	bag.reset()
+	push_bubbles = 0
+	horn_bubbles = 0
+	_chatter_at = -INF
+
+# --- TEXT-01: общий лимит пузырей и события ---
+
+## Можно ли жителю who начать пузырь car/walk/idle: не чаще CHATTER_GAP и не больше CHATTER_MAX таких на экране.
+func allow_chatter(who: Node) -> bool:
+	if _break_clock < _chatter_at + CHATTER_GAP:
+		return false
+	var shown := 0
+	for resident in residents:
+		if resident != who and resident.bubble_visible() and not resident.bubble_kind in ResidentScript.EVENT_KINDS:
+			shown += 1
+	return shown < CHATTER_MAX
+
+func note_bubble(_who: Node, kind: StringName) -> void:
+	if not kind in ResidentScript.EVENT_KINDS:
+		_chatter_at = _break_clock
+
+## Удар Илюши пешком задел жителя — тот оборачивается и говорит реплику push (Resident.on_pushed).
+func _on_punch_landed(targets: Array) -> void:
+	for target in targets:
+		if target is Resident and target in residents and target.on_pushed():
+			push_bubbles += 1
 
 func _physics_process(delta: float) -> void:
 	if _sound == null:
@@ -161,7 +207,7 @@ func _connect_sound() -> void:
 
 # --- BREAK-01: поломка рядом ---
 ## Жители ближе BREAK_GLANCE_DISTANCE оглядываются на сломанный объект (glance_at); ближайший говорит реплику
-## QuestLines.BREAK_LINES (жительская), не чаще BREAK_BUBBLE_COOLDOWN на всех. Свой HIT при наезде это не блокирует.
+## своего голоса (QuestLines.street_lines(voice, &"break")), не чаще BREAK_BUBBLE_COOLDOWN на всех. Свой HIT при наезде это не блокирует.
 const BREAK_GLANCE_DISTANCE := 8.0
 const BREAK_BUBBLE_COOLDOWN := 15.0
 var break_glances := 0
@@ -190,18 +236,26 @@ func _on_broken(b: Node3D, _by: StringName) -> void:
 		if d <= best:
 			best = d
 			nearest = resident
-	if nearest != null and _break_clock >= _break_ready_at:
-		nearest.speak_break(QuestLines.break_line(&"resident", break_bubbles))
+	if nearest != null and _break_clock >= _break_ready_at and nearest.speak_event(&"break"):
 		break_bubbles += 1
 		_break_ready_at = _break_clock + BREAK_BUBBLE_COOLDOWN
 
+## Гудок: все ближе HORN_RADIUS оглядываются; ближайший из оглянувшихся говорит реплику car (если его очередь).
 func _on_horn(vehicle: Node3D) -> void:
+	var nearest: Resident = null
+	var best := INF
 	for resident in residents:
 		if resident.hidden:
 			continue
 		var to: Vector3 = vehicle.global_position - resident.global_position
-		if Vector2(to.x, to.z).length() <= Resident.HORN_RADIUS and resident.glance_at(vehicle):
+		var d := Vector2(to.x, to.z).length()
+		if d <= Resident.HORN_RADIUS and resident.glance_at(vehicle):
 			horn_glances += 1
+			if d < best:
+				best = d
+				nearest = resident
+	if nearest != null and nearest.speak_event(&"car"):
+		horn_bubbles += 1
 
 func _on_doors_opened(stop: int) -> void:
 	for resident in residents:

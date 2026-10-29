@@ -10,7 +10,7 @@ extends Node
 ##   &"turn_in"       — Бабка: сдача задания; RETURN_HOME + has_bread → COMPLETE, +50 XP
 ##   &"babka_idle"    — Бабка: обычная реплика, без изменений
 ##   &"vendor_dialog" — продавщица: диалог «Батон? 35 рублей» (только в BUY_BREAD); покупка — buy_bread()
-##                      (COINS-01: денег меньше 35 — QuestFlow дописывает отказ «Не хватает: ещё N ₽», покупки нет)
+##                      (COINS-01: денег меньше 35 — QuestFlow дописывает отказ «Не хватает N ₽», покупки нет)
 ##   &"none"          — взаимодействие недоступно или id не обрабатывается директором
 ##                      (полицейский и «военком» расширения — диалоги QuestFlow, миссию не меняют)
 
@@ -48,7 +48,7 @@ const PROMPT_CAR := "E — СЕСТЬ В МАШИНУ"
 const TITLE_CITY := "ГОРОД Н."   # решение владельца 28.10.2026: город Н., Новосибирск — прототип
 const TITLE_QUEST := "ЗА ХЛЕБОМ"
 const TASK_DONE := "Сдай хлеб Бабке"  # COMPLETE: выполненная задача, на карточке зачёркнута
-const TASK_RETURN := "Вернись к Бабке (самостоятельно)"  # RETURN_HOME вдали от Бабки (EXT-01)
+const TASK_RETURN := "Вернись к Бабке"  # RETURN_HOME вдали от Бабки (EXT-01; TEXT-01 — без «(самостоятельно)»)
 
 var state: StringName = NOT_STARTED
 var has_bread := false
@@ -198,7 +198,7 @@ func _objective() -> Dictionary:
 			var task := "Купи хлеб" if nearby == &"vendor" else "Поговори с продавщицей"
 			return {"title": TITLE_QUEST, "task": task, "target_id": &"vendor"}
 		RETURN_HOME:
-			# EXT-01: «самостоятельно» — вторым слоем про микроавтобус «БЕСПЛАТНЫЙ ПРОЕЗД» (MISSION_EXTENSION.md).
+			# EXT-01: задача возврата; TEXT-01 убрал «(самостоятельно)» — на бегу его не читают.
 			var task := "Сдай хлеб Бабке" if nearby == &"babka" else TASK_RETURN
 			return {"title": TITLE_QUEST, "task": task, "target_id": &"babka"}
 		_:

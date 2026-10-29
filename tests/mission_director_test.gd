@@ -248,7 +248,7 @@ func test_objective_and_prompts() -> void:
 		[&"GO_TO_CAR", "ЗА ХЛЕБОМ", "Сядь в машину", &"car"],
 		[&"DRIVE_TO_KIOSK", "ЗА ХЛЕБОМ", "Доедь до киоска", &"kiosk"],
 		[&"BUY_BREAD", "ЗА ХЛЕБОМ", "Поговори с продавщицей", &"vendor"],
-		[&"RETURN_HOME", "ЗА ХЛЕБОМ", "Вернись к Бабке (самостоятельно)", &"babka"],
+		[&"RETURN_HOME", "ЗА ХЛЕБОМ", MissionDirector.TASK_RETURN, &"babka"],
 	]
 	for row in expected:
 		var d := make()
@@ -264,7 +264,7 @@ func test_objective_and_prompts() -> void:
 		[&"BUY_BREAD", &"vendor", "Купи хлеб"],
 		[&"BUY_BREAD", &"babka", "Поговори с продавщицей"],
 		[&"RETURN_HOME", &"babka", "Сдай хлеб Бабке"],
-		[&"RETURN_HOME", &"vendor", "Вернись к Бабке (самостоятельно)"],
+		[&"RETURN_HOME", &"vendor", MissionDirector.TASK_RETURN],
 	]
 	for row in near:
 		var d := make()

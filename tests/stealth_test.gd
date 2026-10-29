@@ -74,8 +74,8 @@ const DIAG_WAIT := Vector3(75, 0, -63)
 ## fix7: начало отрезка обхода по дороге x = 74,6 вне дальности первого поста (17,4 м).
 const ROAD_NEAR := Vector3(74.6, 0, -58)
 const FAIL_TEXT := "ВАШ МАРШРУТ УТОЧНЁН"
-const TOAST_TEXT := "МАРШРУТ УТОЧНЁН: ВЫ ВСЁ ЕЩЁ ЗА ХЛЕБОМ"   # до покупки; после — «ВЫ ОСТАЛИСЬ ПЕШЕХОДОМ. ХЛЕБ ПРИ ВАС»
-const HINT_TEXT := "Тебя заметили. Отойди, пока это ни к чему не обязывает"
+const TOAST_TEXT := DemoWorld.STEALTH_TOAST_NO_BREAD   # до покупки; после — DemoWorld.STEALTH_TOAST (TEXT-01)
+const HINT_TEXT := "Тебя заметили! Отойди"   # SuspicionMeter.HINT_TEXT (TEXT-01)
 ## Начало прямой «в лоб» к окну: перед машиной на парковке, вне конусов (дальше 12 м от поста).
 const DIRECT_FROM := Vector3(59.5, 0, -57.3)
 const CAR_TOAST := "МАШИНУ ОТОГНАЛИ НА ПАРКОВКУ"

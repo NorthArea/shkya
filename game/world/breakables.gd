@@ -759,7 +759,7 @@ func _update_shake(delta: float) -> void:
 
 # --- квестовая Бабка: пузырь ---
 
-## Объект сломан рядом с квестовой Бабкой — пузырь над ней (реплика 1 BREAK_LINES), не чаще BABKA_COOLDOWN и не в диалоге.
+## Объект сломан рядом с квестовой Бабкой — пузырь над ней (QuestLines.BREAK_LINES_BABKA по кругу), не чаще BABKA_COOLDOWN и не в диалоге.
 func babka_react(b: Breakable) -> void:
 	var babka: Node3D = _world.get_node_or_null("Babka") if _world else null
 	if babka == null or clock < _babka_ready_at:
@@ -796,7 +796,7 @@ func babka_react(b: Breakable) -> void:
 	_babka_back.position = Vector3(0, 2.0 + _babka_back.texture.get_height() * _babka_back.pixel_size * 0.5, 0)
 	_babka_label.text = text
 	_babka_back.visible = true
-	_babka_left = BABKA_BUBBLE_SECONDS
+	_babka_left = maxf(BABKA_BUBBLE_SECONDS, QuestLines.read_seconds(text))   # TEXT-01: успеть прочитать
 	_babka_ready_at = clock + BABKA_COOLDOWN
 	babka_bubbles += 1
 

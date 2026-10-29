@@ -230,9 +230,9 @@ func _pass_one() -> bool:
 	check(1, _hud_has(w, "E — ПОГОВОРИТЬ"), "07: prompt at the vendor")
 	await drv.interact()
 	await drv.frames(5)
-	check(1, _hud_has(w, "Батон один?") and _hud_has(w, "ДАЛЬШЕ"), "07: vendor chain starts «Батон один?» with ДАЛЬШЕ")
+	check(1, _hud_has(w, QuestLines.VENDOR_CHAIN[0]["text"]) and _hud_has(w, "ДАЛЬШЕ"), "07: vendor chain starts «%s» with ДАЛЬШЕ" % QuestLines.VENDOR_CHAIN[0]["text"])
 	check(1, not _hud_has(w, "КУПИТЬ ХЛЕБ"), "07: no purchase button before the chain ends")
-	var chain := ["Один", "А вас сколько?", "Тоже один", "Пока что. 35 рублей"]
+	var chain := QuestLines.VENDOR_CHAIN.slice(1).map(func(l): return l["text"])
 	for line in chain:
 		await drv.frames(40)  # дождаться допечатки: первое нажатие во время печати лишь дописывает
 		if not check(1, await drv.press_button("ДАЛЬШЕ"), "07: ДАЛЬШЕ pressed before «%s» (%s)" % [line, drv.last_error]):
@@ -248,7 +248,7 @@ func _pass_one() -> bool:
 	check(3, m.state == &"BUY_BREAD" and not m.has_bread and _spent(w) == 0, "07: УЙТИ buys nothing (state %s, money %d)" % [m.state, m.money])
 	await drv.interact()
 	await drv.frames(5)
-	check(1, _hud_has(w, "Батон? 35 рублей") and not _hud_has(w, "Батон один?"), "07: second approach is the short line, chain not repeated")
+	check(1, _hud_has(w, "Батон? 35 рублей") and not _hud_has(w, QuestLines.VENDOR_CHAIN[0]["text"]), "07: second approach is the short line, chain not repeated")
 	await _shot("07_vendor_dialog", false)
 	var money_before: int = m.money
 	# COINS-01: стартовых денег нет — 35 ₽ собраны монетами по дороге (двор пешком и ROUTE_DRIVE на «Ладе»).
@@ -263,7 +263,7 @@ func _pass_one() -> bool:
 	check(3, money_before - m.money == 35, "08: 35 рублей paid (%d → %d)" % [money_before, m.money])
 	check(3, _hud_has(w, "ХЛЕБ +1"), "08: toast «ХЛЕБ +1» shown")
 	check(2, _babka_symbol(w) == "?", "08: ? above Babka once the bread is bought")
-	check(1, _hud_has(w, "Вернись к Бабке (самостоятельно)"), "08: HUD task «Вернись к Бабке (самостоятельно)» (EXT-01)")
+	check(1, _hud_has(w, MissionDirector.TASK_RETURN), "08: HUD task «%s» (EXT-01)" % MissionDirector.TASK_RETURN)
 	await _shot("08_bread_toast", true)
 	await drv.frames(150)
 	check(3, toast_frames >= 108 and toast_frames <= 132, "08: toast shown ≈2 s (%d frames at 60)" % toast_frames)
@@ -303,8 +303,8 @@ func _pass_one() -> bool:
 	# 10 — возвращение (EXT-01, этап 9: цепочка «Ты где был?»), сдача кнопкой СДАТЬ ХЛЕБ
 	await drv.interact()
 	await drv.frames(10)
-	check(1, m.state == &"RETURN_HOME" and m.has_bread and _hud_has(w, "Ты где был? Я уже в окно глядела"), "09: E at Babka opens the return chain, no turn-in yet (got %s)" % m.state)
-	for line in ["За хлебом", "Это ты им говори. Мне правду скажи", "За хлебом"]:
+	check(1, m.state == &"RETURN_HOME" and m.has_bread and _hud_has(w, QuestLines.RETURN_CHAIN[0]["text"]), "09: E at Babka opens the return chain, no turn-in yet (got %s)" % m.state)
+	for line in QuestLines.RETURN_CHAIN.slice(1).map(func(l): return l["text"]):
 		await drv.frames(40)
 		if not check(1, await drv.press_button("ДАЛЬШЕ"), "09: ДАЛЬШЕ pressed before «%s» (%s)" % [line, drv.last_error]):
 			return false

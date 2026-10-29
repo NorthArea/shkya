@@ -20,8 +20,8 @@ const HINT_NO_EXIT := "НЕТ МЕСТА, ЧТОБЫ ВЫЙТИ"
 const HINT_SECONDS := 2.0
 ## Стелс (C7, EXT-01): экран «ВАШ МАРШРУТ УТОЧНЁН» держится FAIL_SECONDS, затем респавн на чекпоинт и тост.
 const FAIL_SECONDS := 2.0
-const STEALTH_TOAST := "ВЫ ОСТАЛИСЬ ПЕШЕХОДОМ. ХЛЕБ ПРИ ВАС"            # после покупки (has_bread)
-const STEALTH_TOAST_NO_BREAD := "МАРШРУТ УТОЧНЁН: ВЫ ВСЁ ЕЩЁ ЗА ХЛЕБОМ"   # до покупки (канон расширения); приёмка P2 6
+const STEALTH_TOAST := "ПРОНЕСЛО. ХЛЕБ ПРИ ВАС"            # после покупки (has_bread); TEXT-01 — короче
+const STEALTH_TOAST_NO_BREAD := "ВЫ СНОВА ЗА ХЛЕБОМ"       # до покупки (канон расширения, приёмка P2 6; TEXT-01 — короче)
 const STEALTH_TOAST_CAR := "МАШИНУ ОТОГНАЛИ НА ПАРКОВКУ"                 # провал в машине на площадке (EXT-01 fix2, P1)
 const STEALTH_TOAST_SECONDS := 2.0
 
@@ -39,7 +39,7 @@ var _fail_in_car := false
 var _fail_tow := false
 var _stealth_toast_left := 0.0
 var _stealth_toast_car := false
-## EXT-02: подсказка-отказ в укрытии («СНАЧАЛА СНЯТЬ КОРОБКУ», «ВЫХОД ЗАНЯТ»), HUD — get_hud_state()["hide_hint"].
+## EXT-02: подсказка-отказ в укрытии («СНИМИ КОРОБКУ», «ВЫХОД ЗАНЯТ»), HUD — get_hud_state()["hide_hint"].
 var _hide_hint := ""
 var _hide_hint_left := 0.0
 

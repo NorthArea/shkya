@@ -5,7 +5,7 @@ extends RefCounted
 ## Вторая строка карточки задачи HUD, пока денег меньше цены батона (MissionDirector.objective()["coins_task"]).
 const TASK := "Собери монеты: %d/%d"
 ## Отказ продавщицы при нехватке денег — последняя реплика её диалога, «КУПИТЬ ХЛЕБ» выключена.
-const VENDOR_SHORT := "Не хватает: ещё %d ₽"
+const VENDOR_SHORT := "Не хватает %d ₽"
 
 
 static func task(money: int, goal: int) -> String:
