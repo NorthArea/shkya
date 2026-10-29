@@ -1,6 +1,6 @@
 extends SceneTree
 ## COINS-01: монеты — 35 рублей до батона (решение владельца 29.10; стартовых денег нет).
-## Раскладка CoinLayout: ≥ 60 точек, ни одной внутри коробок Layout.all_solids() и на полосах кольца Layout.ring_lane(),
+## Раскладка Layout: ≥ 60 точек, ни одной внутри коробок Layout.all_solids() и на полосах кольца Layout.ring_lane(),
 ## не у постов и чекпоинта; 35 набираются по ROUTE_WALK (пешком, 0,9 м) и по двору + ROUTE_DRIVE (машиной, 1,6 м) без
 ## крюка — и расчётом, и в мире проходом по маршруту. MissionDirector: START_MONEY 0, add_money + money_changed, строка
 ## «Собери монеты: N/35» в objective()["coins_task"] без правки task; 34 → отказ продавщицы «Не хватает: ещё 1 ₽» и
@@ -13,7 +13,6 @@ extends SceneTree
 ##   → builds/screenshots/COINS-01/
 
 const Layout = preload("res://game/world/layout.gd")
-const CoinLayout = preload("res://game/world/coin_layout.gd")
 const CoinsScript = preload("res://game/world/coins.gd")
 const CoinLines = preload("res://game/mission/coin_lines.gd")
 const Driver = preload("res://tests/playthrough_driver.gd")
@@ -80,7 +79,7 @@ func _fresh_world() -> bool:
 # =====================================================================================
 
 func _part_layout() -> void:
-	var pts := CoinLayout.POINTS
+	var pts := Layout.COIN_POINTS
 	check(pts.size() >= 60, "layout: ≥ 60 coins (%d)" % pts.size())
 	var lanes := [Layout.ring_lane(), Layout.ring_lane(6.0, 6, true)]
 	var in_solid := []
@@ -111,8 +110,8 @@ func _part_layout() -> void:
 	check(near_post.is_empty(), "layout: no coin within %.0f m of posts / checkpoint %s" % [POST_MIN, near_post])
 	check(outside.is_empty(), "layout: all coins inside BOUNDS %s" % [outside])
 	var covered := 0
-	for g in CoinLayout.GROUPS:
-		covered += CoinLayout.GROUPS[g][1]
+	for g in Layout.COIN_GROUPS:
+		covered += Layout.COIN_GROUPS[g][1]
 	check(covered == pts.size(), "layout: groups cover all %d points (%d)" % [pts.size(), covered])
 	var dup := []
 	for i in pts.size():
@@ -142,13 +141,13 @@ func _part_route_math() -> void:
 			both.append(i)
 	check(car.size() >= MissionDirector.BREAD_PRICE, "route: ROUTE_DRIVE alone at 1.6 m picks %d ≥ 35" % car.size())
 	check(both.size() >= MissionDirector.BREAD_PRICE, "route: yard on foot + ROUTE_DRIVE picks %d ≥ 35" % both.size())
-	var all := CoinLayout.POINTS.size()
+	var all := Layout.COIN_POINTS.size()
 	check(all - walk.size() >= 3 and all - car.size() >= 3, "route: some coins are temptations off the routes (%d / %d off)" % [all - walk.size(), all - car.size()])
 
 func _picked(path: Array, radius: float) -> Array:
 	var out := []
-	for i in CoinLayout.POINTS.size():
-		if _polyline_distance(CoinLayout.POINTS[i], path, false) <= radius:
+	for i in Layout.COIN_POINTS.size():
+		if _polyline_distance(Layout.COIN_POINTS[i], path, false) <= radius:
 			out.append(i)
 	return out
 
@@ -195,10 +194,10 @@ func _part_director() -> void:
 
 func _part_start_hud() -> void:
 	var hud := world.get_node("GameHUD")
-	check(coins.layout_count() == CoinLayout.POINTS.size() and coins.remaining() == CoinLayout.POINTS.size(), "world: all %d coins in place (%d)" % [CoinLayout.POINTS.size(), coins.remaining()])
+	check(coins.layout_count() == Layout.COIN_POINTS.size() and coins.remaining() == Layout.COIN_POINTS.size(), "world: all %d coins in place (%d)" % [Layout.COIN_POINTS.size(), coins.remaining()])
 	check(world.mission.money == 0, "world: no money at start")
 	var mm: MultiMesh = coins.multimesh_instance.multimesh
-	check(mm.instance_count >= CoinLayout.POINTS.size() and coins.multimesh_instance.material_override is StandardMaterial3D, "world: coins drawn by one MultiMesh (%d instances)" % mm.instance_count)
+	check(mm.instance_count >= Layout.COIN_POINTS.size() and coins.multimesh_instance.material_override is StandardMaterial3D, "world: coins drawn by one MultiMesh (%d instances)" % mm.instance_count)
 	var no_bodies := coins.find_children("*", "CollisionObject3D", true, false).is_empty()
 	check(no_bodies, "world: coins have no collision bodies")
 	var aabb: AABB = mm.mesh.get_aabb()
@@ -225,7 +224,7 @@ func _part_foot_and_magnet() -> void:
 	var log := []
 	coins.collected.connect(func(p, total): log.append(total), CONNECT_ONE_SHOT)
 	var i := _index(&"garages_yard", 1)   # (20; 95): соседи в 5 м
-	var c: Vector3 = CoinLayout.POINTS[i]
+	var c: Vector3 = Layout.COIN_POINTS[i]
 	world.player.place(c + Vector3(-1.9, 0, 0), 0.0)   # западнее: восточнее — стена гаражей
 	await drv.frames(30)
 	check(coins.is_available(i) and world.mission.money == 0, "foot: 1.9 m away — coin stays (outside magnet 1.5)")
@@ -243,7 +242,7 @@ func _part_foot_and_magnet() -> void:
 	await drv.frames(2)
 	check(hud.coin_counter_label.text == "1 / 35" and hud.coins_label.text == "Собери монеты: 1/35", "HUD: counter «1 / 35» and card line after the pickup")
 	var j := _index(&"garages_yard", 2)
-	world.player.place(CoinLayout.POINTS[j] + Vector3(-0.6, 0, 0.3), 0.0)
+	world.player.place(Layout.COIN_POINTS[j] + Vector3(-0.6, 0, 0.3), 0.0)
 	await drv.frames(2)
 	check(not coins.is_available(j) and world.mission.money == 2, "foot: within 0.9 m — collected on the spot")
 	await drv.frames(1)
@@ -252,7 +251,7 @@ func _part_foot_and_magnet() -> void:
 	check(is_equal_approx(hud.coin_counter.scale.x, 1.0), "HUD: pulse settles back to 1 (%.2f)" % hud.coin_counter.scale.x)
 	# По высоте дальше REACH_HEIGHT — не подбирается (крыша, прыжок): Илюша над монетой на 3 м.
 	var k := _index(&"garages_yard", 0)
-	world.player.place(CoinLayout.POINTS[k] + Vector3(0, 3.0, 0), 0.0)
+	world.player.place(Layout.COIN_POINTS[k] + Vector3(0, 3.0, 0), 0.0)
 	world.player.set_physics_process(false)
 	await drv.frames(3)
 	check(coins.is_available(k), "foot: 3 m above the coin — not collected")
@@ -268,7 +267,7 @@ func _part_car() -> void:
 	var start := world.mission.money
 	var car := world.car
 	var i := _index(&"road_b", 4)   # (70; 0)
-	var c: Vector3 = CoinLayout.POINTS[i]
+	var c: Vector3 = Layout.COIN_POINTS[i]
 	car.reset_to(c + Vector3(0, 0, 3.0), 0.0)
 	world.enter_car()
 	await drv.frames(3)
@@ -278,7 +277,7 @@ func _part_car() -> void:
 	await drv.frames(2)
 	check(not coins.is_available(i) and world.mission.money == start + 1 and coins.collected_in_car == 1, "car: within 1.6 m of the car centre — collected in the car")
 	# Проезд вдоль оси B: машина шагами по 0,5 м с z 26 до −38 собирает все монеты проезжей части.
-	var row: Array = CoinLayout.GROUPS[&"road_b"]
+	var row: Array = Layout.COIN_GROUPS[&"road_b"]
 	var before := world.mission.money
 	if capture:
 		car.reset_to(Vector3(70, 0, 26), 0.0)
@@ -308,17 +307,17 @@ func _part_sound() -> void:
 	check(sound.played.has("coin") and sound.played["coin"] == coins.collected_count, "sound: one chime per coin (%s / %d)" % [sound.played.get("coin"), coins.collected_count])
 	check(sound.coin_player != null and sound.coin_player.stream != null and sound.coin_player.stream.resource_path.ends_with("coin_pickup.wav"), "sound: coin_pickup.wav synth")
 	# Две монеты подряд — второй звон выше; после паузы — снова с первой высоты.
-	var row: Array = CoinLayout.GROUPS[&"street_a"]
+	var row: Array = Layout.COIN_GROUPS[&"street_a"]
 	await drv.frames(60)
-	world.player.place(CoinLayout.POINTS[row[0]], 0.0)
+	world.player.place(Layout.COIN_POINTS[row[0]], 0.0)
 	await drv.frames(2)
 	var p1: float = sound.coin_pitch
-	world.player.place(CoinLayout.POINTS[row[0] + 1], 0.0)
+	world.player.place(Layout.COIN_POINTS[row[0] + 1], 0.0)
 	await drv.frames(2)
 	var p2: float = sound.coin_pitch
 	check(is_equal_approx(p1, 1.0) and p2 > p1, "sound: quick pickups go up in pitch (%.3f → %.3f)" % [p1, p2])
 	await drv.frames(60)
-	world.player.place(CoinLayout.POINTS[row[0] + 2], 0.0)
+	world.player.place(Layout.COIN_POINTS[row[0] + 2], 0.0)
 	await drv.frames(2)
 	check(is_equal_approx(sound.coin_pitch, 1.0), "sound: after a pause the pitch starts over (%.3f)" % sound.coin_pitch)
 
@@ -370,7 +369,7 @@ func _part_respawn_and_reset() -> void:
 	coins.spawn_burst(Vector3(10, 1.5, 60), 4)
 	coins.reset()
 	await drv.frames(2)
-	check(coins.remaining() == CoinLayout.POINTS.size() and coins.collected_count == 0, "reset: all layout coins back, loose gone (%d)" % coins.remaining())
+	check(coins.remaining() == Layout.COIN_POINTS.size() and coins.collected_count == 0, "reset: all layout coins back, loose gone (%d)" % coins.remaining())
 
 # =====================================================================================
 # 10. Продавщица: 34 → отказ с подсказкой, 35 → покупка
@@ -477,13 +476,13 @@ func _part_route_drive_world() -> void:
 # --- помощники ---
 
 func _is_layout_point(p: Vector3) -> bool:
-	for q in CoinLayout.POINTS:
+	for q in Layout.COIN_POINTS:
 		if Vector2(p.x - q.x, p.z - q.z).length() < 0.3:
 			return true
 	return false
 
 func _index(group: StringName, k: int) -> int:
-	return CoinLayout.GROUPS[group][0] + k
+	return Layout.COIN_GROUPS[group][0] + k
 
 func _sample(path: Array, step: float) -> Array:
 	var out := []

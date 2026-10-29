@@ -13,7 +13,6 @@ extends SceneTree
 ## Headless: tools/run.command --headless --fixed-fps 60 --script tests/punch_test.gd
 
 const Layout = preload("res://game/world/layout.gd")
-const DroneLayout = preload("res://game/world/drone_layout.gd")
 const DronesScript = preload("res://game/world/drones.gd")
 const DetectionSensorScript = preload("res://game/stealth/detection_sensor.gd")
 
@@ -73,8 +72,8 @@ func _part_layout() -> void:
 	print("--- layout ---")
 	var list: Array = drones.drones
 	check(list.size() >= 6 and list.size() <= 8, "6–8 drones (%d)" % list.size())
-	check(DroneLayout.LOOPS.size() >= 6 and DroneLayout.LOOPS.size() <= 8, "6–8 loops (%d)" % DroneLayout.LOOPS.size())
-	check(DroneLayout.LOOPS.size() > list.size(), "free loops exist for respawn (%d loops, %d drones)" % [DroneLayout.LOOPS.size(), list.size()])
+	check(Layout.DRONE_LOOPS.size() >= 6 and Layout.DRONE_LOOPS.size() <= 8, "6–8 loops (%d)" % Layout.DRONE_LOOPS.size())
+	check(Layout.DRONE_LOOPS.size() > list.size(), "free loops exist for respawn (%d loops, %d drones)" % [Layout.DRONE_LOOPS.size(), list.size()])
 	var bad_height := []
 	var bad_speed := []
 	var bad_clear := []
@@ -90,10 +89,10 @@ func _part_layout() -> void:
 		if s[1] == "road":
 			roads.append(Rect2(s[2] - s[3] * 0.5, s[3]))
 	var solids: Array = Layout.all_solids()
-	for li in DroneLayout.LOOPS.size():
-		var spec: Array = DroneLayout.LOOPS[li]
+	for li in Layout.DRONE_LOOPS.size():
+		var spec: Array = Layout.DRONE_LOOPS[li]
 		var h: float = spec[1]
-		if h - DroneLayout.BOB < 1.6 or h + DroneLayout.BOB > 2.2:
+		if h - Layout.DRONE_BOB < 1.6 or h + Layout.DRONE_BOB > 2.2:
 			bad_height.append(li)
 		var v: float = spec[2]
 		if v < 2.0 or v > 3.0:
@@ -206,7 +205,7 @@ func _part_patrol() -> void:
 	for i in list.size():
 		var d: Node3D = list[i]
 		var speed: float = path[i] / (float(frames) / 60.0)
-		var wanted: float = DroneLayout.LOOPS[d.loop][2]
+		var wanted: float = Layout.DRONE_LOOPS[d.loop][2]
 		if d.state != &"patrol" or absf(speed - wanted) > 0.15:
 			bad.append("%s %s %.2f/%.2f" % [d.name, d.state, speed, wanted])
 	check(bad.is_empty(), "drones fly their loops at 2–3 m/s %s" % [bad])

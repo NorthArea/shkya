@@ -1,6 +1,6 @@
 extends Node3D
 ## Монеты (COINS-01, решение владельца 29.10: 35 рублей собрать до батона, стартовых денег нет).
-## Узел «Coins» создаёт LevelGeometry (DemoWorld/LevelGeometry/Coins). Точки — CoinLayout.POINTS (C1, временно вне
+## Узел «Coins» создаёт LevelGeometry (DemoWorld/LevelGeometry/Coins). Точки — Layout.COIN_POINTS (C1,
 ## layout.gd); деньги — только MissionDirector.add_money() (C5): монета — 1 ₽, сигнал collected — для звука и проверок.
 ##
 ## Монета — простой объём без чужих ассетов: жёлтый диск Ø 0,4 м с «₽» на обеих сторонах (текстура рисуется кодом),
@@ -16,7 +16,8 @@ extends Node3D
 
 signal collected(position: Vector3, total: int)
 
-const CoinLayout = preload("res://game/world/coin_layout.gd")
+
+const Layout = preload("res://game/world/layout.gd")
 
 const DIAMETER := 0.4
 const THICKNESS := 0.05
@@ -62,7 +63,7 @@ var _state: PackedInt32Array = PackedInt32Array()
 var _age: PackedFloat32Array = PackedFloat32Array()
 var _phase: PackedFloat32Array = PackedFloat32Array()
 var _speed: PackedFloat32Array = PackedFloat32Array()
-var _fixed := 0                  # первые _fixed — точки CoinLayout, дальше — пул выброшенных
+var _fixed := 0                  # первые _fixed — точки Layout, дальше — пул выброшенных
 var _time := 0.0
 var _rng := RandomNumberGenerator.new()
 
@@ -74,7 +75,7 @@ func _init() -> void:
 func _ready() -> void:
 	_world = _find_world()
 	_rng.seed = 29102026
-	_fixed = CoinLayout.POINTS.size()
+	_fixed = Layout.COIN_POINTS.size()
 	var total := _fixed + MAX_LOOSE
 	_origin.resize(total)
 	_pos.resize(total)
@@ -96,7 +97,7 @@ func reset() -> void:
 		_vel[i] = Vector3.ZERO
 		_age[i] = 0.0
 		if i < _fixed:
-			_origin[i] = CoinLayout.POINTS[i] + Vector3.UP * HOVER
+			_origin[i] = Layout.COIN_POINTS[i] + Vector3.UP * HOVER
 			_pos[i] = _origin[i]
 			_state[i] = IDLE
 		else:

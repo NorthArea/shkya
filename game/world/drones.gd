@@ -1,6 +1,6 @@
 extends Node3D
 ## Мини-дроны ГСУМ «уточняют маршруты» (PUNCH-01, решение владельца 29.10): идея ос-камер *Hit & Run* без ассетов.
-## Дрон летит по петле DroneLayout (2–3 м/с, 1,6–2,2 м), жужжит (SoundDirector, 3D по удалению). Илюша пешком (не в
+## Дрон летит по петле Layout.DRONE_LOOPS (2–3 м/с, 1,6–2,2 м), жужжит (SoundDirector, 3D по удалению). Илюша пешком (не в
 ## укрытии, без диалога) ближе ENGAGE_DISTANCE — один дрон подлетает и зависает в HOVER_DISTANCE перед ним, чуть
 ## сбоку, покачиваясь и мигая красным («смотрит»), через HOVER_SECONDS улетает на свою петлю и IGNORE_SECONDS его не
 ## замечает. Удар Илюши (Ilyusha.punch_landed) по дрону — дрон рассыпается 4–6 обломками (исчезают за DEBRIS_SECONDS),
@@ -15,7 +15,7 @@ extends Node3D
 ## E010): плоский корпус 20 см (×DRONE_SCALE в кадре) с камерой-глазком и LED спереди, четыре луча крестом, моторы, винты в
 ## кольцах. Без логотипов: мелко «ГСУМ» на крышке.
 
-const DroneLayout = preload("res://game/world/drone_layout.gd")
+const Layout = preload("res://game/world/layout.gd")
 const Materials = preload("res://game/world/materials.gd")
 const HideTuning = preload("res://game/stealth/hide_tuning.gd")
 
@@ -78,7 +78,7 @@ func _ready() -> void:
 		_player = _world.get_node_or_null("Ilyusha")
 	if _player and _player.has_signal("punch_landed"):
 		_player.punch_landed.connect(_on_punch_landed)
-	for spec: Array in DroneLayout.LOOPS:
+	for spec: Array in Layout.DRONE_LOOPS:
 		var points: Array[Vector3] = []
 		for p: Vector2 in spec[0]:
 			points.append(Vector3(p.x, 0.0, p.y))
@@ -89,14 +89,14 @@ func _ready() -> void:
 			lengths.append(total)
 		_loops.append({"points": points, "lengths": lengths, "total": total, "height": spec[1], "speed": spec[2]})
 	var shared := Drone.shared_parts()
-	for i in DroneLayout.START_LOOPS.size():
+	for i in Layout.DRONE_START_LOOPS.size():
 		var drone := Drone.new()
 		drone.name = "Drone%d" % i
 		drone.index = i
 		drone.phase = float(i) * 1.37
 		add_child(drone)
 		drone.build(shared)
-		var loop: int = DroneLayout.START_LOOPS[i]
+		var loop: int = Layout.DRONE_START_LOOPS[i]
 		_place_on_loop(drone, loop, fmod(float(i) * 3.7, _loops[loop]["total"]))
 		drones.append(drone)
 
@@ -188,7 +188,7 @@ func _update_drone(drone: Drone, delta: float, watcher: Node3D) -> void:
 	drone.animate(delta, moved.length() / delta)
 
 func _patrol_height(drone: Drone) -> float:
-	return float(_loops[drone.loop]["height"]) + DroneLayout.BOB * sin(drone.timer * 1.3 + drone.phase)
+	return float(_loops[drone.loop]["height"]) + Layout.DRONE_BOB * sin(drone.timer * 1.3 + drone.phase)
 
 ## Точка зависания перед Илюшей: HOVER_DISTANCE по взгляду облика, HOVER_SIDE вправо, HOVER_HEIGHT над землёй;
 ## стена или машина между — ближе, перед препятствием (луч по World|Car).
@@ -257,7 +257,7 @@ func _closest_s(loop: int, p: Vector3) -> float:
 			best_s = lengths[i] + a.distance_to(q)
 	return best_s
 
-## Петля, где сейчас дрон (для проверок): индекс в DroneLayout.LOOPS.
+## Петля, где сейчас дрон (для проверок): индекс в Layout.DRONE_LOOPS.
 func loop_points(loop: int) -> Array[Vector3]:
 	return _loops[loop]["points"]
 
