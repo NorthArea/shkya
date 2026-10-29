@@ -37,9 +37,9 @@ const GAG_PAGE_SECONDS := 2.5
 
 ## Подсказка-отказ (вход в машину, диалог, покупка в укрытии) держится столько секунд.
 const HINT_SECONDS := 2.0
-const HINT_BOX := "СНАЧАЛА СНЯТЬ КОРОБКУ"
-const HINT_BARREL := "СНАЧАЛА ВЫЛЕЗТИ ИЗ БОЧКИ"
-const HINT_SNOWDRIFT := "СНАЧАЛА ВЫЛЕЗТИ"
+const HINT_BOX := "СНИМИ КОРОБКУ"
+const HINT_BARREL := "ВЫЛЕЗИ ИЗ БОЧКИ"
+const HINT_SNOWDRIFT := "ВЫЛЕЗИ ИЗ СУГРОБА"
 const HINT_EXIT_BLOCKED := "ВЫХОД ЗАНЯТ"
 
 ## Подсказки зон укрытий (выставляет сам HideSpot).

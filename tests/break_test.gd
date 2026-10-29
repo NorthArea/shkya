@@ -507,10 +507,8 @@ func _part_residents() -> void:
 	await drv.frames(20)
 	check(not snowman.is_intact(), "snowman broken by a punch near resident 0")
 	check(r.glance_count > glances and r.state == &"glance", "resident within 8 m glances at the break (state %s)" % r.state)
-	var lines := []
-	for l in QuestLines.BREAK_LINES:
-		lines.append(l["text"])
-	check(r.bubble_kind == &"break" and r.bubble_text in lines and r.bubble_visible(), "resident says a BREAK_LINES line «%s»" % r.bubble_text)
+	var lines := QuestLines.street_lines(r.voice, &"break")
+	check(r.bubble_kind == &"break" and r.bubble_text in lines and r.bubble_visible(), "resident says a break line of its voice «%s»" % r.bubble_text)
 	check(residents_node.break_bubbles == bubbles + 1, "one break bubble")
 	if capture:
 		await _capture_at("07_resident_reacts", snowman.global_position + Vector3(4.0, 0, -4.0), r.global_position)

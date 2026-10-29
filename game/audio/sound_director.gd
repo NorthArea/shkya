@@ -170,8 +170,12 @@ func _play_gag(lines: Array, seconds: float) -> void:
 			subtitle_label.text = page
 			subtitle_card.visible = true
 			DialogPanelScript.pop(subtitle_card, 0.6))
-		tween.tween_interval(seconds)
+		tween.tween_interval(page_seconds(page, seconds))
 	tween.tween_callback(_gag_finished)
+
+## TEXT-01: страница гэга висит не меньше времени чтения (QuestLines.read_seconds), даже если просили меньше.
+static func page_seconds(page: String, seconds: float) -> float:
+	return maxf(seconds, QuestLines.read_seconds(page.replace("\n", " ")))
 
 func _gag_finished() -> void:
 	_gag_tween = null

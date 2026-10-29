@@ -185,7 +185,7 @@ func _part_director() -> void:
 	log.clear()
 	d.reset()
 	check(d.money == 0 and log == [[0, -5]], "director: reset → money 0, one money_changed (%s)" % [log])
-	check(CoinLines.vendor_short(12) == "Не хватает: ещё 12 ₽", "lines: vendor refusal «Не хватает: ещё 12 ₽»")
+	check(CoinLines.vendor_short(12) == CoinLines.VENDOR_SHORT % 12 and CoinLines.vendor_short(12).contains("12"), "lines: vendor refusal «%s»" % CoinLines.vendor_short(12))
 	d.free()
 
 # =====================================================================================
@@ -398,7 +398,7 @@ func _part_vendor() -> void:
 		flow.dialog.advance()
 		await drv.frames(2)
 	flow.dialog.finish_typing()
-	check(flow.dialog.text_label.text == "Не хватает: ещё 1 ₽" and flow.dialog.speaker_label.text == "ПРОДАВЩИЦА", "vendor: last line is the refusal «Не хватает: ещё 1 ₽» ('%s')" % flow.dialog.text_label.text)
+	check(flow.dialog.text_label.text == CoinLines.vendor_short(1) and flow.dialog.speaker_label.text == "ПРОДАВЩИЦА", "vendor: last line is the refusal «%s» ('%s')" % CoinLines.vendor_short(1) % flow.dialog.text_label.text)
 	check(flow.dialog.buttons.has(&"buy") and flow.dialog.buttons[&"buy"].disabled, "vendor: КУПИТЬ ХЛЕБ disabled at 34")
 	flow.dialog.buttons[&"buy"].pressed.emit()
 	await drv.frames(2)

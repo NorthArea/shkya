@@ -330,10 +330,10 @@ func _part_gag() -> void:
 	check(spot.officer_looks_at_drift(), "officer west looks at the drift")
 	check(spot.gag_count == count0 + 1, "C04 fired once when the officer turned to the drift (%d)" % (spot.gag_count - count0))
 	await drv.frames(10)
-	check(sound.subtitle_card.visible and sound.subtitle_label.text.contains(QuestLines.HIDE_SNOW_LOOK[0]) and sound.subtitle_label.text.contains(QuestLines.HIDE_SNOW_LOOK[1]), "subtitle shows the first pair (%s)" % sound.subtitle_label.text.replace("\n", " / "))
+	check(sound.subtitle_card.visible and sound.subtitle_label.text == QuestLines.HIDE_SNOW_LOOK[0], "subtitle shows the officer's one line (%s)" % sound.subtitle_label.text.replace("\n", " / "))
 	await _shot("03_gag_c04", Vector3.INF, 0.9, -0.28)
 	await drv.frames(int(2.5 * 60))
-	check(sound.subtitle_label.text.contains(QuestLines.HIDE_SNOW_LOOK[2]) and sound.subtitle_label.text.contains(QuestLines.HIDE_SNOW_LOOK[3]), "second pair after 2.5 s (%s)" % sound.subtitle_label.text.replace("\n", " / "))
+	check(not sound.gag_playing() and not sound.subtitle_card.visible, "one line only: gone after 2.5 s (TEXT-01), no radio-style second pair")
 	# В той же попытке: выйти, снова войти под взглядом — второго раза нет.
 	spot.exit()
 	await drv.frames(3)

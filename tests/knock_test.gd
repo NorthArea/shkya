@@ -185,7 +185,7 @@ func _part_knock() -> void:
 				if getup_at < 0.0:
 					getup_at = t
 					getup_frame = frame
-					hit_line = r.bubble_kind == &"hit" and r.bubble_visible() and QuestLines.RESIDENT_LINES_HIT.has(r.bubble_text)
+					hit_line = r.bubble_kind == &"hit" and r.bubble_visible() and QuestLines.street_lines(r.voice, &"hit").has(r.bubble_text)
 				if frame - getup_frame == 30:
 					await _shot("04_getup_line")
 					if capture:

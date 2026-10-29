@@ -6,7 +6,7 @@ extends Node3D
 ## IGNORE_SECONDS его не замечает. Удар Илюши (Ilyusha.punch_landed) по дрону — дрон рассыпается 4–6 обломками (исчезают за DEBRIS_SECONDS),
 ## хлопок, 5 монет через Coins.spawn_burst (если узел Coins есть — COINS-01), возрождение через 60–90 с на другой
 ## свободной петле. Удар по патрулю (дети Patrols) — субтитр PATROL_GAG через SoundDirector.show_gag не чаще раза в
-## GAG_COOLDOWN; по жителям и Бабке — ничего. Провала и подозрения нет.
+## GAG_COOLDOWN; по Бабке — ничего, жители отвечают репликой push (Residents, TEXT-01). Провала и подозрения нет.
 ## Коллизий нет: попадание — Area3D на слое HIT_LAYER (5-й бит, вне World/Player/Car/Interact): транспорт, лучи
 ## наблюдателей (маска World|Car, без областей), пружина камеры и зонд E их не видят. Дроны не сенсоры: в группе
 ## detection_sensors их нет. Узел создаёт LevelGeometry (DemoWorld/LevelGeometry/Drones). Случайности — только из
@@ -62,7 +62,7 @@ const RESPAWN := Vector2(60.0, 90.0)
 const RESPAWN_FAR := 15.0        # м: место возрождения по возможности не ближе к Илюше
 const DEBRIS_SECONDS := 1.5
 const COINS_PER_DRONE := 5
-const PATROL_GAG := "Гражданин, руками не размахивайте"
+const PATROL_GAG := "Гражданин, руками не машем!"
 const GAG_COOLDOWN := 20.0
 
 var drones: Array = []

@@ -104,7 +104,8 @@ func _run() -> void:
 	while flow.is_dialog_open() and not flow.dialog.is_last_line():
 		flow.dialog.finish_typing()
 		flow.dialog.buttons[&"next"].pressed.emit()
-	check(sound.played["ui"] == clicks_before + 4, "ДАЛЬШЕ clicks four times through the vendor chain (%d)" % (sound.played["ui"] - clicks_before))
+	var nexts: int = QuestLines.VENDOR_CHAIN.size() - 1
+	check(sound.played["ui"] == clicks_before + nexts, "ДАЛЬШЕ clicks %d times through the vendor chain (%d)" % [nexts, sound.played["ui"] - clicks_before])
 	if flow.is_dialog_open() and flow.dialog.buttons.has(&"buy"):
 		flow.dialog.buttons[&"buy"].pressed.emit()
 	await _frames(2)

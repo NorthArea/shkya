@@ -223,7 +223,7 @@ func _part_refusals() -> void:
 	await drv.frames(5)
 	check(not world.quest_flow.is_dialog_open() and m.state == &"BUY_BREAD" and not m.has_bread, "E at the window in the box → no dialog, no purchase")
 	check(world.get_hud_state()["hide_hint"] == QuestLines.HIDE_BOX_VENDOR, "window: hint «%s»" % QuestLines.HIDE_BOX_VENDOR)
-	check(QuestLines.HIDE_BOX_VENDOR.contains("Оптовикам не продаю. Вылезайте"), "vendor line text")
+	check(QuestLines.HIDE_BOX_VENDOR.begins_with(QuestLines.VENDOR + ": «"), "vendor line text («%s»)" % QuestLines.HIDE_BOX_VENDOR)
 	check(player.hide_mode == &"none" and _crates() == 1, "E at the window took the box off (one crate)")
 	await _shot("box_window_refusal_box_off")
 	await drv.interact()
@@ -331,11 +331,11 @@ func _part_gags() -> void:
 	check(box.gag_counts[&"C02"] == c02, "C02 not before 3 s")
 	await drv.frames(60)
 	check(box.gag_counts[&"C02"] == c02 + 1, "C02 after 3 s standing in view (%d)" % (box.gag_counts[&"C02"] - c02))
-	check(sound.subtitle_card.visible and sound.subtitle_label.text.contains("Почему коробка стоит без сопровождения?"), "C02 subtitle on screen: «%s»" % sound.subtitle_label.text)
-	check(sound.subtitle_label.text.split("\n").size() == 2, "two lines per screen")
+	check(sound.subtitle_card.visible and sound.subtitle_label.text.contains(QuestLines.HIDE_BOX_STILL[0]), "C02 subtitle on screen: «%s»" % sound.subtitle_label.text)
+	check(sound.subtitle_label.text.split("\n").size() == 1, "one line, no radio reply (TEXT-01)")
 	await _shot("gag_c02_on_screen")
 	await drv.frames(160)
-	check(sound.subtitle_label.text.contains("К товару вопросов нет"), "C02 second page after 2.5 s («%s»)" % sound.subtitle_label.text)
+	check(not sound.gag_playing(), "C02 is a single page: over after 2.5 s («%s»)" % sound.subtitle_label.text)
 	officer.place_at(Layout.OFFICER_POST)
 	await drv.frames(300)
 	check(box.gag_counts[&"C02"] == c02 + 1 and not world.is_stealth_failing(), "C02 once per attempt, standing box not detected")
@@ -355,7 +355,7 @@ func _part_gags() -> void:
 		await drv.frames(2)
 		check(box.gag_counts[&"C03"] == c03 + 1, "walk %d in the cone, suspicion %.2f > 0.3 → C03 shown once (%d)" % [k + 1, world.stealth.suspicion, box.gag_counts[&"C03"] - c03])
 		if k == 0:
-			check(sound.subtitle_card.visible and sound.subtitle_label.text.contains("Товар пошёл"), "C03 subtitle on screen: «%s»" % sound.subtitle_label.text)
+			check(sound.subtitle_card.visible and sound.subtitle_label.text.contains(QuestLines.HIDE_BOX_MOVING[0]), "C03 subtitle on screen: «%s»" % sound.subtitle_label.text)
 			await drv.frames(150)   # стоя — шкала спадает
 	check(not world.is_stealth_failing(), "C03 walks stopped in time, no fail")
 	# Новая попытка (reset) — гэги снова доступны.
@@ -402,7 +402,7 @@ func _part_gag_queue_limit() -> void:
 	await _place(Layout.OFFICER_POST + Vector3(-5.0, 0, 0), PI * 0.5)
 	box.enter()
 	await drv.frames(int(BoxSpot.GAG_STILL_SECONDS * 60) + 40)
-	check(box.gag_counts[&"C02"] == c02 + 1 and sound.subtitle_label.text.contains("Почему коробка стоит без сопровождения?"), "C02 on screen (%s)" % sound.subtitle_label.text.replace("\n", " / "))
+	check(box.gag_counts[&"C02"] == c02 + 1 and sound.subtitle_label.text.contains(QuestLines.HIDE_BOX_STILL[0]), "C02 on screen (%s)" % sound.subtitle_label.text.replace("\n", " / "))
 	await _shot("gag_above_prompt_box_on_ilyusha")
 	var card: Control = sound.subtitle_card
 	var plate: Control = world.get_node("GameHUD").prompt_plate
@@ -421,7 +421,7 @@ func _part_gag_queue_limit() -> void:
 		n += 1
 	drv.release_all()
 	check(box.gag_counts[&"C03"] == c03 + 1, "C03 accepted while C02 is on screen (%.2f s walk)" % (n / 60.0))
-	check(sound.subtitle_label.text.contains("Почему коробка") or sound.subtitle_label.text.contains("К товару вопросов нет"), "C02 not interrupted by C03 («%s»)" % sound.subtitle_label.text.replace("\n", " / "))
+	check(sound.subtitle_label.text.contains(QuestLines.HIDE_BOX_STILL[0]), "C02 not interrupted by C03 («%s»)" % sound.subtitle_label.text.replace("\n", " / "))
 	check(sound.gag_queue_size() == 1 and sound.gags_started == started0 + 1, "C03 waits in the queue (queue %d)" % sound.gag_queue_size())
 	# Третий гэг попытки (сугроб, C04) — принят в очередь; четвёртый и пятый (бочка C05, C06) — сверх лимита.
 	check(snow.say_gag(&"C04", QuestLines.HIDE_SNOW_LOOK), "third gag of the attempt (C04) accepted")
@@ -432,22 +432,18 @@ func _part_gag_queue_limit() -> void:
 	check(barrel.toast_count == toasts0 + 1 and barrel.toast_text() == QuestLines.HIDE_BARREL_BUMP_TOAST, "barrel bump toast still shows over the limit")
 	check(hub.gags_this_attempt == HideTuning.GAG_LIMIT and hub.gag_log.size() == log0 + 3 and barrel.roll_gag_count == roll0, "attempt: exactly %d gags accepted (%s)" % [HideTuning.GAG_LIMIT, hub.gag_log.slice(log0)])
 	check(sound.gag_queue_size() == 2, "queue holds C03 and C04 (%d)" % sound.gag_queue_size())
-	# Дождаться: вторая страница C02, затем C03, затем C04 — по очереди.
+	# Дождаться: C02 до конца, затем C03, затем C04 — по очереди (TEXT-01: по одной фразе).
 	officer.sensor.enabled = false
 	var seen := []
 	for i in 60 * 16:
 		var text: String = sound.subtitle_label.text
 		var tag := ""
-		if text.contains("К товару вопросов нет"):
-			tag = "C02b"
-		elif text.contains("Почему коробка"):
-			tag = "C02a"
-		elif text.contains("Товар пошёл"):
+		if text.contains(QuestLines.HIDE_BOX_STILL[0]):
+			tag = "C02"
+		elif text.contains(QuestLines.HIDE_BOX_MOVING[0]):
 			tag = "C03"
 		elif text.contains(QuestLines.HIDE_SNOW_LOOK[0]):
-			tag = "C04a"
-		elif text.contains(QuestLines.HIDE_SNOW_LOOK[2]):
-			tag = "C04b"
+			tag = "C04"
 		elif text.contains(QuestLines.HIDE_BARREL_BUMP_ILYUSHA) or text.contains(QuestLines.HIDE_BARREL_ROLL[0]):
 			tag = "barrel"
 		if tag != "" and (seen.is_empty() or seen[-1] != tag):
@@ -456,8 +452,7 @@ func _part_gag_queue_limit() -> void:
 			break
 		await drv.frames(1)
 	print("INFO: subtitle order %s" % [seen])
-	var order := seen.filter(func(t): return t != "C02a")
-	check(order == ["C02b", "C03", "C04a", "C04b"], "C02 shown to the end, then C03, then C04; no barrel lines (%s)" % [seen])
+	check(seen == ["C02", "C03", "C04"], "C02 shown to the end, then C03, then C04; no barrel lines (%s)" % [seen])
 	check(sound.gags_started == started0 + 3 and not sound.subtitle_card.visible, "three gags played, plate gone (%d)" % (sound.gags_started - started0))
 	# Переполнение очереди: идущий + 2 в очереди, лишний старейший отброшен.
 	var dropped0: int = sound.gags_dropped
@@ -467,7 +462,7 @@ func _part_gag_queue_limit() -> void:
 	sound.show_gag(["Т4"], 0.3)
 	check(sound.gag_playing() and sound.gag_queue_size() == 2 and sound.gags_dropped == dropped0 + 1, "queue max 2: oldest queued dropped (%d in queue)" % sound.gag_queue_size())
 	var shown := []
-	for i in 120:
+	for i in 240:   # TEXT-01: страница не короче времени чтения (SoundDirector.page_seconds) — 1,05 с вместо 0,3 с
 		var t: String = sound.subtitle_label.text
 		if t != "" and (shown.is_empty() or shown[-1] != t):
 			shown.append(t)
