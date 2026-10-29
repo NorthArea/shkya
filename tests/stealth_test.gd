@@ -1025,7 +1025,7 @@ func _part_fix3() -> void:
 	_watch_sensor = s2
 
 	# Пост, настройки, без диалога.
-	check(officer2 != null and officer2.name == "Officer2" and officer2.interaction_id == &"officer2" and officer2.character == "police", "Officer2: second police NPC (id officer2, police art)")
+	check(officer2 != null and officer2.name == "Officer2" and officer2.interaction_id == &"officer2" and officer2.character == "guard", "Officer2: second observer NPC (id officer2, guard art — ART-08)")
 	check(s2.is_in_group(&"detection_sensors") and s2.show_cone and is_equal_approx(s2.range_m, PatrolsScript.OFFICER2_RANGE) and is_equal_approx(s2.range_m, 14.0) and is_equal_approx(s2.fov_deg, PatrolsScript.OFFICER2_FOV) and is_equal_approx(s2.fov_deg, 100.0) and officer2.turn_every == officer.turn_every and officer2.facing_holds == [PatrolsScript.OFFICER2_HOLD_WEST, PatrolsScript.OFFICER2_HOLD_EAST], "Officer2 sensor: in the group, cone, %.0f m / %.0f°, west %s s (fix6), east-south-east %s s (fix7)" % [s2.range_m, s2.fov_deg, PatrolsScript.OFFICER2_HOLD_WEST, PatrolsScript.OFFICER2_HOLD_EAST])
 	check(_near2(officer2.global_position, Layout.OFFICER2_POST, 0.05) and Layout.OFFICER2_FACING.size() == 2, "Officer2 at OFFICER2_POST %s, two facings" % Layout.OFFICER2_POST)
 	check(s1.car_area == Layout.KIOSK_SQUARE and s2.car_area == Layout.KIOSK_SQUARE and Layout.KIOSK_SQUARE == Rect2(50, -94, 26, 34), "both officers watch cars on KIOSK_SQUARE x 50…76, z −94…−60")

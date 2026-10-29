@@ -83,7 +83,7 @@ func _ready() -> void:
 	officer2 = PatrolNpcScript.new()
 	officer2.name = "Officer2"
 	officer2.interaction_id = &"officer2"   # без диалога: prompt_for даёт "", зона выключена
-	officer2.character = "police"   # «росгвардеец» STEALTH_DESIGN; отдельный арт позже
+	officer2.character = "guard"   # «росгвардеец» STEALTH_DESIGN: свой облик по e03 (ART-08), без эмблем
 	officer2.height_m = officer.height_m
 	officer2.tint = officer.tint
 	officer2.body_radius = officer.body_radius
