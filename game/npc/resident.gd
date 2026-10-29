@@ -51,14 +51,27 @@ extends "res://game/npc/npc.gd"
 ## Сбит — встаёт, возвращается на точку удара и идёт к той же цели; «Лада» поперёк пути — разворот и новая цель.
 ## Второй в паре идёт по следу первого (FOLLOW_GAP позади, сбоку FOLLOW_SIDE). Дальше LOD_DISTANCE и вне кадра —
 ## обновление раз в LOD_STEP шагов физики с накопленным временем.
+##
+## PEOPLE-03 (P2, ARENA-02 «Жизнь»): занятия-точки той же цепочки целей. hockey — катается по коробке (Layout.
+## LIFE_RINK_AREA) с клюшкой, шайба общая (life.hockey_step: ведёт, пас, бросок, отскок от ворот); snowball — лепит и
+## кидает снежок в того, кто у крепости напротив (нет никого — в крепость), попавший вздрагивает, без вреда; trade —
+## торговка стоит у прилавка лицом к тротуару (банки на прилавке — LifeProps); sled — тянет санки с внуком по петле
+## Layout.LIFE_SLED_LOOP. Санки (carry = &"sled") всегда при жителе: едут позади на верёвке и прячутся с ним. Сбитый
+## на хоккее или с санками (RESUME_KINDS) встаёт и продолжает занятие с места. Звуки занятий — сигнал activity_sound
+## (Residents → SoundDirector): стук костяшки (domino), взмах метлы (sweep), скрип санок (sled), скрип горки (slide),
+## клюшка (stick), шайба о борт (board). Реплики занятий — пулы QuestLines.activity_lines(вид) вместо idle и walk
+## своего голоса (тот же «мешок» pick_line).
 
 const DialogPanelScript = preload("res://game/ui/dialog_panel.gd")
 const LineBagScript = preload("res://game/npc/line_bag.gd")
 const Layout = preload("res://game/world/layout.gd")
+const LifeScript = preload("res://game/world/life.gd")   # PEOPLE-03: константы хоккея
 
 const SPEEDS: Array[float] = [1.2, 1.45, 1.35, 1.6, 1.3, 1.25, 1.5, 1.4, 1.5, 1.4, 1.3, 1.35, 1.25, 1.45,
-	1.75, 1.4, 1.15, 1.3, 1.45, 1.8]   # м/с; у второго в паре — как у первого; LIFE-01: дети 14 и 19 бегают, дворник не спешит
-const PAUSES: Array[float] = [4.0, 2.5, 3.5, 2.0, 3.0, 4.5, 2.5, 5.0, 2.5, 5.0, 3.0, 4.0, 5.0, 3.5, 2.0, 3.0, 4.0, 3.0, 3.5, 2.0]   # с, 2–5
+	1.75, 1.4, 1.15, 1.3, 1.45, 1.8,
+	1.7, 1.75, 1.65, 1.2, 1.15]   # м/с; у второго в паре — как у первого; LIFE-01: дети 14 и 19 бегают, дворник не спешит; PEOPLE-03: 20–22 дети, 23 торговка, 24 с санками
+const PAUSES: Array[float] = [4.0, 2.5, 3.5, 2.0, 3.0, 4.5, 2.5, 5.0, 2.5, 5.0, 3.0, 4.0, 5.0, 3.5, 2.0, 3.0, 4.0, 3.0, 3.5, 2.0,
+	2.0, 2.5, 2.0, 4.0, 3.5]   # с, 2–5
 const NOTICE_DISTANCE := 3.0
 const RELEASE_DISTANCE := 4.0
 const STARE_SECONDS := 2.0
@@ -144,7 +157,21 @@ const SIT_DROP := 0.42                    # м: облик сидящего ни
 const SWEEP_SPEED := 0.45                 # м/с: дворник с метлой
 const STEALTH_STAY := 30.0                # м: Илюша ближе к троллейбусу на остановке B — пассажир едет дальше, до A
 const EDGE_RETRY := 3.0                   # с: край карты в кадре — подождать и проверить снова
-const BUSY_KINDS: Array[StringName] = [&"slide"]   # занятие в движении: на Илюшу и гудок не останавливается
+const BUSY_KINDS: Array[StringName] = [&"slide", &"hockey", &"sled"]   # занятие в движении: на Илюшу и гудок не останавливается
+# PEOPLE-03 (P2)
+const HOCKEY_SPEED := 2.4                 # м/с: на коньках
+const HOCKEY_REACH := Vector2(6.0, 4.0)   # м: катается не дальше от своего места (x, z)
+const STICK_LEAD := 0.65                  # м: крюк клюшки впереди
+const STICK_SIDE := 0.25                  # м: и правее
+const SLED_SPEED := 0.85                  # м/с: тянет санки по петле
+const SLED_BACK := 1.4                    # м: санки позади на верёвке
+const SLED_CREAK_STEP := 1.2              # м пути санок между скрипами
+const SNOWBALL_EVERY := Vector2(2.2, 4.2) # с между бросками
+const SNOWBALL_FLIGHT := 0.9              # с полёта
+const SNOWBALL_ARC := 1.6                 # м над прямой
+const SNOWBALL_MOLD := 0.6                # с: лепит, присев, перед броском
+const RESUME_KINDS: Array[StringName] = [&"hockey", &"sled"]   # сбитый — продолжает занятие с места
+const SNOW_FORT_TOP := Vector3(-69.75, 1.1, 80.0)              # крепость Z3_5: снежок без адресата — сюда
 
 @export var index := 0
 var route: Array = []          # Vector3, замкнутая ломаная
@@ -247,6 +274,25 @@ var _lod_acc := 0.0
 var _lod_n := 0
 var _trail: Array = []             # след первого в паре (Vector3, новые в конце)
 var _broom: Node3D
+# PEOPLE-03 (P2)
+signal activity_sound(resident: Resident, kind: StringName)
+var carry := &""                   # всегда при себе: &"sled" — санки с внуком
+var puck_timer := 0.0              # с до паса или броска, пока шайба у него (life.hockey_step)
+var snowballs := 0                 # брошено снежков
+var snow_hits := 0                 # попали в него
+var resumes := 0                   # сбит на занятии и продолжил с места
+var sound_counts := {}             # вид звука → сколько раз
+var _act_target := Vector3.INF     # хоккей: куда катится
+var _stick: Node3D
+var _stick_swing := 0.0
+var _sled: Node3D
+var _sled_rope: MeshInstance3D
+var _sled_moved := 0.0
+var _ball: MeshInstance3D
+var _ball_flight := {}
+var _throw_in := 0.0
+var _flinch := 0.0
+var _resume_act := {}
 var _knock_t := 0.0
 var _knock_time := 1.0             # с полёта
 var _knock_vy := 0.0
@@ -327,6 +373,9 @@ func _physics_process(delta: float) -> void:
 			look_at_target(leader)   # первого сбили: стоит и смотрит, пока тот не вернётся
 		return   # второй в паре: его ставит первый (_mirror)
 	_tick(delta)
+	if carry != &"":
+		_update_carry()
+	_flinch = maxf(_flinch - delta, 0.0)
 	if follower != null and errand:
 		_record_trail()
 	if follower != null and follower.state != &"knocked":
@@ -723,11 +772,18 @@ func on_pushed() -> bool:
 	return true
 
 ## Реплика события kind своего голоса из «мешка» (общего у улицы или своего); подряд у жителя не повторяется.
+## PEOPLE-03: на занятии со своим пулом (QuestLines.activity_lines: домино, торговка, санки, хоккей, снежки) idle и
+## walk берутся из него — тот же мешок под ключом «activity/вид».
 func pick_line(kind: StringName) -> String:
 	var lines := QuestLines.street_lines(voice, kind)
+	var key := StringName("%s/%s" % [voice, kind])
+	if _acting and (kind == &"idle" or kind == &"walk"):
+		var own: Array = QuestLines.activity_lines(_act_kind)
+		if not own.is_empty():
+			lines = own
+			key = StringName("activity/%s" % _act_kind)
 	if bag == null:
 		bag = LineBagScript.new(SEED + index)
-	var key := StringName("%s/%s" % [voice, kind])
 	var text: String = bag.next(key, lines)
 	if text == _last_text and lines.size() > 1:
 		text = bag.next(key, lines)
@@ -1028,6 +1084,9 @@ func knock() -> void:
 		dir = -_flat(lada.global_basis.z)
 	dir = dir.normalized()
 	if errand and state != &"knocked":
+		_resume_act = {}
+		if _acting and state == &"activity" and _act_kind in RESUME_KINDS:
+			_resume_act = {"kind": _act_kind, "wait": _wait, "i": _act_i, "spot": spot_id}
 		_act_stop()
 	if state != &"knocked":
 		_knock_resume = [target_point, direction]
@@ -1157,6 +1216,12 @@ func _tick_back(delta: float) -> void:
 
 ## Снова на маршруте: куда шёл до удара (пауза, перекур, ожидание троллейбуса — дойдёт до своей точки и продолжит).
 func _knock_finish() -> void:
+	if errand and not _resume_act.is_empty() and _resume_act.spot == spot_id:
+		_resume_activity()
+		knock_phase = &""
+		knock_log.append([clock, &"route", _flat(global_position)])
+		return
+	_resume_act = {}
 	state = &"walk"
 	knock_phase = &""
 	target_point = _knock_resume[0]
@@ -1471,6 +1536,14 @@ func _errand_reset() -> void:
 	_lod_n = 0
 	_on_start_leg = true
 	state = &"walk"
+	_resume_act = {}
+	snowballs = 0
+	snow_hits = 0
+	resumes = 0
+	sound_counts = {}
+	_sled_moved = 0.0
+	if _sled:
+		_sled.global_position = _flat(global_position) - _forward(facing_yaw) * SLED_BACK
 	_trail_seed((_flat(start_leg[1]) - _flat(start_leg[0])).normalized())
 	if leader != null or life == null:
 		return
@@ -1568,6 +1641,16 @@ func _arrive() -> void:
 		&"carpet":
 			state = &"activity"
 			life.set_prop(&"carpet", true)
+		&"hockey":
+			state = &"activity"
+			puck_timer = rng.randf_range(LifeScript.PASS_SECONDS.x, LifeScript.PASS_SECONDS.y)
+			_act_target = Vector3.INF
+		&"snowball":
+			state = &"activity"
+			_throw_in = rng.randf_range(1.0, SNOWBALL_EVERY.y)
+		&"trade":
+			state = &"activity"
+			life.set_prop(&"jars", true)
 		_:
 			state = &"activity"
 	_act_sit = Layout.LIFE_SIT.get(spot_id, 0.0)
@@ -1594,8 +1677,17 @@ func _act_stop() -> void:
 	_act_sit = 0.0
 	if _act_kind == &"carpet" and life:
 		life.set_prop(&"carpet", false)
+	if _act_kind == &"trade" and life:
+		life.set_prop(&"jars", false)
+	if _act_kind == &"hockey" and life:
+		life.hockey_leave(self)
 	if _broom:
 		_broom.visible = false
+	if _stick:
+		_stick.visible = false
+	if _ball:
+		_ball.visible = false
+	_ball_flight = {}
 	if global_position.y != 0.0:
 		global_position.y = 0.0
 	if visual:
@@ -1622,6 +1714,18 @@ func _tick_activity(delta: float) -> void:
 		&"slide":
 			if _tick_slide(delta):
 				return
+		&"hockey":
+			if _tick_hockey(delta, s):
+				return
+		&"sled":
+			if _tick_sled(delta):
+				return
+		&"snowball":
+			_tick_snowball(delta)
+		&"domino":
+			var off := index * 0.37
+			if fmod(_act_t + off, 2.9) < fmod(_act_t - delta + off, 2.9):
+				_emit_sound(&"domino")   # стук костяшкой — в начале того же удара, что в _pose_activity
 	_wait -= delta
 	if _wait <= 0.0:
 		_activity_done()
@@ -1636,6 +1740,9 @@ func _tick_sweep(delta: float, s: Dictionary) -> bool:
 	facing_yaw = PI * 0.5 if to < x or (to == x and _act_i > 0) else -PI * 0.5
 	if absf(x - to) < 0.001:
 		_act_i = -_act_i
+	var t := _act_t + index * 0.37
+	if floori(t * 4.0 / PI) != floori((t - delta) * 4.0 / PI):
+		_emit_sound(&"sweep")   # взмах метлы — крайняя точка размаха (_pose_activity: sin(t · 4))
 	_wait -= delta
 	return _wait > 0.0 or absf(global_position.x - a) > 0.05
 
@@ -1659,6 +1766,8 @@ func _tick_slide(delta: float) -> bool:
 	if flat.distance_to(b) > 0.001:
 		return true
 	_act_i += 1
+	if _act_i == 3:
+		_emit_sound(&"slide")   # с площадки — вниз по скату
 	if _act_i < loop.size():
 		return true
 	_act_i = 1   # снова у лесенки
@@ -1870,6 +1979,24 @@ func _pose_activity() -> void:
 				var f := _forward(facing_yaw)
 				_broom.position = f * 0.55 + Vector3(-f.z, 0.0, f.x) * 0.15
 				_broom.rotation = Vector3(0.0, facing_yaw + sin(t * 4.0) * 0.45, 0.0)
+			&"hockey":
+				offset.y += 0.03 * sin(t * 6.0)   # толкается коньками
+				if _stick == null:
+					_stick = _make_stick()
+					add_child(_stick)
+				_stick.visible = true
+				var f := _forward(facing_yaw)
+				_stick.position = f * STICK_LEAD + Vector3(-f.z, 0.0, f.x) * STICK_SIDE
+				_stick.rotation = Vector3(0.0, facing_yaw - 0.35 * (_stick_swing / 0.25), 0.0)
+			&"snowball":
+				if _ball_flight.is_empty() and _throw_in < SNOWBALL_MOLD:
+					offset.y -= 0.14 * sin(clampf(_throw_in / SNOWBALL_MOLD, 0.0, 1.0) * PI)   # присел лепить
+			&"trade":
+				var k := fmod(t, 7.0)
+				if k < 0.6:
+					offset.y -= 0.05 * sin(k / 0.6 * PI)   # поправляет банки
+		if _flinch > 0.0:
+			offset.x += 0.06 * sin(_flinch * 40.0)   # снежок попал — вздрогнул
 	visual.position = offset
 
 ## Метла: черенок (наклонён к дворнику) и веник у снега — своя простая геометрия.
@@ -1927,3 +2054,269 @@ func _lod_delta(delta: float) -> float:
 	_lod_acc = 0.0
 	_lod_n = 0
 	return d
+
+# =====================================================================================
+# PEOPLE-03 (P2): хоккей, снежки, санки, звуки и реплики занятий
+# =====================================================================================
+
+## Играет ли сейчас в kind (на занятии, не уходит, не скрыт, не сбит): life.players и шайба.
+func is_playing(kind: StringName) -> bool:
+	return _acting and _act_kind == kind and state == &"activity" and _wait > 0.0 and not hidden and knock_phase == &""
+
+func is_hockey_active() -> bool:
+	return is_playing(&"hockey")
+
+## Крюк клюшки (там шайба, пока она у него).
+func stick_point() -> Vector3:
+	var f := _forward(facing_yaw)
+	return _flat(global_position) + f * STICK_LEAD + Vector3(-f.z, 0.0, f.x) * STICK_SIDE
+
+func _emit_sound(kind: StringName) -> void:
+	sound_counts[kind] = int(sound_counts.get(kind, 0)) + 1
+	activity_sound.emit(self, kind)
+
+## Хоккей: катается к случайным точкам у своего места внутри LIFE_RINK_AREA, шайба — life.hockey_step. Время вышло —
+## подкатывается к своему месту (оттуда путь по графу через проход). true — занятие ещё не может кончиться.
+func _tick_hockey(delta: float, s: Dictionary) -> bool:
+	_stick_swing = maxf(_stick_swing - delta, 0.0)
+	var here := _flat(global_position)
+	var ending := _wait <= 0.0
+	if ending and life.puck_holder == self:
+		life.hockey_leave(self)
+	var goal: Vector3 = s.pos
+	if not ending:
+		if _act_target == Vector3.INF or here.distance_to(_act_target) < 0.3:
+			_act_target = _hockey_target(s.pos)
+		goal = _act_target
+	var next := move_toward_v(here, goal, HOCKEY_SPEED * delta)
+	distance_walked += here.distance_to(next)
+	global_position = next
+	var d := goal - next
+	if d.length() > 0.01:
+		facing_yaw = atan2(-d.x, -d.z)
+	if not ending:
+		var ev: StringName = life.hockey_step(self, delta, rng)
+		if ev != &"":
+			_emit_sound(ev)
+			if ev == &"stick":
+				_stick_swing = 0.25
+	_wait -= delta
+	return not ending or next.distance_to(s.pos) > 0.05
+
+func _hockey_target(center: Vector3) -> Vector3:
+	var area: Rect2 = Layout.LIFE_RINK_AREA
+	var x := clampf(center.x + rng.randf_range(-HOCKEY_REACH.x, HOCKEY_REACH.x), area.position.x, area.end.x)
+	var z := clampf(center.z + rng.randf_range(-HOCKEY_REACH.y, HOCKEY_REACH.y), area.position.y, area.end.y)
+	return Vector3(x, 0.0, z)
+
+## Санки: по петле Layout.LIFE_SLED_LOOP от места и обратно к нему. true — занятие ещё не может кончиться.
+func _tick_sled(delta: float) -> bool:
+	var loop: Array = Layout.LIFE_SLED_LOOP
+	var p: Vector2 = loop[_act_i]
+	var b := Vector3(p.x, 0.0, p.y)
+	var here := _flat(global_position)
+	var next := move_toward_v(here, b, SLED_SPEED * delta)
+	distance_walked += here.distance_to(next)
+	global_position = next
+	var d := b - next
+	if d.length() > 0.001:
+		facing_yaw = atan2(-d.x, -d.z)
+	_wait -= delta
+	if next.distance_to(b) > 0.001:
+		return true
+	_act_i += 1
+	if _act_i < loop.size():
+		return true
+	_act_i = 1
+	return _wait > 0.0
+
+## Снежки: лицом к тому, кто у крепости напротив (или к крепости), раз в SNOWBALL_EVERY лепит и кидает.
+func _tick_snowball(delta: float) -> void:
+	var foe: Resident = _snow_foe()
+	var aim: Vector3 = foe.global_position + Vector3.UP * 1.0 if foe else SNOW_FORT_TOP
+	facing_yaw = _yaw_to(aim)
+	if not _ball_flight.is_empty():
+		_ball_flight.t += delta
+		var k := clampf(_ball_flight.t / SNOWBALL_FLIGHT, 0.0, 1.0)
+		var to: Vector3 = _ball_flight.to
+		if is_instance_valid(_ball_flight.who):
+			to = _ball_flight.who.global_position + Vector3.UP * 1.0
+		_ball.global_position = _ball_flight.from.lerp(to, k) + Vector3.UP * SNOWBALL_ARC * 4.0 * k * (1.0 - k)
+		if k >= 1.0:
+			if is_instance_valid(_ball_flight.who) and _ball_flight.who.is_playing(&"snowball"):
+				_ball_flight.who.snow_hit()
+			_ball.visible = false
+			_ball_flight = {}
+		return
+	_throw_in -= delta
+	if _throw_in > 0.0:
+		return
+	_throw_in = rng.randf_range(SNOWBALL_EVERY.x, SNOWBALL_EVERY.y)
+	if _ball == null:
+		_ball = _make_ball()
+		add_child(_ball)
+	var from := _flat(global_position) + _forward(facing_yaw) * 0.3 + Vector3.UP * 1.45
+	var miss := Vector3(rng.randf_range(-0.6, 0.6), 0.0, rng.randf_range(-0.6, 0.6)) if foe == null else Vector3.ZERO
+	_ball_flight = {"from": from, "to": aim + miss, "t": 0.0, "who": foe}
+	_ball.global_position = from
+	_ball.visible = true
+	snowballs += 1
+
+func _snow_foe() -> Resident:
+	for r in life.players(&"snowball"):
+		if r != self:
+			return r
+	return null
+
+## В него попали снежком: вздрогнул (_pose_activity), без вреда.
+func snow_hit() -> void:
+	snow_hits += 1
+	_flinch = 0.35
+
+## Сбит на хоккее или с санками — встал и продолжил занятие с того места, где его сбили (_resume_act).
+func _resume_activity() -> void:
+	state = &"activity"
+	_acting = true
+	_act_kind = _resume_act.kind
+	_wait = _resume_act.wait
+	_act_i = _resume_act.i
+	_act_t = 0.0
+	_act_target = Vector3.INF
+	_resume_act = {}
+	resumes += 1
+
+## Санки с внуком: позади на верёвке SLED_BACK, разворачиваются за жителем; телепорт (дверь, сброс) — сразу за спиной.
+## Сбитый — санки стоят, где были. Скрип — через каждые SLED_CREAK_STEP м пути санок.
+func _update_carry() -> void:
+	if _sled == null:
+		_sled = _make_sled()
+		add_child(_sled)
+		_sled.global_position = _flat(global_position) - _forward(facing_yaw) * SLED_BACK
+	if state == &"knocked":
+		return
+	var here := _flat(global_position)
+	var at := _flat(_sled.global_position)
+	var to := here - at
+	var dist := to.length()
+	var was := at
+	if dist > SLED_BACK * 2.5:
+		at = here - _forward(facing_yaw) * SLED_BACK
+	elif dist > SLED_BACK:
+		at = here - to / dist * SLED_BACK
+	if at.distance_to(was) < SLED_BACK * 2.0:
+		_sled_moved += at.distance_to(was)
+	if _sled_moved >= SLED_CREAK_STEP:
+		_sled_moved = 0.0
+		_emit_sound(&"sled")
+	var dir := here - at
+	_sled.global_position = at
+	if dir.length() > 0.05:
+		_sled.global_rotation = Vector3(0.0, atan2(-dir.x, -dir.z), 0.0)
+	# Верёвка: от передка санок к руке.
+	var front := at + Vector3.UP * 0.2
+	if dir.length() > 0.05:
+		front += dir.normalized() * 0.5
+	var hand := here + Vector3.UP * 0.75
+	var rope := hand - front
+	if rope.length() > 0.05:
+		_sled_rope.global_transform = Transform3D(Basis.looking_at(rope.normalized()).scaled(Vector3(1.0, 1.0, rope.length())), (front + hand) * 0.5)
+
+func sled_node() -> Node3D:
+	return _sled
+
+## Детские санки с внуком в санках — своя простая геометрия: полозья, рейки, спинка; внук — пуховик, шарф, шапка
+## в цветах пацана ШКЯ (облик kid, CHARACTERS.md). Ноль коллизий, без теней от мелочи.
+func _make_sled() -> Node3D:
+	var root := Node3D.new()
+	root.name = "Sled"
+	root.top_level = true
+	var metal := _plain(Color(0.20, 0.22, 0.26))
+	var wood := _plain(Color(0.62, 0.42, 0.24))
+	var jacket := _plain(Color(0.58, 0.84, 0.74))
+	var scarf := _plain(Color(0.92, 0.48, 0.62))
+	var skin := _plain(Color(0.97, 0.80, 0.70))
+	var pants := _plain(Color(0.48, 0.16, 0.22))
+	for x in [-0.17, 0.17]:
+		_part3(root, _boxm(Vector3(0.025, 0.025, 0.95)), Vector3(x, 0.03, 0.0), metal)
+		_part3(root, _boxm(Vector3(0.025, 0.025, 0.16)), Vector3(x, 0.08, -0.5), metal, Vector3(-0.8, 0.0, 0.0))   # загиб полоза
+		for z in [-0.3, 0.3]:
+			_part3(root, _boxm(Vector3(0.02, 0.14, 0.02)), Vector3(x, 0.1, z), metal)
+	for k in 6:
+		_part3(root, _boxm(Vector3(0.42, 0.02, 0.09)), Vector3(0.0, 0.18, -0.33 + k * 0.13), wood)
+	_part3(root, _boxm(Vector3(0.42, 0.22, 0.03)), Vector3(0.0, 0.3, 0.38), wood, Vector3(0.25, 0.0, 0.0))   # спинка
+	# Внук: сидит лицом вперёд (−Z), ноги вытянуты.
+	_part3(root, _boxm(Vector3(0.24, 0.1, 0.34)), Vector3(0.0, 0.25, -0.12), pants)
+	var body := CapsuleMesh.new()
+	body.radius = 0.14
+	body.height = 0.42
+	_part3(root, body, Vector3(0.0, 0.42, 0.18), jacket)
+	_part3(root, _torusm(0.1, 0.04), Vector3(0.0, 0.6, 0.18), scarf)
+	_part3(root, _spherem(0.1), Vector3(0.0, 0.72, 0.17), skin)
+	var hat := _part3(root, _spherem(0.105), Vector3(0.0, 0.77, 0.18), jacket)
+	hat.scale = Vector3(1.0, 0.75, 1.0)
+	_part3(root, _spherem(0.035), Vector3(0.0, 0.86, 0.2), scarf)   # помпон
+	_sled_rope = MeshInstance3D.new()
+	_sled_rope.name = "Rope"
+	_sled_rope.mesh = _boxm(Vector3(0.012, 0.012, 1.0))
+	_sled_rope.material_override = _plain(Color(0.75, 0.70, 0.6))
+	_sled_rope.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	_sled_rope.top_level = true
+	root.add_child(_sled_rope)
+	return root
+
+## Клюшка: черенок наклонён к хоккеисту, крюк лежит на льду (корень — у крюка, как веник у метлы).
+func _make_stick() -> Node3D:
+	var root := Node3D.new()
+	root.name = "Stick"
+	var shaft := _part3(root, _boxm(Vector3(0.03, 0.03, 1.25)), Vector3(0.0, 0.48, 0.42), _plain(Color(0.55, 0.38, 0.22)), Vector3(0.82, 0.0, 0.0))
+	shaft.name = "Shaft"
+	_part3(root, _boxm(Vector3(0.28, 0.06, 0.035)), Vector3(-0.1, 0.05, 0.0), _plain(Color(0.12, 0.12, 0.14)))   # крюк, обмотан изолентой
+	root.visible = false
+	return root
+
+func _make_ball() -> MeshInstance3D:
+	var ball := MeshInstance3D.new()
+	ball.name = "Snowball"
+	ball.mesh = _spherem(0.075)
+	ball.material_override = _plain(Color(0.95, 0.97, 1.0))
+	ball.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	ball.top_level = true
+	ball.visible = false
+	return ball
+
+static func _plain(color: Color) -> StandardMaterial3D:
+	var m := StandardMaterial3D.new()
+	m.albedo_color = color
+	m.roughness = 0.85
+	return m
+
+static func _boxm(size: Vector3) -> BoxMesh:
+	var m := BoxMesh.new()
+	m.size = size
+	return m
+
+static func _spherem(r: float) -> SphereMesh:
+	var m := SphereMesh.new()
+	m.radius = r
+	m.height = r * 2.0
+	m.radial_segments = 8
+	m.rings = 4
+	return m
+
+static func _torusm(r: float, thickness: float) -> TorusMesh:
+	var m := TorusMesh.new()
+	m.inner_radius = r - thickness * 0.5
+	m.outer_radius = r + thickness * 0.5
+	m.rings = 10
+	m.ring_segments = 4
+	return m
+
+func _part3(parent: Node3D, mesh: Mesh, at: Vector3, material: Material, rot := Vector3.ZERO) -> MeshInstance3D:
+	var mi := MeshInstance3D.new()
+	mi.mesh = mesh
+	mi.material_override = material
+	mi.position = at
+	mi.rotation = rot
+	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	parent.add_child(mi)
+	return mi

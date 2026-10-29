@@ -473,14 +473,70 @@ static func street_lines(voice: StringName, kind: StringName) -> Array:
 	var by_kind: Dictionary = STREET_LINES.get(voice, STREET_LINES[VOICE_BABKA])
 	return by_kind.get(kind, [])
 
-## Все реплики прохожих без повторов (для подложек пузырей и проверок).
+## Все реплики прохожих без повторов (для подложек пузырей и проверок); PEOPLE-03 — с репликами занятий.
 static func all_street_lines() -> Array:
 	var seen := {}
 	for voice in VOICES:
 		for kind in KINDS:
 			for text in street_lines(voice, kind):
 				seen[text] = true
+	for activity in ACTIVITY_LINES:
+		for text in ACTIVITY_LINES[activity]:
+			seen[text] = true
 	return seen.keys()
+
+# --- занятия жителей (PEOPLE-03) ---
+## На занятии житель говорит пул занятия вместо idle и walk своего голоса (Resident.pick_line, тот же «мешок»).
+## Оригинальные реплики в духе ШКЯ; ограничения — как у пузырей прохожих (tests/life01_test.gd, text01_test.gd).
+const DOMINO_LINES := [
+	"Рыба!",
+	"Дуплет!",
+	"Пусто-пусто!",
+	"Ходи давай, не спи!",
+	"Козла забили!",
+	"Эх, мне бы шестёрку…",
+	"Кто так ходит?!",
+]
+const TRADE_LINES := [
+	"Огурчики свои!",
+	"Капустка квашеная!",
+	"Грибочки, сама солила!",
+	"Сынок, возьми помидорчиков!",
+	"Дешевле, чем в магазине!",
+	"Без нитратов, со своего огорода!",
+	"Банку потом верни!",
+]
+const SLED_LINES := [
+	"Держись крепче!",
+	"Варежки не снимай!",
+	"Сейчас домой, суп стынет",
+	"Не вертись, вывалишься!",
+	"Ножки не мёрзнут?",
+	"Щёки красные — хорошо!",
+]
+const HOCKEY_LINES := [
+	"Пас! Пас давай!",
+	"Шайбу! Шайбу!",
+	"Гол! Гол!",
+	"Не было гола!",
+	"Чур, я на воротах!",
+	"Мама, ещё пять минут!",
+]
+const SNOWBALL_LINES := [
+	"Получай!",
+	"Мимо! Мимо!",
+	"Ай! За шиворот!",
+	"Сдавайся, крепость наша!",
+	"Чур, в лицо не кидать!",
+	"Перемирие! Шнурок!",
+]
+## Вид занятия (Layout.LIFE_SPOTS) → пул.
+const ACTIVITY_LINES := {&"domino": DOMINO_LINES, &"trade": TRADE_LINES, &"sled": SLED_LINES, &"hockey": HOCKEY_LINES,
+	&"snowball": SNOWBALL_LINES}
+
+## Пул занятия kind (нет своего — пусто: житель говорит пулы своего голоса).
+static func activity_lines(kind: StringName) -> Array:
+	return ACTIVITY_LINES.get(kind, [])
 
 # --- поломка рядом с квестовой Бабкой и доминошниками (BREAK-01) ---
 ## Квестовая Бабка — свой короткий пул (пузырь над ней, Breakables); жители говорят пулы break своих голосов.
