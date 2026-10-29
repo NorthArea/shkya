@@ -45,8 +45,10 @@ void fragment() {
 		float side = abs(nrm.x) > 0.5 ? sign(nrm.x) * 3.0 : sign(nrm.z) * 7.0;
 		float h = hash(vec2(col + side * 31.0, fl) + seed);
 		if (win || px > 0.45) {
-			// Вдали окна сливаются: средний свет по доле горящих, без мерцающего муара.
-			float on = px > 0.45 ? custom.g * 0.5 : step(h, custom.g);
+			// Вдали окна сливаются: средний свет по доле горящих, без мерцающего муара. Грань под скользящим углом
+			// (тоже px > 0,45) не светится: средний тёплый свет на синей стене читался «розовой плитой» (сверка CITY-02).
+			float facing = abs(dot(NORMAL, VIEW));
+			float on = px > 0.45 ? custom.g * 0.5 * smoothstep(0.12, 0.45, facing) : step(h, custom.g);
 			vec3 lc = hash(vec2(fl, col) * 1.7 + seed) < 0.15 ? lit_cool : lit_warm * (0.75 + 0.35 * hash(vec2(col, fl) + seed * 0.3));
 			c = px > 0.45 ? wall : mix(wall * 0.55, wall * 0.3, 0.5);
 			e = lc * on * lit_energy;

@@ -62,6 +62,9 @@ const VFOG_ANISOTROPY := 0.55          # вперёд: свет фонаря в�
 const VFOG_LENGTH := 70.0              # м, дальность сетки тумана
 const VFOG_AMBIENT := 0.9              # доля общего (небесного) света в тумане
 const VFOG_SKY_LIGHT := 0.4            # доля голубого направленного света в тумане
+const STREET_LAMP_ENERGY := 13.0       # CITY-02 F: конус вниз (было шаром 11 на 19 м)
+const STREET_LAMP_RANGE := 14.0        # м
+const STREET_LAMP_ANGLE := 64.0        # градусов от вертикали
 const VFOG_LAMP := 2.0                 # уличные фонари: рассеяние в тумане
 const VFOG_WARM := 0.8                 # подъезд и дворовый фонарь
 const VFOG_OTHER := -1.0               # прочие лампы сцены (вывески, фары): −1 — не трогать (по умолчанию Godot 1,0)
@@ -280,7 +283,7 @@ func _ready() -> void:
 	# Светильник — на конце консоли, над проезжей частью (ART-05).
 	for p in Layout.street_lamps():
 		var tip: Vector2 = p + Layout.lamp_arm(p)
-		_lamp(Vector3(tip.x, Layout.POLE_HEIGHT - 0.8, tip.y), 11.0, index, SODIUM, 19.0, VFOG_LAMP)
+		_street_lamp(Vector3(tip.x, Layout.POLE_HEIGHT - 0.8, tip.y), index)
 		_halos.append([Vector3(tip.x, Layout.POLE_HEIGHT - 0.5, tip.y), HALO_SIZE, SODIUM])
 		index += 1
 	# Контрастные пятна тёплого света на земле (раздел 2 канона): стоянка «Лады» под дворовым фонарём и площадка у окна киоска.
@@ -344,6 +347,23 @@ func _lamp(at: Vector3, energy: float, index: int, color: Color, reach: float, f
 	lamp.omni_range = reach
 	lamp.omni_attenuation = 1.4
 	lamp.light_volumetric_fog_energy = fog
+	add_child(lamp)
+
+## Уличный фонарь (CITY-02 F): конус вниз вместо шара 19 м — шар заливал фасады жёлтым до 9-го этажа, и фасады
+## становились светлее неба (черта 21 — наоборот). Конус STREET_LAMP_ANGLE от вертикали и радиус STREET_LAMP_RANGE:
+## светит дорога, тротуар и низ первого этажа; выше светильника конус не достаёт.
+func _street_lamp(at: Vector3, index: int) -> void:
+	var lamp := SpotLight3D.new()
+	lamp.name = "StreetLamp%d" % index
+	lamp.position = at
+	lamp.rotation = Vector3(-PI * 0.5, 0.0, 0.0)
+	lamp.light_color = SODIUM
+	lamp.light_energy = STREET_LAMP_ENERGY
+	lamp.spot_range = STREET_LAMP_RANGE
+	lamp.spot_angle = STREET_LAMP_ANGLE
+	lamp.spot_attenuation = 1.4
+	lamp.spot_angle_attenuation = 0.7
+	lamp.light_volumetric_fog_energy = VFOG_LAMP
 	add_child(lamp)
 
 ## Мокрый снег: MultiMesh из плоских хлопьев, движение и обёртка вокруг камеры — в шейдере wet_snow.

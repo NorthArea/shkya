@@ -98,6 +98,27 @@ static func steam() -> StandardMaterial3D:
 		_cache["steam"] = m
 	return _cache["steam"]
 
+## Светящееся без света сцены, но в тумане (окна лоджий и лампы подъездов ближнего ряда панорамы, CITY-02 F).
+static func glow_vertex() -> StandardMaterial3D:
+	if not _cache.has("glow_vertex"):
+		var m := StandardMaterial3D.new()
+		m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+		m.vertex_color_use_as_albedo = true
+		m.vertex_color_is_srgb = true
+		_cache["glow_vertex"] = m
+	return _cache["glow_vertex"]
+
+## Пар клубами-билбордами (shaders/steam_plume, CITY-02 F): шлейфы ТЭЦ, градирен и вытяжек; params — униформы шейдера.
+static func steam_plume(params: Dictionary) -> ShaderMaterial:
+	var key := "steam_plume_%s" % str(params)
+	if not _cache.has(key):
+		var m := ShaderMaterial.new()
+		m.shader = load("res://game/world/shaders/steam_plume.gdshader")
+		for k in params:
+			m.set_shader_parameter(k, params[k])
+		_cache[key] = m
+	return _cache[key]
+
 ## Пар и окраска труб ТЭЦ на горизонте: без тумана, дымка задана самим цветом (С2, С3).
 static func far(color: Color) -> StandardMaterial3D:
 	var key := "far_%s" % color

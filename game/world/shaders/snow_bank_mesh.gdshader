@@ -2,7 +2,7 @@ shader_type spatial;
 // CITY-02 E: вал и сугроб как слежавшийся грязный снег (ART-04, черта 10; ART-05/06). Форма — сетка с шумом
 // (level_geometry._bank_mesh); цвет вершины: r — грязь к дороге (брызги колёс со стороны проезжей части),
 // g — корка (подтаявшая и снова замёрзшая гладкая поверхность сверху), b — срез лопаты/отвала (плотный снег на
-// гранях). Грязь у низа (кромка 0,15–0,31 м) и светлая шапка — как в snow.gdshader для roadside, чтобы валы
+// гранях). Грязь у низа (кромка ~0,5 м) и светлая шапка — как в snow.gdshader для roadside, чтобы валы
 // с сеткой и прежние валы читались одним снегом. Без текстур.
 
 uniform vec3 clean : source_color = vec3(0.84, 0.87, 0.92);
@@ -37,17 +37,18 @@ void fragment() {
 	float n = noise(p) * 0.6 + noise(p * 3.1) * 0.3 + noise(p * 9.0) * 0.1;
 	float fine = noise(world_pos.xz * 6.0 + world_pos.y * 4.0) * 0.6 + noise(world_pos.xz * 17.0 - world_pos.y * 9.0) * 0.4;
 	float dirt = smoothstep(0.55, 0.85, n);
-	vec3 packed = mix(clean, dirty, 0.28 + dirt * 0.25);
+	// Слежавшийся снег серо-бурый, не открыточный (черта 10, концепт 05); дворовые сугробы чище.
+	vec3 packed = mix(clean, mix(dirty, brown, 0.3), mix(0.3, 0.45, roadside) + dirt * 0.25);
 	vec3 color = packed;
 	// Срез лопаты и отвала: плотный, чуть голубоватый (под брызгами — их кидает поверх).
 	color = mix(color, mix(clean * 0.92, crust_tint * 0.9, 0.5), marks.b * 0.6);
 	// Брызги от колёс: со стороны дороги, гуще у низа, рваными пятнами.
-	float splash = marks.r * smoothstep(0.3, 0.7, fine + marks.r * 0.3) * (1.0 - smoothstep(0.25, 1.1, world_pos.y) * 0.7);
+	float splash = marks.r * smoothstep(0.3, 0.7, fine + marks.r * 0.3) * (1.0 - smoothstep(0.4, 1.4, world_pos.y) * 0.75);
 	color = mix(color, mix(grime, brown, 0.45 + 0.3 * noise(p * 5.0)), clamp(splash, 0.0, 0.85));
 	// Бурые пятна (реагент, песок) — редкие.
 	color = mix(color, brown * 1.5, smoothstep(0.66, 0.86, noise(p * 2.1 + 4.0)) * 0.3);
-	// Низ: кромка грязи 0,15–0,31 м — только у валов у дороги.
-	float edge = 0.23 + (noise(p * 4.3 + world_pos.y) - 0.5) * 0.16;
+	// Низ: кромка грязи 0,38–0,62 м рваной линией — только у валов у дороги (сверка CITY-02 F: было 0,15–0,31).
+	float edge = 0.5 + (noise(p * 4.3 + world_pos.y) - 0.5) * 0.24;
 	float low = (1.0 - smoothstep(edge - 0.06, edge + 0.04, world_pos.y)) * roadside;
 	color = mix(color, mix(grime, brown, 0.35), low * 0.85);
 	float cut = marks.b;

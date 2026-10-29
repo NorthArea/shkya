@@ -35,6 +35,7 @@ const ENTRANCE_DOOR_X := Buildings.ENTRANCE_DOOR_X   # дверь по цент�
 var _buildings: Buildings = null
 var _environment: EnvDress = null
 var _skyline: Skyline = null
+var _vent_steam: Array[Vector3] = []   # устья вытяжек на крышах (_steam_puff)
 var _wires: Array[Transform3D] = []
 
 # Надписи: [текст, позиция, поворот y, размер шрифта, цвет].
@@ -63,6 +64,7 @@ func _ready() -> void:
 	_build_kiosk_sign()
 	_build_wires()
 	_build_trails()
+	_build_yard_piles()
 	_build_house_plates()
 	_build_bus_stop()
 	_build_skyline()
@@ -718,10 +720,35 @@ func _build_skyline() -> void:
 	tower.name = "Landmark"
 	tower.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	add_child(tower)
-	var spire := Greybox.mesh_cylinder(0.0, 4.0, 18.0, Color.WHITE)
+	# Верх как в концепте 05 (CITY-02 F, P3): уступ, часовая башня с подсвеченным циферблатом к арене, фонарь со шпилем
+	# и красным огнём. Раньше — один конус на крыше.
+	var tiers := [[Vector3(16, 8, 14), 62.0], [Vector3(9, 12, 9), 72.0]]
+	for t in tiers:
+		var tier := Greybox.mesh_box(t[0], Color.WHITE)
+		tier.material_override = Materials.facade(8.0, true)
+		tier.position = Vector3(70, float(t[1]), -205)
+		tier.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		add_child(tier)
+	var clock := Greybox.mesh_cylinder(2.7, 2.7, 0.2, Color.WHITE)
+	clock.material_override = Materials.plain(Color(0.95, 0.90, 0.76), 0.5, Color(1.0, 0.88, 0.62), 1.4)
+	clock.rotation.x = PI * 0.5
+	clock.position = Vector3(70, 73.0, -200.4)
+	add_child(clock)
+	for hand in [[Vector3(0.25, 2.0, 0.08), 0.6], [Vector3(0.2, 1.4, 0.08), -1.9]]:
+		var arm := Greybox.mesh_box(hand[0], Color.WHITE)
+		arm.material_override = Materials.plain(Color(0.08, 0.08, 0.09), 0.6)
+		arm.rotation.z = float(hand[1])
+		arm.position = Vector3(70, 73.0, -200.25) + Vector3(-sin(float(hand[1])), cos(float(hand[1])), 0) * float((hand[0] as Vector3).y) * 0.45
+		add_child(arm)
+	var lantern := Greybox.mesh_box(Vector3(5, 5, 5), Color.WHITE)
+	lantern.material_override = Materials.plain(Color(0.30, 0.28, 0.25), 0.6, Color(1.0, 0.8, 0.5), 0.35)
+	lantern.position = Vector3(70, 80.5, -205)
+	add_child(lantern)
+	var spire := Greybox.mesh_cylinder(0.0, 2.0, 15.0, Color.WHITE)
 	spire.material_override = Materials.plain(Color(0.45, 0.42, 0.38), 0.6)
-	spire.position = Vector3(70, 67, -205)
+	spire.position = Vector3(70, 90.5, -205)
 	add_child(spire)
+	_sky()._light(Vector3(70, 98.6, -205), Skyline.BEACON, 1.0, 1, 0.4, 0.8)
 	# Буквы-короб на крыше башни, как в концепте 05 (сверка ART-04, P3 14): каркас и светящиеся буквы над парапетом.
 	var frame := Greybox.mesh_box(Vector3(22, 0.3, 0.3), Color.WHITE)
 	frame.material_override = Materials.plain(Color(0.15, 0.15, 0.16), 0.6)
@@ -807,6 +834,15 @@ func _build_trails() -> void:
 		[Vector2(-40, 106), Vector2(-70, 104), 1.1], [Vector2(-40, 106), Vector2(-12, 104), 1.1],
 		[Vector2(-60, 86), Vector2(-48, 96), 1.0], [Vector2(64, -77), Vector2(59, -77), 2.2],
 		[Vector2(58, -70), Vector2(58, -84), 1.2], [Vector2(-88, 17), Vector2(-10, 18), 1.0],
+		# CITY-02 F (сверка: «двор — гладкая равнина»): от каждого подъезда двора (H1 −73,5 и −13,5; H2 z 67,5 и 97,5;
+		# H3 −53,3 и −27,3) — к площадке, контейнерам, выезду на улицу A и к воротам гаражей.
+		[Vector2(-73.5, 107.6), Vector2(-73.5, 101), 1.4], [Vector2(-73.5, 101), Vector2(-63, 86), 1.0],
+		[Vector2(-13.5, 107.6), Vector2(-13.5, 101), 1.4], [Vector2(-13.5, 101), Vector2(-7, 79), 1.1], [Vector2(-7, 79), Vector2(-5, 62), 1.1],
+		[Vector2(-77.6, 67.5), Vector2(-70, 67.5), 1.4], [Vector2(-70, 67.5), Vector2(-62, 75), 1.0], [Vector2(-70, 66.2), Vector2(-37, 66.6), 1.0],
+		[Vector2(-77.6, 97.5), Vector2(-70, 97.5), 1.4], [Vector2(-70, 97.5), Vector2(-64, 86), 0.9],
+		[Vector2(-53.3, 60), Vector2(-53.3, 66), 1.4], [Vector2(-53.3, 66), Vector2(-58, 75), 1.0],
+		[Vector2(-27.3, 60), Vector2(-27.3, 63.5), 1.4], [Vector2(-27.3, 63), Vector2(-6, 60.5), 1.1],
+		[Vector2(-5, 63), Vector2(21, 72), 1.0], [Vector2(-12, 104), Vector2(21, 96), 1.0], [Vector2(-54, 81), Vector2(-21, 86), 0.9],
 	]
 	for p in paths:
 		var a: Vector2 = p[0]
@@ -823,12 +859,32 @@ func _build_trails() -> void:
 		mesh.rotation.y = atan2(b.x - a.x, b.y - a.y)
 		add_child(mesh)
 
+## Отвалы снега у внутридворового проезда (CITY-02 F; черта 12): низкие (0,35 м), без коллизии — в стороне от путей
+## жителей, Илюши и «Лады». Форма — та же сетка, что у валов (EnvDress.bank_mesh), без грязной кромки дороги.
+func _build_yard_piles() -> void:
+	for spec in [[Vector2(-20.5, 99.6), 10.0, true, -1.0, 51], [Vector2(-50.5, 92.0), 8.0, false, -1.0, 52], [Vector2(8.5, 81.0), 10.0, false, 1.0, 53]]:
+		var xz: Vector2 = spec[0]
+		var mesh := MeshInstance3D.new()
+		mesh.name = "YardPile"
+		mesh.mesh = EnvDress.bank_mesh(float(spec[1]), 0.9, 0.35, int(spec[4]), float(spec[3]))
+		mesh.material_override = Materials.bank_snow(0.0)
+		mesh.position = Vector3(xz.x, 0.0, xz.y)
+		if not spec[2]:
+			mesh.rotation.y = -PI * 0.5
+		mesh.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		add_child(mesh)
+
 ## Общие MultiMesh: провода (без теней); дома — пакеты buildings.gd (CITY-02 B); среда и панорама — EnvDress
 ## и Skyline (CITY-02 E).
 func _build_instances() -> void:
 	_houses().build()   # лоджии, рамы, стёкла, снег, крыши, мелочь домов (CITY-02 B)
 	_env().build()      # деревья, бордюры, пятна, люки, снег на проводах, столбы (CITY-02 E)
 	_sky().finish()     # средний слой, огни, мост, краны (CITY-02 E)
+	if not _vent_steam.is_empty():
+		# Пар вытяжек: мелкие клубы, сносимые ветром; дымка по расстоянию — материал без тумана сцены (CITY-02 F).
+		add_child(Skyline.plume("VentSteam", _vent_steam, 7, {"wind": Vector3(3.2, 0, 1.4), "life": 7.0, "rise": 4.0,
+			"size_start": 0.7, "size_end": 3.6, "spread": 0.5, "color": Color(0.66, 0.69, 0.75, 0.42), "haze_dist": 140.0}, 5))
+		_vent_steam.clear()
 	var wire := CylinderMesh.new()
 	wire.top_radius = 0.02
 	wire.bottom_radius = 0.02
@@ -1008,17 +1064,10 @@ func _pavilion(size: Vector3) -> Node3D:
 func _build_chimneys() -> void:
 	_sky().chimneys()
 
-## Пар из вытяжки на крыше: несколько полупрозрачных клубов, сносимых ветром (ART-06, Н9: `minus-28`).
+## Пар из вытяжки на крыше (ART-06, Н9: `minus-28`): точка копится, клубы-билборды строит _build_instances одним
+## MultiMesh (shaders/steam_plume, CITY-02 F) — раньше четыре полупрозрачные сферы с геометрическими краями.
 func _steam_puff(parent: Node3D, at: Vector3, seed: int) -> void:
-	var drift := Vector3(cos(seed * 1.7), 0, sin(seed * 1.7))
-	for k in 4:
-		var puff := Greybox.mesh_sphere(1.0, Color.WHITE)
-		puff.material_override = Materials.steam()
-		var r := 0.6 + k * 0.45
-		puff.scale = Vector3(r, r * 0.8, r)
-		puff.position = at + Vector3.UP * (k * 0.9) + drift * (k * 0.7)
-		puff.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-		parent.add_child(puff)
+	_vent_steam.append(parent.position + at + Vector3(0, 0.1 * (seed % 3), 0))
 
 
 # --- POLISH-02, п. 15: двор — площадка, выбивалка, контейнеры ---
