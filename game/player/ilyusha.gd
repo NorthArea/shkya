@@ -13,9 +13,6 @@ extends CharacterBody3D
 ## К Илюше узлов не добавляется (инвариант DEMO_ACCEPTANCE 3): запрос — через direct_space_state.
 
 const CharacterSpriteScript = preload("res://game/characters/character_sprite.gd")
-const CharacterBody3DLookScript = preload("res://game/characters/character_body3d.gd")
-## CHAR3D-01: true — объёмный облик (CharacterBody3DLook) вместо спрайта; без правки кода — аргумент --look3d.
-const LOOK_3D := false
 const HideTuning = preload("res://game/stealth/hide_tuning.gd")
 
 const WALK_SPEED := 4.0         # 2,2 роста/с при фигуре 1,8 м, как у эталона (PLAY-02)
@@ -354,7 +351,7 @@ func _cancel_punch() -> void:
 func _build_visual() -> Node3D:
 	var root := Node3D.new()
 	root.name = "Visual"
-	var look = CharacterBody3DLookScript.new() if CharacterBody3DLookScript.wanted(LOOK_3D, "ilyusha") else CharacterSpriteScript.new()
+	var look = CharacterSpriteScript.new()
 	look.name = "Look"
 	look.character = "ilyusha"
 	look.height_m = 2.0   # фигура ≈1,8 м — чуть выше крыши «Лады», как в концепте 04 и у эталона (PLAY-01)

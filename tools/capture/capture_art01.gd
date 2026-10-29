@@ -1,7 +1,7 @@
 extends SceneTree
 ## Кадры ART-01: Илюша с четырёх сторон и в ходьбе, Бабка с четырёх сторон, продавщица в окне киоска,
 ## сцены 01/02/06/07 → builds/screenshots/art01/. Окно 1920×1080, настоящий рендер:
-## ./tools/run.command --fixed-fps 60 --resolution 1920x1080 --script tools/capture_art01.gd
+## ./tools/run.command --fixed-fps 60 --resolution 1920x1080 --script tools/capture/capture_art01.gd
 
 const Layout = preload("res://game/world/layout.gd")
 const OUT := "res://builds/screenshots/art01"

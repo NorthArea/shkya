@@ -87,7 +87,7 @@ static func balcony_glass() -> ShaderMaterial:
 		_cache["balcony_glass"] = m
 	return _cache["balcony_glass"]
 
-## Пар (ART-06, Н4, Н9): полупрозрачный белёсый — шлейфы ТЭЦ и вытяжек на крышах.
+## Пар (ART-06, Н7, Н9): полупрозрачный белёсый — шлейфы ТЭЦ и вытяжек на крышах.
 static func steam() -> StandardMaterial3D:
 	if not _cache.has("steam"):
 		# Без освещения и светлее неба: иначе пар в ночном свете темнел и читался дымом (итоговая сверка ART-06, С3).

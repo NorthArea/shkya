@@ -1,7 +1,7 @@
 class_name Breakables
 extends Node3D
-## BREAK-01: разрушаемые объекты двора и улиц (идея *Hit & Run*, своя реализация без ассетов; контракт — раздел
-## «BREAK-01 контракт» в docs/workflow/tasks/ARENA-02.md). Данные — Layout.BREAKABLES (C1): [id, kind, центр, размер,
+## BREAK-01: разрушаемые объекты двора и улиц (идея *Hit & Run*, своя реализация без ассетов; контракт — C11
+## в docs/workflow/README.md, план объектов — docs/workflow/tasks/ARENA-02.md). Данные — Layout.BREAKABLES (C1): [id, kind, центр, размер,
 ## yaw, class]. Узел создаёт LevelGeometry (DemoWorld/LevelGeometry/Breakables, группа GROUP_ROOT).
 ##
 ## Каждый объект — Breakable (Node3D в группе GROUP): StaticBody3D на слое LAYER (6, «Breakable»), hp, остаток после

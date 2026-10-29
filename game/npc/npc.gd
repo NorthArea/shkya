@@ -5,10 +5,6 @@ extends Node3D
 ## (look_at_target / stop_looking — вызывает QuestFlow). Поворачивается только облик, не узел и не зона E.
 
 const CharacterSpriteScript = preload("res://game/characters/character_sprite.gd")
-const CharacterBody3DLookScript = preload("res://game/characters/character_body3d.gd")
-## CHAR3D-01: true — объёмный облик (CharacterBody3DLook) для рисунков с паспортом; иначе спрайт. Без правки кода —
-## аргумент запуска --look3d.
-const LOOK_3D := false
 const InteractableScript = preload("res://game/interaction/interactable.gd")
 
 @export var interaction_id: StringName
@@ -34,7 +30,7 @@ func _ready() -> void:
 	visual = Node3D.new()
 	visual.name = "Visual"
 	visual.rotation.y = facing_yaw
-	var look = CharacterBody3DLookScript.new() if CharacterBody3DLookScript.wanted(LOOK_3D, character) else CharacterSpriteScript.new()
+	var look = CharacterSpriteScript.new()
 	look.name = "Look"
 	look.character = character
 	look.height_m = height_m

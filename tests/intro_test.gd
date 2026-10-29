@@ -3,7 +3,7 @@ extends SceneTree
 ## В headless и под тестовым SceneTree заставки по умолчанию нет — это проверяется первым (остальные наборы и capture
 ## не меняются). Дальше Intro.force_enabled = true: лента заголовков и тайминги, свайпы, пузырь «Пойду прогуляюсь»,
 ## пауза, конечное состояние (ввод, камера на SPAWN_YAW, «!» над Бабкой, HUD, миссия прежняя), пропуск по E, Esc и A,
-## запрещённые слова. Кадры заставки — tools/capture_intro.gd в окне.
+## запрещённые слова. Кадры заставки — tools/capture/capture_intro.gd в окне.
 
 const Layout = preload("res://game/world/layout.gd")
 const IntroScript = preload("res://game/ui/intro.gd")

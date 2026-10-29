@@ -1,7 +1,7 @@
 ## POLISH-01: выход из игры без «ObjectDB instances were leaked» (звук на паузе, щелчок кнопки).
 ## Только в окне: в headless звуковой драйвер-заглушка не микширует, и плееры «утекают» всегда.
 ## Запуск по одному режиму (pause, restart, click, close, menu_quit):
-##   PROBE_MODE=pause tools/run.command --verbose --resolution 1280x720 --script tests/polish01_quit.gd
+##   PROBE_MODE=pause tools/run.command --verbose --resolution 1280x720 --script tools/capture/polish01_quit.gd
 ## Итог: код 0 и в логе нет «leaked» и «still in use»; PROBE_STUCK — игра не вышла сама.
 extends SceneTree
 # Пути выхода, которых нет у автопилота: пауза, перезапуск, меню, щелчок кнопки.

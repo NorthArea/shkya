@@ -1,5 +1,5 @@
 extends SceneTree
-## BREAK-01: разрушаемые объекты на настоящей сцене main.tscn (набор BREAK; контракт — ARENA-02.md, «BREAK-01 контракт»).
+## BREAK-01: разрушаемые объекты на настоящей сцене main.tscn (набор BREAK; контракт — C11 в docs/workflow/README.md).
 ## 1. Запасы каждого объекта Layout.BREAKABLES, как в builds/checks/ARENA-02/scripts/check.py: ROUTE_WALK 2, ROUTE_DRIVE
 ##    и ROUTE_LEAVE_KIOSK 3,5, VAN_PATH 3, полосы кольца 2,5 / 2,3, жители 1,2, SNEAK 1,5, посты 8 (Бабка, спавн и
 ##    прочие точки — 3), монеты 1, петли дронов 1,5 (у объектов выше 1,6 м); вне KIOSK_SQUARE / ROOF_AREA и проезжей

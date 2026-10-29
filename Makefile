@@ -1,4 +1,4 @@
-.PHONY: run editor test pack capture fps
+.PHONY: run editor test capture fps
 run:
 	./tools/run.command
 editor:
@@ -37,15 +37,12 @@ test:
 	$(call godot_test,coins_test,60,COINS)
 	$(call godot_test,punch_test,60,PUNCH)
 	$(call godot_test,knock_test,60,KNOCK)
-	$(call godot_test,char3d_test,60,CHAR3D)
 	$(call godot_test,break_test,60,BREAK)
 	$(call godot_test,drive02_snow,60,DRIVE02)
 	$(call godot_test,pad01_test,60,PAD01)
 	$(call godot_test,text01_test,60,TEXT01)
 capture:
-	./tools/run.command --fixed-fps 60 --resolution 1920x1080 --script tools/capture.gd
-pack:
-	./tools/run.command --headless --script tools/pack.gd
+	./tools/run.command --fixed-fps 60 --resolution 1920x1080 --script tools/capture/capture.gd
 
 fps:
 	./tools/run.command --resolution 1920x1080 --script tools/fps_probe.gd

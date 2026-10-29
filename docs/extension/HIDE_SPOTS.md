@@ -224,7 +224,7 @@ B. Заметность: `exposure_factor` у Илюши, множитель в 
 C. Коробка: объект, режим, подсказки-отказы, сброс, C02/C03.
 D. Сугроб: объект, якоря, выход, сброс, C04, тост.
 E. Бочка: режим качения, вращение, звуки, удар, сброс, C05/C06.
-F. Интеграция: `HideSpots` в `LevelGeometry`, набор `tests/hide_spots_test.gd` в Makefile (`HIDE`), `make fps` ≥ 100 среднее, кадры участка, независимая приёмка по разделу 14, ручная игра владельца.
+F. Интеграция: `HideSpots` в `LevelGeometry`, наборы `tests/hide_core_test.gd`, `hide_box_test.gd`, `hide_snow_test.gd`, `hide_barrel_test.gd` в Makefile (`HIDE_CORE`, `HIDE_BOX`, `HIDE_SNOW`, `HIDE_BARREL`), `make fps` ≥ 100 среднее, кадры участка, независимая приёмка по разделу 14, ручная игра владельца.
 
 Части C, D, E — параллельно разными исполнителями на непересекающихся файлах; `ilyusha.gd`, `detection_sensor.gd`, `demo_world.gd`, Makefile — интегратор. Логи — `builds/checks/EXT-02/`, кадры — `builds/screenshots/EXT-02/`.
 
@@ -246,7 +246,7 @@ F. Интеграция: `HideSpots` в `LevelGeometry`, набор `tests/hide_
 
 ## 15. Что сдаёт исполнитель
 
-Список новых и изменённых файлов; фактические имена контрактов (раздел 9) с правками C7 в `docs/workflow/README.md`; константы баланса в одном месте (`game/stealth/hide_tuning.gd` или начало `hide_spot.gd`); `tests/hide_spots_test.gd` и строка в Makefile; логи `make test`, `make fps` с версией Godot (4.7.2); кадры участка из игры; известные ограничения. Без Godot или с красным набором — так и писать, PASS не объявлять.
+Список новых и изменённых файлов; фактические имена контрактов (раздел 9) с правками C7 в `docs/workflow/README.md`; константы баланса в одном месте (`game/stealth/hide_tuning.gd` или начало `hide_spot.gd`); наборы `tests/hide_*_test.gd` и строки в Makefile; логи `make test`, `make fps` с версией Godot (4.7.2); кадры участка из игры; известные ограничения. Без Godot или с красным набором — так и писать, PASS не объявлять.
 
 ## 16. Документация Godot (T01–T08 референсов)
 

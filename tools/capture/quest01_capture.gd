@@ -3,7 +3,7 @@ extends SceneTree
 ## Композиция каждого кадра повторяет концепт docs/art/concepts/NN_*.png (камера за Илюшей, Бабка/машина/киоск в кадре).
 ## Кадр 05 и дорога до киоска — настоящая езда «Лады» автопилотом (tests/quest01_driver.gd).
 ## Дополнительно в окне проверяется режим мыши после Esc при открытом диалоге (MOUSE_CHECK).
-## Запуск: tools/run.command --fixed-fps 60 --resolution 1920x1080 --script tests/quest01_capture.gd
+## Запуск: tools/run.command --fixed-fps 60 --resolution 1920x1080 --script tools/capture/quest01_capture.gd
 
 const Layout = preload("res://game/world/layout.gd")
 const Driver = preload("res://tests/quest01_driver.gd")
