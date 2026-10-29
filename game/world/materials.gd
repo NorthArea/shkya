@@ -194,3 +194,81 @@ static func glass() -> StandardMaterial3D:
 		m.roughness = 0.05
 		_cache["glass"] = m
 	return _cache["glass"]
+
+# --- CITY-02 B: дома ---
+
+## Цвет стены дома этой палитры (парапеты, фронтоны, цоколь под тон фасада).
+static func facade_wall(seed: float, low: bool) -> Color:
+	return _palette(seed, low)[0]
+
+## Кирпичный фасад с рельефом кладки (CITY-02 B): красный кирпич, светлый раствор; belts — светлые пояса по
+## перекрытиям, как у кирпичных башен (ART-06, Н11). Окна, свет и витрины — как у facade().
+static func facade_brick(seed: float, low: bool, belts := false) -> ShaderMaterial:
+	var key := "facade_brick_%s_%s_%s" % [seed, low, belts]
+	if not _cache.has(key):
+		var m := facade(seed, low).duplicate() as ShaderMaterial
+		m.set_shader_parameter("brick", 1.0)
+		m.set_shader_parameter("belts", 1.0 if belts else 0.0)
+		m.set_shader_parameter("wall_color", LOW_PALETTES[0][0])
+		m.set_shader_parameter("seam_color", LOW_PALETTES[0][1])
+		m.set_shader_parameter("reveal_color", Color(0.72, 0.70, 0.66))
+		_cache[key] = m
+	return _cache[key]
+
+## Мелкие детали домов одним материалом для MultiMesh (CITY-02 B): цвет экземпляра в sRGB; INSTANCE_CUSTOM:
+## r — узор (0 гладкий, 1 профлист с вертикальными рёбрами, 2 решётка с прутьями, 3 оцинковка),
+## g — шероховатость (0 — 0,85), b — свечение (лампы, светящиеся плафоны).
+const DETAIL_CODE := """
+shader_type spatial;
+varying vec4 tint;
+varying vec3 custom;
+varying vec2 local;
+varying vec2 extent;
+void vertex() {
+	tint = vec4(pow(COLOR.rgb, vec3(2.2)), COLOR.a);
+	custom = INSTANCE_CUSTOM.rgb;
+	// Узор идёт вдоль длинной горизонтальной оси экземпляра (у фасадов вдоль z коробка не повёрнута, а растянута).
+	vec3 e = vec3(length(MODEL_MATRIX[0].xyz), length(MODEL_MATRIX[1].xyz), length(MODEL_MATRIX[2].xyz));
+	bool along_z = e.z > e.x;
+	extent = vec2(along_z ? e.z : e.x, e.y);
+	local = vec2(along_z ? VERTEX.z * e.z : VERTEX.x * e.x, VERTEX.y * e.y);
+}
+void fragment() {
+	vec3 c = tint.rgb;
+	float mode = custom.r;
+	ROUGHNESS = custom.g > 0.0 ? custom.g : 0.85;
+	if (mode > 0.5 && mode < 1.5) {
+		// Профлист: трапеции с шагом 11,5 см.
+		float ph = local.x / 0.115 * 6.2832;
+		NORMAL_MAP = normalize(vec3(0.5 + 0.42 * sin(ph), 0.5, 1.0));
+		c *= 0.9 + 0.1 * cos(ph);
+	} else if (mode > 1.5 && mode < 2.5) {
+		// Решётка: прутья 2,5 см с шагом 12 см, обвязка 4 см; вдали — сплошная тёмная (упрощённый облик).
+		float px = fwidth(local.x);
+		if (px < 0.03) {
+			float bx = abs(fract(local.x / 0.12) - 0.5) * 0.12;
+			float edge = min(extent.x * 0.5 - abs(local.x), extent.y * 0.5 - abs(local.y));
+			if (bx > 0.0125 && edge > 0.04) {
+				discard;
+			}
+		} else {
+			c *= 0.45;
+		}
+		ROUGHNESS = 0.5;
+	} else if (mode > 2.5) {
+		METALLIC = 0.6;
+		ROUGHNESS = 0.45;
+	}
+	ALBEDO = c;
+	EMISSION = c * custom.b;
+}
+"""
+
+static func detail() -> ShaderMaterial:
+	if not _cache.has("detail"):
+		var shader := Shader.new()
+		shader.code = DETAIL_CODE
+		var m := ShaderMaterial.new()
+		m.shader = shader
+		_cache["detail"] = m
+	return _cache["detail"]
