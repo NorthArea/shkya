@@ -272,3 +272,74 @@ static func detail() -> ShaderMaterial:
 		m.shader = shader
 		_cache["detail"] = m
 	return _cache["detail"]
+
+# --- CITY-02 E: среда и панорама ---
+
+## Вал или сугроб из сетки (shaders/snow_bank_mesh): брызги к дороге, корка, срез лопаты — по цвету вершин.
+## roadside 0 — дворовый сугроб без грязной кромки у низа.
+static func bank_snow(roadside := 1.0) -> ShaderMaterial:
+	var key := "bank_snow_%s" % roadside
+	if not _cache.has(key):
+		var m := ShaderMaterial.new()
+		m.shader = load("res://game/world/shaders/snow_bank_mesh.gdshader")
+		m.set_shader_parameter("roadside", roadside)
+		_cache[key] = m
+	return _cache[key]
+
+## Лёд: сосульки и наледь на кромках — гладкий, голубоватый, с бликом.
+static func ice() -> StandardMaterial3D:
+	if not _cache.has("ice"):
+		var m := StandardMaterial3D.new()
+		m.albedo_color = Color(0.72, 0.82, 0.92)
+		m.roughness = 0.08
+		m.metallic_specular = 0.8
+		m.rim_enabled = true
+		m.rim = 0.4
+		_cache["ice"] = m
+	return _cache["ice"]
+
+## Пятна на тротуарах (shaders/ground_patch): наледь, проталины, каша — вид в INSTANCE_CUSTOM.r.
+static func ground_patch() -> ShaderMaterial:
+	if not _cache.has("ground_patch"):
+		var m := ShaderMaterial.new()
+		m.shader = load("res://game/world/shaders/ground_patch.gdshader")
+		_cache["ground_patch"] = m
+	return _cache["ground_patch"]
+
+## Дальние дома панорамы одним MultiMesh (shaders/skyline_block): окна, дымка без тумана сцены.
+static func skyline_block() -> ShaderMaterial:
+	if not _cache.has("skyline_block"):
+		var m := ShaderMaterial.new()
+		m.shader = load("res://game/world/shaders/skyline_block.gdshader")
+		_cache["skyline_block"] = m
+	return _cache["skyline_block"]
+
+## Силуэты города на горизонте (shaders/skyline_far): кольцо-билборд, layer 0 — ближнее, 1 — дальнее.
+static func skyline_far(layer: int) -> ShaderMaterial:
+	var key := "skyline_far_%d" % layer
+	if not _cache.has(key):
+		var m := ShaderMaterial.new()
+		m.shader = load("res://game/world/shaders/skyline_far.gdshader")
+		m.set_shader_parameter("layer", float(layer))
+		_cache[key] = m
+	return _cache[key]
+
+## Огни панорамы (shaders/skyline_lights): заградительные огни с миганием, фонари моста, поток фар.
+static func skyline_lights() -> ShaderMaterial:
+	if not _cache.has("skyline_lights"):
+		var m := ShaderMaterial.new()
+		m.shader = load("res://game/world/shaders/skyline_lights.gdshader")
+		_cache["skyline_lights"] = m
+	return _cache["skyline_lights"]
+
+## Дальние объёмы с запечённой светотенью в цвете вершины (градирни, трубы ТЭЦ, мост): без света и тумана,
+## дымка — в самом цвете (как far()).
+static func far_vertex() -> StandardMaterial3D:
+	if not _cache.has("far_vertex"):
+		var m := StandardMaterial3D.new()
+		m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+		m.disable_fog = true
+		m.vertex_color_use_as_albedo = true
+		m.vertex_color_is_srgb = true
+		_cache["far_vertex"] = m
+	return _cache["far_vertex"]
