@@ -37,6 +37,7 @@ test:
 	$(call godot_test,coins_test,60,COINS)
 	$(call godot_test,punch_test,60,PUNCH)
 	$(call godot_test,knock_test,60,KNOCK)
+	$(call godot_test,char3d_test,60,CHAR3D)
 capture:
 	./tools/run.command --fixed-fps 60 --resolution 1920x1080 --script tools/capture.gd
 pack:
