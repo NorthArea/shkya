@@ -18,6 +18,11 @@ extends SceneTree
 ## запрещённых слов и без дублей; RESIDENT_LINES = PASS; pick_line детерминирован и не повторяет реплику подряд.
 ## Касание «Лады» — пузырь HIT; Илюша вплотную — PASS; за прогон города стоящие бубнят IDLE тихим пузырём;
 ## у каждого жителя реплики подряд не повторяются и идут не чаще раза в 15 с (кроме HIT, который перебивает).
+## LIFE-01: жители живут по цепочкам целей (длинный прогон — tests/life01_test.gd). Здесь: 18–22 жителя, скорость
+## 1,1–1,9 м/с (дети бегают, дворник не спешит); стартовые отрезки — по тротуарам и газонам LIFE_GROUNDS; прогон —
+## каждый проходит стартовый отрезок (или уже на месте первой цели) без застреваний, не по проезжей части вне переходов
+## и не в коробках; второй в паре держится по следу первого; курящий курит 40–60 с и уходит к следующей цели; кто-то
+## садится в троллейбус у A, выходит на B у передней двери, переходит улицу, заходит в «ГАСТРОНОМ» и позже выходит.
 ##
 ## Headless: tools/run.command --headless --fixed-fps 60 --script tests/residents_test.gd
 
@@ -31,6 +36,7 @@ const CLEARANCE := 1.0        # м от оси маршрута до короб�
 const POST_CLEARANCE := 8.0   # м до постов стелса
 const TEST_PATH_CLEARANCE := 2.0
 const STALL_LIMIT := 0.5      # с без продвижения в состоянии walk
+const START_LEG_SECONDS := 80.0   # LIFE-01: за столько каждый проходит стартовый отрезок
 const TRANSIT_STATES: Array[StringName] = [&"board", &"alight", &"transit"]   # пассажир у дверей и на переходе — не по маршруту
 const FORBIDDEN := ["мобилизац", "бусификац"]
 
@@ -82,6 +88,8 @@ func _run() -> void:
 		elif surface[1] == "sidewalk" or surface[1] == "yard_road":
 			_walkable.append([surface[0], rect])
 	_walkable.append(["ENTRANCE_AREA", Layout.RESIDENT_ENTRANCE_AREA])
+	for g in Layout.LIFE_GROUNDS:
+		_walkable.append(["LIFE_GROUND", g])   # LIFE-01: газоны и дворы
 	_part_roster()
 	_part_routes()
 	_part_layers()
@@ -102,7 +110,7 @@ func _run() -> void:
 
 func _part_roster() -> void:
 	print("--- roster ---")
-	check(residents.size() >= 12 and residents.size() <= 16, "12–16 residents (%d)" % residents.size())
+	check(residents.size() >= 18 and residents.size() <= 22, "18–22 residents (%d)" % residents.size())
 	var looks := {}
 	for look in Layout.RESIDENT_LOOKS:
 		looks[look] = true
@@ -117,7 +125,7 @@ func _part_roster() -> void:
 		check(ResidentsScript.character_for(look).begins_with("resident_"), "look %s has resident art" % look)
 	check(Layout.RESIDENT_ROUTES.size() == residents.size() and Layout.RESIDENT_PAUSES.size() == residents.size() and Layout.RESIDENT_STARTS.size() == residents.size() and Layout.RESIDENT_LOOKS.size() == residents.size(), "one route, pause list, start and look per resident")
 	for r in residents:
-		check(r.speed >= 1.2 and r.speed <= 1.6 and r.speed == Resident.SPEEDS[r.index], "%s: speed %.2f m/s (1.2–1.6, constant by index)" % [r.name, r.speed])
+		check(r.speed >= 1.1 and r.speed <= 1.9 and r.speed == Resident.SPEEDS[r.index], "%s: speed %.2f m/s (1.1–1.9, constant by index)" % [r.name, r.speed])
 		check(r.pause_seconds >= 2.0 and r.pause_seconds <= 5.0 and r.pause_seconds == Resident.PAUSES[r.index], "%s: pause %.1f s (2–5, constant by index)" % [r.name, r.pause_seconds])
 		if r.leader != null:
 			check(r.speed == r.leader.speed, "%s: same pace as its pair leader %s" % [r.name, r.leader.name])
@@ -161,7 +169,7 @@ func _part_routes() -> void:
 			min_test_path = minf(min_test_path, minf(_polyline_distance(Layout.ROUTE_WALK, q), _polyline_distance(Layout.ROUTE_DRIVE, q)))
 			if _rect_distance(kiosk, q) < 1.0:
 				in_kiosk = true
-		check(off_walk.is_empty(), "%s: every point on Walk_*/Yard_Drive/entrance area%s" % [label, "" if off_walk.is_empty() else " — off at " + ", ".join(off_walk.slice(0, 4))])
+		check(off_walk.is_empty(), "%s: every point on Walk_*/Yard_Drive/entrance area/LIFE_GROUNDS%s" % [label, "" if off_walk.is_empty() else " — off at " + ", ".join(off_walk.slice(0, 4))])
 		check(on_road.is_empty(), "%s: body never on a road surface%s" % [label, "" if on_road.is_empty() else " — %s" % [on_road.keys()]])
 		check(min_solid >= CLEARANCE, "%s: ≥ %.1f m from every solid (nearest %s, %.2f m)" % [label, CLEARANCE, min_solid_name, min_solid])
 		check(not in_kiosk, "%s: outside KIOSK_ZONE (+1 m)" % label)
@@ -223,59 +231,56 @@ func _find_spring_arm(node: Node) -> SpringArm3D:
 # =====================================================================================
 
 func _part_walk() -> void:
-	print("--- walk the loops ---")
+	print("--- walk the start legs (LIFE-01) ---")
 	world.player.place(Layout.SPAWN, Layout.SPAWN_YAW)
 	residents_node.reset_positions()
 	var lada_at: Vector3 = world.car.global_position
 	var player_at: Vector3 = world.player.global_position
-	var limit := 0.0
-	for r in residents:
-		var smoke := Resident.SMOKE_SECONDS.y if r.smoke_point >= 0 else 0.0
-		limit = maxf(limit, (r.loop_length() / r.speed + r.pause_points.size() * r.pause_seconds + smoke) * 1.3 + 10.0)
 	var dt := 1.0 / Engine.physics_ticks_per_second
 	var stall := {}
 	var worst_stall := {}
 	var last := {}
 	var road_hits := {}
 	var solid_hits := {}
+	var legs := {}
 	for r in residents:
 		stall[r] = 0.0
 		worst_stall[r] = 0.0
-		last[r] = 0.0
-	var frames := int(limit / dt)
+		last[r] = Vector3(r.global_position)
+		legs[r] = Vector2(r.start_leg[0].x, r.start_leg[0].z).distance_to(Vector2(r.start_leg[1].x, r.start_leg[1].z))
 	var done_at := -1.0
-	for frame in frames:
+	for frame in int(START_LEG_SECONDS / dt):
 		await physics_frame
 		var all_done := true
 		for r in residents:
-			if r.state == &"walk":
-				stall[r] = stall[r] + dt if r.distance_walked <= last[r] + 0.0001 else 0.0
+			var here := Vector3(r.global_position.x, 0, r.global_position.z)
+			if r.state == &"walk" and not r.hidden:
+				stall[r] = stall[r] + dt if here.distance_to(last[r]) < 0.0001 else 0.0
 				worst_stall[r] = maxf(worst_stall[r], stall[r])
 			else:
 				stall[r] = 0.0
-			last[r] = r.distance_walked
-			if not r.rider:
-				all_done = all_done and r.distance_walked >= 0.95 * r.loop_length()
-			if frame % 6 == 0 and not r.hidden and not r.state in TRANSIT_STATES:
+			last[r] = here
+			var lead: Resident = r.leader if r.leader else r
+			all_done = all_done and (lead.distance_walked >= 0.95 * legs[lead] or not lead.visits.is_empty())
+			if frame % 6 == 0 and not r.hidden and not r.state in TRANSIT_STATES and not r.on_crossing():
 				var q := Vector2(r.global_position.x, r.global_position.z)
 				for road in _roads:
 					if _rect_distance(road[1], q) < Resident.BODY_RADIUS:
 						road_hits[r.name] = "%s on %s at (%.1f, %.1f)" % [r.name, road[0], q.x, q.y]
-				for solid in _solids:
-					if _rect_distance(Rect2(solid[1] - Vector2(solid[2].x, solid[2].z) * 0.5, Vector2(solid[2].x, solid[2].z)), q) < Resident.BODY_RADIUS:
-						solid_hits[r.name] = "%s in %s at (%.1f, %.1f)" % [r.name, solid[0], q.x, q.y]
-		if all_done:
+				if r.global_position.y < 0.3 and not r.on_slide():
+					for solid in _solids:
+						if _rect_distance(Rect2(solid[1] - Vector2(solid[2].x, solid[2].z) * 0.5, Vector2(solid[2].x, solid[2].z)), q) < Resident.BODY_RADIUS:
+							solid_hits[r.name] = "%s in %s at (%.1f, %.1f)" % [r.name, solid[0], q.x, q.y]
+		if all_done and done_at < 0.0:
 			done_at = frame * dt
-			break
 	for r in residents:
-		if r.rider:
-			continue   # пассажир ждёт троллейбус, а не ходит по кругу — _part_city
-		var share: float = r.distance_walked / r.loop_length()
-		check(share >= 0.95, "%s walked %.0f of %.0f m (%.0f %%, ≥ 95 %%)" % [r.name, r.distance_walked, r.loop_length(), share * 100.0])
+		var lead: Resident = r.leader if r.leader else r
+		check(lead.distance_walked >= 0.95 * legs[lead] or not lead.visits.is_empty(), "%s walked its start leg (%.0f of %.0f m) or reached its first goal (%s)" % [r.name, lead.distance_walked, legs[lead], lead.visits])
 		check(worst_stall[r] <= STALL_LIMIT, "%s: never stuck while walking (longest stall %.2f s)" % [r.name, worst_stall[r]])
-		check(r.stare_count == 0 and r.lada_bumps == 0 and r.turnarounds == 0, "%s: undisturbed lap (stares %d, Lada bumps %d, turnarounds %d)" % [r.name, r.stare_count, r.lada_bumps, r.turnarounds])
-	check(done_at > 0.0, "all residents covered 95 %% of their loops in %.0f s (limit %.0f s)" % [done_at if done_at > 0.0 else frames * dt, limit])
-	check(road_hits.is_empty(), "nobody on a road surface during the run%s" % ("" if road_hits.is_empty() else " — " + ", ".join(road_hits.values())))
+		check(r.stare_count == 0 and r.lada_bumps == 0 and r.turnarounds == 0, "%s: undisturbed (stares %d, Lada bumps %d, turnarounds %d)" % [r.name, r.stare_count, r.lada_bumps, r.turnarounds])
+		check(r.leader != null or r.spot_id != &"", "%s has a goal (%s)" % [r.name, r.spot_id])
+	check(done_at > 0.0, "all residents covered their start legs in %.0f s (limit %.0f s)" % [done_at if done_at > 0.0 else START_LEG_SECONDS, START_LEG_SECONDS])
+	check(road_hits.is_empty(), "nobody on a road surface outside crossings%s" % ("" if road_hits.is_empty() else " — " + ", ".join(road_hits.values())))
 	check(solid_hits.is_empty(), "nobody inside a Layout solid during the run%s" % ("" if solid_hits.is_empty() else " — " + ", ".join(solid_hits.values())))
 	check(_flat(world.car.global_position).distance_to(_flat(lada_at)) < 0.05, "parked Lada untouched")
 	check(_flat(world.player.global_position).distance_to(_flat(player_at)) < 0.05, "Ilyusha untouched")
@@ -326,7 +331,7 @@ func _part_block() -> void:
 	world.player.place(Layout.SPAWN, Layout.SPAWN_YAW)
 	var r: Resident = residents[7]   # улица C, южный тротуар
 	await drv.frames(120)
-	var goal: Vector3 = Layout.RESIDENT_ROUTES[7][r.target_point]
+	var goal: Vector3 = r.route[r.target_point]   # LIFE-01: текущий отрезок пути
 	var here := Vector3(r.global_position.x, 0.0, r.global_position.z)
 	var dir := (Vector3(goal.x, 0.0, goal.z) - here).normalized()
 	world.player.place(here + dir * 1.0, 0.0)
@@ -366,7 +371,7 @@ func _part_lada() -> void:
 	check(r.lada_bumps == 1, "%s stepped aside once (%d)" % [r.name, r.lada_bumps])
 	check(r.bubble_kind == &"hit" and r.bubble_visible() and QuestLines.RESIDENT_LINES_HIT.has(r.bubble_text), "%s says a HIT line when the Lada touches ('%s', %s)" % [r.name, r.bubble_text, r.bubble_kind])
 	check(not r._lada_touches(r.global_position, 0.0), "%s clear of the Lada" % r.name)
-	var off := _polyline_distance(Layout.RESIDENT_ROUTES[6], Vector2(r.global_position.x, r.global_position.z), true)
+	var off := _polyline_distance(r.route, Vector2(r.global_position.x, r.global_position.z))   # LIFE-01: текущий отрезок
 	check(off < 0.01, "%s stands on its route (%.3f m off)" % [r.name, off])
 	var jump := _flat(r.global_position).distance_to(_flat(at))
 	check(jump <= Lada.SIZE.z * 0.5 + Resident.BODY_RADIUS + Resident.LADA_CLEAR + 0.6, "%s moved to the nearest free point (%.2f m)" % [r.name, jump])
@@ -397,7 +402,10 @@ func _part_reset() -> void:
 	for r in residents:
 		var start: Vector3 = Layout.RESIDENT_ROUTES[r.index][Layout.RESIDENT_STARTS[r.index]]
 		worst = maxf(worst, _flat(r.global_position).distance_to(_flat(start)))
-		var start_state := &"smoke" if r.smoke_point == r.start_point else &"walk"
+		# LIFE-01: курящий, стоящий на месте первой цели, сразу курит; остальные идут стартовым отрезком.
+		var lead: Resident = r.leader if r.leader else r
+		var at_goal: bool = lead.spot_id != &"" and Vector2(lead.global_position.x, lead.global_position.z).distance_to(Vector2(lead.life.spots[lead.spot_id].pos.x, lead.life.spots[lead.spot_id].pos.z)) < 0.01
+		var start_state := &"smoke" if at_goal and lead.life.spots[lead.spot_id].kind == &"smoke" else &"walk"
 		states_ok = states_ok and r.state == start_state and r.direction == 1 and r.distance_walked == 0.0 and not r.hidden and r.visible
 	check(worst < 0.001, "reset_positions(): everyone on their start (worst %.4f m)" % worst)
 	check(states_ok, "reset_positions(): walking forward (smokers smoking), visible, counters cleared")
@@ -497,7 +505,7 @@ func _check_bubble_logs(where: String) -> void:
 # =====================================================================================
 
 func _part_city() -> void:
-	print("--- city run: pairs, smokers, trolleybus ---")
+	print("--- city run: pairs, smokers, trolleybus (LIFE-01) ---")
 	var traffic: Node = world.get_node_or_null("LevelGeometry/Traffic")
 	if not check(traffic != null and residents_node.trolley == traffic.trolleybus, "residents listen to trolleybus 13"):
 		return
@@ -507,7 +515,6 @@ func _part_city() -> void:
 	traffic.reset_positions()
 	residents_node.reset_positions()
 	await drv.frames(1)
-	var rider: Resident = residents[ResidentsScript.RIDER]
 	var clock := [0.0]   # в массиве: лямбды захватывают локальные переменные по значению
 	var dt := 1.0 / Engine.physics_ticks_per_second
 	var dwells: Array = []   # [остановка, открыты, закрыты]
@@ -517,109 +524,119 @@ func _part_city() -> void:
 			dwells[-1][2] = clock[0]
 	bus.doors_opened.connect(on_open)
 	bus.doors_closed.connect(on_close)
-	# пары
-	var pair_dev := {}
+	# пары: второй — по следу первого, не дальше FOLLOW_GAP + 0,6 м и не ближе 0,3 м, пока оба идут
+	var pair_range := {}
 	for f in ResidentsScript.PAIRS:
-		pair_dev[f] = 0.0
-	# курящие: [время ухода с перекура, вернулся и снова курит, поворотов за перекур, время начала перекура]
+		pair_range[f] = Vector2(INF, 0.0)
+	# курящие: [начало перекура, ушёл, поворотов, перекуры, цель после]
 	var smoke := {}
 	for i in ResidentsScript.SMOKERS:
 		var r: Resident = residents[i]
-		smoke[i] = {"start": 0.0 if r.state == &"smoke" else -1.0, "left": -1.0, "back": -1.0, "turns": 0, "yaw": r.facing_yaw, "spells": []}
-	# пассажир
+		smoke[i] = {"start": 0.0 if r.state == &"smoke" else -1.0, "left": -1.0, "turns": 0, "yaw": r.facing_yaw, "spells": [], "next": &""}
+	# пассажир — первый, кто сел в троллейбус
+	var rider: Resident = null
 	var alight_b_at := Vector3.INF
 	var alight_b_door := Vector3.INF
 	var in_zone_with_body := false
-	var on_road_with_body_outside_crossing := false
-	var shop_at := -1.0
-	var shop_pos := Vector3.INF
-	var board_hidden_in_dwell := false
-	var alight_a_at := Vector3.INF
-	var alight_a_door := Vector3.INF
-	var events_seen := 0
-	var kiosk_square := Layout.KIOSK_SQUARE
-	var zone := Rect2(Layout.KIOSK_ZONE.position.x, Layout.KIOSK_ZONE.position.z, Layout.KIOSK_ZONE.size.x, Layout.KIOSK_ZONE.size.z)
 	var in_square := false
 	var near_post := INF
-	var crossed_cars_stopped := 0
-	for frame in int(320.0 / dt):
+	var board_hidden_in_dwell := false
+	var shop_at := -1.0
+	var shop_pos := Vector3.INF
+	var out_at := -1.0
+	var events_seen := 0
+	var seen_events: Array = []   # [время теста, вид, остановка]
+	var zone := Rect2(Layout.KIOSK_ZONE.position.x, Layout.KIOSK_ZONE.position.z, Layout.KIOSK_ZONE.size.x, Layout.KIOSK_ZONE.size.z)
+	for frame in int(400.0 / dt):
 		await physics_frame
 		clock[0] += dt
 		var t: float = clock[0]
 		for f in ResidentsScript.PAIRS:
 			var second: Resident = residents[f]
 			var first: Resident = residents[ResidentsScript.PAIRS[f]]
-			var d := _flat(second.global_position).distance_to(_flat(first.global_position))
-			pair_dev[f] = maxf(pair_dev[f], absf(d - Vector2(second.follow_offset.x, second.follow_offset.z).length()))
+			# Не у цели и не у двери, из которой первый вышел (там второй выходит следом, вплотную).
+			var lead_spot: Vector3 = residents_node.life.spots[first.spot_id].pos if first.spot_id != &"" else Vector3.INF
+			var away: bool = first._trail.size() > 1 and _flat(first.global_position).distance_to(_flat(first._trail[0])) > 3.0 \
+				and _flat(first.global_position).distance_to(_flat(lead_spot)) > 3.0
+			if first.state == &"walk" and not first.hidden and away:
+				var d := _flat(second.global_position).distance_to(_flat(first.global_position))
+				pair_range[f] = Vector2(minf(pair_range[f].x, d), maxf(pair_range[f].y, d))
 		for i in smoke:
 			var r: Resident = residents[i]
 			var rec: Dictionary = smoke[i]
 			if r.state == &"smoke":
 				if rec["start"] < 0.0:
 					rec["start"] = t
-				if absf(angle_difference(r.facing_yaw, rec["yaw"])) > 0.3:
+				if rec["left"] < 0.0 and absf(angle_difference(r.facing_yaw, rec["yaw"])) > 0.3:
 					rec["turns"] += 1
 				rec["yaw"] = r.facing_yaw
-				if rec["left"] >= 0.0 and rec["back"] < 0.0 and _flat(r.global_position).distance_to(_flat(r.route[0])) < 0.01:
-					rec["back"] = t
 			elif rec["start"] >= 0.0 and rec["left"] < 0.0 and r.state == &"walk":
 				rec["left"] = t
 				rec["spells"].append(t - rec["start"])
-		# пассажир
+				rec["next"] = r.spot_id
+		if rider == null:
+			for r in residents:
+				if not r.events.filter(func(e): return e[1] == &"board").is_empty():
+					rider = r
+					events_seen = 0
+					# Сел, пока двери открыты (или в тот же шаг, когда закрылись: запрыгнул), и исчез.
+					board_hidden_in_dwell = r.hidden and not dwells.is_empty() and dwells[-1][0] == 0 \
+						and (dwells[-1][2] < 0.0 or t - dwells[-1][2] < 0.05)
+					break
+		if rider == null:
+			continue
 		while events_seen < rider.events.size():
 			var e: Array = rider.events[events_seen]
 			events_seen += 1
+			seen_events.append([t, e[1], e[2]])
 			if e[1] == &"alight" and e[2] == 1:
 				alight_b_at = rider.global_position
 				alight_b_door = Resident.door_point(bus, 0)
-			elif e[1] == &"alight" and e[2] == 0:
-				alight_a_at = rider.global_position
-				alight_a_door = Resident.door_point(bus, 2)
-			elif e[1] == &"board" and not dwells.is_empty() and dwells[-1][2] < 0.0 and rider.hidden:
-				board_hidden_in_dwell = true
 		if not rider.hidden:
 			var q := _flat(rider.global_position)
 			if rider.body.collision_layer != 0 and _rect_distance(zone, q) < Resident.BODY_RADIUS:
 				in_zone_with_body = true
-			if kiosk_square.has_point(q):
+			if Layout.KIOSK_SQUARE.has_point(q):
 				in_square = true
 			for post in [Layout.OFFICER_POST, Layout.OFFICER_POST_AFTER, Layout.OFFICER2_POST, Layout.STEALTH_CHECKPOINT]:
 				near_post = minf(near_post, q.distance_to(_flat(post)))
-		if rider.state == &"shop" and shop_at < 0.0:
+		if shop_at < 0.0 and rider.state == &"inside" and rider.spot_id == &"gastro":
 			shop_at = t
 			shop_pos = rider.global_position
-		if alight_a_at != Vector3.INF and rider.state == &"wait_trolley":
+		if shop_at > 0.0 and out_at < 0.0 and not rider.hidden:
+			out_at = t
+		if out_at > 0.0 and t > out_at + 3.0 and smoke.values().all(func(rec): return rec["left"] > 0.0):
 			break
 	bus.doors_opened.disconnect(on_open)
 	bus.doors_closed.disconnect(on_close)
 	print("INFO: city run %.0f s, dwells %s" % [clock[0], dwells.map(func(d): return "[%d %.1f–%.1f]" % [d[0], d[1], d[2]])])
-	print("INFO: rider events %s" % [rider.events.map(func(e): return "%s@%d %.1f" % [e[1], e[2], e[0]])])
 	for f in ResidentsScript.PAIRS:
-		check(pair_dev[f] < 0.01, "%s keeps %.2f m from %s all the run (max deviation %.3f m)" % [residents[f].name, Vector2(residents[f].follow_offset.x, residents[f].follow_offset.z).length(), residents[ResidentsScript.PAIRS[f]].name, pair_dev[f]])
-		var off := _polyline_distance(residents[f].route, _flat(residents[f].global_position), true)
-		check(off < 0.01, "%s stays on its (shifted) route (%.3f m off)" % [residents[f].name, off])
+		var second: Resident = residents[f]
+		check(pair_range[f].x >= 0.3 and pair_range[f].y <= ResidentsScript.FOLLOW_GAP + 0.6, "%s follows %s at %.2f–%.2f m while walking (0.3–%.1f)" % [second.name, second.leader.name, pair_range[f].x, pair_range[f].y, ResidentsScript.FOLLOW_GAP + 0.6])
 	for i in smoke:
 		var rec: Dictionary = smoke[i]
 		var spell: float = rec["spells"][0] if not rec["spells"].is_empty() else -1.0
 		check(spell >= Resident.SMOKE_SECONDS.x - 0.05 and spell <= Resident.SMOKE_SECONDS.y + 0.05, "%s smoked %.1f s at the entrance and left (40–60)" % [residents[i].name, spell])
 		check(rec["turns"] >= 3, "%s turned %d times while smoking (≥ 3)" % [residents[i].name, rec["turns"]])
-		check(rec["back"] - rec["left"] >= 10.0, "%s came back to the smoking spot (%.0f s after leaving at %.0f s)" % [residents[i].name, rec["back"] - rec["left"], rec["left"]])
+		var next_kind = residents_node.life.spots.get(rec["next"], {}).get("kind", &"")
+		check(rec["next"] != &"" and next_kind != &"smoke", "%s went on to its next goal after the smoke (%s)" % [residents[i].name, rec["next"]])
+	if not check(rider != null, "someone boarded trolleybus 13 at stop A"):
+		return
+	print("INFO: rider %s events %s" % [rider.name, rider.events.map(func(e): return "%s@%d %.1f" % [e[1], e[2], e[0]])])
 	var per_dwell := {}
-	for e in rider.events:
+	for e in seen_events:
 		var key := "%d@%d" % [e[2], _dwell_of(dwells, e[0], e[2])]
 		per_dwell[key + String(e[1])] = per_dwell.get(key + String(e[1]), 0) + 1
 	check(per_dwell.values().all(func(n): return n <= 1), "at most one boarding and one alighting per stop per dwell (%s)" % [per_dwell])
-	var boarded := rider.events.filter(func(e): return e[1] == &"board" and e[2] == 0)
-	check(not boarded.is_empty() and board_hidden_in_dwell, "rider waiting at stop A boarded and vanished while the doors were open (%d boardings)" % boarded.size())
-	check(alight_b_at != Vector3.INF and _flat(alight_b_at).distance_to(_flat(alight_b_door)) < 0.05, "a 'new' passenger stepped out of the front door at stop B (%.2f m from the door)" % (_flat(alight_b_at).distance_to(_flat(alight_b_door)) if alight_b_at != Vector3.INF else INF))
+	check(board_hidden_in_dwell, "%s boarded at stop A and vanished while the doors were open" % rider.name)
+	check(alight_b_at != Vector3.INF and _flat(alight_b_at).distance_to(_flat(alight_b_door)) < 0.05, "%s stepped out of the front door at stop B (%.2f m from the door)" % [rider.name, _flat(alight_b_at).distance_to(_flat(alight_b_door)) if alight_b_at != Vector3.INF else INF])
 	check(not in_zone_with_body, "passenger never inside KIOSK_ZONE with a live body")
 	check(not in_square, "passenger never on KIOSK_SQUARE")
 	check(near_post >= 8.0, "passenger ≥ 8 m from stealth posts and checkpoint (%.1f m)" % near_post)
-	var shop: Vector3 = Layout.RESIDENT_RIDER_B_PATH[-1]
-	check(shop_at > 0.0 and _flat(shop_pos).distance_to(_flat(shop)) < 0.05, "passenger crossed street B and went into the ГАСТРОНОМ (%.0f s)" % shop_at)
-	check(alight_a_at != Vector3.INF and _flat(alight_a_at).distance_to(_flat(alight_a_door)) < 0.05, "next time at stop A the passenger stepped out of the rear door")
-	check(rider.state == &"wait_trolley" and _flat(rider.global_position).distance_to(_flat(rider.route[ResidentsScript.RIDER_WAIT_POINT])) < 0.01, "…and walked back to wait at the pavilion (%s)" % rider.state)
-	# Бубнёж: стоящие (перекур, ожидание троллейбуса, пауза) говорят IDLE тихим пузырём.
+	var gastro: Vector3 = residents_node.life.spots[&"gastro"].pos
+	check(shop_at > 0.0 and _flat(shop_pos).distance_to(_flat(gastro)) < 0.05, "passenger crossed street B and went into the ГАСТРОНОМ (%.0f s)" % shop_at)
+	check(out_at > shop_at and rider.spot_id != &"gastro", "…came out later and went on to %s (%.0f s)" % [rider.spot_id, out_at])
+	# Бубнёж: стоящие (перекур, ожидание троллейбуса, занятие) говорят IDLE тихим пузырём.
 	var idle_said := []
 	var idle_moving := []
 	for r in residents:

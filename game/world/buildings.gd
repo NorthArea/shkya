@@ -50,6 +50,9 @@ const ENTRANCE_SIDE := {"H1_South": -1.0, "H2_West": 1.0, "H3_North": 1.0, "H4_S
 const PANEL_PATTERNS := [[1, 2, 7, 8], [1, 2, 3, 7, 8, 9], [0, 1, 8, 9], [2, 3, 7, 8], [1, 2, 6, 7, 8]]
 const LOW_PATTERNS := [[2, 3, 7], [1, 2, 7, 8], [3, 4, 8]]
 
+## LIFE-01: точки дверей подъездов на стене (x, 0, z), которые построил _entrance_kit — тест сверяет с ними двери жителей.
+static var door_log: Array[Vector3] = []
+
 const NEAR_CELL := 30.0    # клетка ближних пакетов, м (меньше узлов и draw call)
 const NEAR_RANGE := 60.0   # дальше — мелочь скрыта (C9: LOD по расстоянию)
 
@@ -409,6 +412,7 @@ func _entrance_kit(h: Dictionary, f: Dictionary, u: float, seed: int) -> void:
 	var long_x: bool = f.long_x
 	var wall: float = f.wall
 	var side: float = f.side
+	door_log.append(Vector3(u, 0.0, wall) if long_x else Vector3(wall, 0.0, u))   # LIFE-01: сверка Layout.LIFE_SPOTS с дверями
 	var basis := _face_basis(long_x, side)
 	_put("paint", _box_xf(Vector3(1.6, 2.4, 0.03), u, 1.2, wall + side * 0.015, long_x), Color(0.09, 0.08, 0.08))
 	_put("paint", _box_xf(Vector3(1.25, 2.15, 0.05), u, 1.075, wall + side * 0.04, long_x), DOOR_COLORS[int(_rand(seed, 1) * DOOR_COLORS.size()) % DOOR_COLORS.size()], Color(3, 0, 0))
