@@ -29,7 +29,16 @@ const SILHOUETTES := {
 	&"tourist": ["vendor", 2.0],
 	&"kid": ["vendor", 2.0],
 	&"kid2": ["vendor", 2.0],
+	# PEOPLE-02 c2: остальные бабки ролика «…не наорала бабка» (рост при 2,0 м: собачка 1,65, колпак 1,70, бант 1,58,
+	# тюрбан 1,72)
+	&"dog": ["babka", 2.0],      # собачка на поводке — часть облика (на земле у ноги)
+	&"kolpak": ["babka", 2.0],
+	&"bow": ["babka", 2.0],
+	&"turban": ["babka", 2.0],
 }
+
+## Бабки ролика ШКЯ (PEOPLE-02) — голос бабки: все реплики Resident; остальные — только QuestLines.RESIDENT_LINES_ANYONE.
+const BABKA_LOOKS: Array[StringName] = [&"babka", &"woman", &"shuba", &"beret", &"violet", &"dog", &"kolpak", &"bow", &"turban"]
 
 ## Пары: второй → первый. Маршрут второго — маршрут первого со сдвигом (Layout, жители 8 и 9).
 const PAIRS := {8: 6, 9: 7}
@@ -61,6 +70,7 @@ func _ready() -> void:
 		resident.setup(i, Layout.RESIDENT_ROUTES[i], Layout.RESIDENT_PAUSES[i], Layout.RESIDENT_STARTS[i])
 		resident.character = character_for(look)
 		resident.height_m = SILHOUETTES[look][1]
+		resident.babka_voice = BABKA_LOOKS.has(look)
 		resident.tint = Color(1.0, 1.0, 1.0)
 		resident.player = player
 		resident.lada = lada
@@ -83,7 +93,7 @@ func _ready() -> void:
 	if trolley:
 		trolley.doors_opened.connect(_on_doors_opened)
 		trolley.doors_closed.connect(_on_doors_closed)
-	for line in QuestLines.RESIDENT_LINES:
+	for line in QuestLines.RESIDENT_LINES_HIT + QuestLines.RESIDENT_LINES_PASS + QuestLines.RESIDENT_LINES_IDLE:
 		Resident.bubble_texture(line)   # подложки пузырей — при загрузке, не в момент первой реплики
 	_connect_sound()
 	var rig: Node = world.get_node_or_null("CameraRig") if world else null

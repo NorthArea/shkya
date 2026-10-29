@@ -15,9 +15,14 @@ extends "res://game/npc/npc.gd"
 ## касается пары — «Лада», Илюша, остановки, — решает первый), курящий (smoke_point: стоит SMOKE_SECONDS, время от
 ## времени поворачивается, потом уходит по маршруту и возвращается), пассажир (rider: ждёт троллейбус у wait_point, по
 ## doors_opened идёт к двери и исчезает, на другой остановке выходит из двери — Layout.RESIDENT_RIDER_B_PATH).
-## Реакции: гудок (Residents → glance_at) — остановиться и посмотреть GLANCE_SECONDS; «Лада» с водителем ближе
-## LADA_REACT_DISTANCE — пузырь-реплика QuestLines.RESIDENT_LINES на BUBBLE_SECONDS над головой (как пузыри квеста),
-## не чаще BUBBLE_COOLDOWN, и взгляд на неё. Случайности — только свой RandomNumberGenerator с seed SEED + индекс.
+## Реакции: гудок (Residents → glance_at) — остановиться и посмотреть GLANCE_SECONDS. Пузыри-реплики на BUBBLE_SECONDS
+## над головой (как пузыри квеста), три набора QuestLines (решение владельца 29.10): RESIDENT_LINES_HIT — «Лада» задела
+## (_dodge_lada); RESIDENT_LINES_PASS — «Лада» с водителем ближе LADA_REACT_DISTANCE (и взгляд на неё) или Илюша ближе
+## PASS_PLAYER_DISTANCE; RESIDENT_LINES_IDLE — тихий пузырь (меньше и бледнее) стоящего (IDLE_STATES) раз в IDLE_SECONDS.
+## Не чаще BUBBLE_COOLDOWN на жителя; только HIT перебивает PASS/IDLE (сам — не чаще раза в BUBBLE_COOLDOWN). Реплика —
+## pick_line: hash(SEED, индекс, счётчик реплик), без повтора подряд у жителя; не бабка (babka_voice = false) — только
+## реплики без возраста и рода (QuestLines.RESIDENT_LINES_ANYONE). Случайности — только свой
+## RandomNumberGenerator с seed SEED + индекс (реплики его не трогают).
 
 const DialogPanelScript = preload("res://game/ui/dialog_panel.gd")
 const Layout = preload("res://game/world/layout.gd")
@@ -43,7 +48,12 @@ const GLANCE_SECONDS := 2.0                      # оглянуться на г�
 const HORN_RADIUS := 20.0
 const LADA_REACT_DISTANCE := 5.0
 const BUBBLE_SECONDS := 2.0
-const BUBBLE_COOLDOWN := 20.0
+const BUBBLE_COOLDOWN := 15.0
+const PASS_PLAYER_DISTANCE := 1.5                # Илюша вплотную — пузырь PASS
+const IDLE_SECONDS := Vector2(25.0, 45.0)        # бубнёж стоящего — раз в столько
+const IDLE_STATES: Array[StringName] = [&"pause", &"smoke", &"wait_trolley"]
+const IDLE_SCALE := 0.8                          # тихий пузырь: меньше
+const IDLE_ALPHA := 0.75                         # и бледнее
 const BUBBLE_TIP_Y := 2.1                        # кончик хвостика — над шапкой (рост жителей 1,35–1,83 м)
 const STOP_CATCH_DISTANCE := 8.0                 # пассажир ближе к месту ожидания — успевает на троллейбус
 const BOARD_SPEED_FACTOR := 1.3                  # к двери — быстрым шагом
@@ -96,17 +106,23 @@ var rider := false
 var wait_point := -1               # точка маршрута, где пассажир ждёт троллейбус
 var trolley: Node3D                # Trolleybus (может не быть — тогда ожидание = обычная пауза)
 var rng := RandomNumberGenerator.new()
+var babka_voice := true            # false — мужик или пацан: реплики только из QuestLines.RESIDENT_LINES_ANYONE
 var hidden := false                # в троллейбусе или в магазине
 var glance_count := 0
 var bubble_times: Array[float] = []
 var bubble_text := ""
+var bubble_kind: StringName = &""  # &"hit", &"pass", &"idle" — последний пузырь
+var bubble_log: Array = []         # [время, вид, текст, состояние] — каждый пузырь
 var events: Array = []             # пассажир: [время, &"board" / &"alight", остановка]
 var clock := 0.0
 var _bubble_left := 0.0
 var _bubble_ready_at := 0.0
 var _bubble_back: Sprite3D
 var _bubble_label: Label3D
-var _last_line := -1
+var _line_count := 0
+var _last_text := ""
+var _hit_ready_at := 0.0
+var _idle_at := 0.0
 var _turn_left := 0.0
 var _transit: Array = []
 var _transit_i := 0
@@ -125,6 +141,7 @@ func setup(resident_index: int, points: Array, pauses: Array, start: int) -> voi
 	pause_seconds = PAUSES[index % PAUSES.size()]
 	interaction_id = StringName("resident_%d" % index)   # только для фазы дыхания npc.gd; зона E выключена
 	rng.seed = SEED + index * 7919
+	_idle_at = _idle_interval()
 
 func _ready() -> void:
 	solid = false   # своё тело ниже: не StaticBody на слое World, как у npc.gd
@@ -160,7 +177,7 @@ func _physics_process(delta: float) -> void:
 	_tick_bubble(delta)
 	if hidden:
 		return   # в троллейбусе или в магазине: ждёт doors_opened
-	_react_to_lada()
+	_react()
 	if leader != null:
 		return   # второй в паре: его ставит первый (_mirror)
 	_tick(delta)
@@ -288,10 +305,15 @@ func reset_to_start() -> void:
 	events.clear()
 	glance_count = 0
 	bubble_times.clear()
+	bubble_log.clear()
 	bubble_text = ""
+	bubble_kind = &""
 	_bubble_left = 0.0
 	_bubble_ready_at = clock
-	_last_line = -1
+	_hit_ready_at = clock
+	_line_count = 0
+	_last_text = ""
+	_idle_at = clock + _idle_interval()
 	if _bubble_back:
 		_bubble_back.visible = false
 	if smoke_point == start_point:
@@ -326,6 +348,9 @@ func _dodge_lada() -> void:
 				best = p
 				best_seg = k
 	lada_bumps += 1
+	if clock >= _hit_ready_at:
+		_hit_ready_at = clock + BUBBLE_COOLDOWN
+		_speak(&"hit")
 	stop_looking()
 	state = &"walk"
 	if best_seg < 0:
@@ -442,24 +467,55 @@ func glance_at(target: Node3D, seconds := GLANCE_SECONDS) -> bool:
 		follower._mirror(self)
 	return true
 
-## «Лада» с водителем ближе LADA_REACT_DISTANCE: пузырь-реплика и взгляд на неё; не чаще BUBBLE_COOLDOWN.
-func _react_to_lada() -> void:
-	if not is_instance_valid(lada) or lada.get("driver") == null or clock < _bubble_ready_at:
+## Пузыри PASS и IDLE, не чаще BUBBLE_COOLDOWN. Касание «Лады» — не здесь: HIT говорит _dodge_lada (первый в паре).
+func _react() -> void:
+	if clock < _bubble_ready_at:
 		return
-	var to := lada.global_position - global_position
-	if Vector2(to.x, to.z).length() > LADA_REACT_DISTANCE:
+	if _lada_touches_pair(global_position, LADA_MARGIN):
 		return
-	_bubble_ready_at = clock + BUBBLE_COOLDOWN
-	var lines: Array = QuestLines.RESIDENT_LINES
-	var i := rng.randi_range(0, lines.size() - 1)
-	if i == _last_line:
-		i = (i + 1) % lines.size()
-	_last_line = i
-	say(lines[i])
-	glance_at(lada)
+	if is_instance_valid(lada) and lada.get("driver") != null:
+		var to := lada.global_position - global_position
+		if Vector2(to.x, to.z).length() <= LADA_REACT_DISTANCE:
+			_speak(&"pass")
+			glance_at(lada)
+			return
+	if _player_distance() < PASS_PLAYER_DISTANCE:
+		_speak(&"pass")
+		return
+	if state in IDLE_STATES and clock >= _idle_at:
+		_speak(&"idle")
 
-## Пузырь над головой на BUBBLE_SECONDS.
-func say(text: String) -> void:
+## Пузырь из набора kind (&"hit", &"pass", &"idle"); IDLE — тихий.
+func _speak(kind: StringName) -> void:
+	var lines: Array = QuestLines.RESIDENT_LINES_PASS
+	if kind == &"hit":
+		lines = QuestLines.RESIDENT_LINES_HIT
+	elif kind == &"idle":
+		lines = QuestLines.RESIDENT_LINES_IDLE
+	say(pick_line(lines), kind == &"idle")
+	bubble_kind = kind
+	bubble_log.append([clock, kind, bubble_text, state])
+	_bubble_ready_at = clock + BUBBLE_COOLDOWN
+	_idle_at = clock + _idle_interval()
+
+## Реплика из lines: hash(SEED, индекс жителя, счётчик) — детерминированно; та же, что прошлая, — следующая по списку.
+func pick_line(lines: Array) -> String:
+	if not babka_voice:
+		lines = lines.filter(func(t): return QuestLines.RESIDENT_LINES_ANYONE.has(t))
+	var i := posmod(hash([SEED, index, _line_count]), lines.size())
+	_line_count += 1
+	if lines[i] == _last_text and lines.size() > 1:
+		i = (i + 1) % lines.size()
+	_last_text = lines[i]
+	return lines[i]
+
+## Через сколько секунд следующий бубнёж: IDLE_SECONDS по hash(SEED, индекс, счётчик).
+func _idle_interval() -> float:
+	var k := posmod(hash([SEED, index, _line_count, &"idle"]), 1000) / 999.0
+	return lerpf(IDLE_SECONDS.x, IDLE_SECONDS.y, k)
+
+## Пузырь над головой на BUBBLE_SECONDS; quiet — тихий (IDLE_SCALE, IDLE_ALPHA).
+func say(text: String, quiet := false) -> void:
 	if _bubble_back == null:
 		_bubble_back = Sprite3D.new()
 		_bubble_back.name = "BubbleBack"
@@ -482,8 +538,13 @@ func say(text: String) -> void:
 		_bubble_label.render_priority = 2
 		_bubble_label.position = Vector3(0, BUBBLE_TAIL * 0.5 * BUBBLE_PIXEL, 0)   # в середине тела пузыря, над хвостиком
 		_bubble_back.add_child(_bubble_label)
+	var k := IDLE_SCALE if quiet else 1.0
+	var alpha := IDLE_ALPHA if quiet else 1.0
 	_bubble_back.texture = bubble_texture(text)
-	_bubble_back.position = Vector3(0, BUBBLE_TIP_Y + _bubble_back.texture.get_height() * _bubble_back.pixel_size * 0.5, 0)
+	_bubble_back.scale = Vector3.ONE * k
+	_bubble_back.modulate = Color(1, 1, 1, alpha)
+	_bubble_back.position = Vector3(0, BUBBLE_TIP_Y + _bubble_back.texture.get_height() * _bubble_back.pixel_size * 0.5 * k, 0)
+	_bubble_label.modulate = Color(INK, alpha)
 	_bubble_label.text = text
 	_bubble_back.visible = true
 	_bubble_left = BUBBLE_SECONDS
@@ -521,12 +582,13 @@ static func bubble_texture(text: String) -> ImageTexture:
 	var t1 := Vector2(center.x - body_size.x * 0.02, center.y + half.y - border)
 	var t2 := Vector2(center.x - body_size.x * 0.22, center.y + half.y + tail - 1.0)
 	var tri := PackedVector2Array([t0, t1, t2])
+	var tail_box := Rect2(t0, Vector2.ZERO).expand(t1).expand(t2).grow(1.0)
 	for y in h:
 		for x in w:
 			var p := Vector2(x + 0.5, y + 0.5)
 			var q := (p - center).abs() - half + Vector2(radius, radius)
 			var d := Vector2(maxf(q.x, 0.0), maxf(q.y, 0.0)).length() + minf(maxf(q.x, q.y), 0.0) - radius
-			var in_tail := Geometry2D.is_point_in_polygon(p, tri)
+			var in_tail := tail_box.has_point(p) and Geometry2D.is_point_in_polygon(p, tri)
 			if d <= -border or (in_tail and d > -border and _tail_inner(p, tri, border)):
 				image.set_pixel(x, y, PAPER)
 			elif d <= 0.0 or in_tail:

@@ -2788,12 +2788,505 @@ def resident_kid(view: str, palette: int = 0) -> str:
     return svg.text()
 
 
+# ---- PEOPLE-02 c2: остальные бабки ролика «Как прожить жизнь так, чтобы на тебя не наорала бабка» (su-Tl4Gyp7Q).
+# Тот же метод: фигура из кадра раскадровки приведена к холсту 400×600, формы и посадка уборов сняты с кадра,
+# цвета пипеткой. Рост при height_m 2,0: собачка 1,65 м (верх y=95), колпак 1,70 (80), бант 1,58 (116),
+# тюрбан 1,72 (74). Где кадр обрезан (колпак — до колен, бант и тюрбан — по грудь), низ фигуры достроен
+# по пропорциям бабок того же ролика (голова с убором ≈ треть роста); кадры роликов в репозиторий не входят.
+
+# ---- Бабка в розовом пальто с собачкой (кадр 0:20, лицо 0:17–0:18): шляпка-«таблетка» с цветком, шарф в обороты,
+# жёлтый пакет в левой руке, на поводке маленькая жёлтая собачка. В кадре собачка дальше по тротуару (на уровне
+# руки); в игре она стоит на земле у правой ноги — спрайт плоский, иначе «висит» в воздухе.
+
+RG_COAT, RG_COAT_HI, RG_COAT_LO = "#FBBEE9", "#FFD8F5", "#DE9ACB"              # розовое пальто (#FEC0EC)
+RG_SCARF, RG_SCARF_HI, RG_SCARF_LO = "#DC97BC", "#EBB0D0", "#BF7CA0"           # шарф темнее пальто (#DB97B6)
+RG_HAT, RG_HAT_HI, RG_HAT_LO = "#F9B6E2", "#FFD0F1", "#E197C7"
+RG_FLOWER, RG_FLOWER_LO = "#E9819F", "#C4506F"
+RG_SKIN, RG_SKIN_HI, RG_SKIN_LO = "#F7F3C8", "#FEFDE2", "#DAD7A4"              # лимонное лицо (#FDF8D0)
+RG_BAGS = "#C9C29A"                                                               # зеленоватые мешки под глазами
+RG_HAIR = "#D9D0C0"
+RG_BOOT = "#746E69"
+RG_BAG, RG_BAG_LO = "#F5F6A2", "#D6D57A"
+RG_DOG, RG_DOG_HI, RG_DOG_LO = "#F4F5B0", "#FDFDD6", "#D7D89A"
+RG_HAT_PTS = [(160, 162), (154, 134), (160, 110), (184, 97), (220, 95), (250, 104), (268, 124), (270, 150), (262, 164),
+              (212, 160)]
+RG_FACE_PTS = [(168, 152), (244, 152), (253, 180), (255, 220), (247, 250), (224, 264), (190, 264), (166, 250),
+               (158, 220), (160, 180)]
+RG_SCARF_PTS = [(132, 200), (146, 172), (170, 160), (246, 160), (276, 174), (294, 204), (297, 246), (285, 276),
+                (250, 292), (204, 297), (154, 289), (127, 266), (122, 232)]
+RG_ROLL_PTS = [(152, 250), (204, 270), (256, 250), (276, 262), (268, 284), (206, 299), (146, 286), (136, 264)]
+RG_COAT_PTS = [(150, 180), (250, 180), (296, 196), (322, 220), (340, 256), (350, 300), (354, 350), (356, 400), (354, 440),
+               (352, 480), (352, 520), (334, 532), (270, 536), (200, 534), (132, 532), (102, 524), (100, 490),
+               (100, 450), (98, 424), (72, 418), (70, 396), (74, 350), (82, 300), (94, 256), (112, 222), (130, 196)]
+RG_BOOTS = ((150, 52, -1), (248, 52, 1))
+
+
+def rg_dog(svg: Svg, x: float, y: float, face: int = -1) -> None:
+    """Собачка ростом ≈0,2 м: круглое туловище, острые уши, хвост крючком; x, y — середина низа лап, face — куда морда."""
+    for dx in (-18, -8, 8, 18):                                                         # лапки
+        svg.path(f"M{x + dx:.1f},{y - 22:.1f} L{x + dx + face * 2:.1f},{y:.1f}", width=LINE * 1.4)
+    svg.path(f"M{x - face * 26:.1f},{y - 38:.1f} C{x - face * 40:.1f},{y - 50:.1f} {x - face * 40:.1f},{y - 66:.1f} "
+             f"{x - face * 30:.1f},{y - 68:.1f}", "none", INK, 7.5)                    # хвост крючком
+    svg.path(f"M{x - face * 26:.1f},{y - 38:.1f} C{x - face * 40:.1f},{y - 50:.1f} {x - face * 40:.1f},{y - 66:.1f} "
+             f"{x - face * 30:.1f},{y - 68:.1f}", "none", RG_DOG, 4.0)
+    r_shape(svg, [(x - 30, y - 34), (x - 14, y - 48), (x + 14, y - 48), (x + 30, y - 36), (x + 28, y - 20),
+                  (x, y - 16), (x - 28, y - 20)], RG_DOG, RG_DOG_HI, RG_DOG_LO, LINE * 0.9, light=face)
+    hx, hy = x + face * 30, y - 46
+    for ex in (-8, 6):                                                                  # уши торчком
+        svg.path(f"M{hx + ex - 5:.1f},{hy - 8:.1f} L{hx + ex + 1:.1f},{hy - 24:.1f} L{hx + ex + 7:.1f},{hy - 9:.1f} Z",
+                 RG_DOG, INK, LINE * 0.8)
+    svg.ellipse(hx, hy, 15, 13, RG_DOG, INK, LINE * 0.9)
+    svg.ellipse(hx + face * 13, hy + 3, 3, 2.5, INK, None)                             # нос
+    svg.ellipse(hx + face * 4, hy - 3, 2, 2, INK, None)                                 # глаз
+    svg.path(f"M{hx - face * 9:.1f},{hy + 10:.1f} Q{hx:.1f},{hy + 14:.1f} {hx + face * 8:.1f},{hy + 9:.1f}",
+             width=THIN * 0.9)                                                            # ошейник
+
+
+def rg_hat(svg: Svg, pts: list[tuple[float, float]], flower: tuple[float, float] | None) -> None:
+    r_shape(svg, pts, RG_HAT, RG_HAT_HI, RG_HAT_LO)
+    xs = [p[0] for p in pts]
+    x0, x1 = min(xs), max(xs)
+    for i, y in enumerate((122, 140)):                                                  # складки «таблетки»
+        svg.path(f"M{x0 + 8 + i * 4},{y + 6} C{x0 + 40},{y - 6} {x1 - 40},{y - 8} {x1 - 6 - i * 4},{y}",
+                 width=THIN * 0.8, extra=' opacity="0.8"')
+    if flower:
+        fx, fy = flower
+        for a in range(5):
+            t = math.radians(a * 72 - 90)
+            svg.ellipse(fx + 7 * math.cos(t), fy + 7 * math.sin(t), 6, 6, RG_FLOWER, INK, THIN * 0.7)
+        svg.ellipse(fx, fy, 4, 4, RG_FLOWER_LO, INK, THIN * 0.6)
+
+
+def resident_dog(view: str, dog: bool = True) -> str:
+    svg = Svg()
+    if view in ("front", "back"):
+        back = view == "back"
+        m = (lambda p: p) if not back else r_mirror
+        f = (lambda p: p) if not back else mirror_d
+        mx = (lambda x: x) if not back else (lambda x: 400 - x)
+        for x, w, s in RG_BOOTS:
+            r_boot(svg, mx(x), 516, w, RG_BOOT, s if not back else -s, 8, 590)
+        r_shape(svg, m(RG_COAT_PTS), RG_COAT, RG_COAT_HI, RG_COAT_LO)
+        svg.path(f("M112,232 C104,300 100,350 98,394"), width=LINE * R_INK_SOFT)         # рукава вдоль тела
+        svg.path(f("M300,232 C312,300 318,350 320,398"), width=LINE * R_INK_SOFT)
+        r_shape(svg, m([(68, 392), (98, 394), (100, 420), (70, 418)]), RG_COAT, None, RG_COAT_LO, LINE * 0.9, k=0.1)
+        r_shape(svg, m([(318, 398), (356, 398), (356, 420), (318, 420)]), RG_COAT, None, RG_COAT_LO, LINE * 0.9, k=0.1)
+        svg.path("M200,300 C200,380 199,460 198,532" if not back else "M200,250 C200,350 200,440 200,532",
+                 width=THIN * 0.8)                                                        # борт / шов спинки
+        if back:
+            svg.path("M156,420 Q200,428 244,420", width=THIN * 0.8)                      # хлястик
+        hx = mx(82)
+        r_bag(svg, hx, 432, 84, 118, RG_BAG, RG_BAG_LO, -4 if not back else 4)
+        r_hand(svg, hx, 428, 12, RG_SKIN, -1 if not back else 1)
+        lx, ly = mx(338), 448
+        r_hand(svg, lx, ly, 12, RG_SKIN, 1 if not back else -1)
+        if dog:
+            dx = mx(342)
+            svg.path(f"M{lx:.1f},{ly + 10:.1f} C{lx + (dx - lx) * 0.2:.1f},{ly + 50:.1f} {dx - (dx - 200) * 0.06:.1f},{ly + 70:.1f} "
+                     f"{dx + (-30 if not back else 30):.1f},{ly + 92:.1f}", width=THIN)   # поводок
+            rg_dog(svg, dx, 590, -1 if not back else 1)
+        if back:
+            r_shape(svg, [(150, 168), (250, 168), (256, 200), (240, 222), (200, 228), (160, 222), (144, 200)], RG_HAIR,
+                    None, None, LINE * 0.9)                                               # седой затылок под шляпкой
+            r_shape(svg, r_mirror(RG_SCARF_PTS), RG_SCARF, RG_SCARF_HI, RG_SCARF_LO)
+            for y in (220, 246, 270):                                                     # обороты шарфа на спине
+                svg.path(f"M{134 + (y - 220) * 0.2:.1f},{y} Q200,{y + 18} {266 - (y - 220) * 0.2:.1f},{y}", width=THIN * 0.8)
+            rg_hat(svg, r_mirror(RG_HAT_PTS), (400 - 250, 148))
+            return svg.text()
+        r_shape(svg, RG_SCARF_PTS, RG_SCARF, RG_SCARF_HI, RG_SCARF_LO)
+        r_shape(svg, RG_FACE_PTS, RG_SKIN, RG_SKIN_HI, RG_SKIN_LO)
+        # Лицо: высокий лоб, глаза низко, в зеленоватых мешках; нос коротким крючком, рот «бантиком», усики-тень.
+        for x in (186, 214):
+            svg.ellipse(x, 226, 9, 5, RG_BAGS, None)
+        small_eye(svg, 186, 218, 6, 0.4)
+        small_eye(svg, 214, 218, 6, -0.4)
+        svg.path("M178,206 Q186,202 194,206 M206,206 Q214,202 222,206", width=FACE * 0.8)
+        svg.path("M200,222 C196,230 197,236 202,236 C207,236 208,232 205,228", RG_SKIN, INK, FACE)
+        svg.path("M194,246 Q200,241 206,246 Q200,251 194,246 Z", "#3A2A2E", INK, FACE * 0.8)
+        svg.path("M190,241 Q200,238 210,241", width=FACE * 0.6, extra=' opacity="0.45"')    # усики-тень
+        svg.path("M172,232 C168,244 172,254 180,260 M228,232 C232,244 228,254 220,260", width=FACE * 0.7)
+        r_shape(svg, RG_ROLL_PTS, RG_SCARF, RG_SCARF_HI, RG_SCARF_LO)
+        svg.path("M150,268 Q204,288 268,266 M160,282 Q204,296 258,282", width=THIN * 0.8, extra=' opacity="0.8"')
+        svg.ellipse(266, 274, 8, 8, RG_SCARF_LO, INK, THIN * 0.8)                          # круглая брошь
+        svg.ellipse(266, 274, 3.5, 3.5, RG_FLOWER, None)
+        rg_hat(svg, RG_HAT_PTS, (248, 150))
+    else:  # бок, лицом вправо: пальто колоколом, шарф кольцом, собачка впереди на поводке, пакет в дальней руке
+        r_bag(svg, 136, 436, 70, 106, RG_BAG, RG_BAG_LO, -10)
+        r_boot(svg, 196, 516, 52, RG_BOOT, 1, 12, 590)
+        coat = [(166, 186), (232, 184), (262, 206), (276, 250), (284, 320), (292, 400), (298, 470), (302, 526), (200, 534),
+                (118, 528), (116, 470), (122, 400), (130, 320), (140, 250), (150, 210)]
+        r_shape(svg, coat, RG_COAT, RG_COAT_HI, RG_COAT_LO, light=1)
+        svg.path("M128,440 Q142,446 156,442", width=THIN * 0.7)
+        tube(svg, "M210,236 C224,300 230,360 232,404", 50, RG_COAT, RG_COAT_LO)            # рукав
+        r_shape(svg, [(208, 398), (256, 398), (258, 422), (206, 422)], RG_COAT, None, RG_COAT_LO, LINE * 0.9, k=0.1)
+        r_hand(svg, 234, 434, 12, RG_SKIN)
+        if dog:
+            svg.path("M240,442 C262,470 290,500 316,544", width=THIN)                       # поводок к ошейнику
+            rg_dog(svg, 344, 590, 1)
+        r_shape(svg, [(150, 196), (188, 172), (236, 168), (272, 186), (284, 222), (276, 262), (250, 288), (204, 296),
+                      (164, 286), (144, 252), (140, 222)], RG_SCARF, RG_SCARF_HI, RG_SCARF_LO, light=1)
+        face = [(204, 154), (252, 156), (262, 184), (272, 206), (264, 214), (262, 234), (252, 254), (226, 262),
+                (204, 256), (196, 210)]
+        r_shape(svg, face, RG_SKIN, RG_SKIN_HI, RG_SKIN_LO, light=1, k=0.14)
+        svg.ellipse(248, 226, 8, 5, RG_BAGS, None)
+        small_eye(svg, 248, 218, 5, 1.2)
+        svg.path("M240,206 Q248,202 256,206", width=FACE * 0.8)
+        svg.path("M258,244 Q252,240 248,245 Q253,249 258,244 Z", "#3A2A2E", INK, FACE * 0.8)
+        svg.path("M230,232 C226,244 230,252 236,258", width=FACE * 0.7)
+        r_shape(svg, [(196, 250), (236, 262), (268, 244), (282, 256), (270, 282), (230, 296), (190, 290), (182, 268)],
+                RG_SCARF, RG_SCARF_HI, RG_SCARF_LO, light=1)                              # оборот шарфа под подбородком
+        svg.path("M190,276 Q232,290 272,264", width=THIN * 0.8, extra=' opacity="0.8"')
+        rg_hat(svg, [(168, 164), (164, 134), (172, 110), (198, 97), (232, 96), (258, 108), (272, 130), (272, 156),
+                     (262, 166), (214, 162)], (176, 146))
+    return svg.text()
+
+
+# ---- Бабка в бордовом пальто, фиолетовом колпаке и тёмных очках (кадры 0:55–0:58, 0:62): колпак завитком
+# над рыжими волосами, белёсое лицо, охристый меховой воротник узлом, левая рука протянута к Илюше.
+
+RK2_CAP, RK2_CAP_HI, RK2_CAP_LO = "#834376", "#9C5C8F", "#64305A"               # фиолетовый колпак (#7D487A)
+RK2_HAIR, RK2_HAIR_HI, RK2_HAIR_LO = "#DE3A4C", "#EE6070", "#B12838"             # красно-рыжие волосы (#C83556)
+RK2_SKIN, RK2_SKIN_HI, RK2_SKIN_LO = "#DCDCE2", "#F1F1F5", "#BDBDC8"             # белёсо-серое лицо (#DCD9DD)
+RK2_GLASS = "#1C1719"
+RK2_FUR, RK2_FUR_HI, RK2_FUR_LO = "#B0975C", "#C6AE74", "#917840"                # охристый воротник (#AF965A)
+RK2_COAT, RK2_COAT_HI, RK2_COAT_LO = "#A24B53", "#B6626B", "#7E3540"             # бордовое пальто (#A24B53)
+RK2_HAND, RK2_HAND_LO = "#D6DAD6", "#AEB2AE"
+RK2_BOOT = "#3A2C2E"
+RK2_CAP_PTS = [(182, 160), (184, 134), (192, 112), (202, 94), (210, 80), (220, 88), (234, 106), (248, 126), (257, 146),
+               (258, 162), (220, 168)]
+RK2_HAIR_PTS = [(174, 170), (180, 154), (220, 160), (260, 152), (268, 168), (264, 190), (240, 182), (200, 184),
+                (178, 192)]
+RK2_FACE_PTS = [(192, 182), (248, 182), (262, 206), (270, 240), (266, 266), (246, 284), (214, 290), (186, 282),
+                (172, 260), (172, 226), (180, 200)]
+RK2_FUR_PTS = [(150, 236), (172, 270), (206, 290), (242, 284), (272, 250), (294, 208), (314, 226), (322, 266),
+               (306, 304), (272, 330), (236, 342), (196, 336), (160, 316), (140, 286), (137, 256)]
+RK2_COAT_PTS = [(160, 246), (300, 206), (322, 230), (338, 280), (350, 350), (358, 420), (362, 480), (360, 540),
+                (340, 562), (280, 570), (200, 572), (130, 570), (88, 560), (82, 520), (90, 470), (102, 420),
+                (114, 360), (126, 300), (140, 262)]
+RK2_BOOTS = ((156, 52, -1), (258, 56, 1))
+
+
+def rk2_cap(svg: Svg, pts: list[tuple[float, float]]) -> None:
+    """Колпак завитком: мягкий конус, витки — дугами."""
+    r_shape(svg, pts, RK2_CAP, RK2_CAP_HI, RK2_CAP_LO)
+    xs = [p[0] for p in pts]
+    x0, x1 = min(xs), max(xs)
+    for y, inset in ((150, 6), (130, 16), (110, 26)):
+        svg.path(f"M{x0 + inset:.1f},{y + 6} C{x0 + inset + 14:.1f},{y - 6} {x1 - inset - 10:.1f},{y - 4} {x1 - inset + 4:.1f},{y - 10}",
+                 width=THIN * 0.8)
+
+
+def rk2_palm(svg: Svg, pts: list[tuple[float, float]], tips: list[tuple[float, float, float, float]]) -> None:
+    """Растопыренная кисть: ладонь и пальцы чёрточками (6–7 пальцев, как в ШКЯ)."""
+    r_shape(svg, pts, RK2_HAND, None, RK2_HAND_LO, LINE * 0.8)
+    for x0, y0, dx, dy in tips:
+        svg.path(f"M{x0:.1f},{y0:.1f} l{dx:.1f},{dy:.1f}", width=LINE * 0.9)
+
+
+def resident_kolpak(view: str) -> str:
+    svg = Svg()
+    if view in ("front", "back"):
+        back = view == "back"
+        m = (lambda p: p) if not back else r_mirror
+        f = (lambda p: p) if not back else mirror_d
+        mx = (lambda x: x) if not back else (lambda x: 400 - x)
+        for x, w, s in RK2_BOOTS:
+            r_boot(svg, mx(x), 548, w, RK2_BOOT, s if not back else -s, 10, 590)
+        r_shape(svg, m(RK2_COAT_PTS), RK2_COAT, RK2_COAT_HI, RK2_COAT_LO)
+        # Левая рука протянута вбок-вниз ладонью вперёд, правая висит вдоль тела.
+        tube(svg, f("M166,270 C142,292 120,312 100,330"), 50, RK2_COAT, RK2_COAT_LO)
+        svg.path(f("M318,250 C326,300 314,350 300,398"), width=LINE * R_INK_SOFT)
+        svg.path(f("M98,470 C120,476 140,476 160,470"), width=THIN * 0.7, extra=' opacity="0.7"')
+        if not back:
+            svg.path("M232,346 C230,420 228,490 226,568", width=THIN * 0.8)               # борт
+            for y in (392, 440, 488):
+                svg.ellipse(220, y, 4.5, 4.5, RK2_COAT_LO, INK, THIN * 0.6)
+        else:
+            svg.path("M200,250 C200,350 200,460 200,568", width=THIN * 0.8)
+            svg.path("M150,452 Q200,460 250,452", width=THIN * 0.8)                      # хлястик
+        rk2_palm(svg, m([(98, 322), (110, 338), (100, 356), (78, 362), (62, 350), (66, 330), (84, 320)]),
+                 [(mx(x), y, dx if not back else -dx, dy) for x, y, dx, dy in
+                  ((66, 336, -12, 2), (64, 344, -12, 2), (64, 352, -10, 6), (70, 358, -7, 10), (80, 361, -3, 11),
+                   (92, 358, 1, 11))])
+        rk2_palm(svg, m([(276, 404), (300, 402), (306, 424), (302, 444), (282, 450), (268, 432)]),
+                 [(mx(x), 446, (dx if not back else -dx), 14) for x, dx in ((272, -3), (280, -1), (288, 0), (296, 1), (303, 3))])
+        if back:
+            r_shape(svg, r_mirror([(146, 238), (200, 222), (290, 210), (316, 232), (306, 262), (200, 268), (150, 264)]), RK2_FUR,
+                    RK2_FUR_HI, RK2_FUR_LO)                                               # воротник со спины
+            r_shape(svg, r_mirror([(170, 176), (180, 154), (204, 150), (232, 150), (262, 152), (274, 172), (276, 200),
+                                   (268, 226), (250, 244), (226, 250), (200, 248), (178, 236), (166, 210)]), RK2_HAIR,
+                    RK2_HAIR_HI, RK2_HAIR_LO)
+            for x in (168, 190, 212, 234):                                                # пряди
+                svg.path(f"M{x},{170} C{x - 4},{196} {x + 2},{220} {x - 2},{238}", width=THIN * 0.7, extra=' opacity="0.7"')
+            rk2_cap(svg, r_mirror(RK2_CAP_PTS))
+            return svg.text()
+        r_shape(svg, RK2_FUR_PTS, RK2_FUR, RK2_FUR_HI, RK2_FUR_LO)
+        svg.path("M226,322 L220,364 L246,344 Z", RK2_FUR, INK, LINE * 0.8)                # концы узла
+        svg.path("M246,326 L272,358 L262,330 Z", RK2_FUR, INK, LINE * 0.8)
+        svg.path("M158,300 C176,312 196,320 214,322 M288,240 C296,262 290,288 276,306", width=THIN * 0.7,
+                 extra=' opacity="0.7"')
+        r_shape(svg, RK2_HAIR_PTS, RK2_HAIR, RK2_HAIR_HI, RK2_HAIR_LO)
+        r_shape(svg, RK2_FACE_PTS, RK2_SKIN, RK2_SKIN_HI, RK2_SKIN_LO)
+        # Лицо: тёмные очки злыми щёлками, нос вниз, рот подковой, брыли и складки у глаз.
+        svg.path("M184,200 L212,206 L208,216 L188,212 Z", RK2_GLASS, INK, FACE)
+        svg.path("M226,206 L254,198 L252,211 L230,216 Z", RK2_GLASS, INK, FACE)
+        svg.path("M211,208 Q219,204 227,208", width=FACE)
+        svg.path("M216,220 C212,232 212,240 220,242 C226,243 228,238 224,232", RK2_SKIN, INK, FACE)
+        svg.path("M204,258 Q216,248 230,258", width=FACE * 1.1)
+        svg.path("M190,234 C184,250 188,266 198,274 M246,232 C252,248 248,264 238,272", width=FACE * 0.8)
+        svg.path("M180,222 Q186,226 184,232 M258,222 Q252,226 254,232", width=FACE * 0.6, extra=' opacity="0.7"')
+        rk2_cap(svg, RK2_CAP_PTS)
+    else:  # бок, лицом вправо: корпус вперёд, рука протянута вперёд-вниз, колпак завитком назад
+        r_boot(svg, 214, 548, 58, RK2_BOOT, 1, 12, 590)
+        body = [(162, 230), (240, 206), (282, 226), (306, 270), (320, 340), (330, 420), (338, 500), (340, 556),
+                (220, 570), (118, 562), (110, 500), (114, 420), (122, 340), (134, 280), (146, 248)]
+        r_shape(svg, body, RK2_COAT, RK2_COAT_HI, RK2_COAT_LO, light=1)
+        svg.path("M300,330 C312,400 324,470 332,550", width=THIN * 0.8)
+        svg.path("M124,470 Q146,476 168,472", width=THIN * 0.7)
+        tube(svg, "M236,250 C262,290 290,320 316,344", 50, RK2_COAT, RK2_COAT_LO)
+        rk2_palm(svg, [(310, 330), (334, 334), (346, 354), (336, 372), (316, 370), (306, 352)],
+                 [(338, 368, 6, 10), (344, 362, 9, 7), (346, 352, 11, 3), (328, 372, 2, 11), (318, 371, -2, 10)])
+        r_shape(svg, [(150, 240), (196, 226), (250, 214), (290, 222), (304, 250), (292, 290), (256, 320), (210, 330),
+                      (168, 318), (148, 284)], RK2_FUR, RK2_FUR_HI, RK2_FUR_LO, light=1)
+        svg.path("M262,312 L270,350 L284,318 Z", RK2_FUR, INK, LINE * 0.8)
+        r_shape(svg, [(184, 176), (196, 156), (236, 156), (262, 166), (262, 190), (236, 196), (200, 200), (182, 210)],
+                RK2_HAIR, RK2_HAIR_HI, RK2_HAIR_LO, light=1)
+        face = [(214, 182), (262, 182), (274, 208), (286, 228), (278, 236), (280, 256), (268, 278), (238, 290),
+                (212, 282), (204, 230)]
+        r_shape(svg, face, RK2_SKIN, RK2_SKIN_HI, RK2_SKIN_LO, light=1, k=0.14)
+        svg.path("M252,204 L276,206 L274,218 L254,216 Z", RK2_GLASS, INK, FACE)
+        svg.path("M234,206 L252,208", width=FACE)                                          # дужка
+        svg.path("M272,260 Q264,254 256,262", width=FACE * 1.1)
+        svg.path("M240,236 C236,252 240,266 248,274", width=FACE * 0.8)
+        rk2_cap(svg, [(190, 166), (190, 140), (196, 118), (204, 98), (210, 82), (222, 90), (238, 108), (252, 128),
+                      (262, 148), (264, 166), (226, 172)])
+    return svg.text()
+
+
+# ---- Бабка в жёлтой шубе, рыжей шапке и розовой повязке с бантом (кадры 0:29–0:34 в троллейбусе, 0:57–0:58 на улице):
+# сиренево-розовое лицо, большой нос, накрашенные губы, рот открыт; круглый отложной воротник, пуговицы.
+
+RB2_HAT, RB2_HAT_HI, RB2_HAT_LO = "#F57E1E", "#FF9E48", "#D2630F"               # рыжая шапка (#FD7D12)
+RB2_BAND, RB2_BAND_HI, RB2_BAND_LO = "#E477E0", "#F29CEF", "#C35CC2"             # розовая повязка (#E675E3)
+RB2_SKIN, RB2_SKIN_HI, RB2_SKIN_LO = "#F2D9F5", "#FBEEFD", "#D8BADF"             # сиренево-розовое лицо (#F5DEFC)
+RB2_CHEEK = "#E8B4DA"
+RB2_LIPS, RB2_MOUTH = "#D2485C", "#3A0E14"
+RB2_HAIR = "#CFC4C9"
+RB2_COAT, RB2_COAT_HI, RB2_COAT_LO = "#D9C78E", "#EADBA6", "#B8A46C"             # жёлтая шуба (#D8C68C)
+RB2_BUTTON = "#BBA466"
+RB2_BOOT = "#4A3A36"
+RB2_HAT_PTS = [(150, 186), (147, 152), (155, 131), (180, 120), (220, 119), (245, 130), (253, 152), (252, 186)]
+RB2_BAND_PTS = [(140, 184), (200, 177), (260, 184), (263, 200), (260, 214), (200, 220), (138, 214), (136, 200)]
+RB2_FACE_PTS = [(144, 208), (256, 208), (264, 236), (262, 262), (248, 282), (200, 292), (152, 282), (138, 262),
+                (136, 236)]
+RB2_COAT_PTS = [(132, 262), (268, 262), (300, 282), (310, 320), (314, 370), (326, 420), (338, 470), (342, 520),
+                (334, 548), (300, 556), (200, 560), (100, 556), (66, 548), (58, 520), (62, 470), (74, 420), (86, 370),
+                (90, 320), (100, 282)]
+RB2_COLLAR_L = [(120, 286), (164, 280), (202, 294), (198, 320), (176, 338), (140, 338), (112, 322), (106, 302)]
+
+
+def rb2_bow(svg: Svg, cx: float, cy: float, s: float = 1.0) -> None:
+    """Бант на повязке: две петли и узел."""
+    svg.path(f"M{cx:.1f},{cy:.1f} C{cx - 10 * s:.1f},{cy - 18:.1f} {cx - 26 * s:.1f},{cy - 14:.1f} {cx - 24 * s:.1f},{cy:.1f} "
+             f"C{cx - 26 * s:.1f},{cy + 14:.1f} {cx - 10 * s:.1f},{cy + 16:.1f} {cx:.1f},{cy:.1f} Z", RB2_BAND, INK, LINE * 0.8)
+    svg.path(f"M{cx:.1f},{cy:.1f} C{cx + 10 * s:.1f},{cy - 18:.1f} {cx + 26 * s:.1f},{cy - 14:.1f} {cx + 24 * s:.1f},{cy:.1f} "
+             f"C{cx + 26 * s:.1f},{cy + 14:.1f} {cx + 10 * s:.1f},{cy + 16:.1f} {cx:.1f},{cy:.1f} Z", RB2_BAND, INK, LINE * 0.8)
+    svg.ellipse(cx, cy, 6, 7, RB2_BAND_LO, INK, LINE * 0.8)
+    svg.path(f"M{cx - 18 * s:.1f},{cy - 4:.1f} l{8 * s:.1f},3 M{cx + 18 * s:.1f},{cy - 4:.1f} l{-8 * s:.1f},3",
+             width=THIN * 0.6, extra=' opacity="0.7"')
+
+
+def rb2_fur(svg: Svg, xs: tuple[float, ...], y0: float, y1: float) -> None:
+    """Вертикальные штрихи меха на шубе (в кадре — полосы)."""
+    for i, x in enumerate(xs):
+        svg.path(f"M{x:.1f},{y0 + (i % 3) * 12:.1f} C{x - 3:.1f},{(y0 + y1) / 2:.1f} {x + 3:.1f},{(y0 + y1) / 2 + 30:.1f} "
+                 f"{x - 2:.1f},{y1 - (i % 2) * 16:.1f}", RB2_COAT, RB2_COAT_LO, THIN * 1.2, extra=' opacity="0.8"')
+
+
+def resident_bow(view: str) -> str:
+    svg = Svg()
+    if view in ("front", "back"):
+        back = view == "back"
+        for x, w, s in ((162, 50, -1), (240, 50, 1)):
+            r_boot(svg, x, 548, w, RB2_BOOT, s, 8, 590)
+        r_shape(svg, RB2_COAT_PTS, RB2_COAT, RB2_COAT_HI, RB2_COAT_LO)
+        rb2_fur(svg, (100, 124, 150, 250, 276, 300), 370, 540)
+        svg.path("M96,320 C82,400 72,450 70,500 M304,320 C318,400 328,450 330,500", width=LINE * R_INK_SOFT)  # рукава
+        svg.path("M58,496 Q70,504 84,500 M316,500 Q330,504 342,496", width=THIN * 0.8)                    # обшлаги
+        for x in (72, 328):                                                                  # кисти из рукавов
+            svg.ellipse(x, 514, 12, 14, RB2_SKIN, INK, LINE * 0.8)
+        if back:
+            svg.path("M200,300 L200,556", width=THIN * 0.8)
+            r_shape(svg, [(122, 272), (200, 262), (278, 272), (290, 296), (200, 308), (110, 296)], RB2_COAT, None,
+                    RB2_COAT_LO, LINE * 0.9)                                               # воротник со спины
+            r_shape(svg, [(146, 206), (254, 206), (260, 240), (246, 270), (200, 280), (154, 270), (140, 240)], RB2_HAIR,
+                    None, None, LINE * 0.9)                                                # седой затылок
+            svg.path("M164,236 Q200,250 236,236", width=THIN * 0.7, extra=' opacity="0.6"')
+            r_shape(svg, RB2_HAT_PTS, RB2_HAT, RB2_HAT_HI, RB2_HAT_LO)
+            r_shape(svg, RB2_BAND_PTS, RB2_BAND, RB2_BAND_HI, RB2_BAND_LO, LINE * 0.9)
+            rb2_bow(svg, 158, 198, 0.8)
+            return svg.text()
+        svg.path("M200,320 C200,400 200,480 200,556", width=THIN * 0.8)                      # борт
+        for y in (360, 410, 460):
+            svg.ellipse(212, y, 5, 5, RB2_BUTTON, INK, THIN * 0.7)
+        for x in (140, 260):                                                                  # уши
+            svg.ellipse(x, 244, 8, 12, RB2_SKIN, INK, LINE * 0.8)
+        r_shape(svg, RB2_FACE_PTS, RB2_SKIN, RB2_SKIN_HI, RB2_SKIN_LO)
+        for x in (166, 234):
+            svg.ellipse(x, 252, 13, 8, RB2_CHEEK, None)
+        r_shape(svg, RB2_COLLAR_L, RB2_COAT, RB2_COAT_HI, RB2_COAT_LO, LINE * 0.9)
+        r_shape(svg, r_mirror(RB2_COLLAR_L), RB2_COAT, RB2_COAT_HI, RB2_COAT_LO, LINE * 0.9)
+        # Лицо: веки полуприкрыты, большой нос, накрашенный открытый рот.
+        small_eye(svg, 178, 230, 6, 0.4)
+        small_eye(svg, 222, 230, 6, -0.4)
+        svg.path("M168,222 Q178,217 188,222 M212,222 Q222,217 232,222", width=FACE * 1.1)
+        svg.path("M196,226 C188,240 186,252 196,256 C204,259 214,256 212,246 C210,238 206,232 204,226", RB2_SKIN, INK, FACE)
+        svg.path("M184,266 Q200,258 216,266 Q214,282 200,284 Q186,282 184,266 Z", RB2_LIPS, INK, FACE)
+        svg.path("M189,268 Q200,264 211,268 Q208,278 200,279 Q192,278 189,268 Z", RB2_MOUTH, None)
+        svg.path("M158,258 C156,270 162,280 172,284 M242,258 C244,270 238,280 228,284", width=FACE * 0.7)
+        r_shape(svg, RB2_HAT_PTS, RB2_HAT, RB2_HAT_HI, RB2_HAT_LO)
+        r_shape(svg, RB2_BAND_PTS, RB2_BAND, RB2_BAND_HI, RB2_BAND_LO, LINE * 0.9)
+        svg.path("M150,196 Q200,190 222,196", width=THIN * 0.7, extra=' opacity="0.7"')
+        rb2_bow(svg, 242, 198)
+    else:  # бок, лицом вправо: шуба шаром, шапка, бант спереди на повязке, нос вперёд, рот открыт
+        r_boot(svg, 206, 548, 54, RB2_BOOT, 1, 12, 590)
+        body = [(150, 272), (240, 270), (284, 292), (306, 336), (316, 400), (318, 470), (312, 530), (284, 552),
+                (200, 558), (120, 552), (94, 520), (90, 460), (96, 390), (110, 330), (126, 292)]
+        r_shape(svg, body, RB2_COAT, RB2_COAT_HI, RB2_COAT_LO, light=1)
+        rb2_fur(svg, (120, 146, 270, 294), 360, 540)
+        svg.path("M290,330 C300,400 306,460 304,530", width=THIN * 0.8)
+        for y in (370, 420, 470):
+            svg.ellipse(298, y, 4.5, 4.5, RB2_BUTTON, INK, THIN * 0.6)
+        tube(svg, "M206,300 C216,370 222,430 222,480", 58, RB2_COAT, RB2_COAT_LO)
+        svg.path("M194,478 Q222,488 250,478", width=THIN * 0.8)
+        svg.ellipse(222, 500, 12, 14, RB2_SKIN, INK, LINE * 0.8)
+        r_shape(svg, [(150, 276), (206, 266), (262, 276), (284, 300), (262, 326), (214, 330), (166, 320), (146, 298)],
+                RB2_COAT, RB2_COAT_HI, RB2_COAT_LO, LINE * 0.9, light=1)                  # воротник
+        r_shape(svg, [(166, 210), (206, 206), (238, 214), (250, 240), (244, 270), (210, 282), (176, 276), (160, 244)],
+                RB2_HAIR, None, None, LINE * 0.9)
+        face = [(204, 208), (252, 210), (262, 230), (280, 238), (284, 252), (270, 258), (272, 272), (258, 286),
+                (226, 292), (202, 280), (196, 240)]
+        r_shape(svg, face, RB2_SKIN, RB2_SKIN_HI, RB2_SKIN_LO, light=1, k=0.14)
+        svg.ellipse(196, 244, 9, 13, RB2_SKIN, INK, LINE * 0.8)                              # ухо
+        svg.ellipse(236, 256, 12, 8, RB2_CHEEK, None)
+        small_eye(svg, 250, 228, 5, 1.2)
+        svg.path("M242,220 Q250,216 258,221", width=FACE * 1.1)
+        svg.path("M258,264 Q268,262 272,268 Q266,280 258,278 Q254,272 258,264 Z", RB2_LIPS, INK, FACE)
+        svg.path("M260,268 Q266,267 268,270 Q264,276 260,275 Z", RB2_MOUTH, None)
+        r_shape(svg, [(166, 186), (162, 152), (170, 132), (196, 121), (232, 122), (254, 134), (262, 156), (262, 186)],
+                RB2_HAT, RB2_HAT_HI, RB2_HAT_LO, light=1)
+        r_shape(svg, [(154, 186), (210, 178), (268, 184), (272, 200), (268, 214), (210, 220), (152, 214), (150, 200)],
+                RB2_BAND, RB2_BAND_HI, RB2_BAND_LO, LINE * 0.9, light=1)
+        rb2_bow(svg, 262, 198, 0.7)
+    return svg.text()
+
+
+# ---- Бабка в голубом пальто, оливковом тюрбане и розовом шарфе (кадры 0:26–0:28 в магазине, 0:58 и 0:62 на улице):
+# узкая высокая фигура-столбик, пальто расширяется книзу, шарф обвивает лицо до тюрбана, рот открыт.
+
+RT2_TURBAN, RT2_TURBAN_HI, RT2_TURBAN_LO = "#B4B664", "#CDCF80", "#93954A"     # оливковый тюрбан (#B2B462)
+RT2_SKIN, RT2_SKIN_HI, RT2_SKIN_LO = "#FBF8DA", "#FFFFF0", "#DFDAB4"            # кремовое лицо (#FDFCDE)
+RT2_SCARF, RT2_SCARF_HI, RT2_SCARF_LO = "#EDB0E3", "#F8CCF6", "#CF8EC4"         # розовый шарф (#F4BEE8, #DBA3CF)
+RT2_COAT, RT2_COAT_HI, RT2_COAT_LO = "#BEEEF5", "#DDFBFF", "#96C6D0"            # голубое пальто (#C6FFFF, #99C9D4)
+RT2_BROOCH = "#E8E2C0"
+RT2_BOOT = "#3E3A3E"
+RT2_TURBAN_PTS = [(142, 152), (139, 126), (150, 102), (172, 84), (198, 75), (222, 81), (242, 100), (250, 128),
+                  (248, 152), (200, 158)]
+RT2_FACE_PTS = [(142, 140), (248, 140), (254, 180), (252, 224), (240, 250), (196, 258), (152, 250), (140, 224),
+                (137, 180)]
+RT2_SCARF_PTS = [(122, 152), (134, 130), (256, 130), (270, 152), (280, 200), (282, 250), (270, 284), (236, 300),
+                 (200, 304), (160, 300), (126, 284), (116, 250), (116, 200)]
+RT2_ROLL_PTS = [(138, 246), (196, 262), (254, 246), (272, 266), (252, 294), (200, 305), (148, 296), (128, 268)]
+RT2_COAT_PTS = [(120, 138), (200, 132), (280, 138), (296, 170), (304, 220), (312, 300), (320, 380), (328, 460),
+                (334, 530), (330, 556), (200, 562), (70, 556), (66, 530), (72, 460), (80, 380), (88, 300), (96, 220),
+                (104, 170)]
+
+
+def rt2_turban(svg: Svg, pts: list[tuple[float, float]], brooch: tuple[float, float] | None) -> None:
+    """Тюрбан витками: каждый виток — дуга, выше и уже предыдущего."""
+    r_shape(svg, pts, RT2_TURBAN, RT2_TURBAN_HI, RT2_TURBAN_LO)
+    xs = [p[0] for p in pts]
+    x0, x1 = min(xs), max(xs)
+    for i, y in enumerate((140, 120, 100)):
+        svg.path(f"M{x0 + 4 + i * 12},{y + 8} C{x0 + 24 + i * 10},{y - 8} {x1 - 30 - i * 8},{y - 10} {x1 - 4 - i * 12},{y + 2}",
+                 width=THIN * 0.9)
+    if brooch:
+        svg.ellipse(brooch[0], brooch[1], 6, 5, RT2_BROOCH, INK, THIN * 0.8)
+
+
+def resident_turban(view: str) -> str:
+    svg = Svg()
+    if view in ("front", "back"):
+        back = view == "back"
+        f = (lambda p: p) if not back else mirror_d
+        for x, w, s in ((164, 46, -1), (238, 46, 1)):
+            r_boot(svg, x, 548, w, RT2_BOOT, s, 8, 590)
+        r_shape(svg, RT2_COAT_PTS, RT2_COAT, RT2_COAT_HI, RT2_COAT_LO)
+        svg.path(f("M110,250 C100,330 94,390 92,436 M290,250 C300,330 306,390 308,436"), width=LINE * R_INK_SOFT)  # рукава
+        svg.path("M80,432 Q94,440 108,436 M292,436 Q306,440 320,432", width=THIN * 0.8)
+        for x in (94, 306):                                                                   # кисти
+            svg.ellipse(x, 452, 11, 13, RT2_SKIN, INK, LINE * 0.8)
+        if back:
+            svg.path("M200,300 L200,560", width=THIN * 0.8)
+            r_shape(svg, [(124, 150), (138, 128), (262, 128), (276, 150), (284, 210), (276, 262), (240, 290), (200, 296),
+                          (160, 290), (124, 262), (116, 210)], RT2_SCARF, RT2_SCARF_HI, RT2_SCARF_LO)  # шарф-капюшон
+            for y in (180, 220, 260):
+                svg.path(f"M{128 + (y - 180) * 0.1:.1f},{y} Q200,{y + 16} {272 - (y - 180) * 0.1:.1f},{y}", width=THIN * 0.8)
+            rt2_turban(svg, r_mirror(RT2_TURBAN_PTS), None)
+            return svg.text()
+        svg.path("M200,306 C200,400 200,480 200,560", width=THIN * 0.8)                       # борт
+        r_shape(svg, RT2_SCARF_PTS, RT2_SCARF, RT2_SCARF_HI, RT2_SCARF_LO)
+        svg.ellipse(256, 204, 8, 12, RT2_SKIN, INK, LINE * 0.8)                               # ухо
+        r_shape(svg, RT2_FACE_PTS, RT2_SKIN, RT2_SKIN_HI, RT2_SKIN_LO)
+        # Лицо: глаза-точки в морщинах, длинный нос крючком, открытый рот с зубами, складки щёк.
+        for x in (172, 216):
+            svg.ellipse(x, 196, 4.5, 4.5, "#FFFFFF", INK, FACE * 0.8)
+            svg.ellipse(x, 196, 1.8, 1.8, INK, None)
+            svg.path(f"M{x - 8},{204} Q{x},{210} {x + 8},{204} M{x - 7},{210} Q{x},{215} {x + 7},{210}", width=FACE * 0.6,
+                     extra=' opacity="0.8"')
+        svg.path("M196,198 C188,206 186,218 194,224 C198,227 204,226 206,222", width=FACE)
+        svg.path("M182,230 Q196,226 210,230 Q206,246 196,247 Q186,246 182,230 Z", "#1E1416", INK, FACE)
+        svg.path("M186,232 L208,232 L206,236 L188,236 Z", "#FFFFFF", None)
+        svg.path("M158,212 C152,228 156,240 164,246 M232,212 C238,228 234,240 226,246", width=FACE * 0.7)
+        svg.path("M154,226 l8,2 M234,228 l8,-2 M156,236 l8,1", width=FACE * 0.6, extra=' opacity="0.7"')
+        r_shape(svg, RT2_ROLL_PTS, RT2_SCARF, RT2_SCARF_HI, RT2_SCARF_LO)
+        svg.path("M140,270 Q198,292 262,270 M152,286 Q200,300 250,286", width=THIN * 0.8, extra=' opacity="0.8"')
+        rt2_turban(svg, RT2_TURBAN_PTS, (240, 140))
+    else:  # бок, лицом вправо: столбик пальто, шарф до тюрбана, нос крючком
+        r_boot(svg, 206, 548, 50, RT2_BOOT, 1, 12, 590)
+        coat = [(150, 140), (230, 134), (256, 160), (266, 220), (276, 300), (288, 380), (298, 460), (306, 530), (302, 558),
+                (200, 562), (106, 556), (104, 530), (110, 460), (118, 380), (126, 300), (134, 220), (140, 170)]
+        r_shape(svg, coat, RT2_COAT, RT2_COAT_HI, RT2_COAT_LO, light=1)
+        svg.path("M270,300 C282,380 294,460 300,556", width=THIN * 0.8)
+        svg.path("M196,250 C208,330 214,390 216,436", width=LINE * R_INK_SOFT)
+        svg.path("M200,432 Q216,440 232,434", width=THIN * 0.8)
+        svg.ellipse(218, 452, 11, 13, RT2_SKIN, INK, LINE * 0.8)
+        r_shape(svg, [(150, 150), (164, 128), (240, 128), (262, 150), (270, 200), (270, 250), (258, 284), (226, 302),
+                      (184, 302), (150, 284), (138, 240), (138, 190)], RT2_SCARF, RT2_SCARF_HI, RT2_SCARF_LO, light=1)
+        face = [(204, 140), (252, 142), (260, 170), (262, 186), (274, 196), (272, 204), (264, 208), (264, 228), (254, 250),
+                (226, 258), (204, 250), (196, 200)]
+        r_shape(svg, face, RT2_SKIN, RT2_SKIN_HI, RT2_SKIN_LO, light=1, k=0.14)
+        svg.ellipse(248, 186, 4, 4, "#FFFFFF", INK, FACE * 0.8)
+        svg.ellipse(250, 186, 1.6, 1.6, INK, None)
+        svg.path("M240,196 Q248,201 256,196", width=FACE * 0.6, extra=' opacity="0.8"')
+        svg.path("M262,222 Q254,218 248,224 Q254,236 262,232 Z", "#1E1416", INK, FACE)
+        svg.path("M232,206 C226,220 230,234 238,242", width=FACE * 0.7)
+        r_shape(svg, [(170, 244), (226, 262), (264, 246), (276, 266), (258, 292), (210, 304), (166, 294), (156, 268)],
+                RT2_SCARF, RT2_SCARF_HI, RT2_SCARF_LO, light=1)
+        svg.path("M166,276 Q218,296 266,270", width=THIN * 0.8, extra=' opacity="0.8"')
+        rt2_turban(svg, [(160, 154), (156, 128), (166, 104), (188, 86), (214, 77), (238, 84), (256, 104), (262, 130),
+                         (260, 154), (210, 160)], (252, 140))
+    return svg.text()
+
+
 RESIDENTS = {"babka": resident_babka, "man": resident_man, "woman": resident_woman, "boy": resident_boy,
              # PEOPLE-02: прохожие из роликов ШКЯ
              "shuba": resident_shuba, "beret": resident_beret, "violet": resident_violet,
              "ushanka": resident_ushanka, "tourist": resident_tourist, "kid": resident_kid,
              "ushanka_walk": lambda view: resident_ushanka(view, "walk"),   # ART-07 п2: идёт, без сигареты
-             "kid2": lambda view: resident_kid(view, 1)}
+             "kid2": lambda view: resident_kid(view, 1),
+             # PEOPLE-02 c2: остальные бабки ролика «…не наорала бабка»
+             "dog": resident_dog, "kolpak": resident_kolpak, "bow": resident_bow, "turban": resident_turban}
 
 
 def main() -> None:

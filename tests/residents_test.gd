@@ -13,8 +13,11 @@ extends SceneTree
 ## троллейбус у A (исчезает в дверях, не позже закрытия), выходит на B у передней двери (вне KIOSK_ZONE/KIOSK_SQUARE,
 ## тело выключено у парковки), переходит улицу и исчезает в «ГАСТРОНОМЕ», на следующей стоянке у A выходит из двери;
 ## не больше одной посадки и одного выхода на остановку за стоянку; гудок — ближние в 20 м оглядываются на 2 с, дальние
-## нет; «Лада» с водителем ближе 5 м — пузырь из QuestLines.RESIDENT_LINES на 2 с, не чаще раза в 20 с;
-## реплики — не больше шести коротких, без запрещённых слов.
+## нет; «Лада» с водителем ближе 5 м — пузырь из QuestLines.RESIDENT_LINES_PASS на 2 с, не чаще раза в 15 с.
+## Реплики (решение владельца 29.10): три набора HIT/PASS/IDLE, всего 20–30, IDLE 5–8, каждая ≤ 45 знаков, без
+## запрещённых слов и без дублей; RESIDENT_LINES = PASS; pick_line детерминирован и не повторяет реплику подряд.
+## Касание «Лады» — пузырь HIT; Илюша вплотную — PASS; за прогон города стоящие бубнят IDLE тихим пузырём;
+## у каждого жителя реплики подряд не повторяются и идут не чаще раза в 15 с (кроме HIT, который перебивает).
 ##
 ## Headless: tools/run.command --headless --fixed-fps 60 --script tests/residents_test.gd
 
@@ -104,7 +107,8 @@ func _part_roster() -> void:
 	for look in Layout.RESIDENT_LOOKS:
 		looks[look] = true
 	# PEOPLE-02: персонажи ШКЯ — шесть силуэтов (пацан в двух палитрах), все с рисунками resident_<look>.
-	var expected := [&"shuba", &"beret", &"violet", &"ushanka", &"ushanka_walk", &"tourist", &"kid", &"kid2"]
+	var expected := [&"shuba", &"beret", &"violet", &"ushanka", &"ushanka_walk", &"tourist", &"kid", &"kid2",
+		&"dog", &"kolpak", &"bow", &"turban"]   # PEOPLE-02 c2: бабки ролика su-Tl4Gyp7Q
 	var all_known := true
 	for look in looks:
 		all_known = all_known and expected.has(look)
@@ -339,6 +343,8 @@ func _part_block() -> void:
 	var motion := Vector3(r.global_position.x - world.player.global_position.x, 0.0, r.global_position.z - world.player.global_position.z)
 	var hit: KinematicCollision3D = world.player.move_and_collide(motion, true)
 	check(hit != null and hit.get_collider() == r.body, "Ilyusha bumps into %s's body (%s)" % [r.name, hit.get_collider().name if hit else "nothing"])
+	var said: Array = r.bubble_log.filter(func(e): return e[1] == &"pass")
+	check(not said.is_empty() and QuestLines.RESIDENT_LINES_PASS.has(said[0][2]), "%s says a PASS line with Ilyusha within 1.5 m (%s)" % [r.name, said])
 	world.player.place(Layout.SPAWN, Layout.SPAWN_YAW)
 	var resumed := await _wait_until(func(): return r.distance_walked > walked + 0.5, 5 * 60)
 	check(resumed >= 0, "%s walks on after Ilyusha leaves (%d frames)" % [r.name, resumed])
@@ -358,6 +364,7 @@ func _part_lada() -> void:
 	await drv.frames(2)
 	var lada_at: Vector3 = world.car.global_position
 	check(r.lada_bumps == 1, "%s stepped aside once (%d)" % [r.name, r.lada_bumps])
+	check(r.bubble_kind == &"hit" and r.bubble_visible() and QuestLines.RESIDENT_LINES_HIT.has(r.bubble_text), "%s says a HIT line when the Lada touches ('%s', %s)" % [r.name, r.bubble_text, r.bubble_kind])
 	check(not r._lada_touches(r.global_position, 0.0), "%s clear of the Lada" % r.name)
 	var off := _polyline_distance(Layout.RESIDENT_ROUTES[6], Vector2(r.global_position.x, r.global_position.z), true)
 	check(off < 0.01, "%s stands on its route (%.3f m off)" % [r.name, off])
@@ -396,17 +403,94 @@ func _part_reset() -> void:
 	check(states_ok, "reset_positions(): walking forward (smokers smoking), visible, counters cleared")
 
 # =====================================================================================
-# 9. Реплики: не больше шести коротких, без запрещённых слов
+# 9. Реплики: три набора HIT/PASS/IDLE (решение владельца 29.10), ≤ 45 знаков, без запрещённых слов; pick_line
 # =====================================================================================
 
 func _part_lines() -> void:
 	print("--- lines ---")
-	var lines: Array = QuestLines.RESIDENT_LINES
-	check(lines.size() >= 1 and lines.size() <= 6, "RESIDENT_LINES: 1–6 lines (%d)" % lines.size())
-	for text in lines:
+	var hit: Array = QuestLines.RESIDENT_LINES_HIT
+	var pass_: Array = QuestLines.RESIDENT_LINES_PASS
+	var idle: Array = QuestLines.RESIDENT_LINES_IDLE
+	var all: Array = hit + pass_ + idle
+	check(all.size() >= 20 and all.size() <= 30, "resident lines: 20–30 in all (%d = %d HIT + %d PASS + %d IDLE)" % [all.size(), hit.size(), pass_.size(), idle.size()])
+	check(not hit.is_empty() and not pass_.is_empty() and idle.size() >= 5 and idle.size() <= 8, "HIT and PASS not empty, IDLE 5–8 (%d)" % idle.size())
+	check(QuestLines.RESIDENT_LINES == pass_, "RESIDENT_LINES is the PASS set (compatibility)")
+	var anyone: Array = QuestLines.RESIDENT_LINES_ANYONE
+	check(anyone.all(func(t): return all.has(t)), "RESIDENT_LINES_ANYONE is a subset of HIT/PASS/IDLE")
+	for pair in [["HIT", hit], ["PASS", pass_], ["IDLE", idle]]:
+		check(pair[1].filter(func(t): return anyone.has(t)).size() >= 2, "%s has ≥ 2 lines for men and kids" % pair[0])
+	var seen := {}
+	for text in all:
 		var low := String(text).to_lower()
-		check(String(text).length() <= 20, "short line '%s' (%d chars ≤ 20)" % [text, String(text).length()])
+		check(String(text).length() <= 45, "short line '%s' (%d chars ≤ 45)" % [text, String(text).length()])
 		check(FORBIDDEN.all(func(w): return not low.contains(w)), "forbidden words absent in '%s'" % text)
+		check(not seen.has(text), "line '%s' only once across HIT/PASS/IDLE" % text)
+		seen[text] = true
+	# pick_line: детерминирован (тот же индекс — та же цепочка), подряд не повторяется, набор используется широко.
+	var a: Resident = Resident.new()
+	var b: Resident = Resident.new()
+	a.index = 5
+	b.index = 5
+	var c: Resident = Resident.new()
+	c.index = 6
+	var seq_a: Array = []
+	var seq_b: Array = []
+	var seq_c: Array = []
+	for k in 40:
+		seq_a.append(a.pick_line(hit))
+		seq_b.append(b.pick_line(hit))
+		seq_c.append(c.pick_line(hit))
+	var repeats := 0
+	for k in range(1, seq_a.size()):
+		if seq_a[k] == seq_a[k - 1] or seq_c[k] == seq_c[k - 1]:
+			repeats += 1
+	check(seq_a == seq_b, "pick_line is deterministic for the same resident index")
+	check(seq_a != seq_c, "different residents pick different sequences")
+	check(repeats == 0, "pick_line never repeats a line twice in a row (%d repeats in 2×40)" % repeats)
+	var distinct := {}
+	for t in seq_a:
+		distinct[t] = true
+	check(distinct.size() >= hit.size() - 2, "pick_line uses the set widely (%d of %d HIT lines in 40 picks)" % [distinct.size(), hit.size()])
+	var d: Resident = Resident.new()
+	d.index = 5
+	d.babka_voice = false
+	var seq_d: Array = []
+	for k in 40:
+		seq_d.append(d.pick_line(hit))
+	check(seq_d.all(func(t): return anyone.has(t)), "a man or a kid picks only RESIDENT_LINES_ANYONE")
+	for x in [a, b, c, d]:
+		x.free()
+
+## Журнал пузырей: подряд разные реплики, не чаще BUBBLE_COOLDOWN (HIT может перебить), реплика из своего набора.
+func _check_bubble_logs(where: String) -> void:
+	var sets := {&"hit": QuestLines.RESIDENT_LINES_HIT, &"pass": QuestLines.RESIDENT_LINES_PASS, &"idle": QuestLines.RESIDENT_LINES_IDLE}
+	var total := 0
+	var bad_repeat := []
+	var bad_gap := []
+	var bad_set := []
+	for r in residents:
+		var entries: Array = r.bubble_log
+		total += entries.size()
+		for k in entries.size():
+			if not sets[entries[k][1]].has(entries[k][2]):
+				bad_set.append([r.name, entries[k]])
+			if k == 0:
+				continue
+			if entries[k][2] == entries[k - 1][2]:
+				bad_repeat.append([r.name, entries[k - 1][2]])
+			if entries[k][0] - entries[k - 1][0] < Resident.BUBBLE_COOLDOWN - 0.01 and entries[k][1] != &"hit":
+				bad_gap.append([r.name, entries[k][0] - entries[k - 1][0]])
+	var bad_voice := []
+	for r in residents:
+		if not r.babka_voice:
+			for e in r.bubble_log:
+				if not QuestLines.RESIDENT_LINES_ANYONE.has(e[2]):
+					bad_voice.append([r.name, e[2]])
+	check(residents.any(func(r): return r.babka_voice) and residents.any(func(r): return not r.babka_voice), "babkas and others both on the street")
+	check(bad_voice.is_empty(), "%s: men and kids speak only RESIDENT_LINES_ANYONE %s" % [where, bad_voice])
+	check(bad_set.is_empty(), "%s: every bubble from its own set (%d bubbles) %s" % [where, total, bad_set])
+	check(bad_repeat.is_empty(), "%s: no resident repeats a line twice in a row %s" % [where, bad_repeat])
+	check(bad_gap.is_empty(), "%s: bubbles no more often than every %.0f s per resident (HIT aside) %s" % [where, Resident.BUBBLE_COOLDOWN, bad_gap])
 
 # =====================================================================================
 # 10. Город 200 с: пары держат дистанцию, курящие уходят и возвращаются, пассажир ездит троллейбусом
@@ -535,6 +619,26 @@ func _part_city() -> void:
 	check(shop_at > 0.0 and _flat(shop_pos).distance_to(_flat(shop)) < 0.05, "passenger crossed street B and went into the ГАСТРОНОМ (%.0f s)" % shop_at)
 	check(alight_a_at != Vector3.INF and _flat(alight_a_at).distance_to(_flat(alight_a_door)) < 0.05, "next time at stop A the passenger stepped out of the rear door")
 	check(rider.state == &"wait_trolley" and _flat(rider.global_position).distance_to(_flat(rider.route[ResidentsScript.RIDER_WAIT_POINT])) < 0.01, "…and walked back to wait at the pavilion (%s)" % rider.state)
+	# Бубнёж: стоящие (перекур, ожидание троллейбуса, пауза) говорят IDLE тихим пузырём.
+	var idle_said := []
+	var idle_moving := []
+	for r in residents:
+		for e in r.bubble_log:
+			if e[1] == &"idle":
+				idle_said.append([r.name, snappedf(e[0], 0.1), e[2]])
+				if not Resident.IDLE_STATES.has(e[3]):
+					idle_moving.append([r.name, e[3]])
+	print("INFO: idle lines %s" % [idle_said])
+	check(idle_said.size() >= 3, "standing residents mutter IDLE lines during the city run (%d)" % idle_said.size())
+	check(idle_moving.is_empty(), "IDLE only while standing %s" % [idle_moving])
+	var quiet: Resident = null
+	for r in residents:
+		if r.bubble_kind == &"idle" and r.get_node_or_null("BubbleBack") != null:
+			quiet = r
+	if check(quiet != null, "someone's last bubble was IDLE"):
+		var qb: Sprite3D = quiet.get_node("BubbleBack")
+		check(qb.scale.is_equal_approx(Vector3.ONE * Resident.IDLE_SCALE) and is_equal_approx(qb.modulate.a, Resident.IDLE_ALPHA), "IDLE bubble is quiet (scale %.2f, alpha %.2f)" % [qb.scale.x, qb.modulate.a])
+	_check_bubble_logs("city run")
 
 func _dwell_of(dwells: Array, at: float, stop: int) -> int:
 	for k in range(dwells.size() - 1, -1, -1):
@@ -584,7 +688,7 @@ func _part_horn() -> void:
 	horn.queue_free()
 
 # =====================================================================================
-# 12. «Лада» с водителем ближе 5 м: пузырь-реплика 2 с, не чаще раза в 20 с
+# 12. «Лада» с водителем ближе 5 м: пузырь-реплика 2 с, не чаще раза в 15 с
 # =====================================================================================
 
 func _part_bubble() -> void:
@@ -615,16 +719,17 @@ func _part_bubble() -> void:
 		was = on
 		if shown.size() == 1 and t - shown[0][0] < 1.0 and r._look_target == world.car:
 			looked = true
-	var lines: Array = QuestLines.RESIDENT_LINES
+	var lines: Array = QuestLines.RESIDENT_LINES_PASS
 	print("INFO: bubbles %s" % [shown])
 	check(shown.size() == 2, "two bubbles in 25 s with the Lada alongside (%d)" % shown.size())
+	check(r.bubble_log.all(func(e): return e[1] == &"pass"), "Lada alongside — PASS lines (%s)" % [r.bubble_log.map(func(e): return e[1])])
 	if shown.size() >= 1:
 		check(shown[0][0] < 0.2, "first bubble at once (%.2f s)" % shown[0][0])
 		check(absf(shown[0][1] - shown[0][0] - Resident.BUBBLE_SECONDS) < 0.1, "bubble shown %.2f s (2)" % (shown[0][1] - shown[0][0]))
-		check(lines.has(shown[0][2]), "bubble text '%s' from RESIDENT_LINES" % shown[0][2])
+		check(lines.has(shown[0][2]), "bubble text '%s' from RESIDENT_LINES_PASS" % shown[0][2])
 		check(looked, "%s looks at the Lada while speaking" % r.name)
 	if shown.size() >= 2:
-		check(shown[1][0] - shown[0][0] >= Resident.BUBBLE_COOLDOWN - 0.05, "next bubble no sooner than 20 s (%.2f s)" % (shown[1][0] - shown[0][0]))
+		check(shown[1][0] - shown[0][0] >= Resident.BUBBLE_COOLDOWN - 0.05, "next bubble no sooner than 15 s (%.2f s)" % (shown[1][0] - shown[0][0]))
 		check(shown[1][2] != shown[0][2], "a different line the second time ('%s')" % shown[1][2])
 	var back: Sprite3D = r.get_node_or_null("BubbleBack")
 	var label: Label3D = back.get_node_or_null("Bubble") if back else null
