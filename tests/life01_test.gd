@@ -12,6 +12,11 @@ extends SceneTree
 ##    MAX_ON_SCREEN жителей.
 ## 3. Сбит «Ладой» по дороге к цели — встал и дошёл до той же цели.
 ## 4. reset_positions(): все на стартах, брони сняты.
+## PEOPLE-03 (P2): данные — петля санок и площадка хоккея без коробок, пулы реплик занятий в лимитах TEXT-01; в городе
+## запускаются hockey, snowball, trade, sled и звучат занятия; отдельно (часть P2): торговка у прилавка, хоккеисты
+## катаются и пасуют шайбу, дети кидаются снежками и попадают, санки едут за бабушкой, птицы (голуби у контейнеров и
+## голубятни, синицы у кормушки) взлетают от Илюши и «Лады» и садятся обратно, звук занятия слышен рядом и не
+## запускается вдали, реплики занятий — из своих пулов без повторов подряд, сбитый хоккеист продолжает игру.
 ##
 ## Headless: tools/run.command --headless --fixed-fps 60 --script tests/life01_test.gd (после «--» слово data — только п. 1)
 
@@ -28,6 +33,14 @@ const ROUTE_CLEARANCE := 2.0
 const SNEAK_CLEARANCE := 1.5
 const SPOT_CLEARANCE := 0.5
 const P1_KINDS: Array[StringName] = [&"domino", &"hood", &"dig", &"sweep", &"slide", &"bench", &"carpet", &"door", &"shop"]
+const P2_KINDS: Array[StringName] = [&"hockey", &"snowball", &"trade", &"sled"]
+const P2_SOUNDS: Array[StringName] = [&"domino", &"sweep", &"slide", &"stick", &"sled"]
+const LINE_MAX_WORDS := 7
+const LINE_MAX_CHARS := 40
+const HOCKEY_KIDS: Array[int] = [20, 21]
+const SNOW_KIDS: Array[int] = [13, 22]
+const TRADER := 23
+const SLED_GRAN := 24
 
 var failures: Array[String] = []
 var checks := 0
@@ -85,6 +98,7 @@ func _run() -> void:
 	_part_data()
 	if not data_only:
 		await _part_city()
+		await _part_p2()
 		await _part_knock()
 		_part_reset()
 	_finish()
@@ -189,6 +203,56 @@ func _part_data() -> void:
 		for step in persona.get("plan", []):
 			ok = ok and (step == &"home" or kinds.has(step) or life.spots.has(step))
 		check(ok and r.errand, "%s: persona with a home door and a plan of known steps %s" % [r.name, persona.get("plan", [])])
+	_part_p2_data(posts)
+
+## PEOPLE-03 (P2): петля санок — по газонам, ≥ LIFE_CLEARANCE от коробок и разрушаемых, ≥ 8 м от постов, ≥ 2 м от
+## путей игрока; площадка хоккея — внутри коробки, ≥ 1 м от бортов; пулы реплик занятий — 1–7 слов, ≤ 40 знаков.
+func _part_p2_data(posts: Array) -> void:
+	print("--- P2 data ---")
+	var loop: Array = Layout.LIFE_SLED_LOOP
+	var worst := [INF, ""]
+	var off := []
+	var min_post := INF
+	var min_route := INF
+	for i in loop.size() - 1:
+		var a: Vector2 = loop[i]
+		var b: Vector2 = loop[i + 1]
+		var n := maxi(1, ceili(a.distance_to(b) / 0.25))
+		for j in n + 1:
+			var q := a.lerp(b, float(j) / n)
+			if not _walkable.any(func(w): return w.has_point(q)):
+				off.append("(%.1f, %.1f)" % [q.x, q.y])
+			for r in _solids + _breaks:
+				var d := _rect_distance(r[1], q)
+				if d < worst[0]:
+					worst = [d, r[0]]
+			for p in posts:
+				min_post = minf(min_post, q.distance_to(Vector2(p.x, p.z)))
+			min_route = minf(min_route, minf(_polyline_distance(Layout.ROUTE_WALK, q), _polyline_distance(Layout.ROUTE_DRIVE, q)))
+	check(off.is_empty() and worst[0] >= Layout.LIFE_CLEARANCE - 0.05 and min_post >= POST_CLEARANCE and min_route >= ROUTE_CLEARANCE,
+		"sled loop: walkable, %.2f m from %s, posts %.1f, routes %.1f%s" % [worst[0], worst[1], min_post, min_route, "" if off.is_empty() else " — off at " + ", ".join(off.slice(0, 3))])
+	var sled_pos: Vector3 = life.spots[&"sled"].pos
+	check(loop[0] == Vector2(sled_pos.x, sled_pos.z) and loop[0] == loop[-1], "sled loop starts and ends at the sled spot")
+	var area: Rect2 = Layout.LIFE_RINK_AREA
+	var rink := Rect2(Layout.RINK[0] - Vector2(Layout.RINK[1].x, Layout.RINK[1].z) * 0.5, Vector2(Layout.RINK[1].x, Layout.RINK[1].z))
+	var board := INF
+	for corner in [area.position, area.end, Vector2(area.position.x, area.end.y), Vector2(area.end.x, area.position.y)]:
+		board = minf(board, minf(minf(corner.x - rink.position.x, rink.end.x - corner.x), minf(corner.y - rink.position.y, rink.end.y - corner.y)))
+	check(rink.encloses(area) and board >= 1.0, "hockey area inside the rink, ≥ 1 m from the boards (%.2f m)" % board)
+	for id in [&"hockey_w", &"hockey_e", &"hockey_c"]:
+		var pos: Vector3 = life.spots[id].pos
+		check(area.has_point(Vector2(pos.x, pos.z)), "spot %s inside the hockey area" % id)
+	for kind in QuestLines.ACTIVITY_LINES:
+		var pool: Array = QuestLines.activity_lines(kind)
+		var bad := []
+		var seen := {}
+		for text: String in pool:
+			var words := QuestLines.word_count(text)
+			if words < 1 or words > LINE_MAX_WORDS or text.length() > LINE_MAX_CHARS or seen.has(text):
+				bad.append(text)
+			seen[text] = true
+		check(pool.size() >= 5 and bad.is_empty(), "activity lines %s: %d lines, 1–%d words, ≤ %d chars, no repeats %s" % [kind, pool.size(), LINE_MAX_WORDS, LINE_MAX_CHARS, bad])
+	check(QuestLines.activity_lines(&"domino").has("Рыба!"), "domino players say «Рыба!»")
 
 # =====================================================================================
 # 2. Город: цели, посещения, застревания, дорога, занятия, троллейбус, кадр
@@ -260,10 +324,170 @@ func _part_city() -> void:
 	check(no_goal.is_empty(), "every resident always has a goal %s" % [no_goal.values().slice(0, 4)])
 	check(road_hits.is_empty(), "nobody on a road outside crossings%s" % ("" if road_hits.is_empty() else " — " + ", ".join(road_hits.values().slice(0, 4))))
 	check(solid_hits.is_empty(), "nobody inside a Layout solid%s" % ("" if solid_hits.is_empty() else " — " + ", ".join(solid_hits.values().slice(0, 4))))
-	for k in P1_KINDS:
+	for k in P1_KINDS + P2_KINDS:
 		check(kinds.get(k, 0) >= 1, "activity %s started (%d)" % [k, kinds.get(k, 0)])
+	print("INFO: activity sounds %s" % [residents_node.activity_sounds])
+	for k in P2_SOUNDS:
+		check(int(residents_node.activity_sounds.get(k, 0)) >= 1, "activity sound %s emitted (%d)" % [k, residents_node.activity_sounds.get(k, 0)])
+	var act_said := {}
+	for r in residents:
+		for b in r.bubble_log:
+			for kind in QuestLines.ACTIVITY_LINES:
+				if QuestLines.activity_lines(kind).has(b[2]):
+					act_said[kind] = int(act_said.get(kind, 0)) + 1
+	print("INFO: activity lines said %s" % [act_said])
+	check(not act_said.is_empty(), "residents at their activities speak lines from the activity pools %s" % [act_said])
 	check(rides >= 1, "someone rode trolleybus 13 (%d boardings)" % rides)
 	check(max_screen >= 1 and max_screen <= MAX_ON_SCREEN, "residents on screen within 60 m: max %d (1–%d)" % [max_screen, MAX_ON_SCREEN])
+
+# =====================================================================================
+# P2. Занятия PEOPLE-03: торговка, хоккей, снежки, санки, птицы, звук, реплики, сбитый хоккеист
+# =====================================================================================
+
+func _part_p2() -> void:
+	print("--- P2 activities ---")
+	world.player.place(Layout.SPAWN, Layout.SPAWN_YAW)
+	world.car.reset_to(Layout.CAR_SPAWN, Layout.CAR_SPAWN_YAW)
+	residents_node.reset_positions()
+	var trader: Resident = residents[TRADER]
+	var gran: Resident = residents[SLED_GRAN]
+	var hockey: Array = HOCKEY_KIDS.map(func(i): return residents[i])
+	var snow: Array = SNOW_KIDS.map(func(i): return residents[i])
+	# Торговка — у прилавка, лицом к тротуару; банки на прилавке.
+	var t := await _wait_until(func(): return trader.is_playing(&"trade"), 60 * 60)
+	var spot: Dictionary = life.spots[&"trade"]
+	check(t >= 0 and Resident._flat(trader.global_position).distance_to(spot.pos) < 0.05 and is_equal_approx(trader.facing_yaw, spot.yaw),
+		"trader stands at the stall facing the sidewalk (%.0f s)" % (t / 60.0))
+	var stall_ok: bool = residents_node.get_node_or_null("LifeProps/Stall") != null
+	var b_root = get_first_node_in_group(&"breakables_root")
+	if b_root and b_root.has_method(&"get_by_id") and b_root.get_by_id(Layout.LIFE_STALL) != null:
+		stall_ok = true
+	check(stall_ok and life.props.has(&"jars") and life.props[&"jars"].visible, "the stall and the pickle jars are there while she trades")
+	# Санки — едут за бабушкой.
+	await _wait_until(func(): return gran.is_playing(&"sled"), 60 * 60)
+	var walked: float = gran.distance_walked
+	var max_gap := 0.0
+	for k in 600:
+		await physics_frame
+		if gran.sled_node():
+			max_gap = maxf(max_gap, Resident._flat(gran.sled_node().global_position).distance_to(Resident._flat(gran.global_position)))
+	check(gran.is_playing(&"sled") and gran.distance_walked - walked > 5.0 and gran.sled_node() != null and max_gap <= Resident.SLED_BACK + 0.3,
+		"granny pulls the sled around Z15 (%.1f m in 10 s, sled ≤ %.2f m behind)" % [gran.distance_walked - walked, max_gap])
+	# Хоккей: оба на льду, катаются внутри площадки, шайба ходит.
+	t = await _wait_until(func(): return hockey.all(func(r): return r.is_playing(&"hockey")), 90 * 60)
+	check(t >= 0, "both hockey kids skate in the rink (%.0f s)" % (t / 60.0))
+	var moves: int = life.hockey_passes + life.hockey_shots
+	var puck: Node3D = life.props.get(&"puck")
+	var puck_from: Vector3 = puck.global_position if puck else Vector3.ZERO
+	var outside := 0
+	for k in 20 * 60:
+		await physics_frame
+		for r in hockey:
+			if r.is_playing(&"hockey") and not Layout.LIFE_RINK_AREA.grow(0.05).has_point(Vector2(r.global_position.x, r.global_position.z)):
+				outside += 1
+	var sticks: bool = hockey.all(func(r): return r.get_node_or_null("Stick") != null and r.get_node("Stick").visible)
+	check(life.hockey_passes + life.hockey_shots - moves >= 3 and puck != null and puck.global_position.distance_to(puck_from) > 1.0,
+		"the puck goes around: %d passes, %d shots" % [life.hockey_passes, life.hockey_shots])
+	check(outside == 0 and sticks, "hockey kids stay inside the rink area with sticks (%d frames outside)" % outside)
+	# Снежки: двое у крепости, кидают и попадают.
+	t = await _wait_until(func(): return snow.all(func(r): return r.is_playing(&"snowball")), 150 * 60)
+	check(t >= 0, "two kids at the snow fort (%.0f s)" % (t / 60.0))
+	var thrown: int = snow[0].snowballs + snow[1].snowballs
+	await _wait_until(func(): return snow[0].snow_hits + snow[1].snow_hits >= 1 and snow[0].snowballs + snow[1].snowballs - thrown >= 3, 30 * 60)
+	check(snow[0].snowballs + snow[1].snowballs - thrown >= 3 and snow[0].snow_hits + snow[1].snow_hits >= 1,
+		"snowballs fly across the fort and hit (%d thrown, %d hits)" % [snow[0].snowballs + snow[1].snowballs, snow[0].snow_hits + snow[1].snow_hits])
+	await _part_p2_sound(hockey)
+	await _part_p2_birds()
+	_part_p2_lines()
+	await _part_p2_knock(hockey)
+
+## Звук занятия: рядом с коробкой клюшка слышна, от спавна (≈ 90 м) — не запускается.
+func _part_p2_sound(hockey: Array) -> void:
+	var sound: Node = world.get_node_or_null("SoundDirector")
+	if not check(sound != null and sound.get("life_players") != null, "SoundDirector has activity sound players"):
+		return
+	world.player.place(Vector3(62.0, 0, 84.0), 0.0)
+	await drv.frames(90)
+	var near: int = sound.played["life_stick"]
+	await _wait_until(func(): return sound.played["life_stick"] - near >= 2, 30 * 60)
+	check(sound.played["life_stick"] - near >= 2, "hockey stick heard next to the rink (%d)" % (sound.played["life_stick"] - near))
+	var p: AudioStreamPlayer3D = sound.life_players[&"stick"]
+	check(p.max_distance <= 40.0 and p.volume_db <= -6.0, "activity sounds are quiet 3D: %.0f dB, heard to %.0f m" % [p.volume_db, p.max_distance])
+	world.player.place(Layout.SPAWN, Layout.SPAWN_YAW)
+	await drv.frames(90)
+	var far: int = sound.played["life_stick"]
+	var skipped: int = sound.played["life_far"]
+	for k in 15 * 60:
+		await physics_frame
+	check(sound.played["life_stick"] == far and sound.played["life_far"] > skipped and hockey.any(func(r): return r.is_playing(&"hockey")),
+		"…and silent from the spawn (%d far sounds skipped)" % (sound.played["life_far"] - skipped))
+
+## Птицы: голуби у контейнеров и синицы у кормушки — от Илюши, голуби у голубятни — от «Лады»; садятся обратно.
+func _part_p2_birds() -> void:
+	var amb: Node = world.get_node_or_null("LevelGeometry/Ambient")
+	var sound: Node = world.get_node_or_null("SoundDirector")
+	if not check(amb != null and amb.pigeons.size() >= 6 and amb.tits.size() >= 2, "pigeons and tits are there (%d, %d)" % [amb.pigeons.size() if amb else 0, amb.tits.size() if amb else 0]):
+		return
+	check(amb.pigeons.all(func(b): return b.state == &"sit") and amb.tits.all(func(b): return b.state == &"sit"), "birds start sitting")
+	var bins_flock: Array = amb.flocks[2][0]
+	var wings: int = sound.played["life_wings"]
+	world.player.place(Vector3(-33.0, 0, 72.0), 0.0)
+	await drv.frames(30)
+	check(bins_flock.all(func(b): return b.state != &"sit") and amb.bird_flushes[&"pigeon"] >= 1, "pigeons at the yard bins take off when Ilyusha comes near")
+	check(sound.played["life_wings"] > wings, "wings flap heard (%d)" % (sound.played["life_wings"] - wings))
+	world.player.place(Vector3(-64.0, 0, 95.5), 0.0)
+	await drv.frames(30)
+	check(amb.tits.all(func(b): return b.state != &"sit") and amb.bird_flushes[&"tit"] >= 1, "tits at the feeder fly up when Ilyusha comes near")
+	world.player.place(Layout.SPAWN, Layout.SPAWN_YAW)
+	var settled := await _wait_until(func(): return bins_flock.all(func(b): return b.state == &"sit") and amb.tits.all(func(b): return b.state == &"sit"), 40 * 60)
+	check(settled >= 0, "…and they settle back once he is gone (%.1f s)" % (settled / 60.0))
+	var roof: Array = amb.flocks[0][0]
+	world.car.reset_to(Vector3(86.0, 0, 105.5), 0.0)
+	await drv.frames(30)
+	check(roof.all(func(b): return b.state != &"sit"), "pigeons on the dovecote take off from the Lada")
+	world.car.reset_to(Layout.CAR_SPAWN, Layout.CAR_SPAWN_YAW)
+	check(amb.coos >= 1, "pigeons coo (%d)" % amb.coos)
+
+## Реплики занятий: idle и walk на занятии — из пула занятия, подряд без повторов.
+func _part_p2_lines() -> void:
+	var r: Resident = residents[0]
+	var was_acting: bool = r._acting
+	var was_kind: StringName = r._act_kind
+	for kind in QuestLines.ACTIVITY_LINES:
+		r._acting = true
+		r._act_kind = kind
+		var pool: Array = QuestLines.activity_lines(kind)
+		var seq := []
+		for k in pool.size() * 3:
+			seq.append(r.pick_line(&"idle" if k % 2 == 0 else &"walk"))
+		var repeats := 0
+		for k in range(1, seq.size()):
+			if seq[k] == seq[k - 1]:
+				repeats += 1
+		check(seq.all(func(x): return pool.has(x)) and repeats == 0, "%s: idle/walk lines come from its pool, no repeats in a row" % kind)
+	r._acting = was_acting
+	r._act_kind = was_kind
+
+## Сбитый хоккеист встаёт и продолжает игру с места.
+func _part_p2_knock(hockey: Array) -> void:
+	world.player.place(Layout.SPAWN, Layout.SPAWN_YAW)
+	var r: Resident = hockey[0]
+	if not check(await _wait_until(func(): return r.is_playing(&"hockey"), 60 * 60) >= 0, "%s plays hockey before the knock" % r.name):
+		return
+	var resumes: int = r.resumes
+	world.car.reset_to(Vector3(Layout.RINK[0].x, 0, Layout.RINK[0].y), 0.0)
+	var hit := -1
+	for frame in 240:
+		var to: Vector3 = Resident._flat(r.global_position) - Resident._flat(world.car.global_position)
+		world.car.velocity = to.normalized() * 6.0
+		await physics_frame
+		if r.state == &"knocked":
+			hit = frame
+			break
+	world.car.reset_to(Layout.CAR_SPAWN, Layout.CAR_SPAWN_YAW)
+	check(hit >= 0, "Lada knocks %s on the ice (frame %d)" % [r.name, hit])
+	await _wait_until(func(): return r.knock_phase == &"", 20 * 60)
+	check(r.resumes == resumes + 1 and r.is_playing(&"hockey"), "after getting up %s goes on playing hockey (%s)" % [r.name, r.state])
 
 # =====================================================================================
 # 3. Сбит по дороге к цели — встал и дошёл до той же цели
