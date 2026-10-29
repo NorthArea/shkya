@@ -48,7 +48,7 @@ var end_buttons: Dictionary = {}  # id -> Button: &"again", &"menu", &"stay"
 ## Стелс (EXT-01, C7): глаз + «!» справа вверху, подсказка, экран провала и тост — читает снимок мира.
 var suspicion_meter: SuspicionMeter
 ## COINS-01: вторая строка карточки «Собери монеты: N/35» и счётчик монет справа от карточки (монета + «N / 35»,
-## после покупки — «N ₽»), пульс при каждом подборе. Только из get_hud_state(): money, money_goal, coins_task.
+## при ≥ 35 и после покупки — «N ₽»), пульс при каждом подборе. Только из get_hud_state(): money, money_goal, coins_task.
 var coins_row: HBoxContainer
 var coins_label: Label
 var coin_counter: PanelContainer
@@ -136,8 +136,9 @@ func _update_coins(state: Dictionary) -> void:
 	coins_row.visible = coins_task != ""
 	var money: int = state.get("money", 0)
 	var goal: int = state.get("money_goal", 0)
-	coin_counter_label.text = ("%d / %d" % [money, goal]) if goal > 0 else ("%d ₽" % money)
 	var enough := goal > 0 and money >= goal   # хватает на батон — число зелёное
+	# До цели — «N / 35»; набрано или батон куплен — «N ₽» (а не «48 / 35», приёмка COINS-01).
+	coin_counter_label.text = ("%d / %d" % [money, goal]) if goal > 0 and not enough else ("%d ₽" % money)
 	if enough != _counter_enough:
 		_counter_enough = enough
 		coin_counter_label.add_theme_color_override("font_color", GREEN if enough else INK)
