@@ -40,10 +40,17 @@ extends SceneTree
 ## после поворота на угол 0, чистых ≤ 2; с ожиданием угла 0 на дороге — проход; честные пути с ожиданием — проход (время
 ## в лог); SNEAK_WEST без ожидания — 4 фазы, чистых ≤ 1; KIOSK_BINS в 3,9 м от гаражей, прыжок с них на крышу гаражей не
 ## достаёт; на крыше гаражей и киоска — провал ≤ 2,5 с; на контейнерах и в прыжке с земли — не «на крыше».
+## EXT-01 fix6 (шестая приёмка). Часть 14 (свежий мир): правило близости — ближе 3 м виден без угла и луча, рост ×3, в
+## 3…6 м без угла (луч нужен); в коробке/сугробе множитель заметности остаётся; круг 6 м на земле; дальность первого 14 м;
+## шесть маршрутов приёмки (dij_south/east/north/west, N1, N2) по 12 фазам цикла первого поста без ожидания — провал в
+## ≥ 9 из 12; «в лоб», обе диагонали и SNEAK_WEST без ожидания — 12 фаз, число чистых в лог (норма ≤ 4 / ≤ 6); честные
+## SNEAK_EAST/WEST с ожиданием — проход (время в лог); окно 30 с — 0 кадров; чекпоинт вне.
 ##
 ## Headless: tools/run.command --headless --fixed-fps 60 --script tests/stealth_test.gd
 ## Кадры: tools/run.command --fixed-fps 60 --resolution 1920x1080 --script tests/stealth_test.gd -- --capture
-##   (только часть 12: -- --capture --fix3-only; только часть 13: -- --capture --fix5-only → builds/screenshots/EXT-01/fix5/)
+##   (только часть 12: -- --capture --fix3-only; только часть 13: -- --capture --fix5-only → builds/screenshots/EXT-01/fix5/;
+##   только часть 14: -- --capture --fix6-only → builds/screenshots/EXT-01/fix6/; только её кадры: -- --capture --fix6-only
+##   --fix6-frames)
 ##   → builds/screenshots/ext01/s/
 
 const Layout = preload("res://game/world/layout.gd")
@@ -53,6 +60,7 @@ const QuestFlowScript = preload("res://game/mission/quest_flow.gd")
 const PatrolsScript = preload("res://game/world/patrols.gd")
 const OUT := "res://builds/screenshots/ext01/s"
 const OUT5 := "res://builds/screenshots/EXT-01/fix5"
+const OUT6 := "res://builds/screenshots/EXT-01/fix6"
 const SnowSpotScript = preload("res://game/stealth/snow_hide_spot.gd")
 ## fix5: диагональ с дороги B к окну (пятая приёмка, P1-1) — от места выхода у парковки; окно — _vendor_stand().
 const DIAG_LONG := [Vector3(62, 0, -53), Vector3(73.5, 0, -53), Vector3(73.5, 0, -64.5), Vector3(68, 0, -69), Vector3(62.5, 0, -73.2), Vector3(60.5, 0, -75.3)]
@@ -65,10 +73,11 @@ const HINT_TEXT := "Тебя заметили. Отойди, пока это н�
 ## Начало прямой «в лоб» к окну: перед машиной на парковке, вне конусов (дальше 12 м от поста).
 const DIRECT_FROM := Vector3(59.5, 0, -57.3)
 const CAR_TOAST := "МАШИНУ ОТОГНАЛИ НА ПАРКОВКУ"
-## Где Илюша говорит с полицейским (угол 0): северо-западнее поста, 2,1 м — сбоку, вне конуса, E доступна.
-const TALK_SPOT := Vector3(60.5, 0, -71.5)
+## Где Илюша говорит с полицейским (угол 0): северо-западнее поста, 2,1 м — сбоку, вне конуса, E доступна; fix6 — в
+## радиусе близости (3 м): видят без угла, рост ×3 — успеть нажать E.
+const TALK_SPOT := Layout.OFFICER_POST + Vector3(-1.5, 0, -1.5)
 ## За спиной полицейского при угле 0 (169° от корпуса).
-const BEHIND_SPOT := Vector3(63.5, 0, -70.5)
+const BEHIND_SPOT := Layout.OFFICER_POST + Vector3(1.5, 0, -0.5)
 
 var failures: Array[String] = []
 var checks := 0
@@ -95,12 +104,13 @@ func _initialize() -> void:
 	call_deferred("_run")
 
 func _run() -> void:
-	create_timer(7200.0, true, false, true).timeout.connect(func():
-		push_error("FAIL: stealth test exceeded 7200 simulated seconds")
+	create_timer(14400.0, true, false, true).timeout.connect(func():
+		push_error("FAIL: stealth test exceeded 14400 simulated seconds")
 		_finish(2))
 	if capture:
 		DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path(OUT))
 		DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path(OUT5))
+		DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path(OUT6))
 	main = load("res://game/main.tscn").instantiate()
 	root.add_child(main)
 	drv = Driver.new(self, main)
@@ -132,6 +142,11 @@ func _run() -> void:
 		drv.release_all()
 		_finish()
 		return
+	if "--fix6-only" in OS.get_cmdline_user_args():   # часть 14 без остального прогона
+		await _part_fix6()
+		drv.release_all()
+		_finish()
+		return
 	await _part_geometry()
 	await _part_cover()
 	await _part_decay()
@@ -150,6 +165,8 @@ func _run() -> void:
 	await _part_fix3()
 	drv.release_all()
 	await _part_fix5()
+	drv.release_all()
+	await _part_fix6()
 	drv.release_all()
 	_finish()
 
@@ -171,13 +188,14 @@ func _part_geometry() -> void:
 	check(_vis() == 1.0, "8.5 m (inside range 9) → 1")
 	_aim(p + Vector3(0, 0, -12), p)
 	check(_vis() == 0.0, "12 m (outside range 9) → 0")
-	_aim(p + Vector3(0, 0, -5), p + Vector3(0, 0, -20))
-	check(_vis() == 0.0, "5 m but facing away → 0")
-	_aim(p + Vector3(0, 0, -5), p)
+	# fix6: ближе DetectionSensor.NEAR_RING (6 м) угол не проверяется — угол проверяем в 7–8,5 м.
+	_aim(p + Vector3(0, 0, -7), p + Vector3(0, 0, -20))
+	check(_vis() == 0.0, "7 m but facing away → 0")
+	_aim(p + Vector3(0, 0, -8), p)
 	sensor.rotation.y += deg_to_rad(30.0)
-	check(_vis() == 1.0, "30° off axis (fov 75) → 1")
+	check(_vis() == 1.0, "8 m, 30° off axis (fov 75) → 1")
 	sensor.rotation.y += deg_to_rad(16.0)
-	check(_vis() == 0.0, "46° off axis (fov 75) → 0")
+	check(_vis() == 0.0, "8 m, 46° off axis (fov 75) → 0")
 	_aim(p + Vector3(0, 0, -5), p)
 	sensor.enabled = false
 	check(_vis() == 0.0, "enabled = false → 0")
@@ -276,8 +294,8 @@ func _part_decay() -> void:
 	check(hud.suspicion_meter.plate.position.x > 1500 and hud.suspicion_meter.plate.position.y < 100, "HUD: meter sits top-right")
 	await _shot("indicator_suspicious")
 	s0 = world.stealth.suspicion   # в режиме кадров шкала успела вырасти за время снимка
-	# Вышли из конуса: Илюша за спиной сенсора.
-	await _place_player(p + Vector3(0, 0, -10), 0.0)
+	# Вышли из конуса: Илюша за спиной сенсора дальше кольца близости (fix6: ближе 6 м видят и за спиной).
+	await _place_player(p + Vector3(0, 0, -12), 0.0)
 	await drv.frames(30)
 	var s1: float = world.stealth.suspicion
 	check(s1 < s0 - 0.15, "0.5 s out of view: suspicion decays (%.2f → %.2f)" % [s0, s1])
@@ -644,14 +662,14 @@ func _part_kiosk_section() -> void:
 	check(_track_fail >= 0 or _track_max >= 0.6, "west path while the officer looks west-south-west: seen (max %.2f, fail %.1f s)" % [_track_max, _track_fail / 60.0 if _track_fail >= 0 else -1.0])
 	await _wait_until(func(): return not world.is_stealth_failing(), 300)
 	await drv.frames(260)
-	# Путь «за остановкой», пока смотрит на юг, — шкала растёт (индикатор), путь требует ожидания.
+	# SNEAK_EAST (fix6: коридор и южная стена киоска при угле [1]), пока смотрит на запад-юго-запад, — видят.
 	await _place_player(exit_spot, 0.0)
 	await drv.frames(30)
 	_reset_track()
-	if await drv.walk_path(Layout.SNEAK_EAST[0]) and await drv.wait_officer_turn(1 - int(Layout.SNEAK_EAST[1])):
+	if await drv.walk_path(Layout.SNEAK_EAST[0]) and await drv.wait_officer_turn(0):
 		await _walk_path_until_fail(Layout.SNEAK_EAST[2], 900)
-	print("INFO: east path while the officer looks south-south-east: max suspicion %.2f, fail frame %d" % [_track_max, _track_fail])
-	check(_track_fail >= 0, "east path while the officer looks south-south-east: detected (max %.2f)" % _track_max)
+	print("INFO: east path while the officer looks west-south-west: max suspicion %.2f, fail frame %d" % [_track_max, _track_fail])
+	check(_track_fail >= 0 or _track_max >= 0.6, "east path while the officer looks west-south-west: seen (max %.2f, fail %.1f s)" % [_track_max, _track_fail / 60.0 if _track_fail >= 0 else -1.0])
 	if _track_fail >= 0:
 		await _wait_until(func(): return not world.is_stealth_failing(), 300)
 	await drv.frames(260)
@@ -776,7 +794,8 @@ func _part_fix2() -> void:
 	await drv.frames(10)
 	var side_prompt: String = world.get_hud_state()["prompt"]
 	check(behind_prompt != "E — ПОГОВОРИТЬ" and side_prompt == "E — ПОГОВОРИТЬ", "officer: no E prompt from behind ('%s'), prompt from the side ('%s')" % [behind_prompt, side_prompt])
-	check(o_sensor.poll() == 0.0, "talk spot is outside the officer cone")
+	var talk_vis := o_sensor.poll()
+	check(talk_vis == 1.0 and o_sensor.near_rise_factor == DetectionSensor.NEAR_RISE_FACTOR, "fix6: talk spot (2.1 m) is inside the 3 m proximity radius — heard, rise ×3")
 	await _shot("f_talk_spot")
 
 	# Разговор с полицейским (этап 5): уйти сразу, через 1 с — без провала; уйти сразу на юг к парковке мимо его второго
@@ -787,11 +806,10 @@ func _part_fix2() -> void:
 		check(await drv.wait_officer_turn(0), "%s: officer on facing 0 (%s)" % [variant, drv.last_error])
 		var before := _kiosk_detections
 		_reset_track()
-		if not check(await drv.walk_to(TALK_SPOT), "%s: walked to the officer's side (%s)" % [variant, drv.last_error]):
-			return
-		await drv.interact()
-		await drv.frames(10)
-		if not check(world.quest_flow.is_dialog_open(), "%s: E opens the officer dialog" % variant):
+		# fix6: ближе 3 м рост ×3 — E жмётся, как только появилась подсказка (как игрок), а не после остановки.
+		var talk: Array = await _walk_and_talk(TALK_SPOT)
+		print("INFO: %s: E at %.2f m from the officer, suspicion at E %.2f" % [variant, talk[2], talk[1]])
+		if not check(talk[0], "%s: walking up from the window, E at the prompt opens the officer dialog (suspicion %.2f)" % [variant, talk[1]]):
 			return
 		for i in 8:
 			if not world.quest_flow.is_dialog_open():
@@ -998,7 +1016,7 @@ func _part_fix3() -> void:
 
 	# Пост, настройки, без диалога.
 	check(officer2 != null and officer2.name == "Officer2" and officer2.interaction_id == &"officer2" and officer2.character == "police", "Officer2: second police NPC (id officer2, police art)")
-	check(s2.is_in_group(&"detection_sensors") and s2.show_cone and is_equal_approx(s2.range_m, PatrolsScript.OFFICER2_RANGE) and is_equal_approx(s2.range_m, 14.0) and is_equal_approx(s2.fov_deg, PatrolsScript.OFFICER2_FOV) and is_equal_approx(s2.fov_deg, 100.0) and officer2.turn_every == officer.turn_every and officer2.facing_holds == [PatrolsScript.OFFICER_HOLD, PatrolsScript.OFFICER2_HOLD_EAST], "Officer2 sensor: in the group, cone, %.0f m / %.0f°, hold %s s, east-south-east %s s (fix5)" % [s2.range_m, s2.fov_deg, officer2.turn_every, PatrolsScript.OFFICER2_HOLD_EAST])
+	check(s2.is_in_group(&"detection_sensors") and s2.show_cone and is_equal_approx(s2.range_m, PatrolsScript.OFFICER2_RANGE) and is_equal_approx(s2.range_m, 14.0) and is_equal_approx(s2.fov_deg, PatrolsScript.OFFICER2_FOV) and is_equal_approx(s2.fov_deg, 100.0) and officer2.turn_every == officer.turn_every and officer2.facing_holds == [PatrolsScript.OFFICER2_HOLD_WEST, PatrolsScript.OFFICER2_HOLD_EAST], "Officer2 sensor: in the group, cone, %.0f m / %.0f°, west %s s (fix6), east-south-east %s s (fix5)" % [s2.range_m, s2.fov_deg, PatrolsScript.OFFICER2_HOLD_WEST, PatrolsScript.OFFICER2_HOLD_EAST])
 	check(_near2(officer2.global_position, Layout.OFFICER2_POST, 0.05) and Layout.OFFICER2_FACING.size() == 2, "Officer2 at OFFICER2_POST %s, two facings" % Layout.OFFICER2_POST)
 	check(s1.car_area == Layout.KIOSK_SQUARE and s2.car_area == Layout.KIOSK_SQUARE and Layout.KIOSK_SQUARE == Rect2(50, -94, 26, 34), "both officers watch cars on KIOSK_SQUARE x 50…76, z −94…−60")
 	var road_stop := Vector3(66.9, 0, -75.8)
@@ -1049,13 +1067,16 @@ func _part_fix3() -> void:
 			tail_safe += 1 if _in_cone(Layout.OFFICER2_POST, Layout.OFFICER2_FACING[Layout.SNEAK_WEST[3]], q, s2.fov_deg, s2.range_m) else 0
 			tail_seen += 1 if _in_cone(Layout.OFFICER2_POST, Layout.OFFICER2_FACING[1 - Layout.SNEAK_WEST[3]], q, s2.fov_deg, s2.range_m) else 0
 	check(tail_safe == 0 and tail_seen > 8, "SNEAK_WEST past the kiosk: outside Officer2 facing %d, in facing %d for %d points (wait needed)" % [Layout.SNEAK_WEST[3], 1 - Layout.SNEAK_WEST[3], tail_seen])
+	# fix6: с поста (58; −86) угол 0 (пеленг 235°) — коридор z −87…−77 и проход вдоль северной стены киоска.
 	var corridor := []
-	for k in 13:
-		corridor.append(Vector3(51.3, 0, -92.0 + k))
-	check(corridor.all(func(q): return _in_cone(Layout.OFFICER2_POST, Layout.OFFICER2_FACING[0], q, s2.fov_deg, s2.range_m)) and not corridor.any(func(q): return _in_cone(Layout.OFFICER2_POST, Layout.OFFICER2_FACING[1], q, s2.fov_deg, s2.range_m)), "facing 0 (west) covers the corridor x = 51.3, z −92…−80; facing 1 leaves it")
+	for k in 11:
+		corridor.append(Vector3(51.3, 0, -87.0 + k))
+	for k in 6:
+		corridor.append(Vector3(51.5 + k, 0, -79.5))
+	check(corridor.all(func(q): return _in_cone(Layout.OFFICER2_POST, Layout.OFFICER2_FACING[0], q, s2.fov_deg, s2.range_m)) and not corridor.any(func(q): return _in_cone(Layout.OFFICER2_POST, Layout.OFFICER2_FACING[1], q, s2.fov_deg, s2.range_m)), "facing 0 (south-west) covers the corridor x = 51.3, z −87…−77 and the passage z = −79.5 to x 56.5; facing 1 leaves them")
 	# Настоящим опросом: Илюша в коридоре — видят при угле 0 (луч свободен), у западной стены киоска — киоск закрывает.
 	var corridor_seen := []
-	for q in [Vector3(51.3, 0, -91), Vector3(51.3, 0, -86), Vector3(51.3, 0, -81)]:
+	for q in [Vector3(51.3, 0, -86), Vector3(51.3, 0, -81), Vector3(54.5, 0, -79.5)]:
 		await _place_player(q, 0.0)
 		s2.rotation.y = Layout.OFFICER2_FACING[0]
 		corridor_seen.append(s2.poll())
@@ -1079,7 +1100,7 @@ func _part_fix3() -> void:
 		if s2.poll() > 0.0 or _in_cone(Layout.OFFICER2_POST, Layout.OFFICER2_FACING[f], _vendor_stand(), s2.fov_deg, s2.range_m):
 			window_seen.append(f)
 	check(window_seen.is_empty(), "kiosk window is outside both Officer2 cones %s" % [window_seen])
-	var leg := [Vector3(72, 0, -84), Vector3(69, 0, -84), Vector3(66, 0, -84)]
+	var leg := [Vector3(71, 0, -84), Vector3(68, 0, -84), Vector3(65, 0, -84)]
 	check(_in_cone(Layout.OFFICER2_POST, Layout.OFFICER2_FACING[1], road_stop, s2.fov_deg, s2.range_m) and leg.all(func(q): return _in_cone(Layout.OFFICER2_POST, Layout.OFFICER2_FACING[1], q, s2.fov_deg, s2.range_m)), "facing 1 covers the road stop by the window and the road bypass leg z = −84")
 	check(not leg.any(func(q): return _in_cone(Layout.OFFICER2_POST, Layout.OFFICER2_FACING[0], q, s2.fov_deg, s2.range_m)), "facing 0 leaves the road bypass leg open")
 	await drv.frames(10)
@@ -1221,8 +1242,11 @@ func _part_fix3() -> void:
 	var t_wait := (_track_frames - t0) / 60.0 - t_cover
 	road_ok = road_ok and await drv.walk_path(road_b)
 	var t_road := (_track_frames - t0) / 60.0
-	print("INFO: road bypass with a wait for Officer2 facing 0: %.1f s (to the wait spot %.1f, wait %.1f), max suspicion %.2f" % [t_road, t_cover, t_wait, _track_max])
-	check(road_ok and _kiosk_detections == before_ok and _near2(world.player.global_position, _vendor_stand(), 0.6), "road bypass with a wait for Officer2 facing west: window without a fail (%.1f s)" % t_road)
+	print("INFO: road bypass with a wait for Officer2 facing 0: %.1f s (to the wait spot %.1f, wait %.1f), max suspicion %.2f, fails %d" % [t_road, t_cover, t_wait, _track_max, _kiosk_detections - before_ok])
+	# fix6: дальность первого 14 м — отрезок x = 74,6 (11,6 м от поста) в его секторах [1] и [2]; обход по дороге больше
+	# не честный путь (итог прохода — в лог).
+	var x74 := [Vector3(74.6, 0, -64), Vector3(74.6, 0, -70), Vector3(74.6, 0, -76)]
+	check(x74.all(func(q): return _in_cone(Layout.OFFICER_POST, Layout.OFFICER_FACING[2], q, officer._fov_for(2), s1.range_m)) and x74.slice(0, 2).all(func(q): return _in_cone(Layout.OFFICER_POST, Layout.OFFICER_FACING[1], q, officer._fov_for(1), s1.range_m)), "fix6: road bypass leg x = 74.6 is within the officer's 14 m in facing 2 (z −64…−76) and facing 1 (z −64…−70)")
 	await _shot("x3_road_bypass_window")
 
 	# Честные пути с двумя постами — прежние: от чекпоинта, с ожиданием разворота первого, 15–30 с, второй не видит.
@@ -1235,7 +1259,7 @@ func _part_fix3() -> void:
 		var seen_before := _watch_frames
 		var ok: bool = await drv.sneak_route(route)
 		var seconds := _track_frames / 60.0
-		var limit := 60.0 if route.size() >= 5 else 45.0   # fix4: SNEAK_WEST ждёт оба поста; fix5: цикл первого — три угла (~27 с)
+		var limit := 75.0 if route.size() >= 5 else 45.0   # fix4: SNEAK_WEST ждёт оба поста; fix5: цикл первого — три угла (~27 с); fix6: второй — до 21 с
 		print("INFO: fix4 honest %s path checkpoint → window %.1f s, max suspicion %.2f, Officer2 saw %d frames (%s)" % [route_name, seconds, _track_max, _watch_frames - seen_before, drv.last_error if not ok else ""])
 		check(ok and _kiosk_detections == before and seconds >= 12.0 and seconds <= limit and _watch_frames == seen_before, "fix4 honest %s path with both posts: no fail, %.1f s (12…%.0f), Officer2 never sees" % [route_name, seconds, limit])
 
@@ -1454,7 +1478,7 @@ func _part_fix5() -> void:
 	var exit_spot: Vector3 = world.player.global_position
 
 	# --- Геометрия: три угла, обзор, восток на диагонали, окно вне всех ---
-	check(Layout.OFFICER_FACING.size() == 3 and officer.facing_fovs == PatrolsScript.OFFICER_FOVS and PatrolsScript.OFFICER_FOVS == [100.0, 150.0, 100.0] and is_equal_approx(s1.range_m, 12.0) and not is_nan(officer.avoid_yaw), "Officer: three facings, 12 m, view %s°, turns avoid the window (avoid_yaw %.2f)" % [PatrolsScript.OFFICER_FOVS, officer.avoid_yaw])
+	check(Layout.OFFICER_FACING.size() == 3 and officer.facing_fovs == PatrolsScript.OFFICER_FOVS and PatrolsScript.OFFICER_FOVS == [100.0, 150.0, 100.0] and is_equal_approx(s1.range_m, 14.0) and not is_nan(officer.avoid_yaw), "Officer: three facings, 14 m (fix6), view %s°, turns avoid the window (avoid_yaw %.2f)" % [PatrolsScript.OFFICER_FOVS, officer.avoid_yaw])
 	check(is_equal_approx(s1.fov_deg, officer._fov_for(officer.facing_index())), "sensor view follows the facing (%.0f° at facing %d)" % [s1.fov_deg, officer.facing_index()])
 	var diag_pts := [Vector3(68, 0, -69), Vector3(66, 0, -72), Vector3(71, 0, -64.5), Vector3(70, 0, -66)]
 	check(diag_pts.all(func(q): return _in_cone(Layout.OFFICER_POST, Layout.OFFICER_FACING[2], q, officer._fov_for(2), s1.range_m)), "facing 2 (east) covers the diagonal %s" % [diag_pts])
@@ -1606,7 +1630,8 @@ func _part_fix5() -> void:
 	await _wait_until(func(): return world.is_stealth_failing(), 240)
 	await _wait_until(func(): return not world.is_stealth_failing(), 300)
 
-	# --- Диагональ с ожиданием: на восточном краю B (вне дальности) дождаться угла 0 ---
+	# --- Диагональ с ожиданием угла 0 (fix5 — честная) — fix6: её второе колено идёт в 3,2 м от поста, в кольце близости
+	# 6 м (угол не проверяется) — провал и с ожиданием.
 	await _place_player(exit_spot, PI)
 	await drv.frames(260)
 	_reset_track()
@@ -1615,11 +1640,12 @@ func _part_fix5() -> void:
 	var t_cover := _track_frames / 60.0
 	ok = ok and await drv.wait_officer_turn(0)
 	var t_wait := _track_frames / 60.0 - t_cover
-	ok = ok and await drv.walk_path([Vector3(68, 0, -69), Vector3(62.5, 0, -73.2), Vector3(60.5, 0, -75.3), _vendor_stand()])
+	if ok:
+		await _walk_path_until_fail([Vector3(68, 0, -69), Vector3(62.5, 0, -73.2), Vector3(60.5, 0, -75.3), _vendor_stand()], 900)
 	await drv.frames(20)
-	print("INFO: fix5 diagonal with a wait for facing 0 at %s: %.1f s (to the wait spot %.1f, wait %.1f), max %.2f" % [DIAG_WAIT, _track_frames / 60.0, t_cover, t_wait, _track_max])
-	check(ok and _kiosk_detections == before_w and not world.is_stealth_failing() and _near2(world.player.global_position, _vendor_stand(), 0.8), "diagonal with a wait for facing 0: window without a fail (%s)" % drv.last_error)
-	if world.is_stealth_failing():
+	print("INFO: fix5 diagonal with a wait for facing 0 at %s: %.1f s (to the wait spot %.1f, wait %.1f), max %.2f, fail %s" % [DIAG_WAIT, _track_frames / 60.0, t_cover, t_wait, _track_max, _kiosk_detections > before_w])
+	check(ok and (_kiosk_detections == before_w + 1 or _track_max >= 0.6), "fix6: diagonal with a wait for facing 0 passes 3.2 m from the post — heard in the 6 m ring (fail %s, max %.2f)" % [_kiosk_detections > before_w, _track_max])
+	if world.is_stealth_failing() or _kiosk_detections > before_w:
 		await _wait_until(func(): return not world.is_stealth_failing(), 300)
 
 	# --- Честные пути с ожиданием: проход, время в лог ---
@@ -1658,7 +1684,8 @@ func _part_fix5() -> void:
 		if failed:
 			await _wait_until(func(): return not world.is_stealth_failing(), 300)
 	print("INFO: fix5 SNEAK_WEST without a wait: clean %d of 4, max %s" % [west_clean, west_max])
-	check(west_clean <= 1, "SNEAK_WEST without a wait: clean in ≤ 1 of 4 phases (%d, max %s)" % [west_clean, west_max])
+	# fix6: по 12 фазам полного цикла — часть 14 (норма ≤ 6 из 12); здесь — не все четыре.
+	check(west_clean <= 3, "SNEAK_WEST without a wait: clean in ≤ 3 of 4 phases (%d, max %s; 12 phases — part 14)" % [west_clean, west_max])
 
 	# --- Крыши ---
 	# Прыжок с контейнеров на крышу гаражей: зазор 3,9 м не берётся (три точки толчка у западного края крышки).
@@ -1731,6 +1758,381 @@ func _part_fix5() -> void:
 	_out = OUT
 
 ## Ждать, пока наблюдатель o только что встал в угол index (после разворота).
+# =====================================================================================
+# 14. EXT-01 fix6: правило близости, дальность 14 м, второй пост ближе к коридору, маршруты шестой приёмки
+# =====================================================================================
+
+var _f6_frame := 0
+var _f6_f0 := -1          # кадр, когда первый пост последний раз встал в угол 0
+var _f6_prev_ok := false
+
+func _f6_monitor() -> void:
+	_track()
+	_f6_frame += 1
+	var o: Node3D = world.get_node("LevelGeometry/Patrols").officer
+	var ok: bool = o.facing_index() == 0 and not o.is_turning() and not o.is_moving()
+	if ok and not _f6_prev_ok:
+		_f6_f0 = _f6_frame
+	_f6_prev_ok = ok
+
+## Идти по точкам (вводом); застрял у вала — прыжок. Стоп — экран провала или max_frames. [дошёл, причина].
+func _f6_walk(points: Array, max_frames := 3600) -> Array:
+	var f := 0
+	var slow := 0
+	for p in points:
+		while _flat_d(world.player.global_position, p) > 0.45:
+			if world.is_stealth_failing():
+				drv.release_all()
+				return [false, "fail"]
+			var to: Vector3 = p - world.player.global_position
+			to.y = 0.0
+			drv._walk_axes(to.normalized() * clampf(to.length() / 1.2, 0.35, 1.0))
+			var v: Vector3 = world.player.velocity
+			slow = slow + 1 if Vector2(v.x, v.z).length() < 1.5 and world.player.is_on_floor() else 0
+			if slow >= 8:
+				slow = 0
+				var down := InputEventAction.new()
+				down.action = &"jump"
+				down.pressed = true
+				Input.parse_input_event(down)
+				await drv.frames(2)
+				var up := InputEventAction.new()
+				up.action = &"jump"
+				up.pressed = false
+				Input.parse_input_event(up)
+			await drv.frames(1)
+			f += 1
+			if f > max_frames:
+				drv.release_all()
+				return [false, "timeout before %s" % p]
+	drv.release_all()
+	return [true, ""]
+
+## Путь без ожидания по n фазам цикла первого поста: фаза k — старт через k/n цикла после поворота на угол 0. Фазы идут
+## в порядке ближайшего старта (без лишнего ожидания). Чистая фаза — дошёл до окна без провала.
+func _f6_phases(label: String, start: Vector3, points: Array, cycle_f: int, n := 12) -> Dictionary:
+	var pending := range(n)
+	var res := {"clean": 0, "fails": 0, "other": 0, "maxes": {}, "times": [], "start_seen": 0}
+	while not pending.is_empty():
+		await _place_player(start, _yaw_to(start, points[0]))
+		await drv.frames(250)
+		var since := _f6_frame - _f6_f0
+		var best := -1
+		var best_wait := 1 << 30
+		for k in pending:
+			var want := int(cycle_f * k / n)
+			var wait := want - since if want >= since else cycle_f - since + want
+			if wait < best_wait:
+				best_wait = wait
+				best = k
+		pending.erase(best)
+		var target_f0 := _f6_f0 if int(cycle_f * best / n) >= since else -1
+		if target_f0 < 0:
+			var old := _f6_f0
+			await _wait_until(func(): return _f6_f0 != old, cycle_f + 900)
+			target_f0 = _f6_f0
+		await _wait_until(func(): return _f6_frame - target_f0 >= int(cycle_f * best / n), cycle_f + 60)
+		if world.is_stealth_failing() or world.stealth.suspicion > 0.0:
+			res["start_seen"] += 1
+		var o1: Node3D = world.get_node("LevelGeometry/Patrols").officer
+		var o2: Node3D = world.get_node("LevelGeometry/Patrols").officer2
+		var f1: int = o1.facing_index()
+		var f2: int = o2.facing_index()
+		var before := _kiosk_detections
+		_reset_track()
+		var r: Array = await _f6_walk(points)
+		await drv.frames(15)
+		var failed := _kiosk_detections > before or world.is_stealth_failing()
+		var at_window := _flat_d(world.player.global_position, _vendor_stand()) < 0.9
+		res["maxes"][best] = snappedf(_track_max, 0.01)
+		if failed:
+			res["fails"] += 1
+		elif at_window:
+			res["clean"] += 1
+			res["times"].append(snappedf(_track_frames / 60.0, 0.1))
+		else:
+			res["other"] += 1
+		print("INFO: fix6 %s phase %d/%d (%.1f s after facing 0; Officer %d, Officer2 %d): %s, %.1f s, max %.2f" % [label, best, n, cycle_f * best / n / 60.0, f1, f2, "FAIL" if failed else ("window" if at_window else r[1]), _track_frames / 60.0, _track_max])
+		if failed:
+			await _wait_until(func(): return not world.is_stealth_failing(), 400)
+	var maxes := []
+	for k in n:
+		maxes.append(res["maxes"].get(k, -1.0))
+	print("INFO: fix6 %s SUMMARY: clean (window, no fail) %d of %d, fails %d, other %d, start seen %d; max by phase %s; times %s" % [label, res["clean"], n, res["fails"], res["other"], res["start_seen"], maxes, res["times"]])
+	return res
+
+## Идти к target вводом и нажать E, как только у полицейского появилась подсказка «E — ПОГОВОРИТЬ».
+## [диалог открыт, шкала в момент E, расстояние до поста].
+func _walk_and_talk(target: Vector3) -> Array:
+	var officer_node: Node3D = world.get_node("LevelGeometry/Patrols").officer
+	var post: Vector3 = officer_node.global_position
+	for i in 600:
+		if world.is_stealth_failing():
+			break
+		# Подсказка у окна та же («E — ПОГОВОРИТЬ», продавщица) — ждать зону самого полицейского.
+		if world.player.current_interactable() == officer_node.interactable and world.get_hud_state()["prompt"] == "E — ПОГОВОРИТЬ":
+			var at := world.stealth.suspicion
+			var dist := _flat_d(world.player.global_position, post)
+			drv.release_all()
+			await drv.interact()
+			await drv.frames(5)
+			return [world.quest_flow.is_dialog_open(), at, dist]
+		var to: Vector3 = target - world.player.global_position
+		to.y = 0.0
+		if to.length() < 0.3:
+			break
+		drv._walk_axes(to.normalized())
+		await drv.frames(1)
+	drv.release_all()
+	return [false, world.stealth.suspicion, _flat_d(world.player.global_position, post)]
+
+func _part_fix6() -> void:
+	print("--- fix6: proximity rule, officer range 14 m, second post near the corridor, sixth acceptance routes ---")
+	_out = OUT6
+	drv.on_frame = Callable()
+	main.start_game()
+	await drv.frames(10)
+	world = main.world
+	var m := world.mission
+	var patrols: Node = world.get_node("LevelGeometry/Patrols")
+	var officer: Node3D = patrols.officer
+	var officer2: Node3D = patrols.officer2
+	var s1: DetectionSensor = officer.sensor
+	var s2: DetectionSensor = officer2.sensor
+	_kiosk_detections = 0
+	world.stealth.player_detected.connect(func(): _kiosk_detections += 1)
+	_f6_f0 = -1
+	_f6_prev_ok = false
+	drv.on_frame = _f6_monitor
+
+	# --- Константы и посты ---
+	check(is_equal_approx(DetectionSensor.NEAR_RADIUS, 3.0) and is_equal_approx(DetectionSensor.NEAR_RING, 6.0) and is_equal_approx(DetectionSensor.NEAR_RISE_FACTOR, 3.0), "proximity rule: 3 m (no angle, no ray, ×3), 6 m (no angle)")
+	check(is_equal_approx(s1.range_m, 14.0) and is_equal_approx(PatrolsScript.OFFICER_RANGE, 14.0) and is_equal_approx(s2.range_m, 14.0), "Officer range 14 m like Officer2 (%.0f / %.0f)" % [s1.range_m, s2.range_m])
+	check(_near2(officer.global_position, Layout.OFFICER_POST, 0.05) and _near2(officer2.global_position, Layout.OFFICER2_POST, 0.05), "posts at OFFICER_POST %s and OFFICER2_POST %s" % [Layout.OFFICER_POST, Layout.OFFICER2_POST])
+	var deep := [Vector3(50.8, 0, -79.5), Vector3(50.8, 0, -80.5)]
+	var deep_d := deep.map(func(q): return snappedf(_flat_d(q, Layout.OFFICER2_POST), 0.01))
+	check(deep_d.all(func(v): return v <= 10.0) and deep.all(func(q): return _in_cone(Layout.OFFICER2_POST, Layout.OFFICER2_FACING[0], q, s2.fov_deg, s2.range_m)), "deep corridor %s: ≤ 10 m from Officer2 %s, in its facing 0" % [deep, deep_d])
+	var win_d := [_flat_d(_vendor_stand(), Layout.OFFICER_POST), _flat_d(_vendor_stand(), Layout.OFFICER2_POST), _flat_d(Layout.VENDOR_WINDOW, Layout.OFFICER_POST), _flat_d(Layout.VENDOR_WINDOW, Layout.OFFICER2_POST)]
+	print("INFO: fix6 window to the posts %s m" % [win_d])
+	check(win_d.all(func(v): return v > DetectionSensor.NEAR_RING + 0.5), "kiosk window is ≥ 6.5 m from both posts (%s)" % [win_d])
+	# Честные пути — вне колец близости обоих постов (до покупки) и вне кольца поста после покупки и двери автобуса.
+	var ring_min := {}
+	var routes := {"SNEAK_EAST": [Layout.SNEAK_EAST, [Layout.OFFICER_POST, Layout.OFFICER2_POST]], "SNEAK_WEST": [Layout.SNEAK_WEST, [Layout.OFFICER_POST, Layout.OFFICER2_POST]],
+			"SNEAK_BACK": [Layout.SNEAK_BACK, [Layout.OFFICER_POST_AFTER, Layout.OFFICER2_POST]], "SNEAK_AGAIN": [Layout.SNEAK_AGAIN, [Layout.OFFICER_POST_AFTER, Layout.OFFICER2_POST]]}
+	for route_name in routes:
+		var r: Array = routes[route_name][0]
+		var pts: Array = []
+		for part in r:
+			if part is Array:
+				pts.append_array(part)
+		var best := INF
+		for i in pts.size() - 1:
+			for k in 41:
+				var q: Vector3 = (pts[i] as Vector3).lerp(pts[i + 1], k / 40.0)
+				for post in routes[route_name][1]:
+					best = minf(best, _flat_d(q, post))
+		ring_min[route_name] = snappedf(best, 0.01)
+	print("INFO: fix6 honest paths, nearest approach to a post: %s m" % [ring_min])
+	check(ring_min.values().all(func(v): return v > DetectionSensor.NEAR_RING + 0.1), "honest paths SNEAK_* stay outside the 6 m proximity ring of every post (%s)" % [ring_min])
+
+	# --- Правило близости тестовым сенсором (двор, как часть 1): спиной к Илюше ---
+	if not is_instance_valid(sensor) or sensor.get_parent() != world:
+		sensor = SensorScript.new()
+		sensor.name = "TestSensor"
+		world.add_child(sensor)
+	sensor.enabled = true
+	sensor.range_m = 9.0
+	sensor.fov_deg = 75.0
+	var p := Layout.SPAWN + Vector3(10.0, 0.0, -12.0)
+	await _place_player(p, 0.0)
+	var rows := []
+	for dist in [2.5, 4.5, 8.0]:
+		_aim(p + Vector3(0, 0, -dist), p + Vector3(0, 0, -dist - 10.0))   # смотрит от Илюши
+		var v := sensor.poll()
+		rows.append([dist, v, sensor.near_rise_factor, sensor.near])
+	print("INFO: fix6 sensor facing away: [distance, visibility, rise factor, near] %s" % [rows])
+	check(rows[0][1] == 1.0 and rows[0][2] == 3.0, "facing away, 2.5 m: seen (heard steps), rise ×3")
+	check(rows[1][1] == 1.0 and rows[1][2] == 1.0, "facing away, 4.5 m, open ray: seen without the angle, rise ×1")
+	check(rows[2][1] == 0.0, "facing away, 8 m: not seen")
+	# Кольцо 3…6 м — луч нужен: киоск (5 × 4 м) между сенсором и Илюшей; ближе 3 м — луч не нужен (сквозь киоск).
+	var qk := Vector3(52.0, 0, -77.0)
+	await _place_player(qk, 0.0)
+	_aim(Vector3(57.9, 0, -77.0), Vector3(67.9, 0, -77.0))   # 5,9 м, спиной, киоск между
+	var wall := sensor.poll()
+	var wall_blocker := sensor.last_blocker
+	await _place_player(Vector3(61.25, 0, -63.2), 0.0)
+	_aim(Vector3(63.75, 0, -63.2), Vector3(73.75, 0, -63.2))   # 2,5 м сквозь павильон остановки, спиной
+	var near_wall := sensor.poll()
+	print("INFO: fix6 5.9 m behind the kiosk: %.0f (blocker %s); 2.5 m through the bus-stop pavilion, facing away: %.0f" % [wall, wall_blocker, near_wall])
+	check(wall == 0.0 and wall_blocker != "" and near_wall == 1.0, "ring 3…6 m needs the ray (the kiosk covers), < 3 m ignores it (heard through the pavilion)")
+	# Рост ×3: ближе 3 м спиной — провал за ~0,67 с; в 4,5 м — за ~2 с.
+	await _place_player(p, 0.0)
+	_aim(p + Vector3(0, 0, -2.0), p + Vector3(0, 0, -12.0))
+	_reset_track()
+	var before := detected_signals + _kiosk_detections
+	var t_near: int = await _wait_until(func(): return world.is_stealth_failing(), 300)
+	print("INFO: fix6 2 m behind the sensor: fail after %.2f s" % (t_near / 60.0))
+	check(t_near >= 0 and t_near <= 60, "2 m behind the sensor: fail within 1 s (%.2f s; rise ×3 → 0.67 s)" % (t_near / 60.0))
+	await _wait_until(func(): return not world.is_stealth_failing(), 400)
+	await drv.frames(250)
+	await _place_player(p, 0.0)   # после провала — на чекпоинте
+	_aim(p + Vector3(0, 0, -4.5), p + Vector3(0, 0, -14.5))
+	var t_ring: int = await _wait_until(func(): return world.is_stealth_failing(), 400)
+	print("INFO: fix6 4.5 m behind the sensor: fail after %.2f s" % (t_ring / 60.0))
+	check(t_ring >= 100 and t_ring <= 160, "4.5 m behind the sensor: fail after ≈2 s (%.2f s; rise ×1)" % (t_ring / 60.0))
+	await _wait_until(func(): return not world.is_stealth_failing(), 400)
+	await drv.frames(250)
+	# Укрытия EXT-02: множитель заметности остаётся. Коробка стоя ≤ 1,5 м — 0,5 (×3), в 2 м — 0 (таблица 5.3, CLOSE_RADIUS
+	# 1,5 м), на ходу — 0,75; сугроб — 0 вплотную.
+	var player: Node3D = world.player
+	await _place_player(p, 0.0)
+	var hide := []
+	for row in [[&"box", 1.2], [&"box", 2.0], [&"snowdrift", 1.2], [&"barrel", 1.2], [&"barrel", 2.0]]:
+		player.force_hide_mode(row[0])
+		await drv.frames(3)
+		_aim(p + Vector3(0, 0, -row[1]), p + Vector3(0, 0, -row[1] - 10.0))
+		var v := sensor.poll()
+		hide.append([row[0], row[1], v, sensor.near_rise_factor])
+	player.force_hide_mode(&"none")
+	await drv.frames(3)
+	print("INFO: fix6 hide modes at the sensor (standing, facing away): [mode, m, visibility, factor] %s" % [hide])
+	check(is_equal_approx(hide[0][2], 0.5) and hide[0][3] == 3.0, "box standing 1.2 m behind the sensor: visibility 0.5 (table), rise ×3")
+	check(hide[1][2] == 0.0, "box standing 2 m behind the sensor: visibility 0 (table: ≥ 1.5 m — 0)")
+	check(hide[2][2] == 0.0, "snowdrift 1.2 m: visibility 0")
+	check(is_equal_approx(hide[3][2], 0.5) and hide[4][2] == 0.0, "barrel standing 1.2 m: 0.5, 2 m: 0")
+	sensor.enabled = false
+	sensor.range_m = 9.0
+	sensor.fov_deg = 75.0
+	await drv.frames(30)
+
+	# --- К парковке, круг близости на земле, три конуса с парковки ---
+	m.interact(&"babka")
+	m.accept()
+	world.car.reset_to(Vector3(22, 0, 32), -PI * 0.5)
+	await drv.frames(5)
+	world.enter_car()
+	await drv.frames(10)
+	var park: Vector3 = Layout.ROUTE_DRIVE[-1]
+	var d: Vector3 = park - Layout.ROUTE_DRIVE[-2]
+	world.car.reset_to(park, atan2(-d.x, -d.z))
+	await drv.frames(10)
+	check(m.state == &"BUY_BREAD" and world.exit_car(), "fix6: at the parking, BUY_BREAD, out of the car")
+	await drv.frames(30)
+	var exit_spot: Vector3 = world.player.global_position
+	check(s1.poll() == 0.0 and s2.poll() == 0.0, "exit spot %s is not seen (%.1f m / %.1f m to the posts)" % [exit_spot, _flat_d(exit_spot, Layout.OFFICER_POST), _flat_d(exit_spot, Layout.OFFICER2_POST)])
+	check(_cone_visible(s1) and s1.near_circle_visible() and s1.near_color.a < s1.cone_color.a, "from the parking the officer cone and the paler 6 m circle are drawn (alpha %.2f < %.2f)" % [s1.near_color.a, s1.cone_color.a])
+	# С места выхода из машины (машина стоит на (60; −54), сам этот пункт занят кузовом) — фигура и три сектора.
+	for f in 3:
+		await _sync_officer(f)
+		await drv.frames(20)
+		await _place_player(exit_spot, _yaw_to(exit_spot, Layout.OFFICER_POST))
+		await drv.frames(10)
+		await _shot("k_parking_cone_facing%d" % f)
+	var c2 := Vector3(57.5, 0, -73.0)   # к югу от окна: виден круг второго поста и сектор
+	await _place_player(c2, _yaw_to(c2, Layout.OFFICER2_POST))
+	await drv.frames(20)
+	check(s2.near_circle_visible(), "Officer2 near circle drawn when Ilyusha is near")
+	await _shot("near_circle_officer2")
+	var c1 := Vector3(55.0, 0, -62.0)
+	await _place_player(c1, _yaw_to(c1, Layout.OFFICER_POST))
+	await drv.frames(20)
+	await _shot("near_circle_officer")
+	if "--fix6-frames" in OS.get_cmdline_user_args():   # только кадры части 14
+		drv.on_frame = Callable()
+		return
+
+	# --- Подойти поговорить (этап 5): от окна к полицейскому, E — как только появилась подсказка ---
+	for attempt in 2:
+		await _place_player(_vendor_stand(), 0.0)
+		await drv.frames(260)
+		await _sync_officer(0)
+		_reset_track()
+		var before_t := _kiosk_detections
+		var talk: Array = await _walk_and_talk(TALK_SPOT)
+		var opened: bool = talk[0]
+		var at_open: float = talk[1]
+		var dist_open: float = talk[2]
+		print("INFO: fix6 walk up to the officer to talk (#%d): dialog %s at %.2f m, suspicion at E %.2f, fail %s" % [attempt, opened, dist_open, at_open, _kiosk_detections > before_t])
+		check(opened and _kiosk_detections == before_t, "fix6: walking up to the officer from the window and pressing E at the prompt opens the dialog before a fail (suspicion %.2f)" % at_open)
+		for i in 8:
+			if not world.quest_flow.is_dialog_open():
+				break
+			await _press_any([QuestLines.BUTTON_OFFICER_LEAVE, "ДАЛЬШЕ"])
+		await drv.walk_to(_vendor_stand())
+		await drv.frames(300)
+		if world.is_stealth_failing():
+			await _wait_until(func(): return not world.is_stealth_failing(), 400)
+
+	# --- Окно 30 с: ни одного кадра видимости ---
+	await _place_player(_vendor_stand(), PI * 0.5)
+	await drv.frames(30)
+	var seen_frames := 0
+	for i in 1800:
+		await drv.frames(1)
+		for sn in get_nodes_in_group(&"detection_sensors"):
+			if sn.get("enabled") != false and sn.visibility() > 0.0:
+				seen_frames += 1
+	check(seen_frames == 0 and world.stealth.suspicion == 0.0, "30 s at the window: 0 frames seen by any sensor (%d)" % seen_frames)
+	await _place_player(Layout.STEALTH_CHECKPOINT, 0.0)
+	var chk := []
+	for sn in get_nodes_in_group(&"detection_sensors"):
+		if sn.get("enabled") != false and sn.poll() > 0.0:
+			chk.append(sn.get_parent().name)
+	check(chk.is_empty(), "checkpoint %s outside every sensor (%s)" % [Layout.STEALTH_CHECKPOINT, chk])
+
+	# --- Длина цикла первого поста ---
+	await _sync_officer(0)
+	var f_a := _f6_frame
+	await _sync_officer(0)
+	var cycle_f := _f6_frame - f_a
+	print("INFO: fix6 Officer cycle %.1f s" % (cycle_f / 60.0))
+
+	# --- Шесть маршрутов шестой приёмки без ожидания, 12 фаз ---
+	var v := _vendor_stand()
+	var six := {
+		"dij_south": [exit_spot, [Vector3(74.25, 0, -58.0), Vector3(74.25, 0, -68.75), Vector3(74.0, 0, -71.75), Vector3(73.25, 0, -74.75), Vector3(71.25, 0, -77.75), Vector3(70.0, 0, -80.75), Vector3(68.5, 0, -82.25), Vector3(67.0, 0, -83.5), Vector3(65.5, 0, -84.25), Vector3(63.0, 0, -85.5), Vector3(61.5, 0, -85.5), Vector3(60.0, 0, -84.25), Vector3(60.0, 0, -81.25), Vector3(60.0, 0, -78.25), v]],
+		"dij_east": [Vector3(77.8, 0, -81.75), [Vector3(74.25, 0, -81.75), Vector3(71.25, 0, -81.75), Vector3(69.75, 0, -82.5), Vector3(68.25, 0, -83.0), Vector3(66.75, 0, -83.75), Vector3(65.25, 0, -84.25), Vector3(64.25, 0, -85.25), Vector3(62.75, 0, -85.5), Vector3(61.25, 0, -85.5), Vector3(60.0, 0, -84.0), Vector3(60.0, 0, -81.0), Vector3(60.0, 0, -78.0), v]],
+		"dij_north": [Vector3(70.25, 0, -100.0), [Vector3(70.25, 0, -98.5), Vector3(65.75, 0, -94.0), Vector3(63.0, 0, -91.0), Vector3(61.5, 0, -89.5), Vector3(60.0, 0, -88.0), Vector3(60.0, 0, -86.5), Vector3(59.5, 0, -85.0), Vector3(59.5, 0, -79.0), v]],
+		"N1": [Vector3(70, 0, -99), [Vector3(60.25, 0, -95), Vector3(60.25, 0, -83), v]],
+		"N2": [Vector3(48, 0, -99), [Vector3(57.8, 0, -95), Vector3(57.8, 0, -83), v]],
+		"dij_west": [Vector3(45.0, 0, -95.0), [Vector3(48.0, 0, -97.75), Vector3(49.5, 0, -97.75), Vector3(52.5, 0, -95.0), Vector3(55.25, 0, -93.0), Vector3(57.25, 0, -90.5), Vector3(58.0, 0, -89.0), Vector3(57.75, 0, -86.0), Vector3(58.5, 0, -84.5), Vector3(58.5, 0, -81.5), Vector3(59.0, 0, -78.5), v]],
+	}
+	var table := []
+	for route_name in six:
+		var r := await _f6_phases(route_name, six[route_name][0], six[route_name][1], cycle_f)
+		table.append("%s %d/12" % [route_name, r["clean"]])
+		check(r["fails"] >= 9 and r["clean"] < 12, "%s without a wait: fail in ≥ 9 of 12 phases (fails %d, clean %d)" % [route_name, r["fails"], r["clean"]])
+	print("INFO: fix6 sixth acceptance routes, clean phases: %s" % [table])
+
+	# --- «В лоб», диагонали, SNEAK_WEST без ожидания: 12 фаз, число чистых ---
+	var others := {
+		"direct": [exit_spot, [DIRECT_FROM, Vector3(DIRECT_FROM.x, 0, -73.0), v], 4],
+		"diag_long": [exit_spot, DIAG_LONG + [v], 4],
+		"diag_short": [exit_spot, DIAG_SHORT + [v], 4],
+		"sneak_west_nowait": [exit_spot, Layout.SNEAK_WEST[0] + Layout.SNEAK_WEST[2] + Layout.SNEAK_WEST[4], 6],
+		# SNEAK_EAST — одно ожидание (угол [1] или [2] первого): без него открыт ~2/3 цикла; в лог, не норма.
+		"sneak_east_nowait": [exit_spot, Layout.SNEAK_EAST[0] + Layout.SNEAK_EAST[2], 12],
+	}
+	table = []
+	for route_name in others:
+		var r := await _f6_phases(route_name, others[route_name][0], others[route_name][1], cycle_f)
+		table.append("%s %d/12" % [route_name, r["clean"]])
+		check(r["clean"] <= others[route_name][2], "%s without a wait: clean in ≤ %d of 12 phases (%d)" % [route_name, others[route_name][2], r["clean"]])
+	print("INFO: fix6 other routes, clean phases: %s" % [table])
+
+	# --- Честные пути с ожиданием — проход ---
+	for route_name in ["SNEAK_EAST", "SNEAK_WEST"]:
+		var route: Array = Layout.SNEAK_EAST if route_name == "SNEAK_EAST" else Layout.SNEAK_WEST
+		for attempt in 2:
+			await _place_player(exit_spot, 0.0)
+			await drv.frames(260)
+			var before_h := _kiosk_detections
+			_reset_track()
+			var ok: bool = await drv.sneak_route(route)
+			print("INFO: fix6 honest %s #%d: %s, %.1f s, max suspicion %.2f (%s)" % [route_name, attempt, ok, _track_frames / 60.0, _track_max, drv.last_error])
+			check(ok and _kiosk_detections == before_h and not world.is_stealth_failing() and _near2(world.player.global_position, _vendor_stand(), 0.6), "honest %s #%d with the waits: window without a fail (%.1f s, max %.2f)" % [route_name, attempt, _track_frames / 60.0, _track_max])
+	drv.on_frame = Callable()
+
 func _sync_npc(o: Node3D, index: int) -> void:
 	var n := 0
 	while o.facing_index() == index and n < 1200:

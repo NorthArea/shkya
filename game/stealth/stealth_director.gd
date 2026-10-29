@@ -12,6 +12,8 @@ extends Node
 ## Обнаружение не меняет MissionDirector (C5).
 ## EXT-01 fix2: detected_in_car — обнаружили «Ладу» с Илюшей на площадке киоска (сенсор с car_area, P1): мир
 ## отгоняет машину на парковку. grant_grace(seconds) — защита после диалога с полицейским (P2-3, этап 5).
+## EXT-01 fix6: правило близости (DetectionSensor.NEAR_RADIUS): рост delta / RISE_SECONDS × видимость × near_rise_factor —
+## множитель того сенсора, у которого видимость × множитель больше (ближе 3 м — ×3, провал за 0,67 с).
 
 signal player_detected
 signal state_changed(old: StringName, new: StringName)
@@ -40,6 +42,7 @@ var _reasons := {}            # StringName -> true
 var _protection_left := 0.0
 var _poll_left := 0.0
 var _visible_now := 0.0
+var _near_now := 1.0          # fix6: множитель роста по последнему опросу
 var _cap_now := 1.0
 var _alerted := false
 
@@ -56,7 +59,7 @@ func _physics_process(delta: float) -> void:
 		return  # обнаружен: ждём респавна, шкала стоит на 1
 	if _visible_now > 0.0 and not frozen:
 		if suspicion < _cap_now:
-			suspicion = minf(suspicion + delta / RISE_SECONDS * _visible_now, _cap_now)
+			suspicion = minf(suspicion + delta / RISE_SECONDS * _visible_now * _near_now, _cap_now)
 	else:
 		suspicion = maxf(suspicion - delta * DECAY_FACTOR / RISE_SECONDS, 0.0)
 	if suspicion >= 1.0:
@@ -76,6 +79,7 @@ func notify_respawned() -> void:
 	suspicion = 0.0
 	_alerted = false
 	_visible_now = 0.0
+	_near_now = 1.0
 	_poll_left = POLL_SECONDS
 	_protection_left = PROTECTION_SECONDS
 	detected_in_car = false
@@ -125,11 +129,13 @@ func snap() -> Dictionary:
 		"protection_left": _protection_left,
 		"visible": _visible_now > 0.0,
 		"visibility": _visible_now,
+		"near_rise_factor": _near_now,
 		"detections": detections,
 	}
 
 func _max_visibility() -> float:
 	var best := 0.0
+	var best_rate := 0.0
 	var cap := 0.0
 	var on_foot := _on_foot()
 	for sensor in get_tree().get_nodes_in_group(&"detection_sensors"):
@@ -138,9 +144,12 @@ func _max_visibility() -> float:
 		var seen: float = sensor.visibility()
 		if seen > 0.0:
 			cap = maxf(cap, float(sensor.get("suspicion_cap")) if sensor.get("suspicion_cap") != null else 1.0)
+			var factor: float = float(sensor.get("near_rise_factor")) if sensor.get("near_rise_factor") != null else 1.0
+			best_rate = maxf(best_rate, seen * factor)   # fix6: близость — быстрее
 		best = maxf(best, seen)
 		sensor.set("cone_wanted", on_foot and sensor.has_method("distance_to_player") and sensor.distance_to_player() < CONE_DISTANCE)   # в машине сектор не рисуется
 	_cap_now = cap if best > 0.0 else 1.0
+	_near_now = best_rate / best if best > 0.0 else 1.0
 	return best
 
 func _on_foot() -> bool:

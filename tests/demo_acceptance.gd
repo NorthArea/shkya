@@ -562,7 +562,11 @@ func _check_navigation(w: DemoWorld) -> void:
 	if near_hidden:
 		_inv("7: diamond hides only for a near target in frame", hero_xz.distance_to(t2) < 15.0 + tol and not hud.get("diamond_clamped"), "distance %.1f" % hero_xz.distance_to(t2))
 	var camera: Camera3D = w.camera_rig.camera
-	var local := camera.global_transform.affine_inverse() * Vector3(target.x, 2.0, target.z)
+	# EXT-01 fix6: сторона экрана — по точке, на которую ромб и указывает (target_position HUD: у киоска — окно продавщицы,
+	# в 4 м от центра Layout.KIOSK); честный путь SNEAK_EAST идёт между ними, и стороны по центру и по окну расходятся.
+	var aim: Variant = w.get_hud_state().get("target_position", null)
+	var side_target: Vector3 = aim if aim is Vector3 else target
+	var local := camera.global_transform.affine_inverse() * Vector3(side_target.x, 2.0, side_target.z)
 	var position: Vector2 = hud.get("diamond_position")
 	var clamped: bool = hud.get("diamond_clamped")
 	if local.z < -3.0 and absf(local.x / -local.z) > 0.2 and absf(local.x / -local.z) < 0.8:

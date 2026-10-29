@@ -512,7 +512,7 @@ func _part_honest_pass() -> void:
 	# Стоять, пока патруль смотрит на запад; на «юге» — к окну.
 	ok = await drv.wait_officer_turn(1)
 	check(ok and detections == start and not world.is_stealth_failing(), "standing in the box through the west facing — not detected (max %.2f)" % track[0])
-	ok = await drv.walk_path([Vector3(58.3, 0, -73.6), _vendor_stand()])
+	ok = await drv.walk_path([Vector3(57.3, 0, -74.2), Vector3(58.5, 0, -75.2), _vendor_stand()])   # EXT-01 fix6: вне кольца 6 м поста
 	print("INFO: honest box pass parking → window %.1f s, max suspicion %.2f, C02 shown %d" % [track[1] / 60.0, track[0], box.gag_counts[&"C02"] - c02])
 	check(ok and detections == start and not world.is_stealth_failing(), "in the box to the window without a fail (%s)" % drv.last_error)
 	check(_near2(player.global_position, _vendor_stand(), 0.6) and player.hide_mode == &"box", "at the window in the box")

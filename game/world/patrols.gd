@@ -19,6 +19,9 @@ extends Node3D
 ## EXT-01 fix5 (пятая приёмка): у первого три угла Layout.OFFICER_FACING (+ восток), обзор по углу OFFICER_FOVS
 ## [100°, 150°, 100°], разворот не через окно (avoid_yaw); у второго восток-юго-восток держится OFFICER2_HOLD_EAST (5–6 с) —
 ## западный угол дольше держит глубокую часть коридора у киоска (P2: SNEAK_WEST без ожидания).
+## EXT-01 fix6 (шестая приёмка): правило близости — в DetectionSensor (3 м / 6 м). Дальность первого — 14 м, как у второго
+## (вдоль x ≈ 74 в 12,2 м от поста было чисто); после перехода на OFFICER_POST_AFTER — OFFICER_AFTER_RANGE 12 м: стоянка и
+## место выхода из машины — в 13,0–13,4 м от этого поста, в секторе угла [1]. Второй держит угол [0] OFFICER2_HOLDS 10–12 с.
 
 const Layout = preload("res://game/world/layout.gd")
 const NpcScript = preload("res://game/npc/npc.gd")
@@ -26,13 +29,15 @@ const PatrolNpcScript = preload("res://game/npc/patrol_npc.gd")
 const CityVanScript = preload("res://game/vehicles/city_van.gd")
 
 const PROMPT_TALK := "E — ПОГОВОРИТЬ"
-const OFFICER_RANGE := 12.0
+const OFFICER_RANGE := 14.0              # fix6: было 12 — путь вдоль x ≈ 74 в 12,2 м от поста не накрывался
+const OFFICER_AFTER_RANGE := 12.0        # fix6: на посту после покупки — стоянка в 13 м остаётся вне сектора
 const OFFICER_FOV := 100.0
 ## fix5: обзор первого по углам OFFICER_FACING; [1] (пеленг 150°) — 150°: сектор 75°…225° накрывает и среднюю часть прямой
 ## x = 59,5 («в лоб» — провал во всех фазах), и второе колено диагонали с дороги B (при 100° — 18 из 32 / 47 из 96, Layout).
 const OFFICER_FOVS := [100.0, 150.0, 100.0]
 const OFFICER2_FOV := 100.0
-const OFFICER2_HOLD_EAST := Vector2(5.0, 6.0)   # fix5: угол [1] второго; честный SNEAK_WEST за ним — 15 м, ~4 с
+const OFFICER2_HOLD_EAST := Vector2(5.0, 6.0)   # fix5: угол [1] второго; честный SNEAK_WEST за ним — 13,7 м, ~3,6 с
+const OFFICER2_HOLD_WEST := Vector2(10.0, 12.0)  # fix6: угол [0] — глубокая часть коридора в секторе ~61 % цикла (было 7–9 с, ~54 %)
 const OFFICER2_RANGE := 14.0             # fix4: с (59, −87) до входа с улицы C и до обхода по дороге z = −84
 const OFFICER_HOLD := Vector2(7.0, 9.0)   # с на угол: при 3–4 с осторожный честный проход занимал 14–15 с (норма участка 45–90 с)
 
@@ -78,7 +83,7 @@ func _ready() -> void:
 	officer2.facings = Layout.OFFICER2_FACING
 	officer2.sensor_range = OFFICER2_RANGE
 	officer2.sensor_fov = OFFICER2_FOV
-	officer2.facing_holds = [OFFICER_HOLD, OFFICER2_HOLD_EAST]
+	officer2.facing_holds = [OFFICER2_HOLD_WEST, OFFICER2_HOLD_EAST]
 	officer2.turn_every = OFFICER_HOLD
 	officer2.position = Layout.OFFICER2_POST
 	# fix4: разворот запад ↔ восток-юго-восток — через север, не через окно киоска на юге.
@@ -145,11 +150,13 @@ func _on_bread_received() -> void:
 		return
 	_moved = true
 	officer.move_post(Layout.OFFICER_POST_AFTER)
+	officer.sensor.range_m = OFFICER_AFTER_RANGE
 	van.drive(Layout.VAN_PATH, Layout.VAN_STOP_YAW)
 
 ## Для тестов и перезапуска: вернуть всех на исходные места.
 func reset_positions() -> void:
 	_moved = false
 	officer.place_at(Layout.OFFICER_POST)
+	officer.sensor.range_m = OFFICER_RANGE
 	officer2.place_at(Layout.OFFICER2_POST)
 	van.park(Layout.VAN_PARK, Layout.VAN_PARK_YAW)

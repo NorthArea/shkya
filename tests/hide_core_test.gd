@@ -208,7 +208,8 @@ func _part_sensor() -> void:
 	_aim(yard + Vector3(0, 0, 1.0), yard)
 	await drv.frames(60)
 	var s: float = world.stealth.suspicion
-	check(s > 0.15 and s < 0.3, "box standing 1 m (0.5): 1 s → suspicion ≈ 0.25 (%.2f)" % s)
+	# EXT-01 fix6: 1 м — внутри радиуса близости 3 м (DetectionSensor.NEAR_RADIUS): рост ×3 → 1 с × 0,5 × 3 / 2 ≈ 0,75.
+	check(s > 0.6 and s < 0.85 and world.stealth.snap().get("near_rise_factor", -1.0) == 3.0, "box standing 1 m (0.5, proximity ×3): 1 s → suspicion ≈ 0.75 (%.2f)" % s)
 	check(world.stealth.snap().get("visibility", -1.0) == 0.5, "StealthDirector snap visibility = 0.5")
 	sensor.enabled = false
 	player.set_hide_mode(&"none")
@@ -299,7 +300,7 @@ func _part_detection_time(ticks: int) -> void:
 		await _place(yard, 0.0)
 		sensor.range_m = 30.0
 		sensor.fov_deg = 90.0
-		_aim(yard + Vector3(0, 0, 2.5), yard)
+		_aim(yard + Vector3(0, 0, 4.5), yard)   # fix6: вне радиуса близости 3 м (там рост ×3)
 		if exposure < 1.0:
 			player.set_hide_mode(&"box")
 			Input.action_press(&"move_forward")

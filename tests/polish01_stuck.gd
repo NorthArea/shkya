@@ -92,6 +92,7 @@ func _run() -> void:
 	_park_car_away(false)
 	await _sweep_car()
 	await _geometry_car(scenarios)
+	_patrol_bodies(true)
 	await _ring_lap()
 	print("INFO: stuck test wall time %.1f s" % ((Time.get_ticks_msec() - started) / 1000.0))
 	_finish()
@@ -384,9 +385,14 @@ func _geometry_car(by_cat: Dictionary) -> void:
 	var inner := Layout.BOUNDS.grow(-2.5)
 	var total := 0
 	for cat in CATS:
+		_patrol_bodies(true)
 		var picked := _pick(by_cat[cat], CAR_CAP, func(s):
 			var p := _car_start(s)
 			return inner.has_point(Vector2(p.x, p.z)) and _free(p, _car_box(0.3), Lada.SIZE.y * 0.5 + 0.1, _yaw(s.dir)))
+		# EXT-01 fix6: полицейские у киоска — люди, как жители (их убирают выше): «Лада», упёртая носом в угол павильона
+		# остановки, не отъезжала назад на 1,5 м из-за тела первого на посту (62; −70). Тела выключены только на заездах —
+		# выборка сценариев (rng) та же, что с телами.
+		_patrol_bodies(false)
 		var touched := 0
 		var stuck := []
 		var no_turn := []
@@ -630,3 +636,13 @@ func _finish() -> void:
 	for i in 3:
 		await process_frame
 	quit(0 if failures.is_empty() else 1)
+
+## EXT-01 fix6: тела полицейских у киоска (слой World) включить / выключить.
+func _patrol_bodies(on: bool) -> void:
+	var patrols := world.get_node_or_null("LevelGeometry/Patrols")
+	if patrols == null:
+		return
+	for npc in [patrols.officer, patrols.officer2]:
+		var body: CollisionObject3D = npc.get_node_or_null("Body")
+		if body:
+			body.collision_layer = 1 if on else 0

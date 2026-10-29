@@ -25,6 +25,12 @@ extends Node3D
 ## EXT-01 fix5 (пятая приёмка P1-2, по крышам): on_roof — Илюша пешком в Layout.ROOF_AREA (площадка и гаражи) выше
 ## Layout.ROOF_HEIGHT над землёй, стоя на чём-то (или в прыжке выше ROOF_JUMP_HEIGHT): включённый сенсор ближе
 ## ROOF_SEE_DISTANCE видит его с видимостью 1 — без угла, дальности range_m, луча и множителя укрытия.
+## EXT-01 fix6 (шестая приёмка: дыры в 1–3 м от второго поста — короткая хорда конуса у самого сенсора): правило близости
+## для пешего Илюши. Ближе NEAR_RADIUS (3 м, в плоскости XZ) — виден без угла и луча («услышал шаги»), рост шкалы
+## ×NEAR_RISE_FACTOR (near_rise_factor, читает StealthDirector); в кольце NEAR_RADIUS…NEAR_RING (6 м) — без угла, луч
+## учитывается, рост обычный. Дальность range_m внутри NEAR_RING не проверяется. Множитель заметности EXT-02 (коробка,
+## сугроб, бочка) действует как всегда: visibility() = 1 × exposure_factor. В машине и на крыше — прежние правила.
+## На земле к сектору добавлен круг NEAR_RING бледнее (near_color) — «рядом нельзя»; у кругового сенсора круга нет.
 
 const POLL_SECONDS := 0.15
 const ACTIVE_DISTANCE := 40.0
@@ -39,6 +45,10 @@ const CAR_STILL_SPEED := 2.0       # м/с: медленнее — машина 
 const CAR_ROAD_STILL_SECONDS := 8.0   # fix4: на проезжей части B — столько подряд медленнее CAR_ROAD_STILL_SPEED
 const CAR_ROAD_STILL_SPEED := 0.5  # м/с: «почти полная остановка» для выдержки на дороге (торможение и разгон не в счёт)
 const CAR_CORNER_INSET := 0.1      # м: углы кузова для лучей — внутрь от габарита Lada.SIZE
+const NEAR_RADIUS := 3.0           # fix6: ближе — виден без угла и луча, рост ×NEAR_RISE_FACTOR
+const NEAR_RING := 6.0             # fix6: ближе — без угла (луч учитывается)
+const NEAR_RISE_FACTOR := 3.0
+const NEAR_COLOR := Color(1.0, 0.85, 0.12, 0.05)   # круг близости на земле — бледнее сектора
 const Layout = preload("res://game/world/layout.gd")
 
 @export var range_m := 9.0
@@ -50,6 +60,8 @@ const Layout = preload("res://game/world/layout.gd")
 @export var suspicion_cap := 1.0
 ## Цвет сектора на земле (учебный круг автобуса — бледнее).
 @export var cone_color := CONE_COLOR
+## Цвет круга близости NEAR_RING на земле (fix6).
+@export var near_color := NEAR_COLOR
 ## Область (x, z), где машина с Илюшей для этого сенсора — как Илюша (P1). Пустая — машин не замечает.
 @export var car_area := Rect2()
 
@@ -60,6 +72,11 @@ var _visible := 0.0
 var _poll_left := 0.0
 ## Последний опрос: Илюша на крыше у киоска и этот сенсор его так видит (fix5).
 var on_roof := false
+## Последний опрос: множитель роста шкалы от этого сенсора — NEAR_RISE_FACTOR, если Илюша ближе NEAR_RADIUS и
+## виден (visibility() > 0), иначе 1 (fix6).
+var near_rise_factor := 1.0
+## Последний опрос: Илюша пешком ближе NEAR_RING — угол не проверялся (fix6).
+var near := false
 ## Что перекрыло луч в последнем опросе (имя тела) — для тестов и настройки укрытий; "" — ничего.
 var last_blocker := ""
 ## Геометрия последнего опроса без множителя заметности: дистанция, угол и луч пропускают (в машине — false).
@@ -67,6 +84,10 @@ var in_view := false
 var _cone: MeshInstance3D
 var _cone_mesh: ImmediateMesh
 var _cone_material: StandardMaterial3D
+var _near_disc: MeshInstance3D
+var _near_mesh: ImmediateMesh
+var _near_material: StandardMaterial3D
+var _near_close := false   # последний _line_of_sight: ближе NEAR_RADIUS
 var _exclude: Array[RID] = []
 ## Сколько секунд подряд машина почти стоит на проезжей части B в car_area (fix4); 0 — едет, не на дороге или вне области.
 var car_road_still := 0.0
@@ -150,6 +171,8 @@ func _update_road_still(delta: float) -> void:
 func _compute() -> float:
 	var world := _world()
 	var car_seen := _car_in_sight()
+	near_rise_factor = 1.0
+	near = false
 	if world != null and world.get("control_mode") == &"in_car":
 		in_view = car_seen > 0.0
 		on_roof = false
@@ -162,9 +185,11 @@ func _compute() -> float:
 	in_view = seen > 0.0
 	var player_seen := 0.0
 	if in_view:
-		# EXT-02: множитель заметности (раздел 5.3); в сугробе 0 независимо от луча.
+		# EXT-02: множитель заметности (раздел 5.3); в сугробе 0 независимо от луча и близости.
 		var player: Node3D = world.player
 		player_seen = clampf(player.exposure_factor(global_position + Vector3.UP * EYE_HEIGHT), 0.0, 1.0) if player.has_method("exposure_factor") else seen
+		if _near_close and player_seen > 0.0 and player_seen >= car_seen:
+			near_rise_factor = NEAR_RISE_FACTOR   # fix6: «услышал шаги»
 	return maxf(player_seen, car_seen)
 
 ## Илюша пешком на крыше у киоска (fix5): в Layout.ROOF_AREA выше ROOF_HEIGHT, стоит на чём-то или в прыжке выше
@@ -234,8 +259,9 @@ static func car_targets(car: Node3D) -> Array[Vector3]:
 	return out
 
 ## Геометрия зрения на Илюшу пешком: 1 — дистанция, угол и луч пропускают, иначе 0 (в машине — 0); last_blocker —
-## что перекрыло луч.
+## что перекрыло луч. fix6: ближе NEAR_RADIUS — 1 без угла и луча; ближе NEAR_RING — без угла и дальности, луч нужен.
 func _line_of_sight() -> float:
+	_near_close = false
 	if not enabled or not is_inside_tree():
 		return 0.0
 	var world := _world()
@@ -246,11 +272,16 @@ func _line_of_sight() -> float:
 	var target := player.global_position + Vector3.UP * TARGET_HEIGHT
 	var flat := Vector2(target.x - eye.x, target.z - eye.z)
 	var distance := flat.length()
-	if distance > ACTIVE_DISTANCE or distance > range_m:
+	near = distance <= NEAR_RING
+	if distance <= NEAR_RADIUS:
+		_near_close = true
+		last_blocker = ""
+		return 1.0
+	if distance > ACTIVE_DISTANCE or (distance > range_m and not near):
 		return 0.0
 	var forward := -global_basis.z
 	var heading := Vector2(forward.x, forward.z)
-	if distance > 0.01 and heading.length() > 0.001:
+	if not near and distance > 0.01 and heading.length() > 0.001:
 		var angle := rad_to_deg(absf(heading.angle_to(flat)))
 		if angle > fov_deg * 0.5:
 			return 0.0
@@ -282,6 +313,59 @@ func _update_cone() -> void:
 		if wanted:
 			_cone_material.albedo_color = cone_color
 			_rebuild_cone()
+	_update_near_disc(wanted and fov_deg < 359.0)
+
+## fix6: круг близости NEAR_RING на земле вне сектора (внутри сектора его уже покрывает веер) — лучами до первой
+## преграды, как сектор: в кольце луч учитывается. Бледнее сектора (near_color).
+func _update_near_disc(wanted: bool) -> void:
+	if wanted and _near_disc == null:
+		_near_mesh = ImmediateMesh.new()
+		_near_material = _cone_material.duplicate() if _cone_material else StandardMaterial3D.new()
+		_near_disc = MeshInstance3D.new()
+		_near_disc.name = "NearCircle"
+		_near_disc.mesh = _near_mesh
+		_near_disc.material_override = _near_material
+		_near_disc.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		_near_disc.position.y = 0.055
+		add_child(_near_disc)
+	if _near_disc == null:
+		return
+	_near_disc.visible = wanted
+	if not wanted:
+		return
+	_near_material.albedo_color = near_color
+	var half := deg_to_rad(fov_deg * 0.5)
+	var arc := TAU - 2.0 * half
+	var rays := maxi(8, int(CONE_RAYS_FULL * arc / TAU))
+	var space := get_world_3d().direct_space_state
+	var eye := global_position + Vector3.UP * EYE_HEIGHT
+	var lengths := PackedFloat32Array()
+	lengths.resize(rays + 1)
+	for i in rays + 1:
+		var a := half + arc * i / rays
+		var world_dir := global_basis * Vector3(0, 0, -1).rotated(Vector3.UP, a)
+		world_dir.y = 0.0
+		world_dir = world_dir.normalized()
+		var end := global_position + world_dir * NEAR_RING + Vector3.UP * TARGET_HEIGHT
+		var hit := space.intersect_ray(PhysicsRayQueryParameters3D.create(eye, end, WORLD_MASK, _exclude))
+		var length := NEAR_RING
+		if not hit.is_empty():
+			var p: Vector3 = hit["position"]
+			length = maxf(Vector2(p.x - global_position.x, p.z - global_position.z).length(), NEAR_RADIUS)
+		lengths[i] = length
+	_near_mesh.clear_surfaces()
+	_near_mesh.surface_begin(Mesh.PRIMITIVE_TRIANGLES)
+	for i in rays:
+		var a0 := half + arc * i / rays
+		var a1 := half + arc * (i + 1) / rays
+		_near_mesh.surface_add_vertex(Vector3.ZERO)
+		_near_mesh.surface_add_vertex(Vector3(0, 0, -lengths[i]).rotated(Vector3.UP, a0))
+		_near_mesh.surface_add_vertex(Vector3(0, 0, -lengths[i + 1]).rotated(Vector3.UP, a1))
+	_near_mesh.surface_end()
+
+## Круг близости на земле сейчас рисуется (fix6, для тестов и кадров).
+func near_circle_visible() -> bool:
+	return _near_disc != null and _near_disc.visible and _near_disc.is_visible_in_tree()
 
 ## Веер треугольников от сенсора: луч i — от глаз (y + EYE_HEIGHT) к точке на дальности range_m на высоте цели
 ## (TARGET_HEIGHT), как луч зрения в _line_of_sight; длина — до первой преграды слоя World. Перестраивается каждый

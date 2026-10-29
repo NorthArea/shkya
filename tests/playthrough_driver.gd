@@ -190,7 +190,7 @@ func sneak(to_cover: Array, safe_facing: int, after: Array, safe_facing2 := -1, 
 		return await walk_path(after)
 	if not await walk_path(after):
 		return false
-	if not await wait_officer_turn(safe_facing2, 1500, officer2()):
+	if not await wait_officer_turn(safe_facing2, 1800, officer2()):   # fix6: цикл второго до ~21 с
 		return false
 	return await walk_path(after2)
 
