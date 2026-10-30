@@ -86,6 +86,7 @@ func _run() -> void:
 	for s in get_nodes_in_group(&"detection_sensors"):
 		s.enabled = false
 	_park_car_away(true)  # машина вне карты, чтобы не мешала пешеходу ни в одном сценарии
+	await _walk_start_regression()
 	await _sweep_walk()
 	var scenarios := _scenarios()
 	await _geometry_walk(scenarios)
@@ -107,6 +108,45 @@ func _park_car_away(away: bool) -> void:
 	world.car.set_physics_process(not away)
 	world.car.reset_to(Vector3(0, 0, 400) if away else Layout.CAR_SPAWN, 0.0)
 
+# C10: прежняя проверка World|Car принимала старт внутри SnowBank; recovery поднимал Илюшу до ввода.
+func _walk_start_regression() -> void:
+	var player := world.player
+	var solids := Layout.all_solids()
+	var snow: Array = solids.filter(func(spec): return spec[0] == "Snow_StreetA")[0]
+	var snow_half := Vector2(snow[3].x, snow[3].z) * 0.5
+	var snow_northwest: Vector2 = snow[2] - snow_half
+	var lamps := solids.filter(func(spec): return spec[1] == "lamp")
+	lamps.sort_custom(func(a, b): return a[2].distance_squared_to(snow_northwest) < b[2].distance_squared_to(snow_northwest))
+	var lamp: Array = lamps[0]
+	var lamp_corner: Vector2 = lamp[2] - Vector2(lamp[3].x, lamp[3].z) * 0.5
+	var snow_corner: Vector2 = snow[2] + Vector2(-snow_half.x, snow_half.y)
+	for point in [lamp_corner - Vector2.LEFT * WALK_RUN, snow_corner - Vector2(-1.0, 1.0).normalized() * WALK_RUN]:
+		var at := Vector3(point.x, 0.0, point.y)
+		check(not _free(at, _capsule(0.4), 0.8, 0.0, player.collision_mask), "walk start rejects the existing snow/lamp overlap at %s" % at)
+	var direction := Vector2(1.0, -1.0).normalized()
+	var from := lamp_corner - direction * WALK_RUN
+	var start := Vector3(from.x, 0.0, from.y)
+	check(_free(start, _capsule(0.4), 0.8, 0.0, player.collision_mask), "nearby legal snow/lamp approach remains eligible")
+	player.place(start, 0.0)
+	world.camera_rig.yaw = _yaw(direction)
+	await _frames(2)
+	Input.action_press(&"move_forward")
+	var top := player.position.y
+	var touched := false
+	for i in WALK_PUSH:
+		await physics_frame
+		top = maxf(top, player.position.y)
+		touched = touched or player.is_on_wall()
+	Input.action_release(&"move_forward")
+	check(touched and top <= 0.3, "legal snow/lamp approach reaches the obstacle without lifting")
+	var contact := player.position
+	world.camera_rig.yaw = _yaw(-direction)
+	await _frames(2)
+	Input.action_press(&"move_forward")
+	await _frames(WALK_ESCAPE)
+	Input.action_release(&"move_forward")
+	check(Vector2(player.position.x - contact.x, player.position.z - contact.z).dot(-direction) >= WALK_ESCAPE_MIN, "legal snow/lamp approach still permits retreat")
+
 # --- часть 1: случайные свободные точки ---
 
 func _sweep_walk() -> void:
@@ -116,7 +156,7 @@ func _sweep_walk() -> void:
 	var tested := 0
 	while tested < WALK_POINTS:
 		var point := _random_point(0.5)
-		if not _free(point, _capsule(0.4), 0.8):
+		if not _free(point, _capsule(0.4), 0.8, 0.0, world.player.collision_mask):
 			continue
 		tested += 1
 		var free_directions := 0
@@ -284,7 +324,7 @@ func _geometry_walk(by_cat: Dictionary) -> void:
 	for cat in CATS:
 		var picked := _pick(by_cat[cat], WALK_CAP, func(s):
 			var p := _walk_start(s)
-			return inner.has_point(Vector2(p.x, p.z)) and _free(p, _capsule(0.4), 0.8))
+			return inner.has_point(Vector2(p.x, p.z)) and _free(p, _capsule(0.4), 0.8, 0.0, world.player.collision_mask))
 		var touched := 0
 		var trapped := []
 		var reverse_blocked := []
@@ -315,8 +355,8 @@ func _geometry_walk(by_cat: Dictionary) -> void:
 				why = " sunk %.3f from (%.2f,%.2f) dir (%.3f,%.3f)" % [low, start.x, start.z, dir.x, dir.y]
 			elif contact.y < -0.5 or not Layout.BOUNDS.has_point(Vector2(contact.x, contact.z)):
 				why = " off map"
-			elif not _free(contact, _capsule(0.25), 0.8):
-				why = " inside %s at (%.3f,%.3f,%.3f) from (%.2f,%.2f) dir (%.3f,%.3f)" % [_hit_name(contact, _capsule(0.25), 0.8),
+			elif not _free(contact, _capsule(0.25), 0.8, 0.0, world.player.collision_mask):
+				why = " inside %s at (%.3f,%.3f,%.3f) from (%.2f,%.2f) dir (%.3f,%.3f)" % [_hit_name(contact, _capsule(0.25), 0.8, 0.0, world.player.collision_mask),
 					contact.x, contact.y, contact.z, start.x, start.z, dir.x, dir.y]
 			if why != "":
 				broken.append(_where(s, contact) + why)
@@ -367,7 +407,7 @@ func _corner_sink_sweep() -> void:
 				var dir: Vector2 = (-corner_sign.normalized()).rotated(deg_to_rad(deg))
 				var start := corner - dir * 1.2
 				var start3 := Vector3(start.x, 0.0, start.y)
-				if not inner.has_point(start) or not _free(start3, _capsule(0.4), 0.8):
+				if not inner.has_point(start) or not _free(start3, _capsule(0.4), 0.8, 0.0, world.player.collision_mask):
 					continue
 				tested += 1
 				player.place(start3, 0.0)
@@ -510,7 +550,7 @@ func _breakable_walk() -> void:
 		for side in _heavy_sides(b):
 			var dir: Vector2 = side[1]
 			var start := Vector3(side[0].x - dir.x * WALK_RUN, 0.0, side[0].y - dir.y * WALK_RUN)
-			if not _free(start, _capsule(0.4), 0.8):
+			if not _free(start, _capsule(0.4), 0.8, 0.0, world.player.collision_mask):
 				continue
 			tested += 1
 			player.place(start, 0.0)
@@ -766,18 +806,18 @@ func _car_box(margin: float) -> Shape3D:
 	box.size = Lada.SIZE + Vector3(margin * 2.0, -0.2, margin * 2.0)
 	return box
 
-func _free(point: Vector3, shape: Shape3D, lift: float, yaw := 0.0) -> bool:
-	return _overlaps(point, shape, lift, yaw).is_empty()
+func _free(point: Vector3, shape: Shape3D, lift: float, yaw := 0.0, collision_mask := 1 | 4) -> bool:
+	return _overlaps(point, shape, lift, yaw, collision_mask).is_empty()
 
 ## Имя первого пересечённого тела — для отчёта о найденном месте.
-func _hit_name(point: Vector3, shape: Shape3D, lift: float, yaw := 0.0) -> String:
-	var hits := _overlaps(point, shape, lift, yaw)
+func _hit_name(point: Vector3, shape: Shape3D, lift: float, yaw := 0.0, collision_mask := 1 | 4) -> String:
+	var hits := _overlaps(point, shape, lift, yaw, collision_mask)
 	return String(hits[0].collider.name) if not hits.is_empty() else "?"
 
-func _overlaps(point: Vector3, shape: Shape3D, lift: float, yaw: float) -> Array[Dictionary]:
+func _overlaps(point: Vector3, shape: Shape3D, lift: float, yaw: float, collision_mask: int) -> Array[Dictionary]:
 	var query := PhysicsShapeQueryParameters3D.new()
 	query.shape = shape
-	query.collision_mask = 1 | 4
+	query.collision_mask = collision_mask
 	query.exclude = [world.car.get_rid(), world.player.get_rid()]
 	query.transform = Transform3D(Basis(Vector3.UP, yaw), point + Vector3.UP * lift)
 	return world.get_world_3d().direct_space_state.intersect_shape(query, 1)
@@ -842,7 +882,7 @@ func _props_walk() -> void:
 		for side in _props_sides(spec):
 			var dir: Vector2 = side[1]
 			var start := Vector3(side[0].x - dir.x * WALK_RUN, 0.0, side[0].y - dir.y * WALK_RUN)
-			if not Layout.BOUNDS.grow(-0.5).has_point(Vector2(start.x, start.z)) or not _free(start, _capsule(0.4), 0.8):
+			if not Layout.BOUNDS.grow(-0.5).has_point(Vector2(start.x, start.z)) or not _free(start, _capsule(0.4), 0.8, 0.0, world.player.collision_mask):
 				continue
 			tested += 1
 			player.place(start, 0.0)
@@ -856,7 +896,7 @@ func _props_walk() -> void:
 			Input.action_release(&"move_forward")
 			var contact := player.global_position
 			var where := "%s@(%.1f,%.1f)" % [spec[0], contact.x, contact.z]
-			if low < -SINK_TOLERANCE or not _free(contact, _capsule(0.25), 0.8):
+			if low < -SINK_TOLERANCE or not _free(contact, _capsule(0.25), 0.8, 0.0, world.player.collision_mask):
 				broken.append(where)
 			var escaped := false
 			for e in WALK_ESCAPES:
