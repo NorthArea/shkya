@@ -49,22 +49,38 @@ const SHOULDER_SHARPNESS := 5.0
 ## как Бабка на концепте 03 (LOOK-01: кадры диалога builds/screenshots/LOOK-01/).
 const TALK_DISTANCE := 3.4
 ## POLISH-03 A: на время диалога пешком камера поворачивается к говорящему (кадр 07: окно киоска и продавщица в кадре,
-## Илюша слева со спины), после — плавно возвращается к прежнему взгляду. Любая запись yaw снаружи (мышь, стик, сцена,
-## тесты) снимает и поворот, и возврат.
+## Илюша слева со спины), после — возвращается к прежнему взгляду. Поворот — один, за фиксированное время с плавным
+## разгоном и торможением (smoothstep), цель считается один раз при открытии: так нет рывка на старте и «дотягивания».
+## План проверяет обзор сферой пружины (как SpringArm3D): плечо, угол и путь поворота без стен; если справа тесно —
+## плечо слева, затем сдвиг угла, затем камера выше. Любая запись yaw снаружи (мышь, стик, сцена, тесты) снимает и
+## поворот, и возврат; первый шаг после диалога снимает возврат.
 const TALK_PITCH := -0.10        # почти горизонтально: окно и собеседник над панелью диалога
-const TALK_AIM_BIAS := 0.25      # точка взгляда — от собеседника на четверть пути к Илюше: собеседник правее центра
+const TALK_PITCH_HIGH := -0.38   # запасной: камера выше, над низкими преградами
+const TALK_SPEAKER_ANGLE := 0.2  # рад: собеседник правее оси кадра (Илюша — левее, на atan(плечо / дистанция))
 const TALK_AIM_HEIGHT := 1.3     # м над землёй собеседника
-const TALK_TURN_RATE := 4.0      # 1/с
-const RETURN_RATE := 3.0         # 1/с
+const TALK_TURN_MIN := 0.55      # с на поворот: от TALK_TURN_MIN до TALK_TURN_MAX по величине угла
+const TALK_TURN_MAX := 1.1
+const TALK_CLEAR := 0.95         # доля свободного хода сферы пружины, которой довольно
 var talk_focus := Vector3.INF    # INF — нет собеседника
 var _return_active := false
 var _saved_yaw := 0.0
 var _saved_pitch := 0.0
 var _focus_written := NAN        # последнее значение yaw, записанное поворотом/возвратом
+var _talk_from := Vector2.ZERO   # (yaw, pitch) в начале поворота или возврата
+var _talk_goal := Vector2.ZERO   # (yaw, pitch) цели
+var _talk_t := 0.0
+var _talk_time := TALK_TURN_MIN
+var _talk_planned := false
+var talk_side := 1.0             # 1 — плечо справа, −1 — слева (справа тесно)
+var _talk_from_arm := Vector2.ZERO   # (плечо, длина пружины) в начале поворота
+var _talk_arm := 0.0                 # сглаженная длина пружины на время поворота
+const ARM_MASK := 1                  # World — как у пружины вне диалога
+const ARM_PULL_RATE := 18.0          # 1/с: к препятствию
+const ARM_RELEASE_RATE := 4.0        # 1/с: от препятствия
 func _ready() -> void:
 	arm = SpringArm3D.new()
 	arm.name = "Arm"
-	arm.collision_mask = 1  # только World
+	arm.collision_mask = ARM_MASK  # только World
 	var sphere := SphereShape3D.new()
 	sphere.radius = 0.25
 	arm.shape = sphere
@@ -136,15 +152,51 @@ func _physics_process(delta: float) -> void:
 	var distance: float = PROFILES[profile]["distance"]
 	if shoulder > 0.0 and profile == &"on_foot":
 		distance = TALK_DISTANCE
-	arm.spring_length = lerpf(arm.spring_length, distance, 1.0 - exp(-4.0 * delta))
-	_shoulder_now = lerpf(_shoulder_now, shoulder, 1.0 - exp(-SHOULDER_SHARPNESS * delta))
+	if is_talk_framing() and _talk_planned:
+		# Плечо и дистанция — тем же плавным ходом, что и угол: экспонента стартует рывком (POLISH-03 A). Столкновение
+		# пружины — своё и сглаженное: SpringArm3D ставит камеру на точку удара мгновенно, и у стены подъезда или киоска
+		# камера на повороте прыгала туда-сюда. Подтягивается к препятствию быстро, отходит медленно.
+		var k := smoothstep(0.0, 1.0, _talk_t)
+		_shoulder_now = lerpf(_talk_from_arm.x, shoulder * talk_side, k)
+		var want := lerpf(_talk_from_arm.y, distance, k)
+		var pivot := global_position
+		var back := Basis.from_euler(Vector3(pitch, yaw, 0.0)) * Vector3(0.0, 0.0, want)
+		var free := want * _free_fraction(pivot, pivot + back)
+		var rate := ARM_PULL_RATE if free < _talk_arm else ARM_RELEASE_RATE
+		_talk_arm = lerpf(_talk_arm, free, 1.0 - exp(-rate * delta))
+		arm.collision_mask = 0
+		arm.spring_length = _talk_arm
+	else:
+		arm.collision_mask = ARM_MASK
+		arm.spring_length = lerpf(arm.spring_length, distance, 1.0 - exp(-4.0 * delta))
+		_shoulder_now = lerpf(_shoulder_now, shoulder * talk_side, 1.0 - exp(-SHOULDER_SHARPNESS * delta))
 	rotation = Vector3(pitch, yaw, 0.0)
+
+## POLISH-03 A (владелец: камера у Бабки и продавщицы дёргается): при захвате мыши после диалога ОС переносит курсор
+## в центр и присылает движение на сотни пикселей — оно рвало камеру и снимало плавный возврат. Первые MOUSE_SETTLE с
+## после смены режима мыши и одиночные скачки больше MOUSE_JUMP_PX не считаются движением.
+const MOUSE_SETTLE := 0.12
+const MOUSE_JUMP_PX := 250.0
+var _mouse_mode_seen := -1
+var _mouse_settle_until := 0
 
 func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventMouseMotion and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
+		_watch_mouse_mode()
+		if Time.get_ticks_msec() < _mouse_settle_until or event.relative.length() > MOUSE_JUMP_PX:
+			return
 		apply_mouse(event.relative)
 
+func _process(_delta: float) -> void:
+	_watch_mouse_mode()
+
+func _watch_mouse_mode() -> void:
+	if Input.mouse_mode != _mouse_mode_seen:
+		_mouse_mode_seen = Input.mouse_mode
+		_mouse_settle_until = Time.get_ticks_msec() + int(MOUSE_SETTLE * 1000.0)
+
 ## POLISH-03 A: повернуться к собеседнику в точке point (пешком; прежний взгляд запоминается для возврата).
+## План (угол, наклон, сторона плеча) — в первом физкадре: там доступен запрос к пространству физики.
 func focus_talk(point: Vector3) -> void:
 	if profile != &"on_foot" or target == null:
 		return
@@ -153,31 +205,102 @@ func focus_talk(point: Vector3) -> void:
 		_saved_pitch = pitch
 	talk_focus = point
 	_return_active = false
+	_talk_planned = false
 	_focus_written = yaw
 
-## Диалог закрыт: плавно вернуть прежний взгляд (если его не перехватили).
+## Диалог закрыт: вернуть прежний взгляд тем же плавным поворотом (если его не перехватили).
 func release_talk() -> void:
 	if talk_focus == Vector3.INF:
 		return
 	talk_focus = Vector3.INF
 	_return_active = true
+	talk_side = 1.0
+	_talk_planned = true
+	_start_turn(Vector2(_saved_yaw, _saved_pitch))
 
 ## Идёт поворот к собеседнику или возврат после диалога.
 func is_talk_framing() -> bool:
 	return talk_focus != Vector3.INF or _return_active
 
-## Угол yaw, при котором собеседник в point оказывается в кадре правее центра, а Илюша — слева (плечо shoulder).
-func talk_yaw(point: Vector3) -> float:
-	var aim := point + (target.global_position - point) * TALK_AIM_BIAS
-	var y := yaw
-	for i in 3:
+## Угол yaw, при котором собеседник в point виден на TALK_SPEAKER_ANGLE · side от оси кадра, а Илюша — по другую
+## сторону (плечо shoulder · side, дистанция TALK_DISTANCE).
+func talk_yaw(point: Vector3, side := 1.0) -> float:
+	var p := target.global_position
+	var to := point - p
+	var y := atan2(-to.x, -to.z)
+	for i in 6:
+		var fwd := Vector3(-sin(y), 0.0, -cos(y))
 		var right := Vector3(cos(y), 0.0, -sin(y))
-		var pivot := target.global_position + right * _shoulder_now
-		var to := aim - pivot
-		if Vector2(to.x, to.z).length() < 0.2:
-			return y
-		y = atan2(-to.x, -to.z)
+		var cam := p + right * shoulder * side - fwd * TALK_DISTANCE
+		var rel := point - cam
+		var angle := atan2(rel.dot(right), rel.dot(fwd))
+		y += side * TALK_SPEAKER_ANGLE - angle
 	return y
+
+## goal.x — угол без свёртки: поворот идёт ровно на goal.x − yaw (короткой или длинной дугой, как выбрал план).
+func _start_turn(goal: Vector2) -> void:
+	_talk_from = Vector2(yaw, pitch)
+	_talk_from_arm = Vector2(_shoulder_now, arm.get_hit_length())
+	_talk_arm = _talk_from_arm.y
+	_talk_goal = goal
+	_talk_t = 0.0
+	_talk_time = lerpf(TALK_TURN_MIN, TALK_TURN_MAX, clampf(absf(goal.x - yaw) / PI, 0.0, 1.0))
+	_focus_written = yaw
+
+## Выбрать сторону плеча, угол, наклон и направление дуги, при которых сфера пружины свободно проходит от головы к
+## плечу и от плеча к камере в цели и на второй половине пути (начало пути — там, где камера уже стоит). Порядок
+## предпочтений: низкий наклон, плечо справа, точный угол, короткая дуга; первый свободный; иначе — самый свободный.
+func _plan_talk() -> void:
+	var best := Vector3(yaw + angle_difference(yaw, talk_yaw(talk_focus, 1.0)), TALK_PITCH, 1.0)
+	var best_score := -1.0
+	for pitch_try in [TALK_PITCH, TALK_PITCH_HIGH]:
+		for side in [1.0, -1.0]:
+			var base := talk_yaw(talk_focus, side)
+			for extra in [0.0, 0.2 * side, 0.4 * side]:
+				var short_turn := angle_difference(yaw, base + extra)
+				for turn in [short_turn, short_turn - signf(short_turn) * TAU]:
+					var y: float = yaw + turn
+					var score := _talk_clearance(y, pitch_try, side)
+					if score > best_score + 0.001:
+						best_score = score
+						best = Vector3(y, pitch_try, side)
+					if score >= TALK_CLEAR:
+						_apply_plan(best)
+						return
+	_apply_plan(best)
+
+func _apply_plan(plan: Vector3) -> void:
+	talk_side = plan.z
+	_talk_planned = true
+	_start_turn(Vector2(plan.x, plan.y))
+
+## Свободный ход 0…1 (минимум по участкам) сферы радиуса пружины: голова → плечо и плечо → камера на конечном угле
+## и на половине и трёх четвертях поворота от текущего (goal_yaw без свёртки).
+func _talk_clearance(goal_yaw: float, goal_pitch: float, side: float) -> float:
+	var head: Vector3 = target.global_position + Vector3.UP * float(PROFILES[profile]["height"])
+	var worst := 1.0
+	for k in [1.0, 0.75, 0.5]:
+		var y := lerpf(yaw, goal_yaw, k)
+		var pt := lerpf(pitch, goal_pitch, k)
+		var right := Vector3(cos(y), 0.0, -sin(y))
+		var pivot: Vector3 = head + right * shoulder * side
+		var back := Basis.from_euler(Vector3(pt, y, 0.0)) * Vector3(0.0, 0.0, TALK_DISTANCE)
+		worst = minf(worst, minf(_free_fraction(head, pivot), _free_fraction(pivot, pivot + back)))
+	return worst
+
+## Доля свободного хода сферы пружины от from до to по слоям пружины (без Илюши и постоянных исключений).
+func _free_fraction(from: Vector3, to: Vector3) -> float:
+	var query := PhysicsShapeQueryParameters3D.new()
+	query.shape = arm.shape
+	query.transform = Transform3D(Basis(), from)
+	query.motion = to - from
+	query.collision_mask = ARM_MASK
+	var exclude: Array[RID] = permanent_exclusions.duplicate()
+	if target is CollisionObject3D:
+		exclude.append((target as CollisionObject3D).get_rid())
+	query.exclude = exclude
+	var result := get_world_3d().direct_space_state.cast_motion(query)
+	return result[0] if result.size() > 0 else 1.0
 
 func _update_talk(delta: float) -> bool:
 	if not is_talk_framing():
@@ -186,18 +309,20 @@ func _update_talk(delta: float) -> bool:
 	if walking_off or profile != &"on_foot" or (not is_nan(_focus_written) and yaw != _focus_written):
 		talk_focus = Vector3.INF   # yaw перехвачен (мышь, сцена, тест) или сели в машину — не спорить
 		_return_active = false
+		talk_side = 1.0
+		arm.collision_mask = ARM_MASK
 		return false
-	var k_rate := TALK_TURN_RATE if talk_focus != Vector3.INF else RETURN_RATE
-	var goal_yaw := talk_yaw(talk_focus) if talk_focus != Vector3.INF else _saved_yaw
-	var goal_pitch := TALK_PITCH if talk_focus != Vector3.INF else _saved_pitch
-	var k := 1.0 - exp(-k_rate * delta)
-	yaw = lerp_angle(yaw, goal_yaw, k)
-	pitch = lerpf(pitch, goal_pitch, k)
+	if talk_focus != Vector3.INF and not _talk_planned:
+		_plan_talk()
+	_talk_t = minf(_talk_t + delta / _talk_time, 1.0)
+	var k := smoothstep(0.0, 1.0, _talk_t)
+	yaw = lerpf(_talk_from.x, _talk_goal.x, k)
+	pitch = lerpf(_talk_from.y, _talk_goal.y, k)
 	_focus_written = yaw
-	if _return_active and absf(angle_difference(yaw, _saved_yaw)) < 0.01:
-		yaw = _saved_yaw
-		pitch = _saved_pitch
+	if _return_active and _talk_t >= 1.0:
 		_return_active = false
+		yaw = wrapf(yaw, -PI, PI)
+		_focus_written = yaw
 	_mouse_idle = 0.0
 	return true
 

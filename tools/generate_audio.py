@@ -1069,11 +1069,13 @@ def _rms_stem(signal: list[float], rms_db: float) -> list[float]:
     return [x * g for x in signal]
 
 
-def _schroeder_reverb(signal: list[float], wet: float) -> list[float]:
-    """Небольшая «комната»: четыре гребенчатых фильтра с затуханием в петле и два всепропускающих (Шрёдер)."""
+def _schroeder_reverb(signal: list[float], wet: float, room: float = 0.0) -> list[float]:
+    """Небольшая «комната»: четыре гребенчатых фильтра с затуханием в петле и два всепропускающих (Шрёдер).
+    room — прибавка к обратной связи гребёнок: длиннее хвост (MUSIC-02)."""
     combs = [(1307, 0.80), (1637, 0.78), (1811, 0.77), (1931, 0.76)]
     acc = [0.0] * len(signal)
     for delay, fb in combs:
+        fb = min(0.95, fb + room)
         buf = [0.0] * delay
         idx, damp = 0, 0.0
         for i, x in enumerate(signal):
@@ -1207,6 +1209,240 @@ def bag_rustle_loop() -> list[float]:
     return to_rms(loop_crossfade(mix, 0.2), -24.0)
 
 
+# --- MUSIC-02: три кандидата темы меню на выбор владельца (вариант MUSIC-01 отвергнут: жёсткий «баян»).
+# Все мягкие: синусы и почти синусы, мягкие атаки, без пил и расстроенных язычков. Свои мелодии, не цитаты.
+# Общая схема — как у MUSIC-01: синтез 44,1 кГц, круговой шов (хвосты за концом круга — в начало), модуляции
+# с целым числом периодов на круг, запись 22,05 кГц моно, RMS −21 дБ.
+
+
+def _tone(freq: float, length: float, gain: float, partials, attack: float, release: float = 0.3) -> list[float]:
+    """Мягкий тон из синусов: partials — [(отношение к freq, громкость, спад с)]; атака attack с, после length с —
+    плавное снятие release с. Спад считается умножением (быстрее exp на каждом отсчёте)."""
+    n = samples(length + release)
+    held = samples(length)
+    out = [0.0] * n
+    for ratio, amp, decay in partials:
+        f = freq * ratio
+        if f >= RATE * 0.45:
+            continue
+        w = math.tau * f / RATE
+        k = math.exp(-1.0 / (decay * RATE))
+        e = amp
+        for i in range(n):
+            out[i] += math.sin(w * i) * e
+            e *= k
+    a = samples(attack)
+    r = samples(release)
+    for i in range(n):
+        g = gain
+        if i < a:
+            g *= math.sin(0.5 * math.pi * i / a) ** 2
+        if i >= held:
+            g *= max(0.0, 1.0 - (i - held) / r) ** 2
+        out[i] *= g
+    return out
+
+
+def _fm_piano(freq: float, length: float, gain: float) -> list[float]:
+    """Электропиано (FM 1:1, как у Rhodes): индекс модуляции 1,1 на ударе гаснет до 0,2 за 0,4 с — мягкий «звон»
+    в начале и почти синус потом; спад 2,8 с, снятие 0,3 с."""
+    release = 0.3
+    n = samples(length + release)
+    held = samples(length)
+    w = math.tau * freq / RATE
+    k_amp = math.exp(-1.0 / (2.8 * RATE))
+    k_idx = math.exp(-1.0 / (0.4 * RATE))
+    a = samples(0.005)
+    r = samples(release)
+    out = []
+    amp, idx = gain, 0.9
+    for i in range(n):
+        ph = w * i
+        v = math.sin(ph + (idx + 0.2) * math.sin(ph)) * amp
+        if i < a:
+            v *= i / a
+        if i >= held:
+            v *= max(0.0, 1.0 - (i - held) / r) ** 2
+        out.append(v)
+        amp *= k_amp
+        idx *= k_idx
+    return out
+
+
+def _loop_master(stems, n: int, tail: int, wet: float, room: float, seed: int, snow_db: float | None) -> list[float]:
+    """Сведение кандидата: стемы [(сигнал, RMS дБ)] → реверберация → круговой шов → шорох снега → 22,05 кГц, −21 дБ."""
+    mix = [0.0] * (n + tail)
+    for stem, db in stems:
+        for i, x in enumerate(_rms_stem(stem, db)):
+            mix[i] += x
+    mix = _schroeder_reverb(mix, wet, room)
+    loop = mix[:n]
+    for i in range(tail):
+        loop[i] += mix[n + i]
+    if snow_db is not None:
+        rng = random.Random(seed)
+        snow = highpass(lowpass([rng.uniform(-1, 1) for _ in range(n)], 1300.0, stages=2), 250.0)
+        snow = [x * (0.65 + 0.25 * math.sin(math.tau * 2 * i / n) + 0.1 * math.sin(math.tau * 5 * i / n + 0.7))
+                for i, x in enumerate(snow)]
+        loop = [x + s for x, s in zip(loop, _rms_stem(snow, snow_db))]
+    # Финальные фильтры — по кругу: состояние «разогревается» последней секундой круга, иначе на шве скачок.
+    pre = samples(1.0) & ~1
+    looped = lowpass(highpass(loop[-pre:] + loop, 35.0), 9000.0, stages=2)[pre:]
+    return to_rms(looped[::2], -21.0, peak=0.9)
+
+
+def _periodic_lfo(n: int, hz: float, depth: float, phase: float = 0.0) -> list[float]:
+    """Множитель 1 − depth·(0,5 + 0,5·sin): частота подогнана к целому числу периодов на круг n отсчётов."""
+    cycles = max(1, round(hz * n / RATE))
+    return [1.0 - depth * (0.5 + 0.5 * math.sin(math.tau * cycles * i / n + phase)) for i in range(n)]
+
+
+def menu_theme_a() -> list[float]:
+    """Кандидат A — «шкатулка»: колыбельная фа мажор, 3/4, 63 уд/мин, 16 тактов = 45,7 с (A A' B A'').
+    Синусы с атакой 12 мс и быстро гаснущими 2-й и 3-й гармониками — мягкая челеста/шкатулка октавой выше;
+    левая рука той же шкатулки — бас на раз и два звука аккорда на два и три; реверберация побольше."""
+    rng = random.Random(401)
+    beat = samples(60.0 / 63.0)                     # 42 000 — целое
+    bar = beat * 3
+    harmony = ["F", "F", "Bb", "F", "Gm", "C", "F", "C", "F", "F", "Bb", "Gm", "F", "C7", "C7", "F"]
+    chords = {"F": (41, [57, 60]), "Bb": (46, [58, 62]), "Gm": (43, [58, 62]), "C": (48, [55, 60]),
+              "C7": (48, [58, 64])}
+    melody = [[(2, 72), (1, 69)], [(1, 65), (1, 69), (1, 72)], [(2, 74), (1, 72)], [(3, 69)],
+              [(2, 70), (1, 69)], [(1, 67), (1, 69), (1, 70)], [(2, 69), (1, 67)], [(3, 67)],
+              [(2, 72), (1, 69)], [(1, 65), (1, 69), (1, 72)], [(2, 77), (1, 74)], [(1, 74), (1, 72), (1, 70)],
+              [(2, 69), (1, 72)], [(2, 67), (1, 70)], [(1.5, 67), (0.5, 64), (1, 67)], [(3, 65)]]
+    assert len(melody) == len(harmony) and all(sum(d for d, _ in m) == 3 for m in melody)
+    n = bar * len(harmony)
+    tail = samples(5.0)
+    box = [(1.0, 1.0, 1.6), (2.0, 0.10, 0.45), (3.0, 0.03, 0.2)]
+    lead = [0.0] * (n + tail)
+    accomp = [0.0] * (n + tail)
+    beat_s = beat / RATE
+    for b, (name, notes) in enumerate(zip(harmony, melody)):
+        pos = 0.0
+        for length, note in notes:
+            start = b * bar + samples(pos * beat_s) + rng.randint(0, 120)
+            _add(lead, start, _tone(_midi(note + 12), length * beat_s, 0.9, box, 0.012, 0.6))
+            pos += length
+        bass, pair = chords[name]
+        _add(accomp, b * bar, _tone(_midi(bass + 12), beat_s, 0.8, [(1.0, 1.0, 1.2), (2.0, 0.08, 0.4)], 0.015, 0.4))
+        for k, v in enumerate(pair):
+            _add(accomp, b * bar + (k + 1) * beat, _tone(_midi(v), beat_s * 0.9, 0.5, box, 0.012, 0.4))
+    lead = lowpass(lead, 5000.0)
+    accomp = lowpass(accomp, 3000.0)
+    return _loop_master([(lead, -17.0), (accomp, -23.0)], n, tail, 0.9, 0.08, 403, -46.0)
+
+
+def menu_theme_b() -> list[float]:
+    """Кандидат B — «зимний вечер»: ленивое электропиано (FM 1:1, тремоло 4,2 Гц) и мягкий бас, медленный свинг
+    4/4, 75 уд/мин, фа мажор, 16 тактов = 51,2 с. Аккорды Fmaj7 Am7 B♭maj7 C7sus/C7, D7 Gm7, минорная
+    субдоминанта B♭m6 «с грустинкой», оборот C7 к началу. Мелодия редкая, свинговые восьмые 2:1."""
+    rng = random.Random(409)
+    beat = samples(60.0 / 75.0)                     # 35 280 — целое
+    bar = beat * 4
+    harmony = ["Fmaj7", "Am7", "Bbmaj7", "C7sus", "Fmaj7", "D7", "Gm7", "C7",
+               "Bbmaj7", "Bbm6", "Am7", "D7", "Gm7", "C7", "Fmaj7", "C7"]
+    voicing = {"Fmaj7": (41, [57, 60, 64]), "Am7": (45, [55, 60, 64]), "Bbmaj7": (46, [57, 62, 65]),
+               "C7sus": (48, [58, 65, 67]), "C7": (48, [58, 64, 67]), "D7": (50, [54, 57, 60]),
+               "Gm7": (43, [53, 58, 62]), "Bbm6": (46, [55, 61, 65])}
+    s = 2.0 / 3.0                                   # свинговая восьмая «и»
+    melody = [[(0, 1.5, 76), (1 + s, 1 - s, 74), (2, 2, 72)], [(0, 3, 69), (3 + s, 1 - s, 72)],
+              [(0, 1.5, 74), (1 + s, 1 - s, 72), (2, 1, 69), (3, 1, 65)], [(0, 3.5, 67)],
+              [(0, 1.5, 76), (1 + s, 1 - s, 74), (2, 2, 72)], [(0, 2, 66), (2, 1, 69), (3, 1, 72)],
+              [(0, 2, 74), (2, 1, 70), (3, 1, 69)], [(0, 3, 67)],
+              [(0, 1.5, 77), (1 + s, 1 - s, 76), (2, 2, 74)], [(0, 1.5, 73), (1 + s, 1 - s, 72), (2, 2, 70)],
+              [(0, 2, 72), (2, 2, 69)], [(0, 1.5, 66), (1 + s, 1 - s, 69), (2, 2, 72)],
+              [(0, 1.5, 70), (1 + s, 1 - s, 69), (2, 2, 65)], [(0, 1.5, 67), (1 + s, 1 - s, 70), (2, 1.5, 64)],
+              [(0, 3.5, 65)], [(2 + s, 1 - s, 72), (3, 1, 74)]]
+    assert len(melody) == len(harmony)
+    n = bar * len(harmony)
+    tail = samples(5.0)
+    beat_s = beat / RATE
+    lead = [0.0] * (n + tail)
+    comp = [0.0] * (n + tail)
+    bass_line = [0.0] * (n + tail)
+    for b, (name, notes) in enumerate(zip(harmony, melody)):
+        for at, length, note in notes:
+            start = b * bar + samples(at * beat_s) + rng.randint(0, 260)     # чуть позади доли — «лениво»
+            _add(lead, start, _fm_piano(_midi(note + 12), length * beat_s * 0.95, 0.8))
+        root, chord = voicing[name]
+        for at, length, vel in ((0.0, 1.4, 0.5), (1 + s, 2.2, 0.4)):
+            start = b * bar + samples(at * beat_s) + rng.randint(0, 200)
+            for v in chord:
+                _add(comp, start, _fm_piano(_midi(v), length * beat_s, vel))
+        fifth = root + 7 if root + 7 <= 52 else root - 5
+        for at, note in ((0.0, root), (2.0, fifth)):
+            _add(bass_line, b * bar + samples(at * beat_s),
+                 _tone(_midi(note), 1.8 * beat_s, 1.0, [(1.0, 1.0, 1.5), (2.0, 0.22, 0.5)], 0.012, 0.15))
+    trem = _periodic_lfo(n, 4.2, 0.2)
+    for buf in (lead, comp):
+        for i in range(n + tail):
+            buf[i] *= trem[i % n]
+    lead = lowpass(lead, 3500.0, stages=2)
+    comp = lowpass(comp, 2500.0, stages=2)
+    bass_line = lowpass(bass_line, 400.0, stages=2)
+    return _loop_master([(lead, -18.0), (comp, -22.5), (bass_line, -22.0)], n, tail, 0.6, 0.04, 411, None)
+
+
+_PAD_TABLE = [math.sin(math.tau * i / 4096) + math.sin(3 * math.tau * i / 4096) / 9
+              + math.sin(5 * math.tau * i / 4096) / 25 for i in range(4096)]
+
+
+def menu_theme_c() -> list[float]:
+    """Кандидат C — эмбиент: тёплые пэды (мягкий треугольник из трёх гармоник, по два голоса ±3 цента — медленный
+    хорус), аккорды по 8 с с наплывом 2,5 с: Dmaj9 Bm9 Gmaj9 Asus Em9 A(add9), всего 48 с; синус-бас, редкие
+    колокольчики из пентатоники ре мажор, шорох снега, длинная реверберация."""
+    rng = random.Random(421)
+    chord_s = 8.0
+    chords = [[50, 57, 61, 64, 66], [47, 54, 57, 61, 62], [43, 50, 54, 57, 59],
+              [45, 52, 57, 59, 62], [40, 52, 55, 59, 66], [45, 52, 54, 59, 61]]
+    n = samples(chord_s) * len(chords)
+    tail = samples(7.0)
+    pad = [0.0] * (n + tail)
+    sub = [0.0] * (n + tail)
+    hold = samples(chord_s)
+    attack = samples(2.5)
+    release = samples(3.5)
+    for c, notes in enumerate(chords):
+        start = c * hold
+        for note in notes[1:]:
+            for cents in (-3.0, 3.0):
+                step = _midi(note) * 2 ** (cents / 1200) * 4096 / RATE
+                phase = rng.random() * 4096
+                m = hold + release
+                for i in range(m):
+                    if i < attack:
+                        g = math.sin(0.5 * math.pi * i / attack) ** 2
+                    elif i >= hold:
+                        g = (1.0 - (i - hold) / release) ** 2
+                    else:
+                        g = 1.0
+                    pad[start + i] += _PAD_TABLE[int(phase) & 4095] * g
+                    phase += step
+        f = _midi(notes[0])
+        w = math.tau * f / RATE
+        for i in range(hold + release):
+            g = math.sin(0.5 * math.pi * min(1.0, i / attack)) ** 2
+            if i >= hold:
+                g *= (1.0 - (i - hold) / release) ** 2
+            sub[start + i] += math.sin(w * i) * g
+    breath = _periodic_lfo(n, 0.11, 0.25)
+    for i in range(n + tail):
+        pad[i] *= breath[i % n]
+    pad = lowpass(pad, 1300.0, stages=2)
+    sub = lowpass(sub, 300.0)
+    bells = [0.0] * (n + tail)
+    scale = [74, 76, 78, 81, 83, 86]
+    t, k = 1.5, 2
+    while t < n / RATE - 1.0:
+        k = max(0, min(len(scale) - 1, k + rng.choice((-2, -1, 1, 2))))
+        _add(bells, samples(t), _tone(_midi(scale[k]), 2.5, rng.uniform(0.6, 1.0),
+                                      [(1.0, 1.0, 2.2), (2.76, 0.12, 0.5), (5.4, 0.03, 0.15)], 0.004, 0.5))
+        t += rng.choice((2.5, 3.5, 4.0, 5.0, 6.0))
+    bells = lowpass(bells, 5000.0)
+    return _loop_master([(pad, -19.0), (sub, -25.0), (bells, -27.0)], n, tail, 1.0, 0.12, 431, -38.0)
+
+
 def main() -> None:
     rng = random.Random(1)
     for k in range(1, 5):
@@ -1281,6 +1517,12 @@ def main() -> None:
     write("menu_theme_loop.wav", menu_theme_loop(), MUSIC_OUT_RATE)
     # CITY-03: шуршание летающего пакета у камеры (цикл, 3D у ближнего пакета).
     write("bag_rustle_loop.wav", bag_rustle_loop())
+
+
+    # MUSIC-02: три кандидата темы меню на выбор владельца — шкатулка, электропиано, эмбиент (в игру не подключены).
+    write("menu_theme_a.wav", menu_theme_a(), MUSIC_OUT_RATE)
+    write("menu_theme_b.wav", menu_theme_b(), MUSIC_OUT_RATE)
+    write("menu_theme_c.wav", menu_theme_c(), MUSIC_OUT_RATE)
 
 
 if __name__ == "__main__":

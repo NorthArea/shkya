@@ -5,6 +5,8 @@ extends SceneTree
 ## 2. Мини-карта: конусы обзора — только у постов (PatrolNpc) и только в районе киоска.
 ## 3. Короб «ХЛЕБ» на крыше киоска смотрит на юг и виден с парковки (луч по World и валам свободен); ромб «Доедь до
 ##    киоска» — над ним.
+## 5. Камера диалога (владелец 30.10: «у Бабки и продавщицы камера застревает и дёргается»): поворот к говорящему и
+##    возврат — без рывков (изменение шага камеры между кадрами ≤ TALK_DSTEP м и ≤ TALK_DTURN°), доходит до цели.
 ## 4. Ромб цели подписан расстоянием в метрах; «!» над Бабкой покачивается, с ореолом и издалека крупнее.
 ## Честный путь не проще: удержания углов постов те же (их проверяет STEALTH, здесь — что предупреждение их не сдвигает).
 ## Итог — строка «POLISH03A: N checks, M failures».
@@ -35,9 +37,11 @@ func _run() -> void:
 	world = main.world
 	hud = world.get_node("GameHUD")
 	await _markers()
+	await _talk_camera_babka()
 	await _diamond_meters()
 	await _kiosk_sign()
 	await _minimap_cones()
+	await _talk_camera_vendor()
 	await _turn_warning()
 	_finish()
 
@@ -66,6 +70,87 @@ func _markers() -> void:
 	await _frames(10)
 	var far: float = flow.marker_distance_scale()
 	check(far > 1.8 and flow.marker.pixel_size > near_px.max() * 1.6, "marker: grows with distance to stay readable (scale %.2f, pixel %.4f)" % [far, flow.marker.pixel_size])
+
+# --- 5. камера диалога ---
+
+const TALK_DSTEP := 0.03    # м/кадр: изменение шага положения камеры между соседними кадрами
+const TALK_DTURN := 0.4     # °/кадр: изменение шага поворота
+var _cam_log: Array = []
+
+func _record(frames: int) -> void:
+	for i in frames:
+		await physics_frame
+		_cam_log.append(world.camera_rig.camera.global_transform)
+
+## Наибольшие шаг и изменение шага камеры по журналу [м, °, Δм, Δ°].
+func _cam_jerk() -> Array:
+	var out := [0.0, 0.0, 0.0, 0.0]
+	var prev_step := -1.0
+	var prev_turn := 0.0
+	for i in range(1, _cam_log.size()):
+		var a: Transform3D = _cam_log[i - 1]
+		var b: Transform3D = _cam_log[i]
+		var step := a.origin.distance_to(b.origin)
+		var turn := rad_to_deg(a.basis.get_rotation_quaternion().angle_to(b.basis.get_rotation_quaternion()))
+		out[0] = maxf(out[0], step)
+		out[1] = maxf(out[1], turn)
+		if prev_step >= 0.0:
+			out[2] = maxf(out[2], absf(step - prev_step))
+			out[3] = maxf(out[3], absf(turn - prev_turn))
+		prev_step = step
+		prev_turn = turn
+	return out
+
+func _talk_series(label: String, open: Callable, close: Callable) -> void:
+	var rig: CameraRig = world.camera_rig
+	await _frames(20)
+	var yaw0 := rig.yaw
+	_cam_log.clear()
+	await _record(5)
+	open.call()
+	await _record(85)
+	var j := _cam_jerk()
+	print("INFO: %s open — step ≤ %.3f m, turn ≤ %.2f°, Δstep ≤ %.3f, Δturn ≤ %.2f°" % [label, j[0], j[1], j[2], j[3]])
+	check(j[2] <= TALK_DSTEP and j[3] <= TALK_DTURN, "talk camera: %s — one smooth turn, no jerks (Δstep %.3f m, Δturn %.2f°)" % [label, j[2], j[3]])
+	check(rig.is_talk_framing() and absf(angle_difference(rig.yaw, rig._talk_goal.x)) < 0.01, "talk camera: %s — reached its framing, not stuck (yaw %.3f, goal %.3f)" % [label, rig.yaw, rig._talk_goal.x])
+	_cam_log.clear()
+	await _record(5)
+	close.call()
+	await _record(85)
+	j = _cam_jerk()
+	print("INFO: %s close — step ≤ %.3f m, turn ≤ %.2f°, Δstep ≤ %.3f, Δturn ≤ %.2f°" % [label, j[0], j[1], j[2], j[3]])
+	check(j[2] <= TALK_DSTEP and j[3] <= TALK_DTURN, "talk camera: %s — smooth return (Δstep %.3f m, Δturn %.2f°)" % [label, j[2], j[3]])
+	check(not rig.is_talk_framing() and absf(angle_difference(rig.yaw, yaw0)) < 0.01, "talk camera: %s — back to the previous view (%.3f vs %.3f)" % [label, rig.yaw, yaw0])
+
+func _press_interact() -> void:
+	var down := InputEventAction.new()
+	down.action = &"interact"
+	down.pressed = true
+	Input.parse_input_event(down)
+	await _frames(2)
+	var up := InputEventAction.new()
+	up.action = &"interact"
+	Input.parse_input_event(up)
+
+func _talk_camera_babka() -> void:
+	print("--- talk camera: Babka ---")
+	var flow: Node = world.get_node("QuestFlow")
+	# Камера смотрит от подъезда во двор — разворот почти на 180°, мимо скамейки и машин у подъезда.
+	world.player.place(Layout.BABKA + Vector3(0.6, 0, -2.0), 0.0)
+	world.camera_rig.yaw = 0.3
+	world.camera_rig.snap()
+	await _talk_series("Babka", func(): _press_interact(), func(): flow.dialog.buttons[&"decline"].pressed.emit())
+	check(world.mission.state == MissionDirector.NOT_STARTED, "talk camera: Babka offer declined, mission untouched")
+
+func _talk_camera_vendor() -> void:
+	print("--- talk camera: vendor ---")
+	var flow: Node = world.get_node("QuestFlow")
+	world.stealth.grant_grace(60.0)
+	world.player.place(Layout.VENDOR_WINDOW, 0.0)
+	world.camera_rig.yaw = 0.0
+	world.camera_rig.snap()
+	await _talk_series("vendor", func(): _press_interact(), func(): flow._on_choice(&"leave"))
+	check(world.mission.state == MissionDirector.BUY_BREAD, "talk camera: vendor dialog left, mission BUY_BREAD")
 
 # --- 4. ромб с расстоянием ---
 

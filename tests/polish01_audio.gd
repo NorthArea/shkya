@@ -22,7 +22,7 @@ func _run() -> void:
 	await _frames(2)
 	var music = main.music
 	check(music.player.playing and music.player.stream == music.THEME and music.player.bus == music.BUS, "menu theme plays on the Music bus (MUSIC-01)")
-	check(music.THEME.loop_mode == AudioStreamWAV.LOOP_FORWARD and music.THEME.get_length() >= 60.0 and music.THEME.get_length() <= 90.0, "menu theme loops, %.1f s" % music.THEME.get_length())
+	check(music.THEME.loop_mode == AudioStreamWAV.LOOP_FORWARD and music.THEME.get_length() >= 40.0 and music.THEME.get_length() <= 90.0, "menu theme loops, %.1f s" % music.THEME.get_length())
 	var rms_db := _stream_rms_db(music.THEME)
 	check(absf(rms_db - music.THEME_RMS_DB) < 0.5, "menu theme track RMS %.1f dB matches THEME_RMS_DB" % rms_db)
 	var level: float = rms_db + music.MENU_DB + AudioServer.get_bus_volume_db(AudioServer.get_bus_index(music.BUS))
