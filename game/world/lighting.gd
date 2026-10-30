@@ -172,6 +172,8 @@ const GLINT_GAIN := 1.6                # яркость отражения (≥ 
 const GLINT_WIDTH := 0.0025            # ширина полосы по азимуту (1 − cos угла)
 const GLINT_STRETCH := 0.06            # длина полосы по высоте (квадрат разности синусов)
 const GLINT_REACH := 26.0              # м от светильника до точки дороги
+const GLINT_NEAR := 45.0               # м: в шейдер идут только фонари ближе к камере (дальние блики мельче пикселя)
+const GLINT_MAX := 12                  # и не больше стольких — цикл в каждом фрагменте дороги короткий (бюджет C9)
 
 # --- окна: температура света и телевизоры; читает Materials.facade ---
 const WINDOW_WARM := Color(1.0, 0.68, 0.32)     # лампа накаливания (принято ART-05)
@@ -308,6 +310,31 @@ func _ready() -> void:
 
 func _process(delta: float) -> void:
 	_update_weather(delta)
+	_update_glints()
+
+## Блеск колей: в материалы дороги — до GLINT_MAX фонарей ближе GLINT_NEAR к камере.
+func _update_glints() -> void:
+	if _road_materials.is_empty() or GLINT_GAIN <= 0.0:
+		return
+	var cam := get_viewport().get_camera_3d()
+	if cam == null:
+		return
+	var at := cam.global_position
+	var near: Array = []
+	for lamp in _glint_lamps:
+		var d := Vector2(lamp.x - at.x, lamp.z - at.z).length_squared()
+		if d < GLINT_NEAR * GLINT_NEAR:
+			near.append([d, lamp])
+	near.sort_custom(func(a, b): return a[0] < b[0])
+	_glint_near.resize(mini(near.size(), GLINT_MAX))
+	for i in _glint_near.size():
+		_glint_near[i] = near[i][1]
+	var count := _glint_near.size()
+	var padded := _glint_near.duplicate()
+	padded.resize(16)
+	for m in _road_materials:
+		m.set_shader_parameter("glint_lamps", padded)
+		m.set_shader_parameter("glint_count", count)
 
 ## Порывы: ветер сильнее и поворачивает, хлопьев больше, позёмка быстрее и гуще, ореолы ярче.
 func _update_weather(delta: float) -> void:
@@ -584,6 +611,8 @@ func _apply_surface_fx() -> void:
 
 var _spark_lamps := PackedVector4Array()
 var _glint_lamps := PackedVector4Array()
+var _road_materials: Array[ShaderMaterial] = []
+var _glint_near := PackedVector4Array()
 var _spark_colors := PackedVector4Array()
 var _spark_sky := Vector3.UP
 
@@ -620,8 +649,8 @@ func _surface_fx(m: ShaderMaterial) -> void:
 		m.set_shader_parameter("puddle_roughness", PUDDLE_ROUGHNESS)
 		m.set_shader_parameter("puddle_level", PUDDLE_LEVEL)
 		var sodium := SODIUM.srgb_to_linear()
-		m.set_shader_parameter("glint_lamps", _glint_lamps)
-		m.set_shader_parameter("glint_count", mini(_glint_lamps.size(), 48))
+		_road_materials.append(m)
+		m.set_shader_parameter("glint_count", 0)   # фонари у камеры задаёт _update_glints каждый кадр
 		m.set_shader_parameter("glint_color", Vector3(sodium.r, sodium.g, sodium.b))
 		m.set_shader_parameter("glint_gain", GLINT_GAIN)
 		m.set_shader_parameter("glint_width", GLINT_WIDTH)

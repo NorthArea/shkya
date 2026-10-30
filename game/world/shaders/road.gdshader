@@ -30,7 +30,7 @@ uniform float puddle_level = 0.45;        // доля каши, до котор�
 // POLISH-03 C: блеск мокрых колей под фонарями (концепты 05/06/e05) — отражение светильника полосой, вытянутой к
 // камере: по азимуту узко (glint_width), по высоте широко (glint_stretch). Только в колеях и лужах, цвет — натрий.
 // Лампы (xyz — светильник, w — дальность, м) и ручки задаёт lighting.gd (GLINT_*); glint_gain = 0 — выключено.
-uniform vec4 glint_lamps[48];
+uniform vec4 glint_lamps[16];
 uniform int glint_count = 0;
 uniform vec3 glint_color = vec3(1.0, 0.35, 0.01);
 uniform float glint_gain = 0.0;
