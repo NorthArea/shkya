@@ -75,6 +75,8 @@ func _ready() -> void:
 	add_child(preload("res://game/world/traffic.gd").new())   # ARENA-01: транспорт кольца (C8)
 	add_child(preload("res://game/world/residents.gd").new())   # PEOPLE-01: жители города Н.
 	add_child(preload("res://game/world/ambient.gd").new())   # CITY-01 (A): вороны, собака, кошка, мусор
+	add_child(preload("res://game/world/wind_bags.gd").new())
+	add_child(preload("res://game/world/winter_grime.gd").new())
 	add_child(preload("res://game/stealth/hide_spots.gd").new())   # EXT-02: укрытия у киоска (C7а)
 	add_child(preload("res://game/world/coins.gd").new())   # COINS-01: монеты, 35 ₽ до батона
 	add_child(preload("res://game/world/drones.gd").new())   # PUNCH-01: мини-дроны ГСУМ (петли — Layout.DRONE_LOOPS)
