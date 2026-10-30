@@ -8,6 +8,7 @@ const MainMenu = preload("res://game/ui/main_menu.gd")
 const PauseMenu = preload("res://game/ui/pause_menu.gd")
 const IntroScript = preload("res://game/ui/intro.gd")
 const PadInput = preload("res://game/ui/pad_input.gd")
+const MusicDirectorScript = preload("res://game/audio/music_director.gd")
 const UI_CLICK := preload("res://assets/audio/ui_click.wav")
 
 var world: DemoWorld
@@ -15,6 +16,8 @@ var menu: CanvasLayer
 var pause_menu: CanvasLayer
 ## Щелчок кнопок меню и паузы (POLISH-01): плеер вне мира, играет и на паузе.
 var ui_click: AudioStreamPlayer
+## Тема меню (MUSIC-01): вне мира, в меню и (тише, приглушённо) на паузе; в игре молчит.
+var music: Node
 
 func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
@@ -41,6 +44,10 @@ func _ready() -> void:
 	for layer in [menu, pause_menu]:
 		for button in layer.find_children("*", "Button", true, false):
 			button.pressed.connect(ui_click.play)
+	music = MusicDirectorScript.new()
+	music.name = "MusicDirector"
+	add_child(music)
+	music.to_menu()
 
 ## Смена мира откладывается до конца кадра: её можно вызвать из сигнала самого мира
 ## (кнопка на панели финала, физический callback) без освобождения узла посреди обработки.
@@ -57,6 +64,7 @@ func _swap_world(new_game: bool) -> void:
 		world = null
 	if new_game:
 		menu.hide()  # до мира: двор за меню (POLISH-02) освобождается, его камера и свет не мешают миру
+		music.to_game()
 		world = WorldScene.instantiate()
 		world.process_mode = Node.PROCESS_MODE_PAUSABLE
 		add_child(world)
@@ -67,6 +75,7 @@ func _swap_world(new_game: bool) -> void:
 	else:
 		set_paused(false)
 		menu.show()
+		music.to_menu()
 		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 
 ## Карточка «Конец демо» (POLISH-02): «ЕЩЁ РАЗ» — новый мир с NOT_STARTED, как из меню; «В МЕНЮ» — главное меню.
@@ -100,6 +109,8 @@ func reset_car() -> void:
 func set_paused(paused: bool) -> void:
 	get_tree().paused = paused
 	pause_menu.visible = paused
+	if world:
+		music.set_paused(paused)
 	if world:
 		var free_mouse := paused or world.ui_blocking
 		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE if free_mouse else Input.MOUSE_MODE_CAPTURED
