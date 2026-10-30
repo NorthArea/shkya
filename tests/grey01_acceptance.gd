@@ -253,6 +253,16 @@ func _check_camera_follow(world: DemoWorld) -> void:
 		var hit: float = rig.arm.get_hit_length()
 		if c[2]:
 			check(hit > float(CameraRig.PROFILES[&"on_foot"]["distance"]) - 0.3, "%s: spring arm stays long (%.2f m)" % [c[3], hit])
+			var head: Vector3 = player.global_position + Vector3.UP * 1.5
+			var ray := PhysicsRayQueryParameters3D.create(rig.camera.global_position, head, 1, [player.get_rid()])
+			var seen: Dictionary = world.get_world_3d().direct_space_state.intersect_ray(ray)
+			check(seen.is_empty(), "%s: the camera steps aside, the pole does not cover Ilyusha (%s)" % [c[3], seen["collider"].name if not seen.is_empty() else "clear"])
+			var faded: Array = rig.faded_poles()
+			var near_opaque := 0
+			for body in rig._thin.values():
+				if Vector2(body.global_position.x - rig.camera.global_position.x, body.global_position.z - rig.camera.global_position.z).length() < CameraRig.POLE_FADE_NEAR and not faded.has(body):
+					near_opaque += 1
+			check(absf(rig._dodge) > 0.2 and near_opaque == 0, "%s: camera steps %.2f m aside, no opaque pole right at the lens (%d faded)" % [c[3], rig._dodge, faded.size()])
 		else:
 			check(hit < 2.5, "%s: spring arm still shortens at a wall (%.2f m)" % [c[3], hit])
 			var lift: float = rig.camera.global_position.y - player.global_position.y

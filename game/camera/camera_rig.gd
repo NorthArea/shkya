@@ -28,6 +28,14 @@ const THIN_SOLID := 0.6         # м
 ## Пружина сжата стеной — камера приподнимается и чуть смотрит вниз, а не садится в затылок (доля сжатия × значение).
 const WALL_LIFT := 0.5          # м
 const WALL_TILT := 0.2          # рад
+## Тонкий столб между головой и камерой (пружина его не замечает) — камера объезжает его вбок, не приближаясь:
+## сдвиг вдоль «вправо» до DODGE_MAX так, чтобы линия взгляда прошла не ближе DODGE_CLEAR от оси столба.
+const DODGE_CLEAR := 0.95       # м (с листовками на столбе — они общей сеткой и не прозрачнеют)
+const DODGE_MAX := 1.1          # м
+const DODGE_SHARPNESS := 6.0
+## Столб ближе POLE_FADE_NEAR к камере (по земле) — полупрозрачный (GeometryInstance3D.transparency), не чёрная полоса.
+const POLE_FADE_NEAR := 3.6     # м
+const POLE_FADE := 0.75
 const PITCH_MIN := -1.1
 const PITCH_MAX := 0.35
 const FOLLOW_SHARPNESS := 14.0
@@ -53,6 +61,9 @@ var _walk_time := 0.0
 var _follow_ramp := 0.0
 var _swing_sign := 0.0          # сторона облёта при ходьбе на камеру (0 — не облетает)
 var _lift := 0.0                # 0…1: сжатие пружины пешком, сглаженное
+var _thin := {}                 # RID тонких столбов (exclude_thin_solids) → тело
+var _dodge := 0.0               # м: текущий объезд столба вбок
+var _faded := {}                # тело столба → его сетки, сейчас полупрозрачные
 var pitch := -0.30
 var arm: SpringArm3D
 var camera: Camera3D
@@ -106,6 +117,7 @@ func exclude_thin_solids(root: Node) -> void:
 			continue
 		if _is_thin(body):
 			exclude_permanently((body as StaticBody3D).get_rid())
+			_thin[(body as StaticBody3D).get_rid()] = body
 
 static func _is_thin(body: Node) -> bool:
 	var shapes := 0
@@ -148,6 +160,8 @@ func _physics_process(delta: float) -> void:
 	var stick := Input.get_vector(&"look_left", &"look_right", &"look_up", &"look_down")
 	if stick.length_squared() > 0.04 and profile != &"in_car":
 		apply_mouse(stick * STICK_LOOK_SPEED * delta / mouse_sensitivity)
+	var dodge := _dodge_target() if profile == &"on_foot" else 0.0
+	_dodge = lerpf(_dodge, dodge, 1.0 - exp(-DODGE_SHARPNESS * delta))
 	global_position = global_position.lerp(_goal(), 1.0 - exp(-FOLLOW_SHARPNESS * delta))
 	if profile == &"in_car":
 		# Камера преследования: плавно встаёт за машиной по её курсу.
@@ -169,6 +183,7 @@ func _physics_process(delta: float) -> void:
 		squeeze = clampf((arm.spring_length - arm.get_hit_length()) / arm.spring_length, 0.0, 1.0)
 	_lift = lerpf(_lift, squeeze, 1.0 - exp(-6.0 * delta))
 	rotation = Vector3(pitch - _lift * WALL_TILT, yaw, 0.0)
+	_fade_near_poles()
 
 ## Доводка пешком (PLAY-02, POLISH-03 C): только после паузы ручной камеры и AUTO_FOLLOW_DELAY ходьбы; при ходьбе на
 ## камеру — облёт за спину после TURN_AROUND_DELAY. Меняет только yaw: курс ходьбы (input_yaw) прежний, пока те же клавиши.
@@ -214,6 +229,59 @@ func apply_mouse(relative: Vector2) -> void:
 func sync_input_yaw() -> void:
 	input_yaw = yaw
 
+## Сдвиг вбок, чтобы тонкий столб не закрывал Илюшу: столбы ближе DODGE_CLEAR (в плане) к отрезку «голова — несдвинутая
+## камера» на отрезке до стены (длина пружины). Считается по несдвинутой линии — без качелей «объехал → вернулся».
+func _dodge_target() -> float:
+	if _thin.is_empty() or target == null:
+		return 0.0
+	var right := Vector3(cos(yaw), 0.0, -sin(yaw))
+	var back := Vector3(sin(yaw), 0.0, cos(yaw))
+	var origin := target.global_position + right * _shoulder_now
+	var reach := minf(arm.spring_length, arm.get_hit_length() + 0.3)
+	var want := 0.0
+	for body in _thin.values():
+		var node := body as Node3D
+		if not is_instance_valid(node):
+			continue
+		var rel := node.global_position - origin
+		var along := rel.x * back.x + rel.z * back.z
+		if along < 0.4 or along > reach:
+			continue
+		var off := rel.x * right.x + rel.z * right.z
+		if absf(off) >= DODGE_CLEAR:
+			continue
+		var need := (-1.0 if off >= 0.0 else 1.0) * (DODGE_CLEAR - absf(off))
+		if absf(need) > absf(want):
+			want = need
+	return clampf(want, -DODGE_MAX, DODGE_MAX)
+
+## Тонкие столбы у самой камеры — полупрозрачные; отошли — снова сплошные.
+func _fade_near_poles() -> void:
+	if _thin.is_empty() or camera == null:
+		return
+	var at := camera.global_position
+	for body in _thin.values():
+		var node := body as Node3D
+		if not is_instance_valid(node):
+			continue
+		var near := Vector2(node.global_position.x - at.x, node.global_position.z - at.z).length() < POLE_FADE_NEAR
+		if near == _faded.has(node):
+			continue
+		if near:
+			var meshes := node.find_children("*", "GeometryInstance3D", true, false)
+			_faded[node] = meshes
+			for m in meshes:
+				(m as GeometryInstance3D).transparency = POLE_FADE
+		else:
+			for m in _faded[node]:
+				if is_instance_valid(m):
+					(m as GeometryInstance3D).transparency = 0.0
+			_faded.erase(node)
+
+## Столбы, полупрозрачные сейчас (для проверок).
+func faded_poles() -> Array:
+	return _faded.keys()
+
 func _goal() -> Vector3:
 	var right := Vector3(cos(yaw), 0.0, -sin(yaw))
-	return target.global_position + Vector3.UP * (float(PROFILES[profile]["height"]) + _lift * WALL_LIFT) + right * _shoulder_now
+	return target.global_position + Vector3.UP * (float(PROFILES[profile]["height"]) + _lift * WALL_LIFT) + right * (_shoulder_now + _dodge)
