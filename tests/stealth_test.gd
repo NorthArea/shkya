@@ -66,6 +66,7 @@ const OUT := "res://builds/screenshots/ext01/s"
 const OUT5 := "res://builds/screenshots/EXT-01/fix5"
 const OUT6 := "res://builds/screenshots/EXT-01/fix6"
 const SnowSpotScript = preload("res://game/stealth/snow_hide_spot.gd")
+const CaughtPanelScript = preload("res://game/ui/caught_panel.gd")
 ## fix5: диагональ с дороги B к окну (пятая приёмка, P1-1) — от места выхода у парковки; окно — _vendor_stand().
 const DIAG_LONG := [Vector3(62, 0, -53), Vector3(73.5, 0, -53), Vector3(73.5, 0, -64.5), Vector3(68, 0, -69), Vector3(62.5, 0, -73.2), Vector3(60.5, 0, -75.3)]
 const DIAG_SHORT := [Vector3(62, 0, -53), Vector3(72, 0, -63), Vector3(72.3, 0, -64.3)]
@@ -149,6 +150,10 @@ func _run() -> void:
 		drv.release_all()
 		_finish()
 		return
+	if "--caught-only" in OS.get_cmdline_user_args():   # часть 15 (STORY-01) без остального прогона
+		await _part_caught()
+		_finish()
+		return
 	if "--fix6-only" in OS.get_cmdline_user_args():   # часть 14 без остального прогона
 		await _part_fix6()
 		drv.release_all()
@@ -175,6 +180,7 @@ func _run() -> void:
 	drv.release_all()
 	await _part_fix6()
 	drv.release_all()
+	await _part_caught()
 	_finish()
 
 # =====================================================================================
@@ -497,7 +503,8 @@ func _part_checkpoint() -> void:
 func _part_complete() -> void:
 	print("--- complete ---")
 	var m := world.mission
-	var path := [Vector3(68, 0, -48), Vector3(70, 0, -40), Vector3(70, 0, 30), Layout.ROUTE_WALK[3], Layout.ROUTE_WALK[2], Layout.ROUTE_WALK[1], _babka_stand()]
+	# POLISH-03 B: проезжая часть улицы Б перекрыта — пешком по западному тротуару через проход в ограждении.
+	var path := [Vector3(62, 0, -46), Vector3(59.5, 0, -40), Vector3(59.5, 0, 30), Layout.ROUTE_WALK[3], Layout.ROUTE_WALK[2], Layout.ROUTE_WALK[1], _babka_stand()]
 	if not check(await drv.walk_path(path), "walked back to Babka on foot (%s)" % drv.last_error):
 		return
 	check(m.has_bread and m.state == &"RETURN_HOME", "arrived with the bread (%s)" % m.state)
@@ -915,6 +922,10 @@ func _part_fix2() -> void:
 ## ближайшей точки пути вне полос. (C) «Лада» на обочине A (не полоса) — ждёт 20 с и объезжает по полосе машин.
 ## Везде: «Ладу» не сдвигает, скачков за кадр нет (кроме крайнего случая A).
 func _part_van_stall(patrols: Node, van: CityVan) -> void:
+	# POLISH-03 B: здесь проверяется поведение автобуса на полосах кольца — перекрытие улицы Б (с ним — пробка у
+	# ограждения) снимаем, как если бы Илюша уже был дома.
+	world.mission.notify_home_reached()
+	await drv.frames(2)
 	var sensors_off := []
 	for s in get_nodes_in_group(&"detection_sensors"):
 		if s.enabled:
@@ -2211,6 +2222,95 @@ func _part_fix6() -> void:
 		check(c[0] < 12 and c[1] < 12, "fix7 %s without a wait: not clean in all 12 phases of either post (Officer %d/12, Officer2 %d/12)" % [route_name, c[0], c[1]])
 	print("INFO: fix7 approaches from the east, clean phases (Officer + Officer2 of 24): %s; total %d + %d of %d" % [table, total[0], total[1], east.size() * 24])
 	drv.on_frame = Callable()
+
+# =====================================================================================
+# 15. STORY-01: карточка «В ГОРОДЕ Н. НИЧЕГО НЕ ПРОИЗОШЛО» вместо экрана провала (логика C7 прежняя)
+# =====================================================================================
+
+func _part_caught() -> void:
+	print("--- STORY-01: caught card ---")
+	check(not CaughtPanelScript.should_play(self), "caught: no card under a test SceneTree by default (other parts keep the old fail)")
+	CaughtPanelScript.force_enabled = true
+	main.start_game()
+	await drv.frames(10)
+	CaughtPanelScript.force_enabled = false
+	world = main.world
+	_free_residents()
+	var panel: CaughtPanel = world.get_node_or_null("CaughtPanel")
+	if not check(panel != null and world.fail_presenter == panel and not panel.visible, "caught: the card is attached, hidden, and holds the fail"):
+		return
+	for s in get_nodes_in_group(&"detection_sensors"):
+		s.enabled = false   # провалы — только alert_now(), мир не мешает
+	var m := world.mission
+	m.has_bread = true   # флаг переживает провал (C7); покупка — части 7 и QUEST01
+	var state_before: StringName = m.state
+	var car_pos: Vector3 = world.car.global_position
+	# Провал 1 → «ЕЩЁ РАЗ» кнопкой.
+	world.stealth.alert_now()
+	await drv.frames(2)
+	check(world.is_stealth_failing() and panel.phase == &"off" and panel.visible, "caught 1: the screen switches off on the fail")
+	check(not world.player.input_enabled, "caught 1: Ilyusha's input is off")
+	check(not world.get_hud_state()["stealth_fail"] and not _hud_has(FAIL_TEXT), "caught 1: no «%s» under the card" % FAIL_TEXT)
+	await drv.frames(int(ceil((CaughtPanel.SQUASH + CaughtPanel.LINE) * 60.0)) + 2)
+	check(paused and not main.pause_menu.visible, "caught 1: the world is paused once the screen is dark, no pause menu")
+	await drv.frames(int(ceil(CaughtPanel.off_seconds() * 60.0)))
+	check(panel.is_open() and panel.card.visible, "caught 1: the card is up after %.2f s" % CaughtPanel.off_seconds())
+	check((panel.card.find_child("Headline", true, false) as Label).text.replace("\n", " ") == CaughtPanel.HEADLINE, "caught 1: headline «%s»" % CaughtPanel.HEADLINE)
+	check(panel.subtitle_label.text == CaughtPanel.subtitle_for(world.stealth.detections) and panel.subtitle_index == 0,
+		"caught 1: subtitle «%s»" % panel.subtitle_label.text)
+	check(root.gui_get_focus_owner() == panel.buttons[&"again"], "caught 1: focus on «%s»" % CaughtPanel.AGAIN_TEXT)
+	check(Input.mouse_mode == Input.MOUSE_MODE_VISIBLE, "caught 1: the mouse is free on the card")
+	var p_before: Vector3 = world.player.global_position
+	await drv.frames(240)   # дольше FAIL_SECONDS: сама карточка не закрывается
+	check(panel.is_open() and world.is_stealth_failing() and world.player.global_position.distance_to(p_before) < 0.01,
+		"caught 1: the card waits for the player (no auto-respawn after %.1f s)" % DemoWorld.FAIL_SECONDS)
+	await _caught_key(KEY_ENTER)   # Enter (ui_accept) нажимает кнопку в фокусе — «ЕЩЁ РАЗ»
+	await drv.frames(3)
+	check(not panel.is_open() and not paused and not world.is_stealth_failing(), "caught 1: Enter on «%s» closes the card and unpauses" % CaughtPanel.AGAIN_TEXT)
+	check(_near2(world.player.global_position, Layout.STEALTH_CHECKPOINT, 0.5), "caught 1: Ilyusha at the checkpoint (%s)" % world.player.global_position)
+	check(m.has_bread and m.state == state_before, "caught 1: has_bread and the mission state kept (%s)" % m.state)
+	check(world.car.global_position.distance_to(car_pos) < 0.01, "caught 1: the car is untouched")
+	check(world.stealth.state == &"safe" and world.stealth.protection_left() > 3.5, "caught 1: suspicion reset, respawn protection on")
+	check(world.player.input_enabled and _hud_has(DemoWorld.STEALTH_TOAST), "caught 1: control back, toast «%s»" % DemoWorld.STEALTH_TOAST)
+	# Провал 2 → другой подзаголовок; Start не открывает паузу; Esc — «ЕЩЁ РАЗ».
+	m.has_bread = false
+	await drv.frames(int(ceil(world.stealth.protection_left() * 60.0)) + 5)
+	world.stealth.alert_now()
+	await drv.frames(int(ceil(CaughtPanel.off_seconds() * 60.0)) + 3)
+	check(panel.is_open() and panel.subtitle_index == 1 and panel.subtitle_label.text == CaughtPanel.SUBTITLES[1] and panel.shown_count == 2,
+		"caught 2: the next subtitle «%s»" % panel.subtitle_label.text)
+	var start := InputEventJoypadButton.new()
+	start.button_index = JOY_BUTTON_START
+	start.pressed = true
+	Input.parse_input_event(start)
+	await drv.frames(2)
+	start = start.duplicate()
+	start.pressed = false
+	Input.parse_input_event(start)
+	await drv.frames(2)
+	check(panel.is_open() and paused and not main.pause_menu.visible, "caught 2: Start does not open the pause over the card")
+	await _caught_key(KEY_ESCAPE)
+	await drv.frames(3)
+	check(not panel.is_open() and not paused and _near2(world.player.global_position, Layout.STEALTH_CHECKPOINT, 0.5) and not m.has_bread,
+		"caught 2: Esc = «%s» — checkpoint, has_bread false kept" % CaughtPanel.AGAIN_TEXT)
+	check(_hud_has(DemoWorld.STEALTH_TOAST_NO_BREAD), "caught 2: toast «%s»" % DemoWorld.STEALTH_TOAST_NO_BREAD)
+	# Провал 3 → «В ГЛАВНОЕ МЕНЮ».
+	await drv.frames(int(ceil(world.stealth.protection_left() * 60.0)) + 5)
+	world.stealth.alert_now()
+	await drv.frames(int(ceil(CaughtPanel.off_seconds() * 60.0)) + 3)
+	check(panel.is_open() and world.stealth.detections == 3, "caught 3: third card, StealthDirector.detections = 3 (counter kept)")
+	panel.buttons[&"menu"].pressed.emit()
+	await drv.frames(4)
+	check(main.world == null and main.menu.visible and not paused, "caught 3: «%s» returns to the main menu, unpaused" % CaughtPanel.MENU_TEXT)
+
+func _caught_key(code: Key) -> void:
+	for pressed in [true, false]:
+		var event := InputEventKey.new()
+		event.physical_keycode = code
+		event.keycode = code
+		event.pressed = pressed
+		Input.parse_input_event(event)
+		await drv.frames(2)
 
 func _sync_npc(o: Node3D, index: int) -> void:
 	var n := 0

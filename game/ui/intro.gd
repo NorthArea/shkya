@@ -2,7 +2,8 @@ class_name Intro
 extends CanvasLayer
 ## INTRO-01 — вступительная заставка «Ничего не происходит» (решение владельца 29.10.2026, идея — вступление
 ## *Hit & Run*, без его ассетов; стиль ШКЯ, город Н.). Илюша у подъезда (Layout.SPAWN) смотрит в телефон и свайпит:
-## на крупной плашке «экрана телефона» листаются заголовки IntroLines.HEADLINES; затем пузырь «Пойду прогуляюсь»,
+## на крупной плашке «экрана телефона» листаются посты IntroLines (заголовок, текст, реакции; STORY-01 — три поста,
+## последний про патрули); затем пузырь «Пойду прогуляюсь»,
 ## камера плавно отъезжает за спину Илюши в ракурс концепта 01, над Бабкой появляется «!» — управление включено.
 ## Пропуск — E, Esc, A/X/B (геймпад): мягкое затемнение и сразу конечное состояние.
 ##
@@ -23,12 +24,11 @@ const PAPER_DARK := Color(0.84, 0.76, 0.58)
 const INK := Color(0.12, 0.10, 0.08)
 const YELLOW := Color(0.99, 0.82, 0.12)
 
-## Тайминги, с. Заголовок k встаёт целиком в headline_start(k); перед ним SWIPE — свайп с предыдущего.
+## Тайминги, с. Пост k встаёт целиком в headline_start(k) и держится headline_hold(k); перед ним SWIPE — свайп с предыдущего.
 const FADE_IN := 0.5
 const PHONE_IN_AT := 0.3
 const PHONE_SLIDE := 0.5
 const FIRST_HEADLINE_AT := 0.8
-const HEADLINE_HOLD := 2.1      # TEXT-01: заголовок до 5 слов читается целиком (0,8 с + 0,25 с на слово)
 const SWIPE := 0.35
 const PHONE_OUT := 0.4
 const BUBBLE_SECONDS := 2.0
@@ -127,12 +127,20 @@ static func attach(new_world: Node) -> Intro:
 	new_world.add_child(intro)
 	return intro
 
-## Начало заголовка k (целиком на экране), с от старта заставки.
+## Сколько держится пост k: весь его текст читается целиком (TEXT-01: 0,8 с + 0,25 с на слово, QuestLines.read_seconds).
+static func headline_hold(k: int) -> float:
+	return QuestLines.read_seconds(IntroLines.post_text(k))
+
+## Начало поста k (целиком на экране), с от старта заставки.
 static func headline_start(k: int) -> float:
-	return FIRST_HEADLINE_AT + k * (HEADLINE_HOLD + SWIPE)
+	var t := FIRST_HEADLINE_AT
+	for j in k:
+		t += headline_hold(j) + SWIPE
+	return t
 
 static func phone_out_at() -> float:
-	return headline_start(IntroLines.HEADLINES.size() - 1) + HEADLINE_HOLD
+	var last := IntroLines.HEADLINES.size() - 1
+	return headline_start(last) + headline_hold(last)
 
 static func bubble_at() -> float:
 	return phone_out_at() + PHONE_OUT
@@ -594,23 +602,35 @@ func _build_phone_panel(root: Control) -> void:
 		var headline := _label(IntroLines.HEADLINES[k], 50)
 		headline.name = "Headline"
 		headline.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-		headline.position = Vector2(30, 10)
-		headline.size = Vector2(width - 60, 260)
+		headline.position = Vector2(30, 6)
+		headline.size = Vector2(width - 60, 130)
 		headline.vertical_alignment = VERTICAL_ALIGNMENT_TOP
 		card.add_child(headline)
 		var stamp := _label(IntroLines.STAMPS[k], 26)
 		stamp.modulate = Color(1, 1, 1, 0.6)
-		stamp.position = Vector2(30, 280)
+		stamp.position = Vector2(30, 140)
 		stamp.size = Vector2(width - 60, 36)
 		card.add_child(stamp)
-		# Строки текста заметки — серые полоски, как в ленте.
-		for line in 4:
-			var bar := ColorRect.new()
-			bar.mouse_filter = Control.MOUSE_FILTER_IGNORE
-			bar.color = Color(INK, 0.16)
-			bar.position = Vector2(30, 340 + line * 34)
-			bar.size = Vector2((width - 60) * (0.62 if line == 3 else 1.0), 14)
-			card.add_child(bar)
+		var post_body := _label(IntroLines.BODIES[k], 36)
+		post_body.name = "Body"
+		post_body.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		post_body.position = Vector2(30, 190)
+		post_body.size = Vector2(width - 60, 230)
+		post_body.vertical_alignment = VERTICAL_ALIGNMENT_TOP
+		card.add_child(post_body)
+		# Черта и строка реакций паблика под постом.
+		var rule := ColorRect.new()
+		rule.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		rule.color = Color(INK, 0.25)
+		rule.position = Vector2(30, 440)
+		rule.size = Vector2(width - 60, 2)
+		card.add_child(rule)
+		var footer := _label(IntroLines.FOOTERS[k], 28)
+		footer.name = "Footer"
+		footer.modulate = Color(1, 1, 1, 0.7)
+		footer.position = Vector2(30, 452)
+		footer.size = Vector2(width - 60, 40)
+		card.add_child(footer)
 		screen.add_child(card)
 		_cards.append(card)
 	_dot_on = StyleBoxFlat.new()

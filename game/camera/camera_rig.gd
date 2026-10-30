@@ -76,6 +76,19 @@ const SHOULDER_SHARPNESS := 5.0
 ## Пешком на время диалога (shoulder > 0) камера ближе: собеседник с 25–27 % высоты кадра становится ≈30 %,
 ## как Бабка на концепте 03 (LOOK-01: кадры диалога builds/screenshots/LOOK-01/).
 const TALK_DISTANCE := 3.4
+## POLISH-03 A: на время диалога пешком камера поворачивается к говорящему (кадр 07: окно киоска и продавщица в кадре,
+## Илюша слева со спины), после — плавно возвращается к прежнему взгляду. Любая запись yaw снаружи (мышь, стик, сцена,
+## тесты) снимает и поворот, и возврат.
+const TALK_PITCH := -0.10        # почти горизонтально: окно и собеседник над панелью диалога
+const TALK_AIM_BIAS := 0.25      # точка взгляда — от собеседника на четверть пути к Илюше: собеседник правее центра
+const TALK_AIM_HEIGHT := 1.3     # м над землёй собеседника
+const TALK_TURN_RATE := 4.0      # 1/с
+const RETURN_RATE := 3.0         # 1/с
+var talk_focus := Vector3.INF    # INF — нет собеседника
+var _return_active := false
+var _saved_yaw := 0.0
+var _saved_pitch := 0.0
+var _focus_written := NAN        # последнее значение yaw, записанное поворотом/возвратом
 func _ready() -> void:
 	arm = SpringArm3D.new()
 	arm.name = "Arm"
@@ -93,6 +106,8 @@ func _ready() -> void:
 
 ## instant = false: камера встаёт за новой целью сразу, а дистанция плавно меняется до профиля.
 func follow(new_target: Node3D, new_profile: StringName = &"on_foot", instant := true) -> void:
+	talk_focus = Vector3.INF
+	_return_active = false
 	target = new_target
 	profile = new_profile
 	pitch = PROFILES[profile]["pitch"]
@@ -163,7 +178,9 @@ func _physics_process(delta: float) -> void:
 	var dodge := _dodge_target() if profile == &"on_foot" else 0.0
 	_dodge = lerpf(_dodge, dodge, 1.0 - exp(-DODGE_SHARPNESS * delta))
 	global_position = global_position.lerp(_goal(), 1.0 - exp(-FOLLOW_SHARPNESS * delta))
-	if profile == &"in_car":
+	if _update_talk(delta):
+		pass   # POLISH-03 A: поворот к собеседнику или возврат ведёт yaw сам
+	elif profile == &"in_car":
 		# Камера преследования: плавно встаёт за машиной по её курсу.
 		yaw = lerp_angle(yaw, target.global_rotation.y, 1.0 - exp(-CHASE_SHARPNESS * delta))
 	else:
@@ -218,10 +235,69 @@ func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventMouseMotion and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
 		apply_mouse(event.relative)
 
+## POLISH-03 A: повернуться к собеседнику в точке point (пешком; прежний взгляд запоминается для возврата).
+func focus_talk(point: Vector3) -> void:
+	if profile != &"on_foot" or target == null:
+		return
+	if talk_focus == Vector3.INF and not _return_active:
+		_saved_yaw = yaw
+		_saved_pitch = pitch
+	talk_focus = point
+	_return_active = false
+	_focus_written = yaw
+
+## Диалог закрыт: плавно вернуть прежний взгляд (если его не перехватили).
+func release_talk() -> void:
+	if talk_focus == Vector3.INF:
+		return
+	talk_focus = Vector3.INF
+	_return_active = true
+
+## Идёт поворот к собеседнику или возврат после диалога.
+func is_talk_framing() -> bool:
+	return talk_focus != Vector3.INF or _return_active
+
+## Угол yaw, при котором собеседник в point оказывается в кадре правее центра, а Илюша — слева (плечо shoulder).
+func talk_yaw(point: Vector3) -> float:
+	var aim := point + (target.global_position - point) * TALK_AIM_BIAS
+	var y := yaw
+	for i in 3:
+		var right := Vector3(cos(y), 0.0, -sin(y))
+		var pivot := target.global_position + right * _shoulder_now
+		var to := aim - pivot
+		if Vector2(to.x, to.z).length() < 0.2:
+			return y
+		y = atan2(-to.x, -to.z)
+	return y
+
+func _update_talk(delta: float) -> bool:
+	if not is_talk_framing():
+		return false
+	var walking_off := _return_active and follow_speed > 0.2   # пошёл сразу после диалога — курс не крутить
+	if walking_off or profile != &"on_foot" or (not is_nan(_focus_written) and yaw != _focus_written):
+		talk_focus = Vector3.INF   # yaw перехвачен (мышь, сцена, тест) или сели в машину — не спорить
+		_return_active = false
+		return false
+	var k_rate := TALK_TURN_RATE if talk_focus != Vector3.INF else RETURN_RATE
+	var goal_yaw := talk_yaw(talk_focus) if talk_focus != Vector3.INF else _saved_yaw
+	var goal_pitch := TALK_PITCH if talk_focus != Vector3.INF else _saved_pitch
+	var k := 1.0 - exp(-k_rate * delta)
+	yaw = lerp_angle(yaw, goal_yaw, k)
+	pitch = lerpf(pitch, goal_pitch, k)
+	_focus_written = yaw
+	if _return_active and absf(angle_difference(yaw, _saved_yaw)) < 0.01:
+		yaw = _saved_yaw
+		pitch = _saved_pitch
+		_return_active = false
+	_mouse_idle = 0.0
+	return true
+
 ## Мышь вправо — камера вправо, мышь вверх — взгляд вверх.
 func apply_mouse(relative: Vector2) -> void:
 	_mouse_idle = 0.0
 	_follow_ramp = 0.0
+	talk_focus = Vector3.INF
+	_return_active = false
 	yaw = wrapf(yaw - relative.x * mouse_sensitivity, -PI, PI)
 	pitch = clampf(pitch - relative.y * mouse_sensitivity, PITCH_MIN, PITCH_MAX)
 

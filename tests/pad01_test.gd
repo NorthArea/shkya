@@ -11,6 +11,7 @@ extends SceneTree
 const Layout = preload("res://game/world/layout.gd")
 const IntroScript = preload("res://game/ui/intro.gd")
 const PadInput = preload("res://game/ui/pad_input.gd")
+const CaughtPanelScript = preload("res://game/ui/caught_panel.gd")
 
 ## Автопилот quest01_driver, но руль — левый стик, газ и тормоз — курки RT/LT (как игрок с геймпадом).
 class PadDriver extends "res://tests/quest01_driver.gd":
@@ -73,6 +74,7 @@ func _run() -> void:
 	await _car_back()
 	await _turn_in()
 	await _end_card_and_menu()
+	await _caught_card()
 	_finish()
 
 func _bind() -> void:
@@ -283,6 +285,17 @@ func _car_to_kiosk() -> void:
 	var mission := world.mission
 	var player := world.player
 	var car: Lada = world.car
+	# POLISH-03 B: прямой путь даёт ≈ 21–23 ₽ — пешком через двор мимо площадки (монеты entrance, playground), на «Ладе» —
+	# с вылазкой за гаражи двора (ROUTE_DRIVE_HUNT).
+	var yard_walk: Array = [player.global_position, Vector3(-44, 0, 100), Vector3(-52, 0, 88), Vector3(-67.3, 0, 87.5),
+		Vector3(-67.3, 0, 91.5), Vector3(-64, 0, 95.5), Vector3(-50, 0, 95.5)]
+	for i in range(1, yard_walk.size()):
+		var a: Vector3 = yard_walk[i - 1]
+		var b: Vector3 = yard_walk[i]
+		var n := maxi(1, int(ceil(a.distance_to(b) / 0.3)))
+		for k in n:
+			player.place(a.lerp(b, float(k) / n), 0.0)
+			await _frames(1)
 	player.place(car.global_position + Vector3(2.2, 0, 0), 0.0)
 	await _frames(4)
 	check(hud.prompt_label.text == "X — СЕСТЬ В МАШИНУ", "car: «X — СЕСТЬ В МАШИНУ» at the Lada (%s)" % hud.prompt_label.text)
@@ -290,7 +303,7 @@ func _car_to_kiosk() -> void:
 	await _frames(4)
 	check(world.control_mode == &"in_car" and mission.state == MissionDirector.DRIVE_TO_KIOSK, "car: X enters the Lada")
 	var driver := PadDriver.new(self, world)
-	var drove: bool = await driver.drive(Layout.ROUTE_DRIVE.slice(1), 12.0, 6.0)
+	var drove: bool = await driver.drive(Layout.ROUTE_DRIVE_HUNT.slice(1), 12.0, 6.0)
 	check(drove and mission.state == MissionDirector.BUY_BREAD, "car: RT and the left stick drive to the kiosk (state %s)" % mission.state)
 	# Ручник B: машина на ходу тормозит быстрее, удара нет (Илюша в машине).
 	_motion(JOY_AXIS_TRIGGER_RIGHT, 0.0)
@@ -355,10 +368,9 @@ func _car_back() -> void:
 	check(world.control_mode == &"in_car", "back: X re-enters the Lada")
 	var driver := PadDriver.new(self, world)
 	var turned: bool = await driver.drive(Layout.ROUTE_LEAVE_KIOSK, 8.0, 3.0)
-	var back: Array = Layout.ROUTE_DRIVE.slice(0, Layout.ROUTE_DRIVE.size() - 2)
-	back.reverse()
-	var returned: bool = turned and await driver.drive(back, 12.0, 6.0)
-	check(returned, "back: the Lada drove back to the yard on the gamepad")
+	# POLISH-03 B: улица Б перекрыта после покупки — домой в объезд (ROUTE_DETOUR).
+	var returned: bool = turned and await driver.drive(Layout.ROUTE_DETOUR.slice(1), 12.0, 6.0)
+	check(returned and not world.mission.road_closed, "back: the Lada drove home along the detour on the gamepad, closure lifted")
 	check(await driver.stop(), "back: stopped in the yard")
 	driver.world = null
 	driver.tree = null
@@ -387,10 +399,15 @@ func _turn_in() -> void:
 	await _button(JOY_BUTTON_A)
 	await _frames(3)
 	check(mission.state == MissionDirector.COMPLETE and hud.completion_panel.visible, "turn-in: A on СДАТЬ ХЛЕБ completes the quest")
-	check(_focus_text() == "ЗАКРЫТЬ", "turn-in: ЗАКРЫТЬ has focus (%s)" % _focus_text())
+	check(_focus_text() == QuestLines.PROTOCOL_BUTTON, "turn-in: «%s» has focus (%s)" % [QuestLines.PROTOCOL_BUTTON, _focus_text()])
 	await _button(JOY_BUTTON_A)
 	await _frames(3)
-	check(hud.is_end_card_open() and _focus_text() == "ЕЩЁ РАЗ", "turn-in: A on ЗАКРЫТЬ opens «Конец демо», focus on ЕЩЁ РАЗ (%s)" % _focus_text())
+	# POLISH-03 B: сцена этапа 10 перед «Конец демо»; A её пропускает.
+	check(flow.finale.playing and not hud.is_end_card_open(), "turn-in: A on the protocol starts the stage-10 scene")
+	await _frames(40)
+	await _button(JOY_BUTTON_A)
+	await _frames(4)
+	check(flow.finale.skipped == 1 and hud.is_end_card_open() and _focus_text() == "ЕЩЁ РАЗ", "turn-in: A skips the scene, «Конец демо» opens, focus on ЕЩЁ РАЗ (%s)" % _focus_text())
 
 # --- «Конец демо» и меню ---
 
@@ -436,6 +453,58 @@ func _end_card_and_menu() -> void:
 	# Клавиатура работает как раньше.
 	await _key(KEY_UP)
 	check(_focus_text() == "НАСТРОЙКИ", "keyboard: the Up arrow still moves the focus")
+
+# --- STORY-01: карточка провала «В ГОРОДЕ Н. НИЧЕГО НЕ ПРОИЗОШЛО» ---
+
+func _caught_card() -> void:
+	CaughtPanelScript.force_enabled = true
+	await _button(JOY_BUTTON_DPAD_UP)
+	check(_focus_text() == "НАЧАТЬ", "caught: back to НАЧАТЬ (%s)" % _focus_text())
+	await _button(JOY_BUTTON_A)
+	await _frames(3)
+	_bind()
+	CaughtPanelScript.force_enabled = false
+	if world == null:
+		return
+	await _intro_skip(JOY_BUTTON_A, "A (caught)")
+	var panel: CaughtPanel = world.get_node_or_null("CaughtPanel")
+	check(panel != null, "caught: the card is attached to the new world")
+	if panel == null:
+		return
+	for s in get_nodes_in_group(&"detection_sensors"):
+		s.enabled = false
+	var card_frames := int(ceil(CaughtPanel.off_seconds() * 60.0)) + 3
+	world.stealth.alert_now()
+	await _frames(card_frames)
+	check(panel.is_open() and _focus_text() == CaughtPanel.AGAIN_TEXT, "caught: the card opens with focus on ЕЩЁ РАЗ (%s)" % _focus_text())
+	await _button(JOY_BUTTON_DPAD_RIGHT)
+	check(_focus_text() == CaughtPanel.MENU_TEXT, "caught: d-pad right → В ГЛАВНОЕ МЕНЮ (%s)" % _focus_text())
+	await _button(JOY_BUTTON_DPAD_DOWN)
+	check(_focus_text() == CaughtPanel.MENU_TEXT, "caught: d-pad down keeps the focus on the card (%s)" % _focus_text())
+	await _stick_push(JOY_AXIS_LEFT_X, -1.0)
+	check(_focus_text() == CaughtPanel.AGAIN_TEXT, "caught: left stick left → ЕЩЁ РАЗ (%s)" % _focus_text())
+	await _button(JOY_BUTTON_START)
+	check(panel.is_open() and not main.pause_menu.visible, "caught: Start does not open the pause over the card")
+	await _button(JOY_BUTTON_B)
+	await _frames(2)
+	check(not panel.is_open() and not paused and world.player.input_enabled
+		and Vector2(world.player.global_position.x - Layout.STEALTH_CHECKPOINT.x, world.player.global_position.z - Layout.STEALTH_CHECKPOINT.z).length() < 0.5,
+		"caught: B = ЕЩЁ РАЗ — back at the checkpoint, control on")
+	await _frames(int(ceil(world.stealth.protection_left() * 60.0)) + 5)
+	world.stealth.alert_now()
+	await _frames(card_frames)
+	await _button(JOY_BUTTON_A)
+	await _frames(2)
+	check(not panel.is_open() and not paused and not world.is_stealth_failing(), "caught: A on ЕЩЁ РАЗ continues from the checkpoint")
+	await _frames(int(ceil(world.stealth.protection_left() * 60.0)) + 5)
+	world.stealth.alert_now()
+	await _frames(card_frames)
+	await _button(JOY_BUTTON_DPAD_RIGHT)
+	await _button(JOY_BUTTON_A)
+	await _frames(4)
+	check(main.world == null and main.menu.visible and not paused, "caught: A on В ГЛАВНОЕ МЕНЮ returns to the menu")
+	await _frames(2)
+	check(_focus_text() == "НАЧАТЬ", "caught: НАЧАТЬ has focus in the menu (%s)" % _focus_text())
 
 # --- ввод ---
 

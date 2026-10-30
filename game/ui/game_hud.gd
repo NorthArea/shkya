@@ -11,6 +11,7 @@ const MinimapScript = preload("res://game/ui/minimap.gd")
 const DialogPanelScript = preload("res://game/ui/dialog_panel.gd")
 const SuspicionMeterScript = preload("res://game/ui/suspicion_meter.gd")
 const PadInput = preload("res://game/ui/pad_input.gd")
+const Layout = preload("res://game/world/layout.gd")
 
 const PAPER := Color(0.93, 0.87, 0.72)
 const INK := Color(0.12, 0.10, 0.08)
@@ -19,7 +20,15 @@ const RED := Color(0.72, 0.12, 0.10)
 const GREEN := Color(0.12, 0.55, 0.20)
 const EDGE_MARGIN := 70.0
 const DIAMOND_HIDE_DISTANCE := 15.0  # м: ближе и в кадре — ромб не нужен
+## POLISH-03 A (критик): под ромбом — расстояние до цели в метрах; цель «киоск» — ромб над коробом «ХЛЕБ» на крыше.
+const DIAMOND_DISTANCE_FONT := 26
+const KIOSK_DIAMOND_ABOVE_SIGN := 0.9   # м над верхом короба Layout.KIOSK_ROOF_SIGN
+const DIAMOND_Y := 3.8
+const MARKER_LIFT := 1.3                # м: ромб выше, пока над Бабкой «!»/«?» (маркер издалека крупнее, QuestFlow)
+## Конусы обзора постов на мини-карте — только когда герой в районе киоска (KIOSK_SQUARE, расширенный на это число м).
+const CONE_AREA_MARGIN := 30.0
 const SPEED_FULL := 100.0            # км/ч: дуга спидометра заполнена
+const PROTOCOL_WIDTH := 600.0        # POLISH-03 B: панель протокола справа внизу
 
 var title_label: Label
 var task_label: Label
@@ -41,11 +50,17 @@ var diamond_clamped := false
 var completion_dismissed := false
 ## Ромб спрятан, потому что цель в кадре и рядом (п. 17).
 var diamond_near_hidden := false
+## Подпись под ромбом: «N м» до цели в плоскости XZ от героя или машины (POLISH-03 A); для проверок и кадров.
+var diamond_distance_text := ""
+var _diamond_font: Font
+var _marker_lift := false   # над Бабкой «!»/«?» — ромб выше маркера, не поверх него
 var toast_card: PanelContainer
 var completion_close: Button
 var prompt_plate: PanelContainer
 var end_panel: PanelContainer
 var end_buttons: Dictionary = {}  # id -> Button: &"again", &"menu", &"stay"
+## POLISH-03 B: значения строк протокола (id из QuestLines.PROTOCOL_ROWS → Label).
+var protocol_values: Dictionary = {}
 ## Стелс (EXT-01, C7): глаз + «!» справа вверху, подсказка, экран провала и тост — читает снимок мира.
 var suspicion_meter: SuspicionMeter
 ## COINS-01: вторая строка карточки «Собери монеты: N/35» и счётчик монет справа от карточки (монета + «N / 35»,
@@ -127,7 +142,10 @@ func _process(delta: float) -> void:
 		completion_close.grab_focus.call_deferred()  # закрыть можно и Enter / A геймпада, не только мышью (QA-01, З2; PAD-01)
 		DialogPanelScript.pop(completion_panel, 0.5)
 	completion_panel.visible = show_completion
-	_update_map_and_diamond(world, state.get("target_position", null), speed >= 0.0)
+	_marker_lift = state.get("babka_marker", "") != ""
+	if show_completion:
+		_update_protocol(state.get("protocol", {}))
+	_update_map_and_diamond(world, state.get("target_position", null), speed >= 0.0, state.get("route_drive", []))
 	suspicion_meter.update_from(state, delta)
 	_update_coins(state)
 
@@ -171,7 +189,7 @@ func is_end_card_open() -> bool:
 
 # --- карта и ромб ---
 
-func _update_map_and_diamond(world: Node, target: Variant, in_car := false) -> void:
+func _update_map_and_diamond(world: Node, target: Variant, in_car := false, route_drive: Array = []) -> void:
 	var rig: CameraRig = world.get("camera_rig")
 	var focus := Vector2.ZERO
 	var yaw := 0.0
@@ -179,7 +197,8 @@ func _update_map_and_diamond(world: Node, target: Variant, in_car := false) -> v
 		yaw = rig.yaw
 		if rig.target:
 			focus = Vector2(rig.target.global_position.x, rig.target.global_position.z)
-	minimap.set_view(focus, yaw, target, in_car)
+	minimap.set_view(focus, yaw, target, in_car, route_drive)
+	minimap.set_cones(patrol_cones(world, focus))
 	var was_visible := diamond_visible
 	diamond_visible = false
 	diamond_clamped = false
@@ -187,7 +206,7 @@ func _update_map_and_diamond(world: Node, target: Variant, in_car := false) -> v
 	if rig and rig.camera and target is Vector3 and target != Vector3.INF:
 		var camera := rig.camera
 		var canvas := _canvas_size()
-		var anchor: Vector3 = target + Vector3.UP * 3.8
+		var anchor: Vector3 = diamond_anchor(target, _marker_lift)
 		# Проекция считается здесь по трансформу и fov камеры (fov вертикальный), в координатах холста 1920x1080:
 		# так результат не зависит от размера окна и совпадает в headless.
 		var local := camera.global_transform.affine_inverse() * anchor
@@ -208,6 +227,7 @@ func _update_map_and_diamond(world: Node, target: Variant, in_car := false) -> v
 		var distance := focus.distance_to(Vector2(target.x, target.z))
 		diamond_near_hidden = not diamond_clamped and distance < DIAMOND_HIDE_DISTANCE
 		diamond_visible = not diamond_near_hidden
+		diamond_distance_text = "%d м" % roundi(distance) if distance >= 2.0 else ""   # у самой цели «0 м» не нужен
 		# Новая цель (скачок больше 5 м) или ромб вернулся — «выпрыгнуть».
 		var jumped: bool = _last_target == null or (_last_target as Vector3).distance_to(target) > 5.0
 		if diamond_visible and (jumped or not was_visible):
@@ -216,8 +236,33 @@ func _update_map_and_diamond(world: Node, target: Variant, in_car := false) -> v
 		_last_target = target
 	else:
 		_last_target = null
+		diamond_distance_text = ""
 	diamond.visible = diamond_visible
 	diamond.queue_redraw()
+
+## Точка ромба над целью: DIAMOND_Y над землёй; у киоска — над световым коробом «ХЛЕБ» на крыше; над Бабкой с «!»/«?»
+## (lift) — на MARKER_LIFT выше, чтобы не закрывать маркер (POLISH-03 A).
+static func diamond_anchor(target: Vector3, lift := false) -> Vector3:
+	if Vector2(target.x - Layout.KIOSK.x, target.z - Layout.KIOSK.z).length() < 0.5:
+		var sign_top := Layout.KIOSK_ROOF_SIGN.y + Layout.KIOSK_ROOF_SIGN_SIZE.y * 0.5
+		return Vector3(Layout.KIOSK_ROOF_SIGN.x, sign_top + KIOSK_DIAMOND_ABOVE_SIGN, Layout.KIOSK_ROOF_SIGN.z)
+	return target + Vector3.UP * (DIAMOND_Y + (MARKER_LIFT if lift else 0.0))
+
+## POLISH-03 A: конусы обзора постов (PatrolNpc) для мини-карты — [центр x, z; курс −Z сенсора x, z; дальность; обзор
+## град; видит ли сейчас Илюшу]. Только посты (сенсоры, чей родитель разворачивается по facings), только включённые и
+## только пока герой в районе киоска; автобус ГСУМ и прочие сенсоры не рисуются.
+static func patrol_cones(world: Node, focus: Vector2) -> Array:
+	var cones: Array = []
+	if not Layout.KIOSK_SQUARE.grow(CONE_AREA_MARGIN).has_point(focus):
+		return cones
+	for sensor in world.get_tree().get_nodes_in_group(&"detection_sensors"):
+		var post: Node = sensor.get_parent()
+		if post == null or not post.has_method("facing_index") or not sensor.enabled:
+			continue
+		var forward: Vector3 = -(sensor as Node3D).global_basis.z
+		var at: Vector3 = (sensor as Node3D).global_position
+		cones.append([Vector2(at.x, at.z), Vector2(forward.x, forward.z).normalized(), sensor.range_m, sensor.fov_deg, sensor.visibility() > 0.0])
+	return cones
 
 ## Ромб не рисуется поверх карточки задачи, мини-карты и спидометра: сдвигается за их край.
 func _avoid_hud(p: Vector2) -> Vector2:
@@ -371,8 +416,23 @@ func _build_diamond() -> void:
 		diamond.draw_colored_polygon(points, YELLOW)
 		var outline := points.duplicate()
 		outline.append(points[0])
-		diamond.draw_polyline(outline, INK, 3.0))
+		diamond.draw_polyline(outline, INK, 3.0)
+		if diamond_distance_text != "":
+			_draw_diamond_distance(r))
 	add_child(diamond)
+
+## Подпись «N м» справа от ромба (у правого края — слева): тёмный текст с бумажной обводкой, как «N» мини-карты.
+## Сбоку, а не снизу — не закрывает «!»/«?» над Бабкой.
+func _draw_diamond_distance(r: float) -> void:
+	if _diamond_font == null:
+		_diamond_font = DialogPanelScript.ui_font()
+	var text_size := _diamond_font.get_string_size(diamond_distance_text, HORIZONTAL_ALIGNMENT_LEFT, -1, DIAMOND_DISTANCE_FONT)
+	var x := diamond_position.x + r + 8.0
+	if x + text_size.x > _canvas_size().x - 8.0:
+		x = diamond_position.x - r - 8.0 - text_size.x
+	var at := Vector2(x, diamond_position.y + text_size.y * 0.3)
+	diamond.draw_string_outline(_diamond_font, at, diamond_distance_text, HORIZONTAL_ALIGNMENT_LEFT, -1, DIAMOND_DISTANCE_FONT, 8, PAPER)
+	diamond.draw_string(_diamond_font, at, diamond_distance_text, HORIZONTAL_ALIGNMENT_LEFT, -1, DIAMOND_DISTANCE_FONT, INK)
 
 func _build_speed() -> void:
 	speed_gauge = Control.new()
@@ -503,59 +563,83 @@ func _build_toast() -> void:
 	add_child(toast_card)
 
 func _build_completion() -> void:
+	# POLISH-03 B: панель финала — протокол прохода справа, герои в середине кадра не закрыты (критик 30.10).
 	completion_panel = PanelContainer.new()
 	completion_panel.name = "CompletionPanel"
 	completion_panel.visible = false
 	completion_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	completion_panel.add_theme_stylebox_override("panel", DialogPanelScript.paper_style())
-	completion_panel.anchor_left = 0.5
-	completion_panel.anchor_right = 0.5
+	completion_panel.anchor_left = 1.0
+	completion_panel.anchor_right = 1.0
 	completion_panel.anchor_top = 1.0
 	completion_panel.anchor_bottom = 1.0
-	completion_panel.offset_left = -430
-	completion_panel.offset_right = 430
-	completion_panel.offset_top = -330
-	completion_panel.offset_bottom = -50
-	var row := HBoxContainer.new()
-	row.add_theme_constant_override("separation", 30)
-	completion_panel.add_child(row)
+	completion_panel.offset_left = -PROTOCOL_WIDTH - 40
+	completion_panel.offset_right = -40
+	completion_panel.offset_top = -40
+	completion_panel.offset_bottom = -40
+	completion_panel.grow_vertical = Control.GROW_DIRECTION_BEGIN   # высота по содержимому, вверх от нижнего края
+	var column := VBoxContainer.new()
+	column.add_theme_constant_override("separation", 6)
+	completion_panel.add_child(column)
+	var top := HBoxContainer.new()
+	top.add_theme_constant_override("separation", 14)
+	column.add_child(top)
 	_loaf_icon = Control.new()
-	_loaf_icon.custom_minimum_size = Vector2(210, 150)
+	_loaf_icon.custom_minimum_size = Vector2(84, 60)
 	_loaf_icon.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	_loaf_icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_loaf_icon.draw.connect(_draw_loaf.bind(_loaf_icon, 1.0, true))
-	row.add_child(_loaf_icon)
-	var column := VBoxContainer.new()
-	column.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	column.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-	row.add_child(column)
-	var head := _label(46)
-	head.text = "ЗАДАНИЕ ВЫПОЛНЕНО"
+	_loaf_icon.draw.connect(_draw_loaf.bind(_loaf_icon, 0.4, false))
+	top.add_child(_loaf_icon)
+	var head := _label(38)
+	head.text = QuestLines.PROTOCOL_DONE
 	head.add_theme_color_override("font_color", INK)
-	column.add_child(head)
+	head.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	top.add_child(head)
 	var rule := ColorRect.new()
 	rule.color = INK
 	rule.custom_minimum_size = Vector2(0, 2)
 	rule.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	column.add_child(rule)
-	var quest := _label(38)
-	quest.text = "ЗА ХЛЕБОМ"
-	quest.add_theme_color_override("font_color", INK)
-	column.add_child(quest)
+	var title := _label(32)
+	title.text = QuestLines.PROTOCOL_TITLE
+	title.add_theme_color_override("font_color", INK)
+	column.add_child(title)
+	var subtitle := _label(26)
+	subtitle.text = QuestLines.PROTOCOL_SUBTITLE
+	subtitle.add_theme_color_override("font_color", RED)
+	column.add_child(subtitle)
+	var grid := GridContainer.new()
+	grid.name = "ProtocolRows"
+	grid.columns = 2
+	grid.add_theme_constant_override("h_separation", 18)
+	grid.add_theme_constant_override("v_separation", 0)
+	column.add_child(grid)
+	for spec in QuestLines.PROTOCOL_ROWS:
+		var key := _label(26)
+		key.text = spec[1]
+		key.add_theme_color_override("font_color", INK)
+		key.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		grid.add_child(key)
+		var value := _label(28)
+		value.name = "Value_" + String(spec[0])
+		value.add_theme_color_override("font_color", INK)
+		value.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+		grid.add_child(value)
+		protocol_values[spec[0]] = value
 	var reward := HBoxContainer.new()
 	column.add_child(reward)
-	var reward_text := _label(32)
-	reward_text.text = "Награда: "
+	var reward_text := _label(28)
+	reward_text.text = QuestLines.PROTOCOL_REWARD + " "
 	reward_text.add_theme_color_override("font_color", INK)
 	reward.add_child(reward_text)
-	var xp := _label(40)
+	var xp := _label(32)
 	xp.name = "Reward"
-	xp.text = "+50 опыта"
+	xp.text = QuestLines.PROTOCOL_XP
 	xp.add_theme_color_override("font_color", GREEN)
 	reward.add_child(xp)
 	completion_close = Button.new()
 	completion_close.name = "CompletionClose"
-	completion_close.text = "ЗАКРЫТЬ"
+	completion_close.text = QuestLines.PROTOCOL_BUTTON
 	completion_close.custom_minimum_size = Vector2(0, 54)
 	DialogPanelScript.style_button(completion_close, true)
 	completion_close.pressed.connect(func():
@@ -564,7 +648,13 @@ func _build_completion() -> void:
 	column.add_child(completion_close)
 	add_child(completion_panel)
 
-## «Конец демо» (п. 11): по центру, «ЕЩЁ РАЗ» — заново с NOT_STARTED, «В МЕНЮ», «ПОГУЛЯТЬ» — остаться в мире
+## POLISH-03 B: значения протокола из снимка мира (C6: get_hud_state()["protocol"]).
+func _update_protocol(protocol: Dictionary) -> void:
+	for id in protocol_values:
+		protocol_values[id].text = str(protocol.get(id, ""))
+
+## «Конец демо» (п. 11): внизу по центру, низкой полосой — герои и финальная сцена выше неё (POLISH-03 B).
+## «ЕЩЁ РАЗ» — заново с NOT_STARTED, «В МЕНЮ», «ПОГУЛЯТЬ» — остаться в мире
 ## (после финала у Бабки обычная реплика, покупки нет — сценарий 6 канона).
 func _build_end_card() -> void:
 	end_panel = PanelContainer.new()
@@ -573,13 +663,13 @@ func _build_end_card() -> void:
 	end_panel.add_theme_stylebox_override("panel", DialogPanelScript.paper_style())
 	end_panel.anchor_left = 0.5
 	end_panel.anchor_right = 0.5
-	end_panel.anchor_top = 0.5
-	end_panel.anchor_bottom = 0.5
+	end_panel.anchor_top = 1.0
+	end_panel.anchor_bottom = 1.0
 	end_panel.offset_left = -420
 	end_panel.offset_right = 420
-	end_panel.offset_top = 0
-	end_panel.offset_bottom = 0
-	end_panel.grow_vertical = Control.GROW_DIRECTION_BOTH  # высота по содержимому
+	end_panel.offset_top = -40
+	end_panel.offset_bottom = -40
+	end_panel.grow_vertical = Control.GROW_DIRECTION_BEGIN  # высота по содержимому, вверх от нижнего края
 	var column := VBoxContainer.new()
 	column.add_theme_constant_override("separation", 14)
 	end_panel.add_child(column)

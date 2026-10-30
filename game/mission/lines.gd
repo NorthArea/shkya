@@ -50,6 +50,9 @@ const BUTTON_DECLINE := "ОТКАЗАТЬСЯ"
 ## (субтитр SoundDirector.show_gag, управление не блокирует; страница — две строки).
 const OFFER_WARNING := ["Бабка: патрулей берегись!", "И ничего не подписывай!"]
 const OFFER_WARNING_SECONDS := 3.0
+## POLISH-03 A: пост вот-вот развернётся к Илюше (PatrolNpc.WARN_LEAD до разворота) — субтитр, одна строка.
+const PATROL_TURN := ["«Кхм…» Патруль оборачивается!"]
+const PATROL_TURN_SECONDS := 1.4
 
 # --- Бабка без дела: до покупки — напоминание, после сдачи — прощание ---
 const IDLE := "Батон белый. И ни к кому не садись"
@@ -95,6 +98,33 @@ const BUTTON_TURN_IN := "СДАТЬ ХЛЕБ"
 const THANKS := "Спасибо, Илюша. Завтра — за молоком"
 const THANKS_AFTER := "Спросят — скажешь, за хлебом"
 const THANKS_PAUSE := 0.8
+
+# --- POLISH-03 B, этап 10 после протокола: пауза, Бабка смотрит на улицу (микроавтобус ГСУМ у соседнего подъезда) ---
+# MISSION_EXTENSION, этап 10: «Завтра за молоком сходишь» — короткая пауза, взгляд на улицу — «Или не сходишь».
+const FINALE_LOOK := "Или не сходишь"
+const FINALE_LOOK_PAUSE := 1.0     # с: пауза перед взглядом на улицу
+const FINALE_LOOK_SECONDS := 2.6   # с: реплика висит (не меньше read_seconds)
+
+# --- POLISH-03 B: протокол финала вместо голого «+50 опыта» (шуточная сводка прохода) ---
+const PROTOCOL_DONE := "ЗАДАНИЕ ВЫПОЛНЕНО"
+const PROTOCOL_TITLE := "ПРОТОКОЛ № 154"
+const PROTOCOL_SUBTITLE := "Ничего необычного не произошло"
+const PROTOCOL_ROWS := [
+	[&"time", "Время в пути"], [&"coins", "Монет собрано"], [&"spent", "Потрачено на хлеб"], [&"left", "Осталось"],
+	[&"knocks", "Сбито прохожих"], [&"drones", "Сбито дронов"], [&"broken", "Сломано во дворах"],
+	[&"detections", "Замечен патрулём"],
+]
+const PROTOCOL_KNOCKS_OK := "все встали"
+const PROTOCOL_REWARD := "Награда:"
+const PROTOCOL_XP := "+50 опыта"
+const PROTOCOL_BUTTON := "НЕ ПОДПИСЫВАТЬ"   # Бабка просила ничего не подписывать (WARN-01)
+
+# --- POLISH-03 B: возврат — ГСУМ перекрыл улицу Б (Троллейную), на машине — в объезд ---
+const RADIO_DETOUR := ["Радио: Троллейная перекрыта", "Объезд — по Выборной"]
+const CLOSURE_GAG := ["ГСУМ: «Проезда нет, гражданин»", "«Ничего необычного»"]
+const CLOSURE_SIGN := "ПРОЕЗД ЗАКРЫТ"
+const CLOSURE_SIGN_SMALL := "НИЧЕГО НЕОБЫЧНОГО"
+const CLOSURE_SIGN_DETOUR := "ОБЪЕЗД — ПО ВЫБОРНОЙ"
 
 const BUTTON_NEXT := "ДАЛЬШЕ"
 

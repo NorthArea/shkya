@@ -259,6 +259,15 @@ func _step04_05_car_and_drive() -> void:
 
 # --- 06: прибытие ---
 
+## Точка в координатах кадра камеры игры: x, y — NDC (−1…1, y вверх), z > 0 — перед камерой.
+func _ndc(p: Vector3) -> Vector3:
+	var camera := world.camera_rig.camera
+	var local := camera.global_transform.affine_inverse() * p
+	if local.z >= -0.01:
+		return Vector3(0, 0, -1)
+	var half_h := tan(deg_to_rad(camera.fov) * 0.5)
+	return Vector3(local.x / -local.z / (half_h * 16.0 / 9.0), local.y / -local.z / half_h, 1.0)
+
 func _step06_arrive() -> void:
 	var mission := world.mission
 	world.player.place(Layout.ROUTE_DRIVE[-1], 0.0)
@@ -277,6 +286,11 @@ func _step07_vendor_dialog() -> void:
 	await _frames(4)
 	check(hud.prompt_label.visible and hud.prompt_label.text == "E — ПОГОВОРИТЬ", "07: E prompt at the kiosk window")
 	mission.money = 10  # условно не хватает денег (монеты — COINS: не хватает 25 ₽)
+	for i in 180:   # камера ещё возвращается после прошлого диалога — дождаться прежнего взгляда
+		if not world.camera_rig.is_talk_framing():
+			break
+		await _frames(1)
+	var yaw_before := world.camera_rig.yaw
 	await _press_interact()
 	check(flow.is_dialog_open() and flow.dialog.text_label.text == QuestLines.VENDOR_CHAIN[0]["text"], "07: vendor chain starts with its first line ('%s')" % flow.dialog.text_label.text)
 	check(flow.dialog.line_count() == QuestLines.VENDOR_CHAIN.size() + 1 and flow.dialog.line_index() == 0 and flow.dialog.buttons.has(&"next"), "07: vendor chain + refusal «Не хватает» (COINS-01), ДАЛЬШЕ first")
@@ -296,6 +310,13 @@ func _step07_vendor_dialog() -> void:
 		check(mission.state == MissionDirector.BUY_BREAD and not mission.has_bread, "07: chain line %d changes no state" % (i + 1))
 	flow.dialog.finish_typing()
 	check(flow.dialog.is_last_line() and not flow.dialog.buttons.has(&"next"), "07: last line has the choices, no ДАЛЬШЕ")
+	# POLISH-03 A (критик, k_07): камера диалога не только сдвигается к плечу, а поворачивается к собеседнику — продавщица
+	# в окне правее центра, над панелью диалога, Илюша левее неё (кадр 07); после диалога взгляд возвращается.
+	await _frames(60)
+	var vendor_ndc := _ndc(world.vendor.global_position + Vector3.UP * 1.3)
+	var player_ndc := _ndc(world.player.global_position + Vector3.UP * 1.0)
+	check(vendor_ndc.z > 0.0 and vendor_ndc.x > -0.3 and vendor_ndc.x < 0.6 and vendor_ndc.y > -0.3, "07: dialog camera turns to the vendor — she is in frame right of centre, above the panel (ndc %s)" % vendor_ndc)
+	check(player_ndc.z > 0.0 and player_ndc.x < vendor_ndc.x, "07: Ilyusha is left of the vendor in the dialog frame (ndc %s)" % player_ndc)
 	var buy: Button = flow.dialog.buttons[&"buy"]
 	check(buy.text == "КУПИТЬ ХЛЕБ" and buy.disabled, "07: КУПИТЬ ХЛЕБ is disabled when can_buy_bread() is false")
 	check(flow.dialog.buttons[&"leave"].text == "УЙТИ", "07: button УЙТИ")
@@ -306,6 +327,8 @@ func _step07_vendor_dialog() -> void:
 	flow.dialog.buttons[&"leave"].pressed.emit()
 	await _frames(3)
 	check(not flow.is_dialog_open() and mission.state == MissionDirector.BUY_BREAD and player.input_enabled, "07: УЙТИ closes the dialog, state unchanged")
+	await _frames(120)
+	check(absf(angle_difference(world.camera_rig.yaw, yaw_before)) < 0.05 and not world.camera_rig.is_talk_framing(), "07: after the dialog the camera returns to the previous view (%.2f vs %.2f)" % [world.camera_rig.yaw, yaw_before])
 	mission.money = MissionDirector.BREAD_PRICE   # монеты — COINS: собрано ровно на батон
 	await _press_interact()
 	check(flow.is_dialog_open() and flow.dialog.text_label.text == QuestLines.VENDOR_AGAIN and flow.dialog.line_count() == 1, "07: second approach is the short line, chain not repeated ('%s')" % flow.dialog.text_label.text)
@@ -369,11 +392,18 @@ func _step10_complete() -> void:
 	await _frames(3)
 	check(hud.completion_panel.visible, "10: completion panel is shown")
 	check(_all_text(hud.completion_panel).has("ЗАДАНИЕ ВЫПОЛНЕНО") and _all_text(hud.completion_panel).has("+50 опыта"), "10: panel shows ЗАДАНИЕ ВЫПОЛНЕНО and +50 опыта")
+	# POLISH-03 B: панель — протокол прохода справа, героев в середине кадра не закрывает.
+	var panel_text := _all_text(hud.completion_panel)
+	check(panel_text.has(QuestLines.PROTOCOL_TITLE) and panel_text.has(QuestLines.PROTOCOL_SUBTITLE), "10: protocol «%s — %s»" % [QuestLines.PROTOCOL_TITLE, QuestLines.PROTOCOL_SUBTITLE])
+	var proto: Dictionary = world.get_hud_state()["protocol"]
+	check(hud.protocol_values.size() == QuestLines.PROTOCOL_ROWS.size() and hud.protocol_values[&"spent"].text == "35 ₽" and hud.protocol_values[&"left"].text == "%d ₽" % mission.money and hud.protocol_values[&"time"].text == proto[&"time"], "10: protocol rows come from get_hud_state() (spent %s, left %s, time %s)" % [hud.protocol_values[&"spent"].text, hud.protocol_values[&"left"].text, hud.protocol_values[&"time"].text])
+	var rect: Rect2 = hud.completion_panel.get_global_rect()
+	check(rect.position.x >= 1920 * 0.6 and rect.end.y <= 1080, "10: protocol on the right (%s), heroes in the middle are not covered" % rect)
 	check(not flow.marker.visible, "10: no marker after completion")
 	check(hud.strike.visible and hud.task_label.text == "Сдай хлеб Бабке", "10: the done task (not 'Задание выполнено') is struck out on the card")
 	check(not hud.diamond_visible and not hud.diamond.visible and not hud.minimap.has_target, "10: no diamond and no minimap target after completion")
 	check(_hands() == hands_before, "10: hands are empty")
-	check(hud.completion_close.has_focus(), "10: ЗАКРЫТЬ has keyboard focus (closable without the mouse)")
+	check(hud.completion_close.has_focus() and hud.completion_close.text == QuestLines.PROTOCOL_BUTTON, "10: «%s» has keyboard focus (closable without the mouse)" % QuestLines.PROTOCOL_BUTTON)
 	await _frames(60)
 	check(flow.thanks_after_bubble.visible and flow.thanks_after_bubble.text == QuestLines.THANKS_AFTER and flow.thanks_bubble.visible, "10: second bubble '%s' after ~%.1f s, first stays" % [QuestLines.THANKS_AFTER, QuestLines.THANKS_PAUSE])
 	# EXT-01 fix2 (P3): второй пузырь — на месте первого, у головы Бабки; первый поднимается над ним (читается сверху вниз).
@@ -387,14 +417,27 @@ func _step10_complete() -> void:
 	accept.pressed = false
 	Input.parse_input_event(accept)
 	await _frames(3)
-	check(not hud.completion_panel.visible and hud.is_end_card_open(), "10: ЗАКРЫТЬ (ui_accept) opens the «Конец демо» card")
+	# POLISH-03 B: этап 10 — пауза, Бабка смотрит на улицу (микроавтобус ГСУМ у соседнего подъезда), «Или не сходишь».
+	check(not hud.completion_panel.visible and not hud.is_end_card_open() and flow.finale.playing, "10: ui_accept closes the protocol, the stage-10 scene plays before «Конец демо»")
+	check(world.ui_blocking and flow.is_dialog_open() and not world.player.input_enabled, "10: input stays blocked during the scene")
+	check(not flow.thanks_bubble.is_visible_in_tree() and not flow.thanks_after_bubble.is_visible_in_tree(), "10: thanks bubbles gone with the protocol")
+	var van: Node3D = world.get_node("LevelGeometry/Patrols/RoadClosure").van
+	check(van.visible and van.global_position.distance_to(Layout.FINALE_VAN) < 0.5 and flow.finale.look_target == van, "10: the GSUM van stands by the next entrance and Babka looks at it")
+	check(not flow.finale.is_bubble_visible(), "10: «%s» waits for the pause" % QuestLines.FINALE_LOOK)
+	await _frames(int((QuestLines.FINALE_LOOK_PAUSE + 0.2) * 60.0))
+	check(flow.finale.is_bubble_visible() and flow.finale.bubble.text == QuestLines.FINALE_LOOK, "10: after the pause Babka says «%s»" % QuestLines.FINALE_LOOK)
+	check(world.camera_rig.target != world.player, "10: the camera pulls back from Ilyusha during the scene")
+	await _frames(int(QuestLines.FINALE_LOOK_SECONDS * 60.0) + 10)
+	check(not flow.finale.playing and hud.is_end_card_open(), "10: «Конец демо» card after the scene")
+	var card_rect: Rect2 = hud.end_panel.get_global_rect()
+	check(card_rect.position.y >= 1080 * 0.7, "10: «Конец демо» card at the bottom, heroes are not covered (%s)" % card_rect)
 	check(world.ui_blocking and flow.is_dialog_open() and not world.player.input_enabled, "10: input stays blocked under the «Конец демо» card")
-	check(not flow.thanks_bubble.is_visible_in_tree() and not flow.thanks_after_bubble.is_visible_in_tree(), "10: thanks bubbles gone with the completion panel")
 	await _frames(2)
 	check(hud.end_buttons[&"again"].has_focus(), "10: ЕЩЁ РАЗ has keyboard focus")
 	hud.end_buttons[&"stay"].pressed.emit()
 	await _frames(3)
 	check(not flow.is_dialog_open() and not hud.is_end_card_open() and not world.ui_blocking and world.player.input_enabled, "10: ПОГУЛЯТЬ closes the card, input restored")
+	check(world.camera_rig.target == world.player and not flow.finale.is_bubble_visible(), "10: ПОГУЛЯТЬ — the camera is back behind Ilyusha, the line is gone")
 	check(_mouse_captured(), "10: mouse captured after closing")
 	var money_before := mission.money   # монеты у Бабки (COINS-01) подобраны раньше
 	for i in 3:
@@ -561,6 +604,17 @@ func _real_car_pass() -> void:
 	flow.dialog.buttons[&"accept"].pressed.emit()
 	await _frames(3)
 	check(mission.state == MissionDirector.GO_TO_CAR, "real: quest accepted")
+	# POLISH-03 B: прямой путь даёт ≈ 21–23 ₽ — пешком через двор к машине мимо подъезда и площадки (монеты entrance и
+	# playground; постов во дворе нет — шаги place() по 0,3 м подбирают монеты как ходьба).
+	var yard_walk: Array = [near_babka, Vector3(-44, 0, 100), Vector3(-52, 0, 88), Vector3(-67.3, 0, 87.5), Vector3(-67.3, 0, 91.5),
+		Vector3(-64, 0, 95.5), Vector3(-50, 0, 95.5), car.global_position + Vector3(2.2, 0, 0)]
+	for i in range(1, yard_walk.size()):
+		var a: Vector3 = yard_walk[i - 1]
+		var b: Vector3 = yard_walk[i]
+		var n := maxi(1, int(ceil(a.distance_to(b) / 0.3)))
+		for k in n:
+			player.place(a.lerp(b, float(k) / n), 0.0)
+			await _frames(1)
 	player.place(car.global_position + Vector3(2.2, 0, 0), 0.0)
 	await _frames(4)
 	check(hud.prompt_label.visible and hud.prompt_label.text == "E — СЕСТЬ В МАШИНУ", "real: E prompt at the car")
@@ -568,9 +622,10 @@ func _real_car_pass() -> void:
 	await _frames(4)
 	check(world.control_mode == &"in_car" and mission.state == MissionDirector.DRIVE_TO_KIOSK, "real: E enters the Lada, mission DRIVE_TO_KIOSK")
 	check(hud.task_label.text == "Доедь до киоска", "real: task 'Доедь до киоска' in the car")
-	var route: Array = Layout.ROUTE_DRIVE.slice(1)
+	# POLISH-03 B: прямой путь даёт ≈ 21–23 ₽ — с одной вылазкой за гаражи двора (ROUTE_DRIVE_HUNT) набирается 35.
+	var route: Array = Layout.ROUTE_DRIVE_HUNT.slice(1)
 	var drove: bool = await driver.drive(route, 12.0, 6.0)
-	check(drove, "real: Lada drove along ROUTE_DRIVE to the kiosk by WASD input")
+	check(drove, "real: Lada drove along ROUTE_DRIVE_HUNT (one detour behind the yard garages) to the kiosk by WASD input")
 	var max_kmh := 0.0
 	check(mission.state == MissionDirector.BUY_BREAD, "real: arrival switched the mission to BUY_BREAD (state %s)" % mission.state)
 	check(await driver.stop(), "real: Lada stopped at the kiosk")
@@ -579,7 +634,7 @@ func _real_car_pass() -> void:
 	await _frames(6)
 	check(world.control_mode == &"on_foot", "real: E exits the Lada at the kiosk")
 	var parked := car.global_transform
-	# COINS-01: деньги — монеты, подобранные «Ладой» по ROUTE_DRIVE и Илюшей во дворе (без add_money).
+	# COINS-01 / POLISH-03 B: деньги — монеты, подобранные «Ладой» по ROUTE_DRIVE_HUNT и Илюшей во дворе (без add_money).
 	check(mission.money >= MissionDirector.BREAD_PRICE, "real: coins collected on the way cover the bread (%d ₽)" % mission.money)
 	player.place(Layout.VENDOR_WINDOW, PI * 0.5)
 	await _frames(4)
@@ -601,10 +656,16 @@ func _real_car_pass() -> void:
 	# потом — маршрут в обратном порядке без двух последних точек, настоящей ездой. Никаких телепортов машины.
 	var turned: bool = await driver.drive(Layout.ROUTE_LEAVE_KIOSK, 8.0, 3.0)
 	check(turned, "real: Lada turned around on the lot by the parking and left through the bank gap onto street B")
-	var back: Array = Layout.ROUTE_DRIVE.slice(0, Layout.ROUTE_DRIVE.size() - 2)
-	back.reverse()
+	# POLISH-03 B: улица Б к A перекрыта ГСУМ — домой в объезд по Выборной и Богаткова (Layout.ROUTE_DETOUR), мини-карта
+	# ведёт туда же.
+	var closure = world.get_node("LevelGeometry/Patrols/RoadClosure")
+	check(mission.road_closed and closure.active, "real: street B is closed after the purchase (closure stands)")
+	await _frames(2)
+	check(Array(hud.minimap.route_points).any(func(p: Vector2) -> bool: return p.y < -90.0), "real: the minimap leads north along the detour, not south to street A (%s)" % [hud.minimap.route_points.slice(0, 3)])
+	var back: Array = Layout.ROUTE_DETOUR.slice(1)
 	var returned: bool = await driver.drive(back, 12.0, 6.0)
-	check(returned, "real: Lada drove back to the yard along the route in reverse order")
+	check(returned, "real: Lada drove home along the detour (ROUTE_DETOUR)")
+	check(not mission.road_closed and not closure.active, "real: back in the yard — the closure is lifted")
 	check(await driver.stop(), "real: Lada stopped in the yard")
 	await _press_interact()
 	await _frames(6)
@@ -619,8 +680,8 @@ func _real_car_pass() -> void:
 	await _frames(3)
 	check(mission.state == MissionDirector.COMPLETE and mission.xp == 50 and hud.completion_panel.visible, "real: turn-in completes, +50 XP, panel shown")
 	hud.completion_close.pressed.emit()
-	await _frames(3)
-	check(hud.is_end_card_open() and world.ui_blocking, "real: «Конец демо» card after ЗАКРЫТЬ")
+	await _frames(int((QuestLines.FINALE_LOOK_PAUSE + QuestLines.FINALE_LOOK_SECONDS) * 60.0) + 10)
+	check(hud.is_end_card_open() and world.ui_blocking, "real: «Конец демо» card after the protocol and the stage-10 scene")
 	if parked.origin.distance_to(car.global_position) < 1.0:
 		check(false, "real: the car actually left the kiosk")
 	driver.world = null
