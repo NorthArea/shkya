@@ -4,7 +4,7 @@ extends SceneTree
 ## маска 0); слои фона играют, циклы зациклены, уровни (RMS файла + volume_db) не выше заданных и тише фона двора;
 ## сигнал машины — только при ожидании > 3 с и не чаще раза в 10 с на машину; вороны взлетают от транспорта, «Лады»
 ## и Илюши ближе 6 м и садятся обратно на свой насест; собака не выходит из своей площадки за гаражами (на дорогу и
-## тротуары), лает раз в 20–40 с, отходит от Илюши и не толкает его; хлопок двери подъезда раз в 60–120 с; кошка
+## тротуары), лает раз в 20–40 с, отходит от Илюши и не толкает его; хлопок двери при реальном входе или выходе; кошка
 ## шевелит хвостом; мусор не мешает идти. Детерминизм: фиксированные seed в Ambient и SoundDirector, --fixed-fps 60.
 ##
 ## Headless: tools/run.command --headless --fixed-fps 60 --script tests/ambient_test.gd
@@ -62,7 +62,7 @@ func _part_structure() -> void:
 	check(crows.size() >= 6 and crows.size() <= 10, "6–10 crows (%d)" % crows.size())
 	check(ambient.dog != null and ambient.cat != null, "dog and cat exist")
 	check(ambient.litter.size() >= 5 and ambient.litter.size() <= 8, "5–8 litter items (%d)" % ambient.litter.size())
-	var bodies := ambient.find_children("*", "CollisionObject3D", true, false)
+	var bodies := ambient.find_children("*", "PhysicsBody3D", true, false)
 	check(bodies.size() == 1 and bodies[0] == ambient.dog_body, "only the dog has a collision body (%d bodies)" % bodies.size())
 	var dog_body: AnimatableBody3D = ambient.dog_body
 	check(dog_body.collision_layer == 4 and dog_body.collision_mask == 0, "dog body: layer Car (4), mask 0, like residents")
@@ -354,17 +354,24 @@ func _part_cat_and_litter() -> void:
 # --- 7. Дверь подъезда ---
 
 func _part_door_slam() -> void:
-	print("--- entrance door ---")
-	var times: Array[float] = sound.door_slam_times
-	check(times.size() >= 2, "entrance door slams during the run (%d)" % times.size())
-	var bad := []
-	for i in range(1, times.size()):
-		var gap := times[i] - times[i - 1]
-		if gap < 60.0 or gap > 120.0:
-			bad.append(snappedf(gap, 0.01))
-	check(times.size() > 0 and times[0] >= 60.0 and times[0] <= 120.0 and bad.is_empty(), "door slams every 60–120 s (first %.1f s, bad gaps %s)" % [times[0] if times.size() > 0 else -1.0, bad])
-	check(sound.played["door_slam"] == times.size() and sound.door_slam.stream == sound.DOOR_SLAM, "door slam counter and stream")
-	check(_flat(sound.door_slam.global_position).distance_to(Vector3(-40, 0, 108)) < 0.5, "door slam sounds at the entrance door")
+	print("--- real entrance door events ---")
+	var before: int = sound.played["door_slam"]
+	sound._ambient_sounds(180.0)
+	check(sound.played["door_slam"] == before, "empty time does not create a phantom door slam")
+	var people: Node = world.get_node("LevelGeometry/Residents")
+	var resident: Resident = people.residents[0]
+	var at: Vector3 = people.life.spots[&"door_h1w"].pos
+	world.player.place(at + Vector3(0, 0, 3), 0.0)
+	world.camera_rig.snap()
+	for voice in sound._door_players:
+		voice.stop()
+	resident.entrance_used.emit(resident, at, true)
+	check(sound.played["door_slam"] == before + 1, "a real entrance event plays a door sound")
+	check(sound.door_slam.stream == sound.DOOR_SLAM and sound.door_slam.global_position.distance_to(at + Vector3.UP * 1.2) < 0.01,
+		"the sound comes from the entrance used by the resident")
+	resident.entrance_used.emit(resident, at, true)
+	check(sound.played["door_slam"] == before + 1, "two neighbours using one door together do not double the slam")
+	check(sound.played["door_slam"] == sound.door_slam_times.size(), "door counter records actual entrance sounds")
 
 # --- общее ---
 

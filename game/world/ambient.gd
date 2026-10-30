@@ -5,7 +5,7 @@ extends Node3D
 ## мир ищется вверх по дереву.
 ## Коллизий нет ни у кого, кроме собаки: её тело — AnimatableBody3D на слое Car (4), маска 0, как у жителей
 ## (PEOPLE-01): Илюша в неё упирается и не толкает, «Лада» (маска World) проходит сквозь, луч наблюдателей и пружина
-## камеры (маска 1) её не видят. Собака сама отходит от Илюши и «Лады» и не ступает ближе DOG_KEEP к Илюше.
+## камеры (маска 1) её не видят. Собака отходит от «Лады», а подошедшему вплотную Илюше даёт себя погладить.
 ## Звук — SoundDirector: слушает сигналы crow_cawed / dog_barked (только слушает, ничем не управляет).
 ## Без случайностей вне seed: расписания лая и карканья — RandomNumberGenerator с фиксированным SEED.
 ## PEOPLE-03 (P2): голуби (конёк голубятни Z6, снег у неё, мусор у контейнеров двора) и синицы у кормушки Z2 — тот же
@@ -75,6 +75,9 @@ const DOG_FLEE_SPEED := 2.4
 const DOG_FLEE_DISTANCE := 4.0  # м до Илюши (до «Лады» — +1 м): отходит
 const DOG_CALM_DISTANCE := 6.0
 const DOG_KEEP := 1.2           # м: ближе к Илюше собака не шагает
+const DOG_GREETING_RANGE := 2.6 # подошёл достаточно близко — ждёт прикосновения, не убегает
+const DOG_PET_REACH := 2.25
+const DOG_PET_SECONDS := 2.4
 const BARK_INTERVAL := Vector2(20.0, 40.0)
 const DOG_BODY := Vector3(0.36, 0.7, 0.95)
 
@@ -94,7 +97,10 @@ const LITTER: Array = [
 var crows: Array = []
 var dog: Node3D
 var dog_body: AnimatableBody3D
-var dog_state: StringName = &"walk"   # walk, pause, flee, return
+var dog_state: StringName = &"walk"   # walk, pause, flee, return, greet, pet
+var dog_interactable: Interactable
+var dog_pets := 0
+var _dog_pet_left := 0.0
 var dog_target := 1
 var dog_barks := 0
 var dog_bark_times: Array[float] = []
@@ -518,8 +524,45 @@ func _build_dog() -> void:
 	collider.position.y = DOG_BODY.y * 0.5
 	dog_body.add_child(collider)
 	dog.add_child(dog_body)
+	dog_interactable = Interactable.new()
+	dog_interactable.name = "PetInteraction"
+	dog_interactable.interaction_id = &"dog"
+	dog_interactable.prompt = "E — ПОГЛАДИТЬ"
+	dog_interactable.radius = 1.8
+	dog_interactable.enabled = false
+	dog_interactable.interacted.connect(_pet_dog)
+	dog.add_child(dog_interactable)
 	dog_target = 1
 	_face(DOG_LOOP[1] - DOG_LOOP[0])
+
+func _dog_player_ready() -> bool:
+	var player := _player as Ilyusha
+	if player == null or get_tree().paused:
+		return false
+	return player.visible and player.input_enabled and player.hide_mode == &"none" and player.can_change_hide_mode()
+
+func _can_pet_dog(actor: Node) -> bool:
+	if actor != _player or not _dog_player_ready() or _dog_pet_left > 0.0 or _dog_car_near():
+		return false
+	var offset := _player.global_position - dog.global_position
+	if Vector2(offset.x, offset.z).length() > DOG_PET_REACH or absf(offset.y) > 0.8:
+		return false
+	var ray := PhysicsRayQueryParameters3D.create(_player.global_position + Vector3.UP * 0.9,
+		dog.global_position + Vector3.UP * 0.6, 1 | 4 | 64)
+	ray.exclude = [dog_body.get_rid()]
+	return get_world_3d().direct_space_state.intersect_ray(ray).is_empty()
+
+func _dog_car_near() -> bool:
+	return is_instance_valid(_lada) and _flat(dog.global_position).distance_to(_flat(_lada.global_position)) < DOG_FLEE_DISTANCE + 1.0
+
+func _pet_dog(actor: Node) -> void:
+	if not _can_pet_dog(actor):
+		return
+	dog_pets += 1
+	dog_state = &"pet"
+	_dog_pet_left = DOG_PET_SECONDS
+	dog_interactable.enabled = false
+	_face(_player.global_position - dog.global_position)
 
 func _part(parent: Node3D, mesh: Mesh, at: Vector3, material: Material, shadow := true) -> MeshInstance3D:
 	var mi := MeshInstance3D.new()
@@ -557,11 +600,22 @@ func _update_dog(delta: float) -> void:
 		dog_barked.emit(dog)
 	_dog_head.rotation.x = move_toward(_dog_head.rotation.x, 0.25 if dog_state == &"pause" else 0.0, delta * 1.5)
 	var here := _flat(dog.global_position)
+	if _dog_pet_left > 0.0:
+		_dog_pet_left = maxf(0.0, _dog_pet_left - delta)
+		if not _dog_car_near() and _dog_player_ready() and here.distance_to(_flat(_player.global_position)) <= DOG_PET_REACH + 0.3:
+			_dog_head.rotation.x = -0.25 + 0.05 * sin(clock * 8.0)
+			_animate_dog(0.0, delta)
+			dog_interactable.enabled = false
+			return
+		_dog_pet_left = 0.0
+	if dog_state == &"pet":
+		dog_state = &"return"
+		dog_target = _nearest_loop_point(here)
 	var player_d := INF
 	var flee_from := Vector3.INF
 	if _player and is_instance_valid(_player) and (_world == null or _world.get("control_mode") != &"in_car"):
 		player_d = here.distance_to(_flat(_player.global_position))
-		if player_d < DOG_FLEE_DISTANCE:
+		if player_d < DOG_FLEE_DISTANCE and not (player_d <= DOG_GREETING_RANGE and _dog_player_ready()):
 			flee_from = _flat(_player.global_position)
 	if _lada and is_instance_valid(_lada):
 		var lada_d := here.distance_to(_flat(_lada.global_position))
@@ -571,6 +625,9 @@ func _update_dog(delta: float) -> void:
 	if flee_from != Vector3.INF:
 		dog_state = &"flee"
 		moved = _dog_flee(here, flee_from, delta)
+	elif player_d <= DOG_GREETING_RANGE and _dog_player_ready():
+		dog_state = &"greet"
+		_face(_player.global_position - here)
 	elif dog_state == &"flee":
 		if player_d >= DOG_CALM_DISTANCE:
 			dog_state = &"return"
@@ -583,6 +640,7 @@ func _update_dog(delta: float) -> void:
 	else:
 		moved = _dog_walk(here, delta)
 	_animate_dog(moved, delta)
+	dog_interactable.enabled = _can_pet_dog(_player)
 
 ## Шаг по петле к dog_target; на точках паузы — постоять (нюхает снег).
 func _dog_walk(here: Vector3, delta: float) -> float:
@@ -659,7 +717,8 @@ func _animate_dog(moved: float, delta: float) -> void:
 		var leg := _dog_legs[i]
 		var sign := 1.0 if i == 0 or i == 3 else -1.0
 		leg.rotation.x = move_toward(leg.rotation.x, swing * sign, delta * 8.0)
-	_dog_tail.rotation.y = sin(clock * (9.0 if dog_state == &"walk" else 4.0)) * 0.45
+	var happy := dog_state in [&"pet", &"greet"]
+	_dog_tail.rotation.y = sin(clock * (15.0 if happy else (9.0 if dog_state == &"walk" else 4.0))) * (0.9 if happy else 0.45)
 
 # --- кошка ---
 
