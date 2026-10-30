@@ -217,54 +217,18 @@ func _part(parent: Node3D, size: Vector3, at: Vector3, material: Material) -> vo
 	parent.add_child(mesh)
 
 func _build_surfaces() -> void:
-	var lift := {"yard_road": 0.01, "sidewalk": 0.015, "road": 0.02}
+	var lift := {"yard_road": 0.01, "sidewalk": 0.015}
 	for spec in Layout.SURFACES:
+		if spec[1] == "road":
+			continue
 		var xz: Vector2 = spec[2]
 		var size: Vector2 = spec[3]
 		var mesh := Greybox.mesh_box(Vector3(size.x, 0.01, size.y), Greybox.COLORS[spec[1]])
 		mesh.name = spec[0]
 		mesh.position = Vector3(xz.x, lift[spec[1]], xz.y)
-		match spec[1]:
-			"road":
-				mesh.material_override = Materials.road(size.x > size.y, xz, minf(size.x, size.y))
-			"sidewalk":
-				mesh.material_override = Materials.snow(0.7)
-			"yard_road":
-				mesh.material_override = Materials.snow(0.9)
+		mesh.material_override = Materials.snow(0.7 if spec[1] == "sidewalk" else 0.9)
 		add_child(mesh)
-	_build_corners()
-
-## Углы кольца (ARENA-01): где улица вдоль x и улица вдоль z обе кончаются (L-образный стык), поверх их общего
-## квадрата — плитка с колеями по дуге вокруг внутреннего угла. На краях плитки колеи и каша совпадают с прямыми
-## улицами (road.gdshader, corner) — без шва. Т-образные стыки (A с B и D) не перекрываются и плитки не получают.
-func _build_corners() -> void:
-	var roads := Layout.SURFACES.filter(func(spec): return spec[1] == "road")
-	for a in roads:
-		var a_size: Vector2 = a[3]
-		if a_size.x <= a_size.y:
-			continue
-		var xr := Rect2(a[2] - a_size * 0.5, a_size)
-		for b in roads:
-			var b_size: Vector2 = b[3]
-			if b_size.x >= b_size.y:
-				continue
-			var zr := Rect2(b[2] - b_size * 0.5, b_size)
-			var sq := xr.intersection(zr)
-			if sq.get_area() < 1.0:
-				continue
-			var west := sq.position.x > xr.position.x + 0.01    # улица вдоль x продолжается на запад
-			var east := sq.end.x < xr.end.x - 0.01
-			var north := sq.position.y > zr.position.y + 0.01  # улица вдоль z продолжается на север
-			var south := sq.end.y < zr.end.y - 0.01
-			if west == east or north == south:
-				continue   # не L-образный угол
-			var corner := Vector2(sq.position.x if west else sq.end.x, sq.position.y if north else sq.end.y)
-			var signs := Vector2(signf(a[2].y - corner.y), signf(b[2].x - corner.x))
-			var mesh := Greybox.mesh_box(Vector3(sq.size.x, 0.01, sq.size.y), Greybox.COLORS["road"])
-			mesh.name = "Corner_%s_%s" % [a[0], b[0]]
-			mesh.position = Vector3(sq.get_center().x, 0.025, sq.get_center().y)
-			mesh.material_override = Materials.road_corner(corner, signs, a_size.y)
-			add_child(mesh)
+	add_child(preload("res://game/world/road_surface.gd").create())
 	_env().street_dress()   # бордюры, наледь, проталины, люки (CITY-02 E)
 
 func _build_bounds() -> void:

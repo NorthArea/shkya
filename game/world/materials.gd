@@ -162,15 +162,15 @@ static func _wet(m: ShaderMaterial) -> void:
 	m.set_shader_parameter("wet_darken", Lighting.WET_DARKEN)
 	m.set_shader_parameter("wet_roughness", Lighting.WET_ROUGHNESS)
 
-## Угол кольца (ARENA-01): колеи по дуге вокруг внутреннего угла corner; signs — знаки направления от угла к осям
-## улицы вдоль x (по z) и улицы вдоль z (по x); width — ширина улиц (обе одинаковые).
-static func road_corner(corner: Vector2, signs: Vector2, width: float) -> ShaderMaterial:
+## Одна мировая дорога: геометрия и описатели реальных полос приходят от RoadSurface.
+static func road_network(bounds: PackedVector4Array, radii: Vector2, roads: PackedVector4Array) -> ShaderMaterial:
 	var m := ShaderMaterial.new()
 	m.shader = RoadShader
-	m.set_shader_parameter("corner", 1.0)
-	m.set_shader_parameter("corner_point", corner)
-	m.set_shader_parameter("corner_sign", signs)
-	m.set_shader_parameter("width", width)
+	m.set_shader_parameter("global_ruts", true)
+	m.set_shader_parameter("lane_bounds", bounds)
+	m.set_shader_parameter("lane_radii", radii)
+	m.set_shader_parameter("road_bounds", roads)
+	m.set_shader_parameter("road_count", roads.size())
 	_wet(m)
 	return m
 

@@ -6,12 +6,13 @@ uniform vec2 center = vec2(0.0);
 uniform float width = 14.0;
 uniform vec3 asphalt : source_color = vec3(0.045, 0.047, 0.055);
 uniform vec3 slush : source_color = vec3(0.58, 0.56, 0.51);   // бежево-серая каша (сверка ART-04: #a7a18e)
-// Угол кольца (ARENA-01): колеи идут по дуге вокруг внутреннего угла corner_point; на краях плитки поперечная
-// координата и координата вдоль совпадают с прямыми улицами, поэтому шва нет. corner_sign — знак направления от угла
-// к оси улицы вдоль x (по z) и к оси улицы вдоль z (по x).
-uniform float corner = 0.0;
-uniform vec2 corner_point = vec2(0.0);
-uniform vec2 corner_sign = vec2(1.0);
+// ROAD-01: обе реальные полосы транспорта в общем мировом поле.
+uniform bool global_ruts = false;
+// xy — центр контура, zw — его полуширины; радиусы берутся из LanePath.
+uniform vec4 lane_bounds[2];
+uniform vec2 lane_radii;
+uniform vec4 road_bounds[4];
+uniform int road_count = 0;
 // Мокрый асфальт (CITY-01 L): у перекрёстков и остановок каша темнеет и блестит, в лужах отражаются фонари (SSR).
 // xy — центр x/z, z — радиус, w — сила; задаёт lighting.gd (WET_SPOTS) через materials.gd.
 uniform vec4 wet_spots[8];
@@ -61,21 +62,44 @@ float slushiness_at(float across, float along, float half_w) {
 	return s * mix(0.75, 1.0, wobble);
 }
 
-// Доля каши в точке мира xz (прямая плитка или угол кольца).
+// Signed distance до скруглённого контура полосы: прямые и дуги имеют общую касательную.
+float lane_distance(vec2 xz, vec4 bounds, float radius) {
+	vec2 q = abs(xz - bounds.xy) - bounds.zw + vec2(radius);
+	return length(max(q, vec2(0.0))) + min(max(q.x, q.y), 0.0) - radius;
+}
+
+float network_slushiness(vec2 xz) {
+	float sway = (noise(xz * 0.08) - 0.5) * 0.52 + (noise(xz * 0.5) - 0.5) * 0.1;
+	float rut_w = 0.22 + 0.14 * noise(xz * 0.3 + vec2(11.0));
+	float rut_distance = 10000.0;
+	for (int i = 0; i < 2; i++) {
+		float across = lane_distance(xz, lane_bounds[i], lane_radii[i]);
+		rut_distance = min(rut_distance, abs(abs(across + sway) - 0.8));
+		// A продолжается в обе стороны за кольцом; прямой проезд и поворот оставляют следы вместе.
+		float straight = xz.y - (lane_bounds[i].y + lane_bounds[i].w);
+		vec4 avenue = road_bounds[0];
+		float on_avenue = 1.0 - smoothstep(avenue.w - 0.1, avenue.w + 0.1, abs(xz.y - avenue.y));
+		rut_distance = min(rut_distance, abs(abs(straight + sway) - 0.8) + (1.0 - on_avenue) * 100.0);
+	}
+	float track = (1.0 - smoothstep(rut_w * 0.4, rut_w * 1.6, rut_distance)) * mix(0.65, 1.0, noise(xz * 0.4));
+	float edge_distance = 10000.0;
+	for (int i = 0; i < road_count; i++) {
+		vec2 q = abs(xz - road_bounds[i].xy) - road_bounds[i].zw;
+		float d = length(max(q, vec2(0.0))) + min(max(q.x, q.y), 0.0);
+		edge_distance = min(edge_distance, d);
+	}
+	float edge = smoothstep(-1.6, -0.3, edge_distance);
+	float between = mix(0.62, 0.92, noise(xz * vec2(0.6, 1.7)));
+	return clamp(max(edge, between) - track * 0.9, 0.0, 1.0) * mix(0.75, 1.0, noise(xz * 0.15));
+}
+
 float slushiness_xz(vec2 xz) {
-	float half_w = width * 0.5;
-	if (corner > 0.5) {
-		vec2 d = xz - corner_point;
-		float r = length(d);
-		// 0 — у края, которым плитка примыкает к улице вдоль x; 1 — к улице вдоль z.
-		float t = atan(abs(d.x), abs(d.y) + 1e-4) / (PI * 0.5);
-		float s_x = slushiness_at(corner_sign.x * (r - half_w), xz.x, half_w);
-		float s_z = slushiness_at(corner_sign.y * (r - half_w), xz.y, half_w);
-		return mix(s_x, s_z, smoothstep(0.0, 1.0, t));
+	if (global_ruts) {
+		return network_slushiness(xz);
 	}
 	float across = along_x > 0.5 ? xz.y - center.y : xz.x - center.x;
 	float along = along_x > 0.5 ? xz.x : xz.y;
-	return slushiness_at(across, along, half_w);
+	return slushiness_at(across, along, width * 0.5);
 }
 
 float wetness(vec2 xz) {
