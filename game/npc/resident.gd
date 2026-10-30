@@ -168,6 +168,8 @@ const FOLLOW_SIDE := 0.45                 # м: второй в паре — с�
 const TRAIL_STEP := 0.15                  # м между точками следа первого в паре
 const SIT_DROP := 0.42                    # м: облик сидящего ниже (ноги за лавкой в снегу); сдвиг — Layout.LIFE_SIT
 const SWEEP_SPEED := 0.45                 # м/с: дворник с метлой
+const WORK_PERIODS := {&"dig": 1.8, &"carpet": 1.2, &"hood": 2.1}
+const WORK_CONTACT := 0.55
 const STEALTH_STAY := 30.0                # м: Илюша ближе к троллейбусу на остановке B — пассажир едет дальше, до A
 const EDGE_RETRY := 3.0                   # с: край карты в кадре — подождать и проверить снова
 const BUSY_KINDS: Array[StringName] = [&"slide", &"hockey", &"sled"]   # занятие в движении: на Илюшу и гудок не останавливается
@@ -281,14 +283,18 @@ var start_leg: Array = []          # стартовый отрезок (Layout.R
 var _act_kind := &""               # занятие на месте (activity, smoke, wait_trolley, inside, away)
 var _acting := false
 var _act_t := 0.0
+var _social_token := ""
+var _social_pose := {}
 var _act_i := 0                    # точка петли горки / направление метлы
 var _cross_ok := -1                # отрезок перехода, на который уже разрешено ступить
 var _lod_acc := 0.0
 var _lod_n := 0
 var _trail: Array = []             # след первого в паре (Vector3, новые в конце)
 var _broom: Node3D
+var _work_tool: Node3D
 # PEOPLE-03 (P2)
 signal activity_sound(resident: Resident, kind: StringName)
+signal entrance_used(resident: Resident, at: Vector3, entering: bool)
 var carry := &""                   # всегда при себе: &"sled" — санки с внуком
 var puck_timer := 0.0              # с до паса или броска, пока шайба у него (life.hockey_step)
 var snowballs := 0                 # брошено снежков
@@ -738,6 +744,8 @@ func _react() -> void:
 			if _speak(&"car"):
 				glance_at(lada)
 			return
+	if _acting and _act_kind in [&"chat", &"domino"]:
+		return   # реплика занятия — только партнёру и в свою очередь; реакции на события остаются выше
 	if _player_distance() < PASS_PLAYER_DISTANCE:
 		_speak(&"walk")
 		return
@@ -1763,11 +1771,15 @@ func _arrive() -> void:
 	_wait = rng.randf_range(dur.x, dur.y)
 	_act_kind = s.kind
 	_act_t = 0.0
+	_social_token = ""
+	_social_pose = {}
 	_act_i = 1
 	_acting = true
 	stop_looking()
 	match s.kind:
 		&"door", &"shop":
+			if not hidden:
+				entrance_used.emit(self, global_position, true)
 			_hide(&"inside")
 		&"stop":
 			if is_instance_valid(trolley):
@@ -1813,6 +1825,8 @@ func _act_stop() -> void:
 	if not _acting:
 		return
 	_acting = false
+	_social_token = ""
+	_social_pose = {}
 	if _act_sit != 0.0 and body and not hidden:
 		body.collision_layer = BODY_LAYER
 	_act_sit = 0.0
@@ -1824,6 +1838,8 @@ func _act_stop() -> void:
 		life.hockey_leave(self)
 	if _broom:
 		_broom.visible = false
+	if _work_tool:
+		_work_tool.visible = false
 	if _stick:
 		_stick.visible = false
 	if _ball:
@@ -1840,7 +1856,8 @@ func _busy() -> bool:
 func _tick_activity(delta: float) -> void:
 	_act_t += delta
 	if spot_id != &"" and not life.anchor_intact(spot_id):
-		_wait = minf(_wait, 0.0)   # столик или лавку сломали — встаёт
+		_activity_done()   # сломанный столик или лавка прекращают занятие до жеста и звука
+		return
 	var s: Dictionary = life.spots[spot_id]
 	match _act_kind:
 		&"edge":
@@ -1863,13 +1880,37 @@ func _tick_activity(delta: float) -> void:
 				return
 		&"snowball":
 			_tick_snowball(delta)
-		&"domino":
-			var off := index * 0.37
-			if fmod(_act_t + off, 2.9) < fmod(_act_t - delta + off, 2.9):
-				_emit_sound(&"domino")   # стук костяшкой — в начале того же удара, что в _pose_activity
+		&"domino", &"chat":
+			_tick_social()
+		&"dig", &"carpet", &"hood":
+			_tick_work(delta)
 	_wait -= delta
 	if _wait <= 0.0:
 		_activity_done()
+
+func _tick_social() -> void:
+	var turn: Dictionary = life.social_turn(self)
+	_social_pose = turn
+	if turn.is_empty():
+		_social_token = ""
+		return
+	var others: Array = turn.members.filter(func(member): return member != self)
+	var center := Vector3.ZERO
+	for member in others:
+		center += member.global_position
+	facing_yaw = _yaw_to(center / float(others.size()))
+	if turn.token == _social_token:
+		return
+	_social_token = turn.token
+	if turn.speaker != self:
+		return
+	if _act_kind == &"domino":
+		_emit_sound(&"domino")
+	if clock >= _idle_at and clock >= _bubble_ready_at:
+		for other in others:
+			if other.bubble_visible():
+				return
+		_speak(&"idle")
 
 ## Дворник: вдоль дома от места до Layout.LIFE_SWEEP_END и обратно. true — занятие ещё не может кончиться.
 func _tick_sweep(delta: float, s: Dictionary) -> bool:
@@ -1920,6 +1961,8 @@ static func move_toward_v(from: Vector3, to: Vector3, step: float) -> Vector3:
 
 ## Скрыт в подъезде, магазине или за краем карты: время вышло — выходит там же (край — только вне кадра).
 func _tick_hidden(delta: float) -> void:
+	if get_tree().paused:
+		return
 	if state != &"inside" and state != &"away":
 		return   # в троллейбусе: ждёт остановку
 	_wait -= delta
@@ -1929,8 +1972,10 @@ func _tick_hidden(delta: float) -> void:
 	if state == &"away" and life.on_screen(s.pos):
 		_wait = EDGE_RETRY
 		return
-	_show()
 	place(s.pos)
+	if state == &"inside":
+		entrance_used.emit(self, global_position, false)
+	_show()
 	facing_yaw = s.yaw + PI
 	_trail = [_flat(global_position)]   # второй в паре выходит из той же двери следом
 	_activity_done()
@@ -1947,8 +1992,10 @@ func _enter_inside(id: StringName) -> void:
 	_act_kind = s.kind
 	_acting = true
 	_wait = rng.randf_range(s.dur.x, s.dur.y)
-	_hide(&"inside")
 	place(s.pos)
+	if not hidden:
+		entrance_used.emit(self, global_position, true)
+	_hide(&"inside")
 
 ## Троллейбус открыл двери: ждущий на остановке A садится, едущий выходит на B, ушедший за край карты (почти пора
 ## вернуться) приезжает на A и выходит из задней двери.
@@ -2094,6 +2141,8 @@ func _mirror_trail(lead: Resident) -> void:
 func _pose_activity() -> void:
 	if visual == null:
 		return
+	if _work_tool:
+		_work_tool.visible = is_playing(_act_kind) and WORK_PERIODS.has(_act_kind)
 	var offset := Vector3.ZERO
 	if _acting and not hidden:
 		var t := _act_t + index * 0.37
@@ -2101,17 +2150,25 @@ func _pose_activity() -> void:
 			offset = _forward(_act_yaw) * _act_sit + Vector3.DOWN * SIT_DROP
 		match _act_kind:
 			&"domino":
-				var k := fmod(t, 2.9)
-				if k < 0.25:
+				var turn: Dictionary = _social_pose
+				var k: float = turn.get("phase", 1.0)
+				if state == &"activity" and turn.get("speaker") == self and k < 0.25:
 					var s := sin(k / 0.25 * PI)
 					offset.y -= 0.07 * s
 					visual.scale.y *= 1.0 - 0.05 * s
-			&"hood", &"dig":
-				visual.scale.y *= 1.0 - 0.09 * (0.5 + 0.5 * sin(t * 1.4))
-			&"carpet":
-				var k := fmod(t, 0.8)
-				if k < 0.16:
-					offset.y = 0.05 * sin(k / 0.16 * PI)
+			&"chat":
+				var turn: Dictionary = _social_pose
+				var k: float = turn.get("phase", 1.0)
+				if state == &"activity" and turn.get("speaker") == self and k < 0.8:
+					var nod := sin(k / 0.8 * PI)
+					offset.y -= 0.035 * nod
+					visual.scale.y *= 1.0 - 0.025 * nod
+			&"hood", &"dig", &"carpet":
+				if is_playing(_act_kind):
+					var stroke := _work_stroke()
+					visual.scale.y *= 1.0 - 0.09 * stroke
+					offset.y -= 0.04 * stroke
+					_pose_work_tool(stroke)
 			&"sweep":
 				if _broom == null:
 					_broom = _make_broom()
@@ -2139,6 +2196,82 @@ func _pose_activity() -> void:
 		if _flinch > 0.0:
 			offset.x += 0.06 * sin(_flinch * 40.0)   # снежок попал — вздрогнул
 	visual.position = offset
+
+func _work_stroke() -> float:
+	var phase := fposmod(_act_t / float(WORK_PERIODS[_act_kind]) + index * 0.17, 1.0)
+	return 0.5 + 0.5 * cos((phase - WORK_CONTACT) * TAU)
+
+func _tick_work(delta: float) -> void:
+	if not is_playing(_act_kind):
+		return
+	var period: float = WORK_PERIODS[_act_kind]
+	var now := _act_t / period + index * 0.17 - WORK_CONTACT
+	var before := (_act_t - delta) / period + index * 0.17 - WORK_CONTACT
+	if floori(now) != floori(before):
+		_pose_work_tool(_work_stroke())
+		_emit_sound(_act_kind)
+
+func _pose_work_tool(stroke: float) -> void:
+	if _work_tool == null:
+		_work_tool = Node3D.new()
+		_work_tool.name = "WorkTool"
+		add_child(_work_tool)
+	if _work_tool.get_meta(&"kind", &"") != _act_kind:
+		for child in _work_tool.get_children():
+			child.free()
+		_work_tool.set_meta(&"kind", _act_kind)
+		_build_work_tool()
+	_work_tool.visible = true
+	var f := _forward(facing_yaw)
+	_work_tool.position = f * 0.45 + Vector3(-f.z, 0.0, f.x) * 0.33 + Vector3.UP * 1.05
+	var tilt := lerpf(-0.65, 0.35, stroke) if _act_kind == &"dig" else lerpf(-0.1, -1.4, stroke)
+	_work_tool.rotation = Vector3(0.0, facing_yaw, 0.0)
+	_work_tool.rotate_object_local(Vector3.RIGHT, tilt)
+
+func _build_work_tool() -> void:
+	var wood := Color(0.44, 0.30, 0.17)
+	var steel := Color(0.58, 0.61, 0.59)
+	match _act_kind:
+		&"dig":
+			_work_part(Vector3(0.05, 1.15, 0.05), Vector3(0, -0.05, 0), wood)
+			_work_part(Vector3(0.32, 0.38, 0.05), Vector3(0, -0.76, -0.04), steel)
+			_work_part(Vector3(0.20, 0.045, 0.05), Vector3(0, 0.54, 0), wood)
+		&"carpet":
+			_work_part(Vector3(0.045, 0.52, 0.045), Vector3(0, 0.18, 0), wood)
+			var ring := TorusMesh.new()
+			ring.inner_radius = 0.17
+			ring.outer_radius = 0.21
+			ring.rings = 16
+			ring.ring_segments = 6
+			var head := MeshInstance3D.new()
+			head.mesh = ring
+			head.position.y = 0.64
+			head.rotation.x = PI * 0.5
+			head.material_override = _work_material(wood)
+			head.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+			_work_tool.add_child(head)
+			_work_part(Vector3(0.04, 0.35, 0.04), Vector3(0, 0.64, 0), wood)
+		&"hood":
+			_work_part(Vector3(0.07, 0.40, 0.05), Vector3(0, 0.1, 0), steel)
+			for side in [-1.0, 1.0]:
+				_work_part(Vector3(0.07, 0.16, 0.06), Vector3(side * 0.075, 0.34, 0), steel)
+			_work_part(Vector3(0.20, 0.07, 0.06), Vector3(0, 0.25, 0), steel)
+
+func _work_material(color: Color) -> StandardMaterial3D:
+	var material := StandardMaterial3D.new()
+	material.albedo_color = color
+	material.roughness = 0.85
+	return material
+
+func _work_part(size: Vector3, at: Vector3, color: Color) -> void:
+	var mesh := BoxMesh.new()
+	mesh.size = size
+	var part := MeshInstance3D.new()
+	part.mesh = mesh
+	part.position = at
+	part.material_override = _work_material(color)
+	part.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	_work_tool.add_child(part)
 
 ## Метла: черенок (наклонён к дворнику) и веник у снега — своя простая геометрия.
 func _make_broom() -> Node3D:

@@ -59,7 +59,6 @@ var _meshes := {}
 var _materials := {}
 var _b := {}                 # пакет текущего объекта: слой → сетка → [преобразования, цвета]
 var _root: Node3D
-var _pigeons: Node3D
 
 func _ready() -> void:
 	name = "Props"
@@ -92,10 +91,6 @@ func _ready() -> void:
 	_bikes()
 	_build_trails()
 	_build_steam()
-
-func _process(delta: float) -> void:
-	if _pigeons:
-		_pigeons.rotate_y(delta * 0.55)
 
 ## Серые коробки-заглушки, которые LevelGeometry._build_solid ставит неизвестному виду «props»: коллизия остаётся.
 func _strip_placeholders() -> void:
@@ -430,7 +425,7 @@ func _ice_slide(xz: Vector2, size: Vector3) -> void:
 
 # --- Z6: голубятня ---
 
-## Будка на сваях с двускатной крышей, выгул из сетки спереди, лесенка; голуби на коньке и в небе над пустырем.
+## Голубятня на сваях с двускатной крышей, выгул и лесенка. Птицами управляет Ambient.
 func _dovecote(xz: Vector2, size: Vector3) -> void:
 	_begin("Dovecote", Vector3(xz.x, 0, xz.y))
 	var paint := Color(0.36, 0.56, 0.62)
@@ -467,24 +462,7 @@ func _dovecote(xz: Vector2, size: Vector3) -> void:
 		var t := (k + 0.5) / 7.0
 		_box(Vector3(0.5, 0.03, 0.04), Vector3(0, base * t, -1.45 + 0.5 * t), pole, &"detail")
 	_notices(Vector3(-1.1, 1.3, -0.82), Vector3.RIGHT, Vector3.FORWARD, 2, 9)
-	var grey := Color(0.48, 0.50, 0.55)
-	for k in 4:   # голуби на коньке
-		_sph(Vector3(0.18, 0.16, 0.26), Vector3(-1.0 + k * 0.6, ridge + 0.14, 0.2), grey, &"detail", &"sph6")
-		_sph(Vector3(0.09, 0.09, 0.09), Vector3(-1.0 + k * 0.6, ridge + 0.25, 0.08), grey * 0.8, &"detail", &"sph6")
 	_end()
-	# Стая над голубятней: кружит (вращение корня в _process).
-	_pigeons = Node3D.new()
-	_pigeons.name = "Pigeons"
-	_pigeons.position = Vector3(0, 7.0, 0)
-	_root.add_child(_pigeons)
-	for k in 7:
-		var a := TAU * k / 7.0
-		var r := 6.0 + 2.0 * _rand(17, k)
-		var p := Vector3(cos(a) * r, (_rand(19, k) - 0.5) * 2.0, sin(a) * r)
-		var yaw := -a   # клювом по касательной к кругу
-		_sph(Vector3(0.18, 0.14, 0.32), p, grey, &"low", &"sph6", Vector3(0, yaw, 0))
-		_box(Vector3(0.7, 0.02, 0.16), p + Vector3(0, 0.04, 0), grey * 1.1, &"low", Vector3(0.0, yaw, 0.25 * (1.0 if k % 2 == 0 else -1.0)))
-	_end(_pigeons)
 
 # --- Z6: «ракушки» ---
 

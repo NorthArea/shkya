@@ -22,6 +22,11 @@ const PLAYER_BONUS := 0.4
 const DIST_SCALE := 80.0     # м: −1 к оценке за столько метров до точки
 const RANDOM_WEIGHT := 0.6
 const AT_SPOT := 0.5         # м: житель на месте точки — путь начинается от её узла
+const SOCIAL_JOIN_BONUS := 0.8
+const CHAT_DISTANCE := 2.8
+const DOMINO_DISTANCE := 5.0   # места по сторонам одного стола; сидящие визуально придвинуты к нему
+const CHAT_TURN_SECONDS := 8.0
+const DOMINO_TURN_SECONDS := 1.45
 
 ## Персоны по индексу жителя: подъезд и цепочка шагов. Пустая — второй в паре (его ведёт первый, Residents.PAIRS).
 ## Пары ходят только туда, где вдвоём уместно: магазин, окно, подъезд, контейнеры.
@@ -135,6 +140,8 @@ func choose(resident: Node3D, step: StringName, home: StringName, rng: RandomNum
 			score += 1.0   # уже стоит на месте точки (курящий у подъезда)
 		if is_instance_valid(player) and player.is_visible_in_tree() and _flat(player.global_position).distance_to(s.pos) < PLAYER_NEAR:
 			score += PLAYER_BONUS
+		if s.kind in [&"chat", &"domino"] and _social_waiter(s, resident):
+			score += SOCIAL_JOIN_BONUS
 		if score > best_score:
 			best_score = score
 			best = id
@@ -158,6 +165,66 @@ func reserve(id: StringName, resident: Node3D) -> void:
 func release(id: StringName, resident: Node3D) -> void:
 	if reserved.has(id):
 		reserved[id].erase(resident)
+
+func _same_social_group(a: Dictionary, b: Dictionary) -> bool:
+	if a.kind != b.kind:
+		return false
+	if a.kind == &"chat":
+		return a.node == b.node
+	return a.kind == &"domino" and a.anchor != &"" and a.anchor == b.anchor
+
+func _social_waiter(spot: Dictionary, visitor: Node3D) -> bool:
+	for id in reserved:
+		if not _same_social_group(spot, spots[id]):
+			continue
+		for resident in reserved[id]:
+			if is_instance_valid(resident) and resident != visitor and _social_present(resident, spot.kind):
+				return true
+	return false
+
+func _social_present(resident: Node3D, kind: StringName) -> bool:
+	if not is_instance_valid(resident) or not resident.is_inside_tree() or not resident.is_visible_in_tree():
+		return false
+	if not resident.is_playing(kind) or not spots.has(resident.spot_id) or not anchor_intact(resident.spot_id):
+		return false
+	return resident.global_position.distance_to(spots[resident.spot_id].pos) <= AT_SPOT
+
+## Участники выводятся из броней и реального присутствия; ушедший, скрытый или сбитый сразу исключается.
+func social_members(resident: Node3D) -> Array:
+	if not spots.has(resident.spot_id):
+		return []
+	var spot: Dictionary = spots[resident.spot_id]
+	if not spot.kind in [&"chat", &"domino"] or not _social_present(resident, spot.kind):
+		return []
+	var members: Array = [resident]
+	for id in reserved:
+		if not _same_social_group(spot, spots[id]):
+			continue
+		for other in reserved[id]:
+			if not is_instance_valid(other) or other == resident or not _social_present(other, spot.kind):
+				continue
+			var reach := CHAT_DISTANCE if spot.kind == &"chat" else DOMINO_DISTANCE
+			if resident.global_position.distance_to(other.global_position) > reach:
+				continue
+			var ray := PhysicsRayQueryParameters3D.create(resident.global_position + Vector3.UP * 1.1,
+				other.global_position + Vector3.UP * 1.1, 1 | 64)
+			if not resident.get_world_3d().direct_space_state.intersect_ray(ray).is_empty():
+				continue
+			members.append(other)
+	members.sort_custom(func(a, b): return a.index < b.index)
+	return members
+
+## Общие часы ведущего дают очередь без второго таймера или отдельного владельца группы.
+func social_turn(resident: Node3D) -> Dictionary:
+	var members := social_members(resident)
+	if members.size() < 2:
+		return {}
+	var period := CHAT_TURN_SECONDS if spots[resident.spot_id].kind == &"chat" else DOMINO_TURN_SECONDS
+	var elapsed: float = members[0].clock
+	var beat := int(floor(elapsed / period))
+	var ids: Array = members.map(func(member): return member.get_instance_id())
+	return {"members": members, "speaker": members[beat % members.size()], "phase": fposmod(elapsed, period),
+		"token": "%s:%d" % [str(ids), beat]}
 
 ## Якорь точки цел (или его нет / разрушаемые не построены).
 func anchor_intact(id: StringName) -> bool:

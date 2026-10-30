@@ -1241,18 +1241,6 @@ func _carpet_post(size: Vector3, first: bool) -> Node3D:
 	_rod(root, Vector3(0, bar_y, 0), to + Vector3(0, bar_y, 0), 0.035, paint)
 	_rod(root, Vector3(0, base + 1.1, 0), to + Vector3(0, base + 1.1, 0), 0.03, paint)
 	_part(root, Vector3(0.12, 0.05, span.length() + 0.1), to * 0.5 + Vector3(0, bar_y + 0.06, 0), Materials.snow(0.0))
-	# Ковёр, перекинутый через перекладину: бордовый с узорной полосой, свисает на обе стороны.
-	var rug := Materials.plain(Color(0.48, 0.10, 0.10), 0.95)
-	var border := Materials.plain(Color(0.78, 0.62, 0.30), 0.9)
-	for side in [-1.0, 1.0]:
-		var panel := Node3D.new()
-		panel.position = to * 0.5 + Vector3(0, bar_y, 0)
-		panel.rotation.z = side * 0.12
-		root.add_child(panel)
-		_part(panel, Vector3(0.03, 1.15, 1.7), Vector3(side * 0.07, -0.58, 0), rug)
-		_part(panel, Vector3(0.035, 0.08, 1.7), Vector3(side * 0.07, -0.95, 0), border)
-		_part(panel, Vector3(0.035, 0.6, 0.08), Vector3(side * 0.07, -0.55, 0.6), border)
-		_part(panel, Vector3(0.035, 0.6, 0.08), Vector3(side * 0.07, -0.55, -0.6), border)
 	return root
 
 ## Три мусорных контейнера на бетонной площадке у проезда: крашеный металл, ручки-цапфы и колёса, крышки с шапкой

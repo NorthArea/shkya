@@ -1,13 +1,19 @@
 extends Node3D
-## Следы на снегу (PLAY-03): колея задних колёс «Лады» и шаги Илюши на снегу, тротуарах и во дворе.
+## Следы на снегу: колея задних колёс «Лады», шаги Илюши и близких жителей на снегу, тротуарах и во дворе.
 ## На проезжей части следов нет: там свои колеи (road.gdshader). Только облик, на игру не влияет.
-## Два MultiMesh — колея и шаги, каждый кольцевой буфер: новые отпечатки замещают самые старые.
+## Буферы Илюши и колеи кольцевые; общий буфер жителей замещает только дальние или невидимые старые следы.
 ## Колея — лента из отрезков от прошлого положения колеса до нового: без стыков и разрывов на любой скорости.
 
 const Layout = preload("res://game/world/layout.gd")
+const SnowField = preload("res://game/world/snow_field.gd")
 
 const TYRE_CAPACITY := 600   # отрезков колеи: 300 пар ≈ 135 м
 const FOOT_CAPACITY := 200
+const RESIDENT_CAPACITY := 320
+const RESIDENT_RANGE := 32.0
+const RESIDENT_KEEP_RANGE := 12.0
+const RESIDENT_SLOT_SEARCH := 32
+const RESIDENT_STAMPS_PER_FRAME := 3
 const TYRE_STEP := 0.45       # м между отрезками колеи
 const FOOT_STEP := 0.75       # м между шагами, как у звука шагов (SoundDirector)
 const TYRE_WIDTH := 0.30
@@ -19,6 +25,14 @@ const LIFT := 0.025           # над тропинками (0,018) и трот�
 var world: DemoWorld
 var _tyres: MultiMesh
 var _feet: MultiMesh
+var _resident_feet: MultiMesh
+var _resident_marks: Array[Vector3] = []
+var _resident_next := 0
+var _residents: Array = []
+var _resident_last := {}
+var _resident_side := {}
+var _nonsnow_patches: Array[Transform3D] = []
+var _ice_areas: Array[Rect2] = []
 var _tyre_next := 0
 var _foot_next := 0
 var _count := 0     # сколько отпечатков поставлено (для проверок)
@@ -50,6 +64,38 @@ func _ready() -> void:
 	foot_tex.width = 32
 	foot_tex.height = 32
 	_feet = _multimesh("Feet", FOOT_CAPACITY, foot_tex)
+	_resident_feet = _multimesh("ResidentFeet", RESIDENT_CAPACITY, foot_tex)
+	_resident_feet.mesh.material = _feet.mesh.material
+	_resident_marks.resize(RESIDENT_CAPACITY)
+	_resident_marks.fill(Vector3.INF)
+	_collect_resident_ground()
+	var residents := world.get_node_or_null("LevelGeometry/Residents")
+	if residents:
+		_residents = residents.residents.duplicate()
+
+func _collect_resident_ground() -> void:
+	var rink: Vector2 = Layout.RINK[0]
+	var size: Vector3 = Layout.RINK[1]
+	_ice_areas.append(Rect2(rink - Vector2(size.x, size.z) * 0.5, Vector2(size.x, size.z)))
+	var slide_width := 0.0
+	for spec in Layout.PROPS_SOLIDS:
+		if spec[0] in ["PropIceSlide", "PropIceSlideRamp"]:
+			var center: Vector2 = spec[2]
+			var footprint := Vector2(spec[3].x, spec[3].z)
+			_ice_areas.append(Rect2(center - footprint * 0.5, footprint))
+			slide_width = maxf(slide_width, footprint.x)
+	var top: Array = Layout.LIFE_SLIDE_LOOP[2]
+	var bottom: Array = Layout.LIFE_SLIDE_LOOP[4]
+	_ice_areas.append(Rect2(float(top[0]) - slide_width * 0.5, float(bottom[1]), slide_width, float(top[1]) - float(bottom[1])))
+	# Только готовые пакеты покрытий Environment; обхода остальной сцены и повторного поиска в кадре нет.
+	var environment := world.get_node_or_null("LevelGeometry/Environment")
+	if environment:
+		for node in environment.get_children():
+			if not node is MultiMeshInstance3D or not String(node.name).begins_with("EnvNear_patch_"):
+				continue
+			for i in node.multimesh.instance_count:
+				var transform: Transform3D = node.global_transform * node.multimesh.get_instance_transform(i)
+				_nonsnow_patches.append(transform.affine_inverse())
 
 func _multimesh(node_name: String, capacity: int, texture: Texture2D) -> MultiMesh:
 	var plane := PlaneMesh.new()
@@ -107,6 +153,65 @@ func _physics_process(_delta: float) -> void:
 			_foot_last = feet
 	else:
 		_foot_last = Vector3.INF
+	_stamp_residents()
+
+func _stamp_residents() -> void:
+	var camera := get_viewport().get_camera_3d()
+	if camera == null:
+		return
+	var budget := RESIDENT_STAMPS_PER_FRAME
+	for cached in _residents:
+		if not is_instance_valid(cached):
+			continue
+		var resident: Resident = cached
+		var at := resident.global_position
+		var seated: bool = resident._acting and resident._act_sit != 0.0
+		var skating: bool = resident._acting and resident._act_kind in [&"slide", &"hockey"]
+		if not resident.is_visible_in_tree() or resident.hidden or resident.state == &"knocked" or seated or skating or absf(at.y) > 0.12 or absf(resident.visual.position.y) > 0.25 or at.distance_squared_to(camera.global_position) > RESIDENT_RANGE * RESIDENT_RANGE:
+			_resident_last.erase(resident)
+			continue
+		var last: Vector3 = _resident_last.get(resident, Vector3.INF)
+		if last == Vector3.INF or _flat(at - last) > 2.0:
+			_resident_last[resident] = at
+			continue
+		if _flat(at - last) < FOOT_STEP or budget <= 0:
+			continue
+		var heading := atan2(-(at.x - last.x), -(at.z - last.z))
+		var side: float = _resident_side.get(resident, 1.0)
+		var point := at + Vector3(cos(heading), 0, -sin(heading)) * 0.14 * side
+		if _resident_snow(point):
+			_stamp_foot(point, heading, true)
+			budget -= 1
+		_resident_last[resident] = at
+		_resident_side[resident] = -side
+
+func _resident_snow(point: Vector3) -> bool:
+	if _on_road(point) or SnowField.height_at(point.x, point.z) > 0.06:
+		return false
+	var flat := Vector2(point.x, point.z)
+	for area in _ice_areas:
+		if area.has_point(flat):
+			return false
+	for inverse in _nonsnow_patches:
+		var local := inverse * point
+		if absf(local.x) <= 0.6 and absf(local.z) <= 0.6:
+			return false
+	return true
+
+func _resident_slot() -> int:
+	var camera := get_viewport().get_camera_3d()
+	for offset in RESIDENT_SLOT_SEARCH:
+		var slot := (_resident_next + offset) % RESIDENT_CAPACITY
+		var point := _resident_marks[slot]
+		var reusable := point == Vector3.INF
+		if not reusable and camera:
+			var distance := point.distance_squared_to(camera.global_position)
+			reusable = distance > RESIDENT_RANGE * RESIDENT_RANGE or (distance > RESIDENT_KEEP_RANGE * RESIDENT_KEEP_RANGE and not camera.is_position_in_frustum(point))
+		if reusable:
+			_resident_next = (slot + 1) % RESIDENT_CAPACITY
+			return slot
+	_resident_next = (_resident_next + RESIDENT_SLOT_SEARCH) % RESIDENT_CAPACITY
+	return -1
 
 func _rear_wheels(car: Node3D) -> Array[Vector3]:
 	var out: Array[Vector3] = []
@@ -126,12 +231,20 @@ func _stamp_tyre(from: Vector3, to: Vector3) -> void:
 	_tyre_next = (_tyre_next + 1) % TYRE_CAPACITY
 	_count += 1
 
-func _stamp_foot(point: Vector3, yaw: float) -> void:
+func _stamp_foot(point: Vector3, yaw: float, resident := false) -> void:
 	if _on_road(point):
 		return
 	var basis := Basis(Vector3.UP, yaw) * Basis.from_scale(Vector3(FOOT_SIZE.x, 1.0, FOOT_SIZE.y))
-	_feet.set_instance_transform(_foot_next, Transform3D(basis, Vector3(point.x, LIFT, point.z)))
-	_foot_next = (_foot_next + 1) % FOOT_CAPACITY
+	var stamp := Transform3D(basis, Vector3(point.x, LIFT, point.z))
+	if resident:
+		var slot := _resident_slot()
+		if slot < 0:
+			return
+		_resident_feet.set_instance_transform(slot, stamp)
+		_resident_marks[slot] = stamp.origin
+	else:
+		_feet.set_instance_transform(_foot_next, stamp)
+		_foot_next = (_foot_next + 1) % FOOT_CAPACITY
 	_count += 1
 
 ## Проезжая часть: Layout.SURFACES вида road (C1).

@@ -7,6 +7,7 @@ extends Node
 ## и строка субтитра внизу экрана (QuestLines.RADIO); управление не блокирует.
 
 const DialogPanelScript = preload("res://game/ui/dialog_panel.gd")
+const Layout = preload("res://game/world/layout.gd")
 const STEP_DISTANCE := 0.75
 const STEPS: Array[AudioStream] = [
 	preload("res://assets/audio/step_snow_1.wav"), preload("res://assets/audio/step_snow_2.wav"),
@@ -331,13 +332,13 @@ func _attach_traffic(vehicle: Node3D) -> AudioStreamPlayer3D:
 
 # --- CITY-01 (A): фон живого города и живность ---
 ## Слои фона без затухания (2D): ветер с порывами и далёкий трафик — циклы под фоном двора и тише него.
-## Музыка из окна — 3D-цикл у окна второго этажа H1 (двор), слышна только рядом. Хлопок двери подъезда — 3D у двери,
-## раз в DOOR_SLAM_INTERVAL с (свой RandomNumberGenerator с фиксированным AMBIENT_SEED). Вороны и собака — 3D на их
+## Музыка из окна — 3D-цикл у окна второго этажа H1 (двор), слышна только рядом. Двери звучат только по
+## Resident.entrance_used и по адресу события; ветер следует LightingAndWeather.gust, во дворе H1 тише. Вороны и собака — 3D на их
 ## узлах по сигналам Ambient (crow_cawed, dog_barked). Сигнал машины кольца — 3D на корпусе: стоит перед препятствием
 ## (PathVehicle.blocked_time) дольше HORN_WAIT — короткий гудок, не чаще раза в HORN_COOLDOWN на машину; сигнал
 ## horn_sounded — для тех, кто хочет оглянуться (жители). Звуки — tools/generate_audio.py (синтез).
 ## Уровни, RMS файла + volume_db (3D — у источника, до затухания): ветер −24 − 14 = −38 дБ, трафик −26 − 14 = −40,
-## музыка −24 − 12 = −36, вороны и собака −18 − 10 = −28, дверь подъезда −18 − 8 = −26, гудок −16 − 10 = −26.
+## музыка −24 − 12 = −36, вороны и собака −18 − 10 = −28, дверь подъезда −18 − 14 = −32, гудок −16 − 10 = −26.
 ## Для сравнения (PLAY-03): фон двора −32, сигналы квеста −23 … −25, мотор −18 … −11.
 const WIND := preload("res://assets/audio/wind_gust_loop.wav")
 const CITY_TRAFFIC := preload("res://assets/audio/distant_traffic_loop.wav")
@@ -347,6 +348,9 @@ const DOG_BARK := preload("res://assets/audio/dog_bark.wav")
 const DOOR_SLAM := preload("res://assets/audio/door_slam.wav")
 const CAR_HORN := preload("res://assets/audio/car_horn_short.wav")
 const WIND_DB := -14.0
+const WIND_CALM_DROP := 6.0
+const WIND_YARD_DROP := 5.0
+const WIND_RESPONSE := 5.0
 const CITY_TRAFFIC_DB := -14.0
 const MUSIC_DB := -12.0
 const CROW_DB := -10.0
@@ -355,8 +359,9 @@ const DOOR_SLAM_DB := -14.0   # −8 равнялось пику звона кв
 const HORN_DB := -10.0
 const HORN_WAIT := 3.0
 const HORN_COOLDOWN := 10.0
-const DOOR_SLAM_INTERVAL := Vector2(60.0, 120.0)
-const ENTRANCE_DOOR := Vector3(-40.0, 1.2, 107.8)   # дверь подъезда H1 (level_geometry: ENTRANCE_DOOR_X, ENTRANCE_WALL_Z)
+const DOOR_POOL_SIZE := 4
+const DOOR_LOCATION_COOLDOWN := 2.0
+const DOOR_HEARING_DISTANCE := 50.0
 const MUSIC_WINDOW := Vector3(-22.5, 4.4, 107.9)    # окно второго этажа H1 по сетке фасада (шаг 3 м, этаж 2,8 м)
 const AMBIENT_SEED := 2911
 
@@ -370,7 +375,10 @@ var door_slam_times: Array[float] = []
 var horn_times: Array = []   # [время, машина, blocked_time в момент гудка]
 var _ambient_rng := RandomNumberGenerator.new()
 var _ambient_clock := 0.0
-var _next_door_slam := 0.0
+var _wind_weather: Node
+var _entrance_residents: Node
+var _door_players: Array[AudioStreamPlayer3D] = []
+var _door_last := {}
 var _ambient_node: Node
 var _crow_players := {}   # ворона → AudioStreamPlayer3D
 var _dog_player: AudioStreamPlayer3D
@@ -381,7 +389,8 @@ func _setup_ambient() -> void:
 	for key in ["crow", "dog", "door_slam", "horn"]:
 		played[key] = 0
 	_ambient_rng.seed = AMBIENT_SEED
-	wind = _bed(WIND, WIND_DB, "WindBed")
+	wind = _bed(WIND, WIND_DB - WIND_CALM_DROP, "WindBed")
+	_wind_weather = world.get_node("LightingAndWeather")
 	city_traffic = _bed(CITY_TRAFFIC, CITY_TRAFFIC_DB, "CityTrafficBed")
 	window_music = AudioStreamPlayer3D.new()
 	window_music.name = "WindowMusic"
@@ -392,15 +401,55 @@ func _setup_ambient() -> void:
 	window_music.position = MUSIC_WINDOW
 	add_child(window_music)
 	window_music.play()
-	door_slam = AudioStreamPlayer3D.new()
-	door_slam.name = "EntranceDoor"
-	door_slam.volume_db = DOOR_SLAM_DB
-	door_slam.unit_size = 6.0
-	door_slam.max_distance = 50.0
-	door_slam.position = ENTRANCE_DOOR
-	add_child(door_slam)
-	_next_door_slam = _ambient_rng.randf_range(DOOR_SLAM_INTERVAL.x, DOOR_SLAM_INTERVAL.y)
+	for i in DOOR_POOL_SIZE:
+		var player := AudioStreamPlayer3D.new()
+		player.name = "EntranceDoor%d" % i
+		player.volume_db = DOOR_SLAM_DB
+		player.unit_size = 6.0
+		player.max_distance = DOOR_HEARING_DISTANCE
+		player.stream = DOOR_SLAM
+		add_child(player)
+		_door_players.append(player)
+	door_slam = _door_players[0]
+	_connect_entrances()
 	_connect_ambient()
+
+func _connect_entrances() -> void:
+	if is_instance_valid(_entrance_residents):
+		return
+	_entrance_residents = get_tree().get_first_node_in_group(&"residents")
+	if _entrance_residents:
+		for resident: Resident in _entrance_residents.residents:
+			resident.entrance_used.connect(_on_entrance_used)
+
+func _on_entrance_used(_resident: Resident, at: Vector3, _entering: bool) -> void:
+	if get_tree().paused:
+		return
+	var source := at + Vector3.UP * 1.2
+	var camera := get_viewport().get_camera_3d()
+	if camera == null or camera.global_position.distance_to(source) > DOOR_HEARING_DISTANCE:
+		return
+	var location := Vector2(at.x, at.z).snapped(Vector2.ONE * 0.1)
+	if _ambient_clock - float(_door_last.get(location, -INF)) < DOOR_LOCATION_COOLDOWN:
+		return
+	for player in _door_players:
+		if player.playing:
+			continue
+		player.global_position = source
+		player.pitch_scale = _ambient_rng.randf_range(0.92, 1.05)
+		_one_shot(player, DOOR_SLAM, "door_slam")
+		_door_last[location] = _ambient_clock
+		door_slam_times.append(_ambient_clock)
+		return
+
+func _wind_sound(delta: float) -> void:
+	var gust := clampf(float(_wind_weather.gust), 0.0, 1.0)
+	var target := WIND_DB - WIND_CALM_DROP * (1.0 - gust)
+	var listener: Node3D = world.car if world.control_mode == &"in_car" else world.player
+	var p := listener.global_position
+	if Layout.YARD_HOME.has_point(Vector2(p.x, p.z)):
+		target -= WIND_YARD_DROP
+	wind.volume_db = lerpf(wind.volume_db, target, 1.0 - exp(-WIND_RESPONSE * delta))
 
 func _bed(stream: AudioStream, volume: float, node_name: String) -> AudioStreamPlayer:
 	var player := AudioStreamPlayer.new()
@@ -444,11 +493,8 @@ func _ambient_sounds(delta: float) -> void:
 		return
 	_ambient_clock += delta
 	_connect_ambient()
-	if _ambient_clock >= _next_door_slam:
-		_next_door_slam = _ambient_clock + _ambient_rng.randf_range(DOOR_SLAM_INTERVAL.x, DOOR_SLAM_INTERVAL.y)
-		door_slam.pitch_scale = _ambient_rng.randf_range(0.92, 1.05)
-		door_slam_times.append(_ambient_clock)
-		_one_shot(door_slam, DOOR_SLAM, "door_slam")
+	_connect_entrances()
+	_wind_sound(delta)
 	for vehicle in get_tree().get_nodes_in_group(&"traffic_vehicles"):
 		var waited: float = vehicle.blocked_time
 		if waited <= HORN_WAIT:
@@ -803,6 +849,9 @@ const LIFE_SOUNDS := {
 	# вид: [поток, volume_db, unit_size, max_distance, высота тона]
 	&"domino": [preload("res://assets/audio/domino_clack.wav"), -8.0, 3.0, 22.0, 1.0],
 	&"sweep": [preload("res://assets/audio/broom_swish.wav"), -8.0, 3.0, 18.0, 1.0],
+	&"dig": [preload("res://assets/audio/broom_swish.wav"), -10.0, 3.0, 18.0, 0.7],
+	&"carpet": [preload("res://assets/audio/hockey_stick.wav"), -10.0, 3.0, 22.0, 0.6],
+	&"hood": [preload("res://assets/audio/domino_clack.wav"), -10.0, 3.0, 18.0, 0.8],
 	&"sled": [preload("res://assets/audio/sled_creak.wav"), -8.0, 3.0, 18.0, 1.0],
 	&"slide": [preload("res://assets/audio/sled_creak.wav"), -6.0, 3.0, 25.0, 0.8],
 	&"stick": [preload("res://assets/audio/hockey_stick.wav"), -6.0, 3.0, 30.0, 1.0],

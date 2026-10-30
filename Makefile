@@ -10,7 +10,8 @@ define godot_test
 	@mkdir -p builds/checks/make-test
 	@./tools/run.command --headless --fixed-fps $(2) --script tests/$(1).gd > builds/checks/make-test/$(1)-$(2).log 2>&1; \
 	status=$$?; grep -E '^$(3): [0-9]+ checks, [0-9]+ failures' builds/checks/make-test/$(1)-$(2).log; \
-	grep -qE '^$(3): [0-9]+ checks, 0 failures' builds/checks/make-test/$(1)-$(2).log && [ $$status -eq 0 ] || \
+	grep -qE '^$(3): [0-9]+ checks, 0 failures' builds/checks/make-test/$(1)-$(2).log && \
+	! grep -q '^SCRIPT ERROR:' builds/checks/make-test/$(1)-$(2).log && [ $$status -eq 0 ] || \
 	{ echo "FAIL: $(1) ($(2) fps), лог builds/checks/make-test/$(1)-$(2).log"; grep -E 'FAIL|SCRIPT ERROR|Parse Error' builds/checks/make-test/$(1)-$(2).log | head -20; exit 1; }
 endef
 
@@ -43,6 +44,15 @@ test:
 	$(call godot_test,text01_test,60,TEXT01)
 	$(call godot_test,life01_test,60,LIFE01)
 	$(call godot_test,polish03a_test,60,POLISH03A)
+	$(call godot_test,city03_test,60,CITY03)
+	$(call godot_test,city03_bags_test,60,CITY03_BAGS)
+	$(call godot_test,dog01_test,60,DOG01)
+	$(call godot_test,phone01_test,60,PHONE01)
+	$(call godot_test,arena03_tracks_test,60,ARENA03_TRACKS)
+	$(call godot_test,arena03_life_test,60,ARENA03_LIFE)
+	$(call godot_test,arena03_audio_test,60,ARENA03_AUDIO)
+	$(call godot_test,arena03_activity_test,60,ARENA03_ACTIVITY)
+	$(call godot_test,road01_test,60,ROAD01)
 capture:
 	./tools/run.command --fixed-fps 60 --resolution 1920x1080 --script tools/capture/capture.gd
 
