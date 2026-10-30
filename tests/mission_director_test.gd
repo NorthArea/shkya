@@ -53,7 +53,32 @@ func _run() -> void:
 	test_insufficient_money()
 	test_vendor_interact()
 	test_babka_interact_results()
+	test_road_closed()
 	_finish()
+
+
+## POLISH-03 B: подэтап возврата «улица Б перекрыта» — флаг внутри RETURN_HOME, переходы FSM не меняет.
+func test_road_closed() -> void:
+	var d := make()
+	var log := []
+	d.road_closed_changed.connect(func(on): log.append(on))
+	for s in [&"NOT_STARTED", &"OFFERED", &"GO_TO_CAR", &"DRIVE_TO_KIOSK", &"BUY_BREAD"]:
+		advance_to(d, s)
+		check(not d.road_closed, "road: not closed in %s" % s)
+	check(not d.notify_home_reached() and log.is_empty(), "road: notify_home_reached before the purchase does nothing, no signal")
+	check(d.buy_bread() and d.road_closed and d.state == &"RETURN_HOME" and log == [true], "road: purchase closes the road (signal true), state RETURN_HOME")
+	var before := snap(d)
+	check(d.notify_home_reached() and not d.road_closed and log == [true, false] and snap(d) == before, "road: home reached reopens it (signal false), state/bread unchanged")
+	check(not d.notify_home_reached() and log.size() == 2, "road: second notify does nothing")
+	var e := make()
+	advance_to(e, &"BUY_BREAD")
+	e.buy_bread()
+	check(e.interact(&"babka") == &"turn_in" and e.state == &"COMPLETE" and not e.road_closed, "road: turn-in with the road still closed reopens it")
+	var f := make()
+	advance_to(f, &"BUY_BREAD")
+	f.buy_bread()
+	f.reset()
+	check(not f.road_closed and f.state == &"NOT_STARTED", "road: reset() reopens the road")
 
 
 # --- помощники ---

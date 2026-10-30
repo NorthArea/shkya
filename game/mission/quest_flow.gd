@@ -17,6 +17,7 @@ extends Node
 
 const DialogPanelScript = preload("res://game/ui/dialog_panel.gd")
 const CoinLines = preload("res://game/mission/coin_lines.gd")   # COINS-01: отказ продавщицы при нехватке денег
+const FinaleScript = preload("res://game/mission/finale.gd")    # POLISH-03 B: протокол и сцена этапа 10 после него
 const ACCEPT_SOUND := preload("res://assets/audio/quest_accept.wav")
 const PAPER := Color(0.93, 0.87, 0.72)
 const INK := Color(0.12, 0.10, 0.08)
@@ -66,6 +67,8 @@ var _thanks_low_y := 0.0                # центр подложки с хво�
 var _thanks_high_y := 0.0               # центр первого пузыря без хвостика над вторым
 var hud: Node
 var accept_player: AudioStreamPlayer
+## POLISH-03 B: протокол финала (счётчики для HUD) и сцена «Или не сходишь» перед карточкой «Конец демо».
+var finale: Node
 
 ## Что QuestFlow попросил у мыши (в headless Input.mouse_mode не отражает запрос).
 var wants_mouse_captured := true
@@ -100,6 +103,9 @@ func _ready() -> void:
 	accept_player.stream = ACCEPT_SOUND
 	accept_player.volume_db = -6.0  # в ряду сигналов квеста: итог ≈ −23 дБ (микс PLAY-03)
 	add_child(accept_player)
+	finale = FinaleScript.new()
+	finale.name = "Finale"
+	add_child(finale)
 	# Зоны наблюдателей создаются миром позже QuestFlow (дети готовы раньше родителя) — искать после сборки.
 	call_deferred(&"connect_observer_zones")
 
@@ -165,7 +171,7 @@ func _nearby() -> StringName:
 			return &"babka"
 		&"vendor":
 			return &"vendor"
-		&"end", &"officer", &"ride":
+		&"end", &"officer", &"ride", &"finale":
 			return &""
 	if world.control_mode != &"on_foot":
 		return &""
@@ -332,7 +338,8 @@ func _block() -> void:
 	wants_mouse_captured = false
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 
-## «ЗАКРЫТЬ» на панели финала: пузыри гаснут, открывается карточка «Конец демо» (HUD).
+## «ЗАКРЫТЬ» на панели финала (POLISH-03 B: протокол, кнопка «НЕ ПОДПИСЫВАТЬ»): пузыри гаснут, сцена этапа 10 — Бабка
+## смотрит на улицу, «Или не сходишь», камера отъезжает (Finale) — и открывается карточка «Конец демо» (HUD).
 ## Ввод остаётся заблокирован, пока игрок не выберет «ЕЩЁ РАЗ», «В МЕНЮ» или «ПОГУЛЯТЬ».
 func _on_completion_closed() -> void:
 	if _kind != &"thanks":
@@ -340,16 +347,20 @@ func _on_completion_closed() -> void:
 	if hud == null or not hud.has_method("show_end_card"):
 		_close()
 		return
-	_kind = &"end"
+	_kind = &"finale"
 	_show_thanks(false)
 	world.camera_rig.shoulder = 0.0
 	world.camera_rig.release_talk()
 	_unface()
-	hud.show_end_card()
+	finale.play(func():
+		if _kind == &"finale":
+			_kind = &"end"
+			hud.show_end_card())
 
-## «ПОГУЛЯТЬ» на карточке «Конец демо»: вернуть управление.
+## «ПОГУЛЯТЬ» на карточке «Конец демо»: вернуть управление и камеру за Илюшей.
 func _on_end_closed() -> void:
 	if _kind == &"end":
+		finale.finish()
 		_close()
 
 func _close() -> void:

@@ -209,7 +209,8 @@ func _pass_one() -> bool:
 	check(5, absf(car.global_position.y) < 0.3, "reset: car on the ground (y %.2f)" % car.global_position.y)
 	check(5, m.state == &"DRIVE_TO_KIOSK", "reset: mission state unchanged (%s)" % m.state)
 	print("INFO: reset moved the car %s → %s" % [parked_at, car.global_position])
-	if not check(5, await drv.drive_path(route.slice(3)), "reset: from the reset spot the car drives on to the kiosk (%s)" % drv.last_error):
+	# POLISH-03 B: прямой путь не набирает 35 ₽ — дальше с вылазкой за гаражи двора (ROUTE_DRIVE_HUNT с улицы A).
+	if not check(5, await drv.drive_path(Layout.ROUTE_DRIVE_HUNT.slice(4)), "reset: from the reset spot the car drives on to the kiosk with one detour behind the yard garages (%s)" % drv.last_error):
 		return false
 
 	# 06 — прибытие, выход
@@ -251,7 +252,7 @@ func _pass_one() -> bool:
 	check(1, _hud_has(w, "Батон? 35 рублей") and not _hud_has(w, QuestLines.VENDOR_CHAIN[0]["text"]), "07: second approach is the short line, chain not repeated")
 	await _shot("07_vendor_dialog", false)
 	var money_before: int = m.money
-	# COINS-01: стартовых денег нет — 35 ₽ собраны монетами по дороге (двор пешком и ROUTE_DRIVE на «Ладе»).
+	# COINS-01 / POLISH-03 B: стартовых денег нет — 35 ₽ собраны монетами (двор, «Лада» с вылазкой за гаражи, путь к окну).
 	check(1, money_before >= 35, "07: coins collected on the way cover the bread (%d ₽, %d coins)" % [money_before, _coins(w).collected_count])
 	if not check(1, await drv.press_button("КУПИТЬ ХЛЕБ", &"ui_left"), "07: КУПИТЬ ХЛЕБ pressed (%s)" % drv.last_error):
 		return false
@@ -287,8 +288,15 @@ func _pass_one() -> bool:
 	await drv.interact()
 	await drv.frames(10)
 	check(1, w.control_mode == &"in_car" and m.state == &"RETURN_HOME", "09: in the car, still RETURN_HOME")
-	if not check(1, await drv.drive_path(_back_route()), "09: drove back to the yard (%s)" % drv.last_error):
+	# POLISH-03 B: улица Б перекрыта ГСУМ — радио объявило объезд, мини-карта ведёт на север, домой по ROUTE_DETOUR.
+	var closure = w.get_node("LevelGeometry/Patrols/RoadClosure")
+	check(1, m.road_closed and closure.active and closure.radio_shown == 1, "09: street B closed after the purchase, radio announced the detour")
+	await drv.frames(2)
+	var mm = w.get_node("GameHUD").minimap
+	check(1, Array(mm.route_points).any(func(p: Vector2) -> bool: return p.y < -90.0), "09: minimap route goes north to the detour (%s)" % [mm.route_points.slice(0, 3)])
+	if not check(1, await drv.drive_path(_detour_route()), "09: drove home along the detour (%s)" % drv.last_error):
 		return false
+	check(1, not m.road_closed and not closure.active and closure.lifts == 1, "09: back in the yard — the closure is lifted")
 	await drv.brake()
 	await drv.interact()
 	await drv.frames(15)
@@ -327,15 +335,24 @@ func _pass_one() -> bool:
 	await _front_shot("10_complete")
 	pass_frames[1] = sim_frames - start_frame
 	print("INFO: pass 1 reached COMPLETE after %d physics frames = %.1f s at 60 fps" % [pass_frames[1], pass_frames[1] / 60.0])
-	# Закрыть панель финала
-	var focus_close := drv.focused() is Button and (drv.focused() as Button).text == "ЗАКРЫТЬ"
+	# Закрыть панель финала (POLISH-03 B: протокол прохода, кнопка «НЕ ПОДПИСЫВАТЬ»)
+	check(1, _hud_has(w, QuestLines.PROTOCOL_TITLE) and _hud_has(w, QuestLines.PROTOCOL_SUBTITLE), "10: protocol «%s — %s»" % [QuestLines.PROTOCOL_TITLE, QuestLines.PROTOCOL_SUBTITLE])
+	var st: Dictionary = w.quest_flow.finale.stats()
+	check(1, st["coins"] == _coins(w).collected_count and st["spent"] == 35 and st["left"] == m.money and st["detections"] == w.stealth.detections and float(st["seconds"]) > 60.0, "10: protocol counts the pass (%s)" % st)
+	var focus_close := drv.focused() is Button and (drv.focused() as Button).text == QuestLines.PROTOCOL_BUTTON
 	print("INFO: completion panel close button has keyboard focus: %s" % focus_close)
-	var close := _visible_button(w, "ЗАКРЫТЬ")
-	check(1, close != null, "10: completion panel has ЗАКРЫТЬ")
+	var close := _visible_button(w, QuestLines.PROTOCOL_BUTTON)
+	check(1, close != null, "10: completion panel has «%s»" % QuestLines.PROTOCOL_BUTTON)
 	if close:
 		await drv.click(close)
 		await drv.frames(5)
 	check(1, not _hud_has(w, "ЗАДАНИЕ ВЫПОЛНЕНО"), "10: completion panel closed by mouse click")
+	# POLISH-03 B, этап 10: пауза, Бабка смотрит на микроавтобус ГСУМ у соседнего подъезда — «Или не сходишь».
+	check(1, not _hud_has(w, "КОНЕЦ ДЕМО") and w.quest_flow.finale.playing, "10: the stage-10 scene plays before «Конец демо»")
+	await drv.frames(int((QuestLines.FINALE_LOOK_PAUSE + 0.3) * 60.0))
+	check(1, w.quest_flow.finale.is_bubble_visible(), "10: Babka says «%s»" % QuestLines.FINALE_LOOK)
+	await _shot("10b_finale_look", false)
+	await drv.frames(int(QuestLines.FINALE_LOOK_SECONDS * 60.0))
 	# POLISH-02: после финала — карточка «Конец демо»; «ПОГУЛЯТЬ» оставляет в мире (сценарий 6 ниже).
 	check(1, _hud_has(w, "КОНЕЦ ДЕМО") and _visible_button(w, "ЕЩЁ РАЗ") != null and _visible_button(w, "В МЕНЮ") != null, "10: «Конец демо» card with ЕЩЁ РАЗ and В МЕНЮ")
 	check(1, await drv.press_button("ПОГУЛЯТЬ", &"ui_right"), "10: ПОГУЛЯТЬ pressed from keyboard (%s)" % drv.last_error)
@@ -603,6 +620,14 @@ func _vendor_stand() -> Vector3:
 ## Честный путь у киоска (Layout.SNEAK_*): до укрытия, выждать разворот полицейского, дальше.
 func _sneak(route: Array) -> bool:
 	return await drv.sneak(route[0], route[1], route[2])
+
+## POLISH-03 B: после покупки улица Б перекрыта — разворот по пустырю (ROUTE_LEAVE_KIOSK) и объезд ROUTE_DETOUR;
+## конец — рядом со стоянкой во дворе.
+func _detour_route() -> Array:
+	var out: Array = Layout.ROUTE_LEAVE_KIOSK.duplicate()
+	out.append_array(Layout.ROUTE_DETOUR.slice(1))
+	out[out.size() - 1] = Layout.CAR_SPAWN + Vector3(3.0, 0, -6.0)
+	return out
 
 ## Отъезд с парковки киоска во двор: разворот по пустырю и выезд на улицу B (ROUTE_LEAVE_KIOSK), затем ROUTE_DRIVE
 ## в обратном порядке без двух последних точек; конец — рядом со стоянкой во дворе.

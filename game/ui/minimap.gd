@@ -56,7 +56,8 @@ func _ready() -> void:
 	_n_label.position = Vector2(size.x * 0.5 - 9.0, -8.0)
 	add_child(_n_label)
 
-func set_view(new_center: Vector2, new_yaw: float, target: Variant, in_car := false) -> void:
+## POLISH-03 B: route_drive — маршрут на машине из снимка HUD (улица Б перекрыта — Layout.ROUTE_DETOUR); пусто — ROUTE_DRIVE.
+func set_view(new_center: Vector2, new_yaw: float, target: Variant, in_car := false, route_drive: Array = []) -> void:
 	center_world = new_center
 	yaw = new_yaw
 	has_target = target is Vector3 and target != Vector3.INF
@@ -65,7 +66,9 @@ func set_view(new_center: Vector2, new_yaw: float, target: Variant, in_car := fa
 		var offset := (target_world - center_world) * _px()
 		target_on_edge = offset.length() > RADIUS - 14.0
 		target_marker = offset.limit_length(RADIUS - 14.0)
-		route_points = route_between(center_world, target_world, Layout.ROUTE_DRIVE if in_car else Layout.ROUTE_WALK)
+		var drive: Array[Vector3] = []
+		drive.assign(Layout.ROUTE_DRIVE if route_drive.is_empty() else route_drive)
+		route_points = route_between(center_world, target_world, drive if in_car else Layout.ROUTE_WALK)
 	else:
 		target_on_edge = false
 		target_marker = Vector2.ZERO

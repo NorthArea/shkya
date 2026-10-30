@@ -28,6 +28,7 @@ const MARKER_LIFT := 1.3                # м: ромб выше, пока над
 ## Конусы обзора постов на мини-карте — только когда герой в районе киоска (KIOSK_SQUARE, расширенный на это число м).
 const CONE_AREA_MARGIN := 30.0
 const SPEED_FULL := 100.0            # км/ч: дуга спидометра заполнена
+const PROTOCOL_WIDTH := 600.0        # POLISH-03 B: панель протокола справа внизу
 
 var title_label: Label
 var task_label: Label
@@ -58,6 +59,8 @@ var completion_close: Button
 var prompt_plate: PanelContainer
 var end_panel: PanelContainer
 var end_buttons: Dictionary = {}  # id -> Button: &"again", &"menu", &"stay"
+## POLISH-03 B: значения строк протокола (id из QuestLines.PROTOCOL_ROWS → Label).
+var protocol_values: Dictionary = {}
 ## Стелс (EXT-01, C7): глаз + «!» справа вверху, подсказка, экран провала и тост — читает снимок мира.
 var suspicion_meter: SuspicionMeter
 ## COINS-01: вторая строка карточки «Собери монеты: N/35» и счётчик монет справа от карточки (монета + «N / 35»,
@@ -140,7 +143,9 @@ func _process(delta: float) -> void:
 		DialogPanelScript.pop(completion_panel, 0.5)
 	completion_panel.visible = show_completion
 	_marker_lift = state.get("babka_marker", "") != ""
-	_update_map_and_diamond(world, state.get("target_position", null), speed >= 0.0)
+	if show_completion:
+		_update_protocol(state.get("protocol", {}))
+	_update_map_and_diamond(world, state.get("target_position", null), speed >= 0.0, state.get("route_drive", []))
 	suspicion_meter.update_from(state, delta)
 	_update_coins(state)
 
@@ -184,7 +189,7 @@ func is_end_card_open() -> bool:
 
 # --- карта и ромб ---
 
-func _update_map_and_diamond(world: Node, target: Variant, in_car := false) -> void:
+func _update_map_and_diamond(world: Node, target: Variant, in_car := false, route_drive: Array = []) -> void:
 	var rig: CameraRig = world.get("camera_rig")
 	var focus := Vector2.ZERO
 	var yaw := 0.0
@@ -192,7 +197,7 @@ func _update_map_and_diamond(world: Node, target: Variant, in_car := false) -> v
 		yaw = rig.yaw
 		if rig.target:
 			focus = Vector2(rig.target.global_position.x, rig.target.global_position.z)
-	minimap.set_view(focus, yaw, target, in_car)
+	minimap.set_view(focus, yaw, target, in_car, route_drive)
 	minimap.set_cones(patrol_cones(world, focus))
 	var was_visible := diamond_visible
 	diamond_visible = false
@@ -558,59 +563,83 @@ func _build_toast() -> void:
 	add_child(toast_card)
 
 func _build_completion() -> void:
+	# POLISH-03 B: панель финала — протокол прохода справа, герои в середине кадра не закрыты (критик 30.10).
 	completion_panel = PanelContainer.new()
 	completion_panel.name = "CompletionPanel"
 	completion_panel.visible = false
 	completion_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	completion_panel.add_theme_stylebox_override("panel", DialogPanelScript.paper_style())
-	completion_panel.anchor_left = 0.5
-	completion_panel.anchor_right = 0.5
+	completion_panel.anchor_left = 1.0
+	completion_panel.anchor_right = 1.0
 	completion_panel.anchor_top = 1.0
 	completion_panel.anchor_bottom = 1.0
-	completion_panel.offset_left = -430
-	completion_panel.offset_right = 430
-	completion_panel.offset_top = -330
-	completion_panel.offset_bottom = -50
-	var row := HBoxContainer.new()
-	row.add_theme_constant_override("separation", 30)
-	completion_panel.add_child(row)
+	completion_panel.offset_left = -PROTOCOL_WIDTH - 40
+	completion_panel.offset_right = -40
+	completion_panel.offset_top = -40
+	completion_panel.offset_bottom = -40
+	completion_panel.grow_vertical = Control.GROW_DIRECTION_BEGIN   # высота по содержимому, вверх от нижнего края
+	var column := VBoxContainer.new()
+	column.add_theme_constant_override("separation", 6)
+	completion_panel.add_child(column)
+	var top := HBoxContainer.new()
+	top.add_theme_constant_override("separation", 14)
+	column.add_child(top)
 	_loaf_icon = Control.new()
-	_loaf_icon.custom_minimum_size = Vector2(210, 150)
+	_loaf_icon.custom_minimum_size = Vector2(84, 60)
 	_loaf_icon.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	_loaf_icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_loaf_icon.draw.connect(_draw_loaf.bind(_loaf_icon, 1.0, true))
-	row.add_child(_loaf_icon)
-	var column := VBoxContainer.new()
-	column.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	column.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-	row.add_child(column)
-	var head := _label(46)
-	head.text = "ЗАДАНИЕ ВЫПОЛНЕНО"
+	_loaf_icon.draw.connect(_draw_loaf.bind(_loaf_icon, 0.4, false))
+	top.add_child(_loaf_icon)
+	var head := _label(38)
+	head.text = QuestLines.PROTOCOL_DONE
 	head.add_theme_color_override("font_color", INK)
-	column.add_child(head)
+	head.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	top.add_child(head)
 	var rule := ColorRect.new()
 	rule.color = INK
 	rule.custom_minimum_size = Vector2(0, 2)
 	rule.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	column.add_child(rule)
-	var quest := _label(38)
-	quest.text = "ЗА ХЛЕБОМ"
-	quest.add_theme_color_override("font_color", INK)
-	column.add_child(quest)
+	var title := _label(32)
+	title.text = QuestLines.PROTOCOL_TITLE
+	title.add_theme_color_override("font_color", INK)
+	column.add_child(title)
+	var subtitle := _label(26)
+	subtitle.text = QuestLines.PROTOCOL_SUBTITLE
+	subtitle.add_theme_color_override("font_color", RED)
+	column.add_child(subtitle)
+	var grid := GridContainer.new()
+	grid.name = "ProtocolRows"
+	grid.columns = 2
+	grid.add_theme_constant_override("h_separation", 18)
+	grid.add_theme_constant_override("v_separation", 0)
+	column.add_child(grid)
+	for spec in QuestLines.PROTOCOL_ROWS:
+		var key := _label(26)
+		key.text = spec[1]
+		key.add_theme_color_override("font_color", INK)
+		key.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		grid.add_child(key)
+		var value := _label(28)
+		value.name = "Value_" + String(spec[0])
+		value.add_theme_color_override("font_color", INK)
+		value.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+		grid.add_child(value)
+		protocol_values[spec[0]] = value
 	var reward := HBoxContainer.new()
 	column.add_child(reward)
-	var reward_text := _label(32)
-	reward_text.text = "Награда: "
+	var reward_text := _label(28)
+	reward_text.text = QuestLines.PROTOCOL_REWARD + " "
 	reward_text.add_theme_color_override("font_color", INK)
 	reward.add_child(reward_text)
-	var xp := _label(40)
+	var xp := _label(32)
 	xp.name = "Reward"
-	xp.text = "+50 опыта"
+	xp.text = QuestLines.PROTOCOL_XP
 	xp.add_theme_color_override("font_color", GREEN)
 	reward.add_child(xp)
 	completion_close = Button.new()
 	completion_close.name = "CompletionClose"
-	completion_close.text = "ЗАКРЫТЬ"
+	completion_close.text = QuestLines.PROTOCOL_BUTTON
 	completion_close.custom_minimum_size = Vector2(0, 54)
 	DialogPanelScript.style_button(completion_close, true)
 	completion_close.pressed.connect(func():
@@ -619,7 +648,13 @@ func _build_completion() -> void:
 	column.add_child(completion_close)
 	add_child(completion_panel)
 
-## «Конец демо» (п. 11): по центру, «ЕЩЁ РАЗ» — заново с NOT_STARTED, «В МЕНЮ», «ПОГУЛЯТЬ» — остаться в мире
+## POLISH-03 B: значения протокола из снимка мира (C6: get_hud_state()["protocol"]).
+func _update_protocol(protocol: Dictionary) -> void:
+	for id in protocol_values:
+		protocol_values[id].text = str(protocol.get(id, ""))
+
+## «Конец демо» (п. 11): внизу по центру, низкой полосой — герои и финальная сцена выше неё (POLISH-03 B).
+## «ЕЩЁ РАЗ» — заново с NOT_STARTED, «В МЕНЮ», «ПОГУЛЯТЬ» — остаться в мире
 ## (после финала у Бабки обычная реплика, покупки нет — сценарий 6 канона).
 func _build_end_card() -> void:
 	end_panel = PanelContainer.new()
@@ -628,13 +663,13 @@ func _build_end_card() -> void:
 	end_panel.add_theme_stylebox_override("panel", DialogPanelScript.paper_style())
 	end_panel.anchor_left = 0.5
 	end_panel.anchor_right = 0.5
-	end_panel.anchor_top = 0.5
-	end_panel.anchor_bottom = 0.5
+	end_panel.anchor_top = 1.0
+	end_panel.anchor_bottom = 1.0
 	end_panel.offset_left = -420
 	end_panel.offset_right = 420
-	end_panel.offset_top = 0
-	end_panel.offset_bottom = 0
-	end_panel.grow_vertical = Control.GROW_DIRECTION_BOTH  # высота по содержимому
+	end_panel.offset_top = -40
+	end_panel.offset_bottom = -40
+	end_panel.grow_vertical = Control.GROW_DIRECTION_BEGIN  # высота по содержимому, вверх от нижнего края
 	var column := VBoxContainer.new()
 	column.add_theme_constant_override("separation", 14)
 	end_panel.add_child(column)

@@ -503,7 +503,8 @@ func _part_checkpoint() -> void:
 func _part_complete() -> void:
 	print("--- complete ---")
 	var m := world.mission
-	var path := [Vector3(68, 0, -48), Vector3(70, 0, -40), Vector3(70, 0, 30), Layout.ROUTE_WALK[3], Layout.ROUTE_WALK[2], Layout.ROUTE_WALK[1], _babka_stand()]
+	# POLISH-03 B: проезжая часть улицы Б перекрыта — пешком по западному тротуару через проход в ограждении.
+	var path := [Vector3(62, 0, -46), Vector3(59.5, 0, -40), Vector3(59.5, 0, 30), Layout.ROUTE_WALK[3], Layout.ROUTE_WALK[2], Layout.ROUTE_WALK[1], _babka_stand()]
 	if not check(await drv.walk_path(path), "walked back to Babka on foot (%s)" % drv.last_error):
 		return
 	check(m.has_bread and m.state == &"RETURN_HOME", "arrived with the bread (%s)" % m.state)
@@ -921,6 +922,10 @@ func _part_fix2() -> void:
 ## ближайшей точки пути вне полос. (C) «Лада» на обочине A (не полоса) — ждёт 20 с и объезжает по полосе машин.
 ## Везде: «Ладу» не сдвигает, скачков за кадр нет (кроме крайнего случая A).
 func _part_van_stall(patrols: Node, van: CityVan) -> void:
+	# POLISH-03 B: здесь проверяется поведение автобуса на полосах кольца — перекрытие улицы Б (с ним — пробка у
+	# ограждения) снимаем, как если бы Илюша уже был дома.
+	world.mission.notify_home_reached()
+	await drv.frames(2)
 	var sensors_off := []
 	for s in get_nodes_in_group(&"detection_sensors"):
 		if s.enabled:

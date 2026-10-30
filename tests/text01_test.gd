@@ -93,7 +93,7 @@ func _street_pools() -> void:
 func _dialog_lines() -> Array:
 	var lines: Array = [QuestLines.OFFER] + QuestLines.OFFER_WARNING + QuestLines.PATROL_TURN + [QuestLines.IDLE, QuestLines.IDLE_DONE, QuestLines.ACCOUNT_OFFICER_ASK["text"],
 		QuestLines.ACCOUNT_OFFICER_REPLY["text"], QuestLines.VENDOR_AGAIN, QuestLines.THANKS, QuestLines.THANKS_AFTER,
-		CoinLines.vendor_short(35)]
+		CoinLines.vendor_short(35), QuestLines.FINALE_LOOK]
 	for chain in [QuestLines.OFFICER_CHAIN, QuestLines.VENDOR_CHAIN, QuestLines.RETURN_CHAIN]:
 		for line in chain:
 			lines.append(line["text"])
@@ -142,6 +142,10 @@ func _all_texts() -> Array:
 		DemoWorld.STEALTH_TOAST_NO_BREAD, DemoWorld.STEALTH_TOAST_CAR, DemoWorld.HINT_NO_EXIT, DronesScript.PATROL_GAG,
 		HideTuning.HINT_BOX, HideTuning.HINT_BARREL, HideTuning.HINT_SNOWDRIFT, HideTuning.HINT_EXIT_BLOCKED,
 		MissionDirector.TASK_RETURN, MissionDirector.TASK_DONE, QuestFlowScript.TOAST_TEXT])
+	# POLISH-03 B: перекрытие улицы Б и протокол финала.
+	texts.append_array(QuestLines.RADIO_DETOUR + QuestLines.CLOSURE_GAG + [QuestLines.CLOSURE_SIGN, QuestLines.CLOSURE_SIGN_SMALL,
+		QuestLines.CLOSURE_SIGN_DETOUR, QuestLines.PROTOCOL_TITLE, QuestLines.PROTOCOL_SUBTITLE, QuestLines.PROTOCOL_BUTTON,
+		QuestLines.PROTOCOL_KNOCKS_OK] + QuestLines.PROTOCOL_ROWS.map(func(r): return r[1]))
 	return texts
 
 func _forbidden() -> void:

@@ -58,6 +58,12 @@ const IGNORE_SECONDS := 12.0     # после «осмотра» — не под
 const APPROACH_SPEED := 3.5
 const FOLLOW_SPEED := 4.5        # м/с: держится перед идущим Илюшей (ходьба 4 м/с)
 const LEAVE_SPEED := 3.0
+## POLISH-03 B: на возврате с хлебом, пока улица Б перекрыта (MissionDirector.road_closed), рой «активнее»: по петлям
+## быстрее, замечает Илюшу издалека, отвлекается ненадолго и сбитые возвращаются раньше. Включает RoadClosure.
+const AGITATED_SPEED := 1.6
+const AGITATED_ENGAGE := 9.0
+const AGITATED_IGNORE := 5.0
+const AGITATED_RESPAWN := 0.5     # множитель задержки возрождения
 const RESPAWN := Vector2(60.0, 90.0)
 const RESPAWN_FAR := 15.0        # м: место возрождения по возможности не ближе к Илюше
 const DEBRIS_SECONDS := 1.5
@@ -66,6 +72,8 @@ const PATROL_GAG := "Гражданин, руками не машем!"
 const GAG_COOLDOWN := 20.0
 
 var drones: Array = []
+## POLISH-03 B: рой «активнее» (set_agitated).
+var agitated := false
 ## Для проверок: сбито, возрождено, монетных россыпей, показано субтитров патруля, удары по жителям/Бабке.
 var breaks := 0
 var respawns := 0
@@ -195,9 +203,9 @@ func _update_drone(drone: Drone, delta: float, watcher: Node3D) -> void:
 			return
 		&"patrol":
 			var loop: Dictionary = _loops[drone.loop]
-			drone.s = fmod(drone.s + float(loop["speed"]) * delta, float(loop["total"]))
+			drone.s = fmod(drone.s + float(loop["speed"]) * (AGITATED_SPEED if agitated else 1.0) * delta, float(loop["total"]))
 			drone.position = _loop_point(drone.loop, drone.s) + Vector3.UP * _patrol_height(drone)
-			if watcher and _engaged == null and drone.ignore_left <= 0.0 and _flat(drone.position).distance_to(_flat(watcher.global_position)) < ENGAGE_DISTANCE:
+			if watcher and _engaged == null and drone.ignore_left <= 0.0 and _flat(drone.position).distance_to(_flat(watcher.global_position)) < engage_distance():
 				_engaged = drone
 				drone.state = &"approach"
 				drone.timer = 0.0
@@ -239,6 +247,14 @@ func _update_drone(drone: Drone, delta: float, watcher: Node3D) -> void:
 func _patrol_height(drone: Drone) -> float:
 	return float(_loops[drone.loop]["height"]) + Layout.DRONE_BOB * sin(drone.timer * 1.3 + drone.phase)
 
+## POLISH-03 B: включить или снять «активный» режим роя (RoadClosure, пока улица Б перекрыта).
+func set_agitated(on: bool) -> void:
+	agitated = on
+
+## Дальность, с которой дрон замечает Илюшу: в «активном» режиме — AGITATED_ENGAGE.
+func engage_distance() -> float:
+	return AGITATED_ENGAGE if agitated else ENGAGE_DISTANCE
+
 ## Точка зависания перед Илюшей: HOVER_DISTANCE по взгляду облика, HOVER_SIDE вправо, HOVER_HEIGHT над землёй;
 ## стена или машина между — ближе, перед препятствием (луч по World|Car).
 func hover_point(watcher: Node3D) -> Vector3:
@@ -265,7 +281,7 @@ func _leave(drone: Drone) -> void:
 		_engaged = null
 	drone.state = &"leave"
 	drone.timer = 0.0
-	drone.ignore_left = IGNORE_SECONDS
+	drone.ignore_left = AGITATED_IGNORE if agitated else IGNORE_SECONDS
 	drone.s = _closest_s(drone.loop, drone.position)
 
 func _place_on_loop(drone: Drone, loop: int, s: float) -> void:
@@ -347,7 +363,7 @@ func break_drone(drone: Drone) -> void:
 	drone.state = &"broken"
 	drone.timer = 0.0
 	drone.breaks += 1
-	drone.respawn_left = _rng.randf_range(RESPAWN.x, RESPAWN.y)
+	drone.respawn_left = _rng.randf_range(RESPAWN.x, RESPAWN.y) * (AGITATED_RESPAWN if agitated else 1.0)
 	drone.last_respawn_delay = drone.respawn_left
 	drone.set_alive(false)
 	breaks += 1

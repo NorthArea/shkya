@@ -345,6 +345,9 @@ func get_hud_state() -> Dictionary:
 		"money": mission.money,
 		"money_goal": 0 if mission.has_bread or mission.state in [MissionDirector.RETURN_HOME, MissionDirector.COMPLETE] else MissionDirector.BREAD_PRICE,
 		"coins_task": objective.get("coins_task", ""),
+		# POLISH-03 B: маршрут мини-карты на машине (улица Б перекрыта — объезд) и протокол финала (только в COMPLETE).
+		"route_drive": Layout.ROUTE_DETOUR if mission.road_closed else Layout.ROUTE_DRIVE,
+		"protocol": quest_flow.finale.protocol() if mission.state == MissionDirector.COMPLETE and quest_flow.get("finale") else {},
 	}
 
 ## Тост после респавна: провал в машине (P1) — про машину, иначе — по has_bread.
