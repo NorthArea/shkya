@@ -24,6 +24,14 @@ const POP_SECONDS := 0.15
 
 const TOAST_SECONDS := 2.0
 const MARKER_Y := 2.62   # над шапкой Бабки: верх облика 2,07 м при height_m 2,17 (ART-01, PLAY-02)
+## POLISH-03 A (критик, k_01): «!»/«?» крупнее, с покачиванием, пульсом и мягким ореолом; издалека — крупнее
+## (размер растёт с расстоянием до камеры от MARKER_NEAR_M до MARKER_SCALE_MAX), чтобы читаться через двор.
+const MARKER_PIXEL := 0.0085
+const MARKER_BOB := 0.14         # м, покачивание
+const MARKER_PULSE := 0.06       # ±6 % размера
+const MARKER_NEAR_M := 12.0
+const MARKER_SCALE_MAX := 2.6
+const HALO_PIXEL := 0.011        # ореол 128 px ≈ 1,4 м при масштабе 1
 const DIALOG_SHOULDER := 1.3  # м: камера вбок на время диалога, собеседник виден из-за Илюши (кадр 07)
 const TOAST_TEXT := "ХЛЕБ +1"
 ## Зоны наблюдателей расширения (исполнитель N): подключаются по id, если узлы есть в мире.
@@ -44,6 +52,8 @@ var world: Node
 var mission: MissionDirector
 var dialog: DialogPanel
 var marker: Label3D
+## Мягкий ореол за маркером (POLISH-03 A), ребёнок marker.
+var marker_halo: Sprite3D
 var thanks_bubble: Label3D
 ## Подложка пузыря финала (кадр 10): бумажный пузырь с хвостиком, текст поверх.
 var thanks_back: Sprite3D
@@ -120,7 +130,12 @@ func _process(delta: float) -> void:
 		if symbol != "":
 			_pop_3d(marker)
 	_marker_time += delta
-	marker.position.y = MARKER_Y + sin(_marker_time * 3.0) * 0.08
+	var far := marker_distance_scale()
+	marker.position.y = MARKER_Y + sin(_marker_time * 3.0) * MARKER_BOB * far
+	var pulse := 1.0 + sin(_marker_time * 5.0) * MARKER_PULSE
+	marker.pixel_size = MARKER_PIXEL * far * pulse
+	marker_halo.pixel_size = HALO_PIXEL * far * (2.0 - pulse)
+	marker_halo.modulate.a = 0.75 + 0.25 * sin(_marker_time * 5.0)
 	# Второй пузырь финала — через паузу после первого (этап 10 расширения).
 	if _thanks_left > 0.0:
 		_thanks_left -= delta
@@ -274,6 +289,9 @@ func _open(speaker: String, text: String, specs: Array, portrait: StringName) ->
 func _open_chain(lines: Array, specs: Array, partner: StringName) -> void:
 	dialog.open_chain(lines, specs)
 	world.camera_rig.shoulder = DIALOG_SHOULDER
+	var npc: Node = _npc_for(partner)
+	if npc is Node3D:
+		world.camera_rig.focus_talk((npc as Node3D).global_position)   # POLISH-03 A: камера к говорящему (кадр 07)
 	_face(partner)
 	_block()
 
@@ -325,6 +343,7 @@ func _on_completion_closed() -> void:
 	_kind = &"end"
 	_show_thanks(false)
 	world.camera_rig.shoulder = 0.0
+	world.camera_rig.release_talk()
 	_unface()
 	hud.show_end_card()
 
@@ -337,6 +356,7 @@ func _close() -> void:
 	var was: StringName = _kind
 	dialog.close()
 	world.camera_rig.shoulder = 0.0
+	world.camera_rig.release_talk()
 	_show_thanks(false)
 	_unface()
 	_kind = &""
@@ -356,14 +376,30 @@ func _build_marker() -> void:
 	marker.billboard = BaseMaterial3D.BILLBOARD_ENABLED
 	marker.no_depth_test = true
 	marker.fixed_size = false
-	marker.pixel_size = 0.006
+	marker.pixel_size = MARKER_PIXEL
+	var bold := FontVariation.new()   # жирный рукописный — тонкий «!» шрифта по умолчанию терялся во дворе
+	bold.base_font = DialogPanelScript.ui_font()
+	bold.variation_embolden = 1.2
+	marker.font = bold
 	marker.font_size = 128
-	marker.outline_size = 24
+	marker.outline_size = 32
 	marker.modulate = Color(1.0, 0.85, 0.1)
 	marker.outline_modulate = Color(0.12, 0.10, 0.08)
+	marker.render_priority = 3
+	marker.outline_render_priority = 2
 	marker.position = Vector3(0, MARKER_Y, 0)
 	marker.visible = false
 	world.get_node("Babka").add_child(marker)
+	marker_halo = Sprite3D.new()
+	marker_halo.name = "Halo"
+	marker_halo.texture = _halo_texture()
+	marker_halo.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+	marker_halo.no_depth_test = true
+	marker_halo.shaded = false
+	marker_halo.render_priority = 1
+	marker_halo.pixel_size = HALO_PIXEL
+	marker_halo.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	marker.add_child(marker_halo)
 	# Пузыри реплики (кадр 10): бумажная подложка с хвостиком к Бабке, текст поверх неё. Второй — тоже с хвостиком, на
 	# месте первого; первый тогда поднимается над ним и теряет хвостик (_stack_thanks).
 	var first := _build_bubble("ThanksBubble", QuestLines.THANKS, true)
@@ -381,6 +417,28 @@ func _build_marker() -> void:
 	_thanks_high_y = thanks_after_back.position.y + _bubble_height(thanks_after_back) * 0.5 + BUBBLE_GAP \
 		+ _thanks_plain_texture.get_height() * thanks_back.pixel_size * 0.5
 	_stack_thanks(false)
+
+## Тёплое мягкое пятно ореола: радиальный градиент от полупрозрачного жёлтого к прозрачному.
+func _halo_texture() -> Texture2D:
+	var gradient := Gradient.new()
+	gradient.offsets = PackedFloat32Array([0.0, 0.45, 1.0])
+	gradient.colors = PackedColorArray([Color(1.0, 0.9, 0.4, 0.85), Color(1.0, 0.82, 0.28, 0.38), Color(1.0, 0.75, 0.2, 0.0)])
+	var texture := GradientTexture2D.new()
+	texture.gradient = gradient
+	texture.fill = GradientTexture2D.FILL_RADIAL
+	texture.fill_from = Vector2(0.5, 0.5)
+	texture.fill_to = Vector2(1.0, 0.5)
+	texture.width = 128
+	texture.height = 128
+	return texture
+
+## Множитель размера маркера по расстоянию до камеры: 1 ближе MARKER_NEAR_M, дальше — пропорционально, до MARKER_SCALE_MAX.
+func marker_distance_scale() -> float:
+	var camera: Camera3D = world.camera_rig.camera if world.camera_rig else null
+	if camera == null or not marker.is_inside_tree():
+		return 1.0
+	var d := camera.global_position.distance_to(marker.global_position)
+	return clampf(d / MARKER_NEAR_M, 1.0, MARKER_SCALE_MAX)
 
 ## Первый пузырь: один — на месте с хвостиком; под ним второй — выше второго, без хвостика (текст по центру подложки).
 func _stack_thanks(stacked: bool) -> void:

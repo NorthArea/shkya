@@ -62,6 +62,7 @@ func _ready() -> void:
 	_build_bounds()
 	_build_signs()
 	_build_kiosk_sign()
+	_build_kiosk_roof_sign()
 	_build_wires()
 	_build_trails()
 	_build_yard_piles()
@@ -620,6 +621,53 @@ func _build_kiosk_sign() -> void:
 	sign.position = Layout.KIOSK + Vector3(2.75, 2.86, 0.0)
 	sign.rotation.y = PI * 0.5  # смотрит на улицу, на восток
 	add_child(sign)
+
+## POLISH-03 A: световой короб «ХЛЕБ» на крыше киоска (Layout.KIOSK_ROOF_SIGN) — ориентир с парковки и с юга, как
+## на концепте 07: тёплый светящийся короб, тёмно-красные буквы; буквы и с северной стороны. Без коллизий — обзор
+## постов (DetectionSensor, слой World) не меняется. Две стойки до крыши и тёплый отсвет на снег перед киоском.
+const ROOF_SIGN_GLOW := 1.4
+func _build_kiosk_roof_sign() -> void:
+	var size := Layout.KIOSK_ROOF_SIGN_SIZE
+	var at := Layout.KIOSK_ROOF_SIGN
+	var board := Greybox.mesh_box(size, Color.WHITE)
+	board.name = "KioskRoofSignBox"
+	board.material_override = Materials.plain(Color(0.78, 0.70, 0.52), 0.6, Color(1.0, 0.82, 0.52), ROOF_SIGN_GLOW)
+	board.position = at
+	board.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	add_child(board)
+	var frame := Materials.plain(Color(0.16, 0.20, 0.17), 0.7)
+	var rim := Greybox.mesh_box(Vector3(size.x + 0.12, 0.08, size.z + 0.06), Color.WHITE)
+	rim.name = "KioskRoofSignRim"
+	rim.material_override = frame
+	rim.position = at + Vector3(0, size.y * 0.5 + 0.04, 0)
+	add_child(rim)
+	var roof_top := 3.32   # крыша с козырьком Layout «Kiosk» (высота 3,2) + 0,12
+	for sx in [-1.0, 1.0]:
+		var post := Greybox.mesh_box(Vector3(0.08, at.y - size.y * 0.5 - roof_top, 0.08), Color.WHITE)
+		post.material_override = frame
+		post.position = Vector3(at.x + sx * (size.x * 0.5 - 0.4), (at.y - size.y * 0.5 + roof_top) * 0.5, at.z)
+		add_child(post)
+	for side in [0.0, PI]:
+		var sign := Label3D.new()
+		sign.name = "KioskRoofSign" if side == 0.0 else "KioskRoofSignBack"
+		sign.text = "ХЛЕБ"
+		sign.font_size = 150
+		sign.pixel_size = 0.0058
+		sign.modulate = Color(0.45, 0.04, 0.02)
+		sign.outline_size = 0
+		sign.shaded = false
+		sign.rotation.y = side   # 0 — лицом на юг (+z), к парковке
+		sign.position = at + Vector3(0, 0, (size.z * 0.5 + 0.01) * (1.0 if side == 0.0 else -1.0))
+		add_child(sign)
+	var spill := OmniLight3D.new()
+	spill.name = "KioskRoofSignLight"
+	spill.light_color = Color(1.0, 0.78, 0.45)
+	spill.light_energy = 1.2
+	spill.omni_range = 5.5
+	spill.omni_attenuation = 1.4
+	spill.shadow_enabled = false
+	spill.position = at + Vector3(0, -0.2, 1.1)
+	add_child(spill)
 
 ## Контактная сеть над улицами A и B (сверка ART-04, черта 13): поперечины между парами столбов через 24 м,
 ## два контактных провода с провисом; во двор — бытовые провода от дворового фонаря к домам.

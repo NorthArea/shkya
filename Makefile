@@ -42,6 +42,7 @@ test:
 	$(call godot_test,pad01_test,60,PAD01)
 	$(call godot_test,text01_test,60,TEXT01)
 	$(call godot_test,life01_test,60,LIFE01)
+	$(call godot_test,polish03a_test,60,POLISH03A)
 capture:
 	./tools/run.command --fixed-fps 60 --resolution 1920x1080 --script tools/capture/capture.gd
 

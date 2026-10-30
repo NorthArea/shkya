@@ -259,6 +259,15 @@ func _step04_05_car_and_drive() -> void:
 
 # --- 06: прибытие ---
 
+## Точка в координатах кадра камеры игры: x, y — NDC (−1…1, y вверх), z > 0 — перед камерой.
+func _ndc(p: Vector3) -> Vector3:
+	var camera := world.camera_rig.camera
+	var local := camera.global_transform.affine_inverse() * p
+	if local.z >= -0.01:
+		return Vector3(0, 0, -1)
+	var half_h := tan(deg_to_rad(camera.fov) * 0.5)
+	return Vector3(local.x / -local.z / (half_h * 16.0 / 9.0), local.y / -local.z / half_h, 1.0)
+
 func _step06_arrive() -> void:
 	var mission := world.mission
 	world.player.place(Layout.ROUTE_DRIVE[-1], 0.0)
@@ -277,6 +286,11 @@ func _step07_vendor_dialog() -> void:
 	await _frames(4)
 	check(hud.prompt_label.visible and hud.prompt_label.text == "E — ПОГОВОРИТЬ", "07: E prompt at the kiosk window")
 	mission.money = 10  # условно не хватает денег (монеты — COINS: не хватает 25 ₽)
+	for i in 180:   # камера ещё возвращается после прошлого диалога — дождаться прежнего взгляда
+		if not world.camera_rig.is_talk_framing():
+			break
+		await _frames(1)
+	var yaw_before := world.camera_rig.yaw
 	await _press_interact()
 	check(flow.is_dialog_open() and flow.dialog.text_label.text == QuestLines.VENDOR_CHAIN[0]["text"], "07: vendor chain starts with its first line ('%s')" % flow.dialog.text_label.text)
 	check(flow.dialog.line_count() == QuestLines.VENDOR_CHAIN.size() + 1 and flow.dialog.line_index() == 0 and flow.dialog.buttons.has(&"next"), "07: vendor chain + refusal «Не хватает» (COINS-01), ДАЛЬШЕ first")
@@ -296,6 +310,13 @@ func _step07_vendor_dialog() -> void:
 		check(mission.state == MissionDirector.BUY_BREAD and not mission.has_bread, "07: chain line %d changes no state" % (i + 1))
 	flow.dialog.finish_typing()
 	check(flow.dialog.is_last_line() and not flow.dialog.buttons.has(&"next"), "07: last line has the choices, no ДАЛЬШЕ")
+	# POLISH-03 A (критик, k_07): камера диалога не только сдвигается к плечу, а поворачивается к собеседнику — продавщица
+	# в окне правее центра, над панелью диалога, Илюша левее неё (кадр 07); после диалога взгляд возвращается.
+	await _frames(60)
+	var vendor_ndc := _ndc(world.vendor.global_position + Vector3.UP * 1.3)
+	var player_ndc := _ndc(world.player.global_position + Vector3.UP * 1.0)
+	check(vendor_ndc.z > 0.0 and vendor_ndc.x > -0.3 and vendor_ndc.x < 0.6 and vendor_ndc.y > -0.3, "07: dialog camera turns to the vendor — she is in frame right of centre, above the panel (ndc %s)" % vendor_ndc)
+	check(player_ndc.z > 0.0 and player_ndc.x < vendor_ndc.x, "07: Ilyusha is left of the vendor in the dialog frame (ndc %s)" % player_ndc)
 	var buy: Button = flow.dialog.buttons[&"buy"]
 	check(buy.text == "КУПИТЬ ХЛЕБ" and buy.disabled, "07: КУПИТЬ ХЛЕБ is disabled when can_buy_bread() is false")
 	check(flow.dialog.buttons[&"leave"].text == "УЙТИ", "07: button УЙТИ")
@@ -306,6 +327,8 @@ func _step07_vendor_dialog() -> void:
 	flow.dialog.buttons[&"leave"].pressed.emit()
 	await _frames(3)
 	check(not flow.is_dialog_open() and mission.state == MissionDirector.BUY_BREAD and player.input_enabled, "07: УЙТИ closes the dialog, state unchanged")
+	await _frames(120)
+	check(absf(angle_difference(world.camera_rig.yaw, yaw_before)) < 0.05 and not world.camera_rig.is_talk_framing(), "07: after the dialog the camera returns to the previous view (%.2f vs %.2f)" % [world.camera_rig.yaw, yaw_before])
 	mission.money = MissionDirector.BREAD_PRICE   # монеты — COINS: собрано ровно на батон
 	await _press_interact()
 	check(flow.is_dialog_open() and flow.dialog.text_label.text == QuestLines.VENDOR_AGAIN and flow.dialog.line_count() == 1, "07: second approach is the short line, chain not repeated ('%s')" % flow.dialog.text_label.text)
