@@ -29,6 +29,10 @@ func _run() -> void:
 			func(e): return e is InputEventKey and e.physical_keycode == KEY_E), "interact is bound to E")
 		main.queue_free()
 		await process_frame
+		# MUSIC-01: тема меню звучит с первого кадра; остановленный поток аудиосервер отпускает в своём потоке
+		# микширования — без паузы по часам выход ловит его живым («resources still in use»).
+		OS.delay_msec(100)
+		await process_frame
 	_finish()
 
 func check(condition: bool, label: String) -> void:
