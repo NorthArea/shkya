@@ -67,6 +67,9 @@ func _ready() -> void:
 	get_viewport().size_changed.connect(_fit_panel)
 	world.mission.state_changed.connect(_on_state_changed)
 	world.mission.bread_received.connect(receive.bind(&"bread"))
+	world.mission.road_closed_changed.connect(func(closed: bool):
+		if closed:
+			receive(&"detour"))
 	world.stealth.player_detected.connect(receive.bind(&"detected"))
 	receive(&"welcome")
 	receive(&"babka_before")

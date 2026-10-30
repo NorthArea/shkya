@@ -341,13 +341,14 @@ func get_hud_state() -> Dictionary:
 		# EXT-02: режим укрытия и подсказка-отказ (HUD показывает её вместо prompt, пока не пуста).
 		"hide_mode": player.hide_mode,
 		"hide_hint": _hide_hint if _hide_hint_left > 0.0 else "",
-		# COINS-01: деньги и вторая строка карточки («Собери монеты: N/35»); money_goal 0 — батон уже куплен.
+		# Кошелёк и источники заработка; цель появляется после принятия и исчезает после покупки.
 		"money": mission.money,
-		"money_goal": 0 if mission.has_bread or mission.state in [MissionDirector.RETURN_HOME, MissionDirector.COMPLETE] else MissionDirector.BREAD_PRICE,
+		"money_goal": 0 if mission.state in [MissionDirector.NOT_STARTED, MissionDirector.OFFERED, MissionDirector.RETURN_HOME, MissionDirector.COMPLETE] else MissionDirector.BREAD_PRICE,
 		"coins_task": objective.get("coins_task", ""),
 		# POLISH-03 B: маршрут мини-карты на машине (улица Б перекрыта — объезд) и протокол финала (только в COMPLETE).
 		"route_drive": Layout.ROUTE_DETOUR if mission.road_closed else Layout.ROUTE_DRIVE,
 		"protocol": quest_flow.finale.protocol() if mission.state == MissionDirector.COMPLETE and quest_flow.get("finale") else {},
+		"protocol_ready": quest_flow.protocol_ready(),
 	}
 
 ## Тост после респавна: провал в машине (P1) — про машину, иначе — по has_bread.

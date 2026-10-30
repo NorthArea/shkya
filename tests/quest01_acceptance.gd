@@ -298,7 +298,7 @@ func _step07_vendor_dialog() -> void:
 	check(flow.dialog.is_typing(), "07: vendor line is being typed")
 	await _press_interact()
 	check(not flow.dialog.is_typing() and flow.is_dialog_open() and flow.dialog.line_index() == 0, "07: E while typing completes the line and keeps the dialog")
-	check(flow.dialog.speaker_label.text == "ПРОДАВЩИЦА", "07: speaker ПРОДАВЩИЦА")
+	check(flow.dialog.speaker_label.text == QuestLines.ILYUSHA, "07: Ilyusha asks about the smaller loaf")
 	var expected_chain := []
 	for line in QuestLines.VENDOR_CHAIN.slice(1):
 		expected_chain.append([line["speaker"], line["text"]])
@@ -390,7 +390,9 @@ func _step10_complete() -> void:
 	check(not flow.dialog.is_open(), "10: only one panel - no dialog panel next to the completion panel")
 	check(world.ui_blocking and not world.player.input_enabled, "10: input is blocked while the completion panel is open")
 	await _frames(3)
-	check(hud.completion_panel.visible, "10: completion panel is shown")
+	check(not hud.completion_panel.visible, "10: protocol waits for Babka's conversation to finish")
+	await _frames(ceili((QuestLines.read_seconds(QuestLines.THANKS) + QuestLines.read_seconds(QuestLines.THANKS_AFTER)) * 60.0) + 3)
+	check(hud.completion_panel.visible, "10: completion panel is shown after the conversation")
 	check(_all_text(hud.completion_panel).has("ЗАДАНИЕ ВЫПОЛНЕНО") and _all_text(hud.completion_panel).has("+50 опыта"), "10: panel shows ЗАДАНИЕ ВЫПОЛНЕНО and +50 опыта")
 	# POLISH-03 B: панель — протокол прохода справа, героев в середине кадра не закрывает.
 	var panel_text := _all_text(hud.completion_panel)
@@ -678,6 +680,7 @@ func _real_car_pass() -> void:
 	check(flow.is_dialog_open() and flow.dialog.buttons.has(&"turn_in"), "real: return chain ends with СДАТЬ ХЛЕБ")
 	flow.dialog.buttons[&"turn_in"].pressed.emit()
 	await _frames(3)
+	await _frames(ceili((QuestLines.read_seconds(QuestLines.THANKS) + QuestLines.read_seconds(QuestLines.THANKS_AFTER)) * 60.0) + 3)
 	check(mission.state == MissionDirector.COMPLETE and mission.xp == 50 and hud.completion_panel.visible, "real: turn-in completes, +50 XP, panel shown")
 	hud.completion_close.pressed.emit()
 	await _frames(int((QuestLines.FINALE_LOOK_PAUSE + QuestLines.FINALE_LOOK_SECONDS) * 60.0) + 10)

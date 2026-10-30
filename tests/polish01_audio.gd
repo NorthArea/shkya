@@ -67,9 +67,10 @@ func _run() -> void:
 	var fast_pitch: float = sound.engine.pitch_scale
 	check(fast_pitch > idle_pitch + 0.5, "engine pitch rises with speed (%.2f → %.2f)" % [idle_pitch, fast_pitch])
 	check(not sound.skid.playing, "no skid sound driving straight")
-	check(sound.played["radio"] == 1 and sound.radio.stream == sound.RADIO, "radio mumble once after getting in (EXT-01, stage 2)")
+	check(sound.played["radio"] == 0 and not sound.radio.playing, "STORY-02: narrative radio uses subtitles without voice playback")
+	check(sound.radio_shown == 1, "first transmission shown once")
 	check(sound.radio_text() == QuestLines.RADIO and sound.subtitle_card.visible, "radio subtitle line on screen: '%s'" % sound.radio_text())
-	check(sound.radio.volume_db < sound.engine.volume_db, "radio is quieter than the engine (muffled)")
+	check(not paused and not world.ui_blocking, "radio leaves the world and driving UI unpaused")
 	check(world.player.input_enabled == false and world.control_mode == &"in_car" and world.car.speed_kmh() > 5.0, "radio does not block driving")
 	Input.action_press(&"handbrake")
 	Input.action_press(&"move_left")
@@ -92,7 +93,10 @@ func _run() -> void:
 	await _frames(4)
 	await _press(&"interact")
 	await _frames(60)
-	check(world.control_mode == &"in_car" and sound.played["radio"] == 1 and sound.radio_text() == "", "re-entering the car plays no second radio line")
+	check(world.control_mode == &"in_car" and sound.radio_shown == 2 and sound.radio_text() == QuestLines.RADIO_PROGRESS, "re-entry resumes the remaining progress transmission without repeating the welcome")
+	check(sound.played["radio"] == 0 and not sound.radio.playing, "progress transmission also has no voice playback")
+	await _frames(int(ceil(maxf(QuestLines.RADIO_SECONDS, QuestLines.read_seconds(QuestLines.RADIO_PROGRESS)) * 60.0)) + 90)
+	check(sound.radio_text() == "" and sound.radio_shown == 2, "both short transmissions finish once per world")
 	await _press(&"interact")
 	frames = 0
 	while world.control_mode == &"in_car" and frames < 400:

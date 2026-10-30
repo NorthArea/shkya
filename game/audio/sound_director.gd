@@ -3,8 +3,8 @@ extends Node
 ## финал и фон двора. Только слушает мир, машину, миссию и диалоги — ничем не управляет.
 ## Звуки синтезированы tools/generate_audio.py (собственная генерация, см. assets/README.md).
 ## Мотор, каша и фон двора зациклены при импорте (`edit/loop_mode=2` в .import).
-## EXT-01 (L): радио при первой посадке в «Жигули» за мир — приглушённый «радийный» бубнёж из машины
-## и строка субтитра внизу экрана (QuestLines.RADIO); управление не блокирует.
+## STORY-02: две сюжетные передачи радио субтитрами, без озвучки; уступают диалогам и гэгам,
+## управление не блокируют. Полицейская рация и звуковой фон города независимы.
 
 const DialogPanelScript = preload("res://game/ui/dialog_panel.gd")
 const Layout = preload("res://game/world/layout.gd")
@@ -44,6 +44,10 @@ var _last_position := Vector3.INF
 var _rng := RandomNumberGenerator.new()
 var _radio_delay := -1.0
 var _subtitle_left := 0.0
+var _radio_caption := ""
+## STORY-02: сюжетное радио только субтитрами; played считает исключительно настоящие звуки.
+var radio_shown := 0
+const RADIO_PROGRESS_DELAY := 4.0
 
 func _ready() -> void:
 	world = get_parent()
@@ -70,15 +74,16 @@ func _setup() -> void:
 	_build_subtitle()
 	world.car.driver_entered.connect(func(_d):
 		_one_shot(door, DOOR_CLOSE, "door_close")
-		if played["radio"] == 0 and _radio_delay < 0.0:
+		if radio_shown < 2 and _radio_delay < 0.0:
 			_radio_delay = RADIO_DELAY)
 	world.car.driver_exited.connect(func(_d):
 		_one_shot(door, DOOR_OPEN, "door_open")
-		# Радио в машине: с выходом водителя бубнёж и субтитр гаснут, второго раза за мир нет.
+		# С выходом водителя сюжетное радио гаснет; уже показанная передача не повторяется.
 		radio.stop()
 		_radio_delay = -1.0
 		_subtitle_left = 0.0
-		subtitle_card.visible = false)
+		if not gag_playing():
+			subtitle_card.visible = false)
 	world.mission.bread_received.connect(func(): _one_shot(chime, BREAD, "bread"))
 	world.mission.quest_completed.connect(func(_xp): _one_shot(chime, COMPLETE, "complete"))
 	var flow := world.get_node_or_null("QuestFlow")
@@ -96,7 +101,7 @@ func _setup() -> void:
 
 ## Текст субтитра радио, пока он на экране ("" — нет).
 func radio_text() -> String:
-	return subtitle_label.text if _subtitle_left > 0.0 else ""
+	return _radio_caption if _subtitle_left > 0.0 and subtitle_card.visible and not gag_playing() else ""
 
 func _physics_process(delta: float) -> void:
 	if not engine:
@@ -112,20 +117,34 @@ func _physics_process(delta: float) -> void:
 	_drive02_sounds()   # DRIVE-02
 	_life_sounds()   # PEOPLE-03
 
-## Радио один раз за мир: бубнёж из машины и субтитр, пока звучит (плюс хвост на дочитать).
+## Сначала предупреждение/диалог, затем радио. Управление остаётся у водителя.
 func _radio(delta: float) -> void:
+	if gag_playing():
+		return
+	if world.ui_blocking:
+		subtitle_card.visible = false
+		return
 	if _radio_delay >= 0.0:
-		_radio_delay -= delta
-		if _radio_delay < 0.0 and world.car.driver:
-			_one_shot(radio, RADIO, "radio")
-			subtitle_label.text = QuestLines.RADIO
-			_subtitle_left = QuestLines.RADIO_SECONDS
+		_radio_delay = maxf(0.0, _radio_delay - delta)
+		if _radio_delay == 0.0 and world.car.driver and not world.ui_blocking and not gag_playing():
+			_radio_delay = -1.0
+			_radio_caption = QuestLines.RADIO if radio_shown == 0 else QuestLines.RADIO_PROGRESS
+			subtitle_label.text = _radio_caption
+			radio_shown += 1
+			_subtitle_left = maxf(QuestLines.RADIO_SECONDS, QuestLines.read_seconds(subtitle_label.text))
+			_subtitle_slot(false)
 			subtitle_card.visible = true
 			DialogPanelScript.pop(subtitle_card, 0.6)
 	if _subtitle_left > 0.0:
+		if not subtitle_card.visible:
+			subtitle_label.text = _radio_caption
+			_subtitle_slot(false)
+			subtitle_card.visible = true
 		_subtitle_left -= delta
 		if _subtitle_left <= 0.0:
 			subtitle_card.visible = false
+			if radio_shown == 1 and world.car.driver:
+				_radio_delay = RADIO_PROGRESS_DELAY
 
 ## EXT-02 (HIDE_SPOTS.md раздел 11): гэг укрытия строкой субтитра — по две строки на экран, каждая пара seconds,
 ## затем плашка гаснет. Управление не блокирует; радио, если звучит, уступает строку. Приёмка P2-1: идущий гэг
@@ -162,7 +181,6 @@ func clear_gag_queue() -> void:
 	_gag_queue.clear()
 
 func _play_gag(lines: Array, seconds: float) -> void:
-	_subtitle_left = 0.0
 	gags_started += 1
 	_subtitle_slot(true)
 	var tween := create_tween()

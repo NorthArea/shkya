@@ -63,10 +63,10 @@ func _texts() -> void:
 	check(headlines.any(func(h): return h.contains("по плану")), "texts: 'всё идёт по плану' present")
 	check(IntroLines.BODIES.any(func(b): return b.contains("не происходит") and b.contains("для вашего блага")),
 		"texts: «всё, что не происходит, — для вашего блага» (STORY-01)")
-	# STORY-01: последний пост — про патрули, «для вашего блага» и совет их обходить.
+	# STORY-01: последний пост — про патрули, «для вашего блага» без совета их обходить (официальный голос STORY-02).
 	var last := IntroLines.post_text(n - 1)
 	check(headlines[-1].contains("Патрул") and last.contains("для вашего блага"), "texts: last post — patrols are for your good")
-	check(last.contains("Обходите патрули"), "texts: last post tells to avoid the patrols")
+	check(not last.to_lower().contains("обходите") and last.contains("Пункт новых возможностей"), "texts: official post advertises opportunities without teaching patrol avoidance")
 	for k in n:
 		var hw := QuestLines.word_count(headlines[k])
 		var bw := QuestLines.word_count(IntroLines.BODIES[k])

@@ -17,7 +17,7 @@ const DialogPanelScript = preload("res://game/ui/dialog_panel.gd")
 const HEADLINE := "В ГОРОДЕ Н. НИЧЕГО НЕ ПРОИЗОШЛО"
 ## Подзаголовки по кругу: провал n (StealthDirector.detections) — строка (n − 1) % size.
 const SUBTITLES: Array[String] = [
-	"Илюша за хлебом не ходил. Бабка ждёт.",
+	QuestLines.PATROL_DETECTED,
 	"Прогулка отменена для вашего блага.",
 	"Патруль ничего не видел. Вы тоже.",
 	"Расходимся, граждане. Смотреть не на что.",

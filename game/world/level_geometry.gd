@@ -1407,6 +1407,21 @@ func _kiosk_inside(root: Node3D, size: Vector3) -> void:
 	root.add_child(bulb_light)
 	# Ценник «Батон 35» за стеклом, в правом нижнем углу окна (если смотреть с улицы).
 	var tag_at := Vector3(hx - 0.07, floor_y + 1.2, 1.35)
+	# Маленький товар на большой подложке: уменьшение видно ещё до разговора с продавщицей.
+	var tray_at := Vector3(hx - 0.31, floor_y + 1.05, 0.75)
+	_part(root, Vector3(0.32, 0.025, 0.64), tray_at, Materials.plain(Color(0.80, 0.77, 0.68), 0.8))
+	var sample := MeshInstance3D.new()
+	sample.name = "SmallLoaf"
+	var small_loaf := CapsuleMesh.new()
+	small_loaf.radius = 0.055
+	small_loaf.height = 0.23
+	small_loaf.radial_segments = 12
+	small_loaf.rings = 3
+	sample.mesh = small_loaf
+	sample.rotation.x = PI * 0.5
+	sample.position = tray_at + Vector3(0, 0.065, 0)
+	sample.material_override = Materials.plain(Color(0.83, 0.55, 0.25), 0.8)
+	root.add_child(sample)
 	_part(root, Vector3(0.01, 0.2, 0.32), tag_at, Materials.plain(Color(0.95, 0.94, 0.88), 0.9))
 	var tag := _label("Батон\n35 р.", 40, Color(0.12, 0.10, 0.10))
 	tag.pixel_size = 0.0028

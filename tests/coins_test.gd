@@ -3,9 +3,9 @@ extends SceneTree
 ## Раскладка Layout: ≥ 60 точек, ни одной внутри коробок Layout.all_solids() и на полосах кольца Layout.ring_lane(),
 ## не у постов и чекпоинта; 35 набираются по ROUTE_WALK (пешком, 0,9 м) и по двору + ROUTE_DRIVE (машиной, 1,6 м) без
 ## крюка — и расчётом, и в мире проходом по маршруту. MissionDirector: START_MONEY 0, add_money + money_changed, строка
-## «Собери монеты: N/35» в objective()["coins_task"] без правки task; 34 → отказ продавщицы «Не хватает: ещё 1 ₽» и
+## денежная подсказка в objective()["coins_task"] только после принятия поручения; 34 → отказ продавщицы «Не хватает: ещё 1 ₽» и
 ## выключенная «КУПИТЬ ХЛЕБ», 35 → покупка. Мир: подбор пешком (0,9 м), магнит (1,5 м), на машине (1,6 м от центра),
-## счётчик HUD «N / 35» с пульсом, строка карточки, звон с чередованием высоты, spawn_burst (в полёте не подбирается),
+## один счётчик HUD «N / 35» с пульсом после принятия, до него кошелёк, звон с чередованием высоты, spawn_burst (в полёте не подбирается),
 ## респавн на чекпоинте монеты не возвращает, reset() — возвращает.
 ##
 ## Headless: tools/run.command --headless --fixed-fps 60 --script tests/coins_test.gd
@@ -177,16 +177,23 @@ func _part_director() -> void:
 	var log := []
 	d.money_changed.connect(func(m, delta): log.append([m, delta]))
 	check(MissionDirector.START_MONEY == 0 and d.money == 0, "director: START_MONEY 0, no money at start")
-	check(d.objective()["task"] == "Подойди к Бабке" and d.objective()["coins_task"] == "Собери монеты: 0/35", "director: task unchanged, coins line «Собери монеты: 0/35» (%s)" % d.objective()["coins_task"])
+	check(d.objective()["task"] == "Подойди к Бабке" and d.objective()["coins_task"] == "", "director: before accepting, no future bread money goal")
 	d.add_money(0)
 	d.add_money(-3)
 	check(d.money == 0 and log.is_empty(), "director: add_money(≤ 0) changes nothing, no signal")
 	d.add_money(1)
 	check(d.money == 1 and log == [[1, 1]], "director: add_money(1) → 1 and money_changed(1, 1) (%s)" % [log])
 	d.add_money(33)
-	check(d.money == 34 and d.money_missing() == 1 and d.coins_task() == "Собери монеты: 34/35", "director: 34 → missing 1, «Собери монеты: 34/35»")
+	check(d.money == 34 and d.money_missing() == 1 and d.coins_task() == "", "director: collecting 34 before the offer does not reveal a future goal")
+	d.interact(&"babka")
+	check(d.coins_task() == "", "director: offered but unaccepted quest has no money goal")
+	d.decline()
+	check(d.coins_task() == "", "director: declining keeps the future goal hidden")
 	d.interact(&"babka")
 	d.accept()
+	var earning := d.coins_task().to_lower()
+	check(earning.contains("монет") and earning.contains("дрон") and (earning.contains("хлам") or earning.contains("предмет")), "director: accepting explains all three earning sources")
+	check(not earning.contains("34") and not earning.contains("35"), "director: earning sources do not duplicate the money counter")
 	d.notify_entered_car()
 	d.notify_arrived_kiosk()
 	check(d.state == MissionDirector.BUY_BREAD and not d.can_buy_bread() and not d.buy_bread(), "director: 34 at the kiosk → no purchase")
@@ -224,9 +231,9 @@ func _part_start_hud() -> void:
 	var b: float = coins.instance_transform(0).basis.get_euler().y
 	check(absf(wrapf(b - a, -PI, PI)) > 0.2, "world: coins spin (%.2f → %.2f rad)" % [a, b])
 	await drv.frames(2)
-	check(hud.coins_row.visible and hud.coins_label.text == "Собери монеты: 0/35", "HUD: card second line «Собери монеты: 0/35» ('%s')" % hud.coins_label.text)
+	check(not hud.coins_row.visible, "HUD: no future money objective before Babka offers the quest")
 	check(hud.task_label.text == "Подойди к Бабке", "HUD: task line unchanged ('%s')" % hud.task_label.text)
-	check(hud.coin_counter.visible and hud.coin_counter_label.text == "0 / 35", "HUD: counter «0 / 35» ('%s')" % hud.coin_counter_label.text)
+	check(hud.coin_counter.visible and hud.coin_counter_label.text == "0 ₽", "HUD: initial wallet «0 ₽» without future purchase target")
 	var card_end: float = hud.card.position.x + hud.card.size.x
 	check(hud.coin_counter.position.x >= card_end and hud.coin_counter.position.y < 60.0, "HUD: counter right of the task card (x %.0f ≥ %.0f)" % [hud.coin_counter.position.x, card_end])
 	if capture:
@@ -257,7 +264,7 @@ func _part_foot_and_magnet() -> void:
 	check(not coins.is_available(i) and world.mission.money == 1 and coins.collected_count == 1, "foot: magnet coin collected without stepping in (money %d)" % world.mission.money)
 	check(log == [1], "foot: collected(total 1) emitted once (%s)" % [log])
 	await drv.frames(2)
-	check(hud.coin_counter_label.text == "1 / 35" and hud.coins_label.text == "Собери монеты: 1/35", "HUD: counter «1 / 35» and card line after the pickup")
+	check(hud.coin_counter_label.text == "1 ₽" and not hud.coins_row.visible, "HUD: pre-quest pickup changes the wallet only")
 	var j := _index(&"garages_yard", 4)
 	world.player.place(Layout.COIN_POINTS[j] + Vector3(-0.6, 0, 0.3), 0.0)
 	await drv.frames(2)

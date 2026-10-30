@@ -60,8 +60,14 @@ const IDLE_DONE := "Иди погрейся, синий весь"
 const BUTTON_CLOSE := "ЛАДНО"
 
 # --- этап 2: радио при посадке в машину (субтитр, не блокирует управление) ---
-const RADIO := "Радио: ничего необычного. Очевидцев просим явиться"
-const RADIO_SECONDS := 4.0
+const RADIO := "Радио Н.: добро пожаловать в город Н. Сегодня ничего необычного не произошло. Приятной поездки"
+const RADIO_PROGRESS := "Радио Н.: отрицательный рост. Общая динамика положительная"
+const RADIO_SECONDS := 6.0
+
+## STORY-02: официальный голос пункта, без новых постов или диалоговых веток.
+const NEW_OPPORTUNITIES_SIGN := "ПУНКТ НОВЫХ\nВОЗМОЖНОСТЕЙ"
+const NEW_OPPORTUNITIES_TAGLINE := "Помогаем определиться с будущим"
+const PATROL_DETECTED := "Не убегайте от возможностей!"
 
 # --- этап 5: полицейский у киоска (по E до обнаружения) — одна реплика, выход свободный ---
 const OFFICER_CHAIN := [
@@ -78,9 +84,9 @@ const BUTTON_RIDE_LEAVE := "Я ЗА ХЛЕБОМ"
 
 # --- этап 6: продавщица, первый подход — короткая цепочка, покупка в конце ---
 const VENDOR_CHAIN := [
-	{"speaker": VENDOR, "text": "Чего тебе?", "portrait": &"vendor"},
-	{"speaker": ILYUSHA, "text": "Батон", "portrait": &"ilyusha"},
-	{"speaker": VENDOR, "text": "35 рублей. Без сдачи!", "portrait": &"vendor"},
+	{"speaker": ILYUSHA, "text": "Мне батон. А чего такой маленький?", "portrait": &"ilyusha"},
+	{"speaker": VENDOR, "text": "Он не меньше. Он полезнее", "portrait": &"vendor"},
+	{"speaker": VENDOR, "text": "Цена прежняя: 35 рублей. Следующий!", "portrait": &"vendor"},
 ]
 ## Повторный подход без покупки: короткая реплика, цепочка не повторяется (канон DEMO.md, раздел 5).
 const VENDOR_AGAIN := "Батон? 35 рублей"
@@ -89,13 +95,13 @@ const BUTTON_LEAVE := "УЙТИ"
 
 # --- этап 9: Бабка при возврате с хлебом, затем сдача ---
 const RETURN_CHAIN := [
-	{"speaker": BABKA, "text": "Наконец-то! Ты где был?", "portrait": &"babka"},
-	{"speaker": ILYUSHA, "text": "За хлебом", "portrait": &"ilyusha"},
+	{"speaker": BABKA, "text": "А батон чего такой маленький?", "portrait": &"babka"},
+	{"speaker": ILYUSHA, "text": "О нас заботятся", "portrait": &"ilyusha"},
 ]
 const BUTTON_TURN_IN := "СДАТЬ ХЛЕБ"
 
 # --- этап 10: сдача — два пузыря над Бабкой подряд, пауза между ними ---
-const THANKS := "Спасибо, Илюша. Завтра — за молоком"
+const THANKS := "Ну и правильно. Завтра — за молоком"
 const THANKS_AFTER := "Спросят — скажешь, за хлебом"
 const THANKS_PAUSE := 0.8
 
@@ -108,7 +114,13 @@ const FINALE_LOOK_SECONDS := 2.6   # с: реплика висит (не мен�
 # --- POLISH-03 B: протокол финала вместо голого «+50 опыта» (шуточная сводка прохода) ---
 const PROTOCOL_DONE := "ЗАДАНИЕ ВЫПОЛНЕНО"
 const PROTOCOL_TITLE := "ПРОТОКОЛ № 154"
-const PROTOCOL_SUBTITLE := "Ничего необычного не произошло"
+const PROTOCOL_SUBTITLE := "Фактические результаты прогулки"
+## Официальная оценка выводится отдельно от реальных счётчиков, не заменяет их.
+const PROTOCOL_CLASSIFICATION: Array[String] = [
+	"Транспортная доступность — повышена",
+	"Новых возможностей — по плану",
+	"Нештатных ситуаций — не установлено",
+]
 const PROTOCOL_ROWS := [
 	[&"time", "Время в пути"], [&"coins", "Монет собрано"], [&"spent", "Потрачено на хлеб"], [&"left", "Осталось"],
 	[&"knocks", "Сбито прохожих"], [&"drones", "Сбито дронов"], [&"broken", "Сломано во дворах"],
@@ -120,10 +132,10 @@ const PROTOCOL_XP := "+50 опыта"
 const PROTOCOL_BUTTON := "НЕ ПОДПИСЫВАТЬ"   # Бабка просила ничего не подписывать (WARN-01)
 
 # --- POLISH-03 B: возврат — ГСУМ перекрыл улицу Б (Троллейную), на машине — в объезд ---
-const RADIO_DETOUR := ["Радио: Троллейная перекрыта", "Объезд — по Выборной"]
-const CLOSURE_GAG := ["ГСУМ: «Проезда нет, гражданин»", "«Ничего необычного»"]
+const RADIO_DETOUR := ["Радио Н.: движение без ограничений", "Идёт оптимизация доступных маршрутов"]
+const CLOSURE_GAG := ["ГСУМ: «Проезд свободный»", "«Просто здесь нельзя»"]
 const CLOSURE_SIGN := "ПРОЕЗД ЗАКРЫТ"
-const CLOSURE_SIGN_SMALL := "НИЧЕГО НЕОБЫЧНОГО"
+const CLOSURE_SIGN_SMALL := "ПОВЫШАЕМ ДОСТУПНОСТЬ"
 const CLOSURE_SIGN_DETOUR := "ОБЪЕЗД — ПО ВЫБОРНОЙ"
 
 const BUTTON_NEXT := "ДАЛЬШЕ"

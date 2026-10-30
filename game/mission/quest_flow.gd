@@ -17,6 +17,8 @@ extends Node
 
 const DialogPanelScript = preload("res://game/ui/dialog_panel.gd")
 const CoinLines = preload("res://game/mission/coin_lines.gd")   # COINS-01: отказ продавщицы при нехватке денег
+const PadInput = preload("res://game/ui/pad_input.gd")
+const HideTuning = preload("res://game/stealth/hide_tuning.gd")
 const FinaleScript = preload("res://game/mission/finale.gd")    # POLISH-03 B: протокол и сцена этапа 10 после него
 const ACCEPT_SOUND := preload("res://assets/audio/quest_accept.wav")
 const PAPER := Color(0.93, 0.87, 0.72)
@@ -81,6 +83,8 @@ var _marker_symbol := ""
 var _thanks_left := 0.0
 ## Зоны наблюдателей по id и их владельцы (для поворота к Илюше).
 var _observer_zones: Dictionary = {}
+var _earn_hint_shown := false
+var _protocol_wait := 0.0
 
 func _ready() -> void:
 	world = get_parent()
@@ -150,8 +154,14 @@ func _process(delta: float) -> void:
 			thanks_after_back.visible = true
 			thanks_after_bubble.visible = true
 			_pop_3d(thanks_after_back)
+	elif _protocol_wait > 0.0:
+		_protocol_wait = maxf(0.0, _protocol_wait - delta)
+
+func protocol_ready() -> bool:
+	return _kind == &"thanks" and _thanks_left <= 0.0 and _protocol_wait <= 0.0
 
 func _physics_process(_delta: float) -> void:
+	_earn_hint()
 	# Прибытие: Илюша или машина на площадке киоска, пока миссия ждёт прибытия.
 	if mission.state == MissionDirector.DRIVE_TO_KIOSK and world.kiosk_zone.is_occupied():
 		mission.notify_arrived_kiosk()
@@ -163,6 +173,24 @@ func _physics_process(_delta: float) -> void:
 		var npc: Node = zone.get_parent()
 		# Полицейский со спины не отвечает (P3): подсказки и E нет, пока Илюша за спиной.
 		zone.enabled = zone.prompt != "" and (npc == null or not npc.has_method("can_talk_to") or npc.can_talk_to(world.player))
+
+## Первое близкое знакомство с дроном после поручения: подсказка рядом с настоящей возможностью заработка.
+func _earn_hint() -> void:
+	if _earn_hint_shown or mission.coins_task() == "" or world.control_mode != &"on_foot" or world.ui_blocking:
+		return
+	if world.player.hide_mode != HideTuning.NONE or world.is_stealth_failing():
+		return
+	var sound: Node = world.get_node_or_null("SoundDirector")
+	if sound == null or sound.gag_playing():
+		return
+	var swarm: Node = world.get_node_or_null("LevelGeometry/Drones")
+	if swarm == null:
+		return
+	for drone in swarm.drones:
+		if drone.visible and drone.global_position.distance_to(world.player.global_position) < 6.0:
+			world.show_hide_hint(CoinLines.earn_hint(PadInput.pad_active), 6.0)
+			_earn_hint_shown = true
+			return
 
 ## С кем Илюша рядом: собеседник открытого диалога или ближайшая доступная зона E пешком.
 func _nearby() -> StringName:
@@ -276,7 +304,8 @@ func _turn_in_shown() -> void:
 	world.camera_rig.shoulder = 0.0
 	_show_thanks(true)
 	_pop_3d(thanks_back)
-	_thanks_left = QuestLines.THANKS_PAUSE
+	_thanks_left = maxf(QuestLines.THANKS_PAUSE, QuestLines.read_seconds(QuestLines.THANKS))
+	_protocol_wait = QuestLines.read_seconds(QuestLines.THANKS_AFTER)
 	dialog.play_voice(&"babka")
 	_face(&"babka")
 	_block()

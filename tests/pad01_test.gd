@@ -398,6 +398,8 @@ func _turn_in() -> void:
 	check(flow.is_dialog_open() and mission.state == MissionDirector.RETURN_HOME, "turn-in: B does not hand in or close without an exit button")
 	await _button(JOY_BUTTON_A)
 	await _frames(3)
+	check(mission.state == MissionDirector.COMPLETE and not hud.completion_panel.visible, "turn-in: handover completes before the readable conversation finishes")
+	await _frames(ceili((QuestLines.read_seconds(QuestLines.THANKS) + QuestLines.read_seconds(QuestLines.THANKS_AFTER)) * 60.0) + 3)
 	check(mission.state == MissionDirector.COMPLETE and hud.completion_panel.visible, "turn-in: A on СДАТЬ ХЛЕБ completes the quest")
 	check(_focus_text() == QuestLines.PROTOCOL_BUTTON, "turn-in: «%s» has focus (%s)" % [QuestLines.PROTOCOL_BUTTON, _focus_text()])
 	await _button(JOY_BUTTON_A)

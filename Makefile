@@ -21,6 +21,7 @@ test: map
 	$(call godot_test,smoke_runner,60,SMOKE)
 	$(call godot_test,intro_test,60,INTRO)
 	$(call godot_test,mission_director_test,60,MISSION)
+	$(call godot_test,story02_test,60,STORY02)
 	$(call godot_test,grey01_acceptance,60,GREY01)
 	$(call godot_test,drive01_acceptance,60,DRIVE01)
 	$(call godot_test,quest01_acceptance,60,QUEST01)

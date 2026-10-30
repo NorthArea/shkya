@@ -177,10 +177,9 @@ func money_missing() -> int:
 	return maxi(0, BREAD_PRICE - money)
 
 
-## Вторая строка карточки задачи: «Собери монеты: N/35», пока денег меньше цены и батон ещё не куплен;
-## сбор возможен с самого начала, до разговора с Бабкой. "" — строки нет.
+## Заработок объясняется после принятия поручения. Собирать деньги можно и до разговора.
 func coins_task() -> String:
-	if has_bread or state == RETURN_HOME or state == COMPLETE or money >= BREAD_PRICE:
+	if state in [NOT_STARTED, OFFERED, RETURN_HOME, COMPLETE] or has_bread or money >= BREAD_PRICE:
 		return ""
 	return CoinLines.task(money, BREAD_PRICE)
 

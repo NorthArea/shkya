@@ -63,8 +63,8 @@ var end_buttons: Dictionary = {}  # id -> Button: &"again", &"menu", &"stay"
 var protocol_values: Dictionary = {}
 ## Стелс (EXT-01, C7): глаз + «!» справа вверху, подсказка, экран провала и тост — читает снимок мира.
 var suspicion_meter: SuspicionMeter
-## COINS-01: вторая строка карточки «Собери монеты: N/35» и счётчик монет справа от карточки (монета + «N / 35»,
-## при ≥ 35 и после покупки — «N ₽»), пульс при каждом подборе. Только из get_hud_state(): money, money_goal, coins_task.
+## Кошелёк — один счётчик; после поручения он показывает цель, строка карточки объясняет источники заработка.
+## При ≥ цены и после покупки — «N ₽», при подборе — пульс. Только из get_hud_state().
 var coins_row: HBoxContainer
 var coins_label: Label
 var coin_counter: PanelContainer
@@ -137,7 +137,7 @@ func _process(delta: float) -> void:
 		if absf(speed - _speed) > 0.05:
 			_speed = speed
 			speed_gauge.queue_redraw()
-	var show_completion: bool = complete and not completion_dismissed
+	var show_completion: bool = complete and state.get("protocol_ready", true) and not completion_dismissed
 	if show_completion and not completion_panel.visible:
 		completion_close.grab_focus.call_deferred()  # закрыть можно и Enter / A геймпада, не только мышью (QA-01, З2; PAD-01)
 		DialogPanelScript.pop(completion_panel, 0.5)
@@ -357,6 +357,8 @@ func _build_card() -> void:
 	coins_label = _label(28)
 	coins_label.name = "CoinsTask"
 	coins_label.add_theme_color_override("font_color", INK)
+	coins_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	coins_label.custom_minimum_size.x = 450
 	coins_row.add_child(coins_label)
 	add_child(card)
 	_build_coin_counter()
@@ -626,6 +628,12 @@ func _build_completion() -> void:
 		value.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 		grid.add_child(value)
 		protocol_values[spec[0]] = value
+	var classification := _label(22)
+	classification.name = "Classification"
+	classification.text = "Официальная оценка:\n" + "\n".join(QuestLines.PROTOCOL_CLASSIFICATION)
+	classification.add_theme_color_override("font_color", RED)
+	classification.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	column.add_child(classification)
 	var reward := HBoxContainer.new()
 	column.add_child(reward)
 	var reward_text := _label(28)

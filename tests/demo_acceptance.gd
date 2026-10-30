@@ -327,6 +327,8 @@ func _pass_one() -> bool:
 	check(1, m.xp == 50 and completed_signals == 1, "10: +50 XP once (xp %d)" % m.xp)
 	check(3, not m.has_bread, "10: has_bread cleared on turn-in")
 	check(1, _hud_has(w, QuestLines.THANKS), "10: line «%s»" % QuestLines.THANKS)
+	check(1, not _hud_has(w, "ЗАДАНИЕ ВЫПОЛНЕНО"), "10: conversation is readable before the protocol")
+	await drv.frames(ceili((QuestLines.read_seconds(QuestLines.THANKS) + QuestLines.read_seconds(QuestLines.THANKS_AFTER)) * 60.0) + 3)
 	check(1, _hud_has(w, "ЗАДАНИЕ ВЫПОЛНЕНО") and _hud_has(w, "+50 опыта"), "10: «ЗАДАНИЕ ВЫПОЛНЕНО» and «+50 опыта»")
 	check(2, _babka_symbol(w) == "", "10: no marker above Babka after completion")
 	await drv.frames(50)

@@ -118,6 +118,7 @@ func _ready() -> void:
 	account_officer.interaction_id = &"account_officer"
 	account_officer.character = "officer"
 	account_officer.height_m = 2.2   # фигура 0,948 холста = 2,09 м: в 1,18 раза выше полицейского (1,77 м), как на e03 (LOOK-01)
+	_opportunities_sign()
 	account_officer.tint = Color(1.0, 1.0, 1.0)
 	account_officer.body_radius = 0.45
 	account_officer.facing_yaw = Layout.ACCOUNT_OFFICER_YAW
@@ -135,6 +136,20 @@ func _ready() -> void:
 	var world := _world()
 	_world_node = world
 	_mission = world.get_node_or_null("MissionDirector") if world else null
+func _opportunities_sign() -> void:
+	for side in [-1.0, 1.0]:
+		var label := Label3D.new()
+		label.name = "OpportunitiesSign"
+		label.text = QuestLines.NEW_OPPORTUNITIES_SIGN + "\n" + QuestLines.NEW_OPPORTUNITIES_TAGLINE
+		label.font = preload("res://assets/fonts/Pangolin-Regular.ttf")
+		label.font_size = 48
+		label.pixel_size = 0.0023
+		label.modulate = Color(0.12, 0.17, 0.24)
+		label.outline_size = 0
+		label.position = Vector3(side * 1.065, 1.65, 0.55)
+		label.rotation.y = side * PI * 0.5
+		van.add_child(label)
+
 	if _mission and _mission.has_signal("bread_received"):
 		_mission.bread_received.connect(_on_bread_received)
 	var rig: Node = world.get_node_or_null("CameraRig") if world else null
