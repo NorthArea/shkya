@@ -42,6 +42,11 @@ const BATCHES := {
 var _batches := {}
 var _meshes := {}
 static var _domes := []   # общие сетки сугробов-куполов (_mound): 4 варианта шума
+## BREAK-03 (C11): экземпляры, поставленные при непустом owners, падают вместе с разрушаемым (id); при непустом
+## wire_owners — висят, пока целы все эти столбы. Записи — в registry (LevelGeometry.break_visuals).
+var owners: Array = []
+var wire_owners: Array = []
+var registry := {}
 
 func _init() -> void:
 	name = "Environment"
@@ -56,8 +61,12 @@ func put(batch: String, xf: Transform3D, color := Color.WHITE, custom := Color(0
 		cell = Vector2i(floori(xf.origin.x / NEAR_CELL), floori(xf.origin.z / NEAR_CELL))
 		key = "%s|%d|%d" % [batch, cell.x, cell.y]
 	if not _batches.has(key):
-		_batches[key] = {"batch": batch, "near": near, "cell": cell, "xf": [], "color": [], "custom": []}
+		_batches[key] = {"batch": batch, "near": near, "cell": cell, "xf": [], "color": [], "custom": [], "owned": [], "wired": []}
 	var store: Dictionary = _batches[key]
+	if not owners.is_empty():
+		(store.owned as Array).append([(store.xf as Array).size(), owners.duplicate()])
+	elif not wire_owners.is_empty():
+		(store.wired as Array).append([(store.xf as Array).size(), wire_owners.duplicate()])
 	(store.xf as Array).append(xf)
 	(store.color as Array).append(color)
 	(store.custom as Array).append(custom)
@@ -108,6 +117,21 @@ func _emit(node_name: String, store: Dictionary, origin: Vector3) -> void:
 		instance.visibility_range_end = NEAR_RANGE
 		instance.visibility_range_end_margin = 4.0
 	add_child(instance)
+	register(registry, instance, store.get("owned", []), "mm")
+	register(registry, instance, store.get("wired", []), "wires")
+
+## BREAK-03: экземпляры узла node с владельцами owned ([[индекс, [id]]]) — в registry (формат LevelGeometry.break_visuals).
+static func register(registry: Dictionary, node: MultiMeshInstance3D, owned: Array, key: String) -> void:
+	var mm := node.multimesh
+	for e: Array in owned:
+		var i: int = e[0]
+		for id: StringName in e[1]:
+			if not registry.has(id):
+				registry[id] = {"nodes": [], "mm": [], "cut": [], "wires": []}
+			if key == "wires":
+				registry[id]["wires"].append([mm, i, mm.get_instance_transform(i), e[1]])
+			else:
+				registry[id]["mm"].append([mm, i, mm.get_instance_transform(i), node])
 
 func _mesh(kind: String) -> Mesh:
 	if _meshes.has(kind):

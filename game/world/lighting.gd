@@ -193,6 +193,46 @@ var _time := 0.0
 var _halos: Array = []                 # [позиция, размер, цвет]
 var _bokeh_material: ShaderMaterial
 var _env: Environment
+## BREAK-03 (C11): сломанный фонарь гаснет. Ключ — центр столба (Vector2i x·10, z·10) → {"lights": [Light3D],
+## "halo": индекс в _halos или −1}; _halo_mm — ореолы, _halos_off — погашенные индексы.
+var lamp_lights := {}
+var _halo_mm: MultiMesh
+var _halos_off := {}
+
+static func _lamp_key(p: Vector2) -> Vector2i:
+	return Vector2i(roundi(p.x * 10.0), roundi(p.y * 10.0))
+
+## Фонарь со столбом в p (центр коллизии Layout) горит / погашен: свет, ореол и подсветка хлопьев. false — такого нет.
+func set_lamp(p: Vector2, on: bool) -> bool:
+	var entry: Dictionary = lamp_lights.get(_lamp_key(p), {})
+	if entry.is_empty():
+		return false
+	for light: Light3D in entry["lights"]:
+		light.visible = on
+	var h: int = entry["halo"]
+	if h >= 0:
+		if on:
+			_halos_off.erase(h)
+		else:
+			_halos_off[h] = true
+		if _halo_mm:
+			var size: float = _halos[h][1] if on else 0.0
+			_halo_mm.set_instance_transform(h, Transform3D(Basis.IDENTITY.scaled(Vector3.ONE * maxf(size, 0.0001)), _halos[h][0]))
+		if _snow_material:
+			_snow_material.set_shader_parameter("lamps", _flake_lamps())
+	return true
+
+## Горит ли фонарь со столбом в p (нет такого — true).
+func lamp_on(p: Vector2) -> bool:
+	var entry: Dictionary = lamp_lights.get(_lamp_key(p), {})
+	return entry.is_empty() or (entry["lights"] as Array).all(func(l: Light3D): return l.visible)
+
+func _flake_lamps() -> PackedVector4Array:
+	var lamps := PackedVector4Array()
+	for i in _halos.size():
+		var at: Vector3 = _halos[i][0]
+		lamps.append(Vector4(at.x, at.y, at.z, 0.0 if _halos_off.has(i) else FLAKE_LAMP_RADIUS * _halos[i][1] / HALO_SIZE))
+	return lamps
 
 func _ready() -> void:
 	var sky_material := ShaderMaterial.new()
@@ -284,11 +324,15 @@ func _ready() -> void:
 	for p in Layout.street_lamps():
 		var tip: Vector2 = p + Layout.lamp_arm(p)
 		_street_lamp(Vector3(tip.x, Layout.POLE_HEIGHT - 0.8, tip.y), index)
+		lamp_lights[_lamp_key(p)] = {"lights": [get_child(get_child_count() - 1)], "halo": _halos.size()}
 		_halos.append([Vector3(tip.x, Layout.POLE_HEIGHT - 0.5, tip.y), HALO_SIZE, SODIUM])
 		index += 1
 	# Контрастные пятна тёплого света на земле (раздел 2 канона): стоянка «Лады» под дворовым фонарём и площадка у окна киоска.
 	# Пятно у стоянки — мягче натриевого: под ним белая «Лада» должна оставаться белой (канон, раздел 2).
 	_pool(Layout.LAMPS[1][0] + Vector3(0.0, -0.3, 0.0), 3.0, 40.0, 12.0, YARD_POOL)   # Н6: Илюша не сливается с пятном
+	# BREAK-03: дворовый фонарь (лампа, пятно, ореол 1) и витрина «ПРОДУКТЫ 24» гаснут вместе со своим объектом.
+	lamp_lights[_lamp_key(Vector2(Layout.LAMPS[1][0].x, Layout.LAMPS[1][0].z))] = {"lights": [get_node("WarmLamp1"), get_child(get_child_count() - 1)], "halo": 1}
+	lamp_lights[_lamp_key(Layout.SHOP24[0])] = {"lights": [get_node("WarmLamp3")], "halo": -1}
 	_pool(Layout.LAMPS[2][0] + Vector3(0.6, 0.3, 0.0), 5.0, 55.0, 7.0, WARM)
 	_build_snow()
 	_build_halos()
@@ -423,7 +467,10 @@ func _build_halos() -> void:
 	node.name = "LampHalos"
 	node.multimesh = multimesh
 	node.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	# Ореол погашенного фонаря сжимается в точку: AABB по всем ореолам, чтобы он не пересчитывался от погашенных.
+	node.custom_aabb = AABB(Vector3(-150, -5, -150), Vector3(300, 30, 300))
 	add_child(node)
+	_halo_mm = multimesh
 
 ## Позёмка: штрихи снега у самой земли вокруг камеры, по ветру (движение — в шейдере ground_drift).
 func _build_drift() -> void:

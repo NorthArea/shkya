@@ -1177,3 +1177,64 @@ const LIFE_SLED_LOOP: Array[Vector2] = [
 ]
 ## Прилавок торговки (Layout.PROPS_BREAKABLES Z19_1, вплотную к гаражам C): банки сверху видны, пока она торгует.
 const LIFE_STALL := &"Z19_1"
+
+# --- BREAK-03: окружение, которое ломается (решение владельца 30.10: «надо, чтобы всё, включая деревья») -----------
+## Деревья, столбы, знаки, щит, павильон остановки, ларьки, контейнеры, лавка и площадка двора, голубятня, «ракушки»,
+## припаркованные машины — коробки all_solids() остаются на месте (облик, запасы и проверки — прежние), но коллизию
+## строит Breakables на слое 6 (C11), а LevelGeometry — только облик. Имя all_solids → [вид Breakables, класс].
+## Не ломаются (C11): дома, гаражи, киоск «ХЛЕБ», валы и сугробы SnowField (C10), укрытия у киоска (KioskPavilion,
+## KioskBins, укрытия EXT-02), борта коробки и ледяная горка (места LIFE), выбивалка (ковёр LIFE-02), машина
+## «мужика под капотом» (LIFE_HOOD_CAR) и ENV_KEEP.
+const ENV_BREAK_KINDS := {
+	"StreetLamp": [&"lamp", &"heavy"], "TrolleyPole": [&"pole", &"heavy"], "Lamp_Yard": [&"lamp_yard", &"heavy"],
+	"Birch": [&"birch", &"heavy"], "Poplar": [&"poplar", &"heavy"], "PropRowan": [&"rowan", &"heavy"],
+	"StreetSign": [&"sign_post", &"light"], "Billboard": [&"billboard", &"heavy"], "BusPavilion": [&"pavilion", &"heavy"],
+	"Shop24": [&"shop24", &"heavy"], "PropShawarma": [&"shawarma", &"heavy"], "PropPress": [&"press", &"heavy"],
+	"PropShells": [&"shells", &"heavy"], "PropDovecote": [&"dovecote", &"heavy"], "TrashBins": [&"bins", &"heavy"],
+	"TrashBinsH10": [&"bins", &"heavy"], "ParkedCar": [&"parked", &"heavy"], "Zhiguli_A": [&"parked", &"heavy"],
+	"Zhiguli_B": [&"parked", &"heavy"], "Bench": [&"bench_big", &"heavy"], "Playground": [&"playground", &"heavy"],
+	"Fence_Yard": [&"fence_long", &"light"],
+}
+## Объекты окружения, которые остаются неразрушаемыми по проверке стелса C7 (центр x/z): см. карточку BREAK-03.
+const ENV_KEEP: Array[Vector2] = []
+## Будка дворняги (props.gd DOG_HOUSE): коробки all_solids у неё не было — только запись здесь.
+const DOG_HOUSE_BOX := [Vector2(38.6, -88.0), Vector3(1.2, 1.25, 1.4)]
+
+static var _env_cache: Array = []
+
+## Записи окружения в формате BREAKABLES + источник: [id, kind, центр, размер, 0, class, индекс в all_solids() или −1].
+## id — имя тела LevelGeometry (имя SOLIDS или «имя_индекс» декора).
+static func env_breakables() -> Array:
+	if not _env_cache.is_empty():
+		return _env_cache
+	var out := []
+	var solids := all_solids()
+	for i in solids.size():
+		var spec: Array = solids[i]
+		if not ENV_BREAK_KINDS.has(spec[0]):
+			continue
+		var xz: Vector2 = spec[2]
+		if spec[0] == "ParkedCar" and xz.distance_to(LIFE_HOOD_CAR) < 0.1:
+			continue
+		var keep := false
+		for k in ENV_KEEP:
+			keep = keep or k.distance_to(xz) < 0.1
+		if keep:
+			continue
+		var id := StringName(spec[0] if i < SOLIDS.size() else "%s_%d" % [spec[0], i])
+		var info: Array = ENV_BREAK_KINDS[spec[0]]
+		out.append([id, info[0], xz, spec[3], 0.0, info[1], i])
+	out.append([&"DogHouse", &"doghouse", DOG_HOUSE_BOX[0], DOG_HOUSE_BOX[1], 0.0, &"light", -1])
+	_env_cache = out
+	return out
+
+## Запись окружения по индексу all_solids() ([] — не ломается).
+static func env_break_at(index: int) -> Array:
+	for spec: Array in env_breakables():
+		if spec[6] == index:
+			return spec
+	return []
+
+## Индекс записи PROPS_SOLIDS[j] в all_solids().
+static func props_solid_index(j: int) -> int:
+	return SOLIDS.size() + decor_solids().size() - PROPS_SOLIDS.size() + j

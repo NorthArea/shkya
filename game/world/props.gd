@@ -92,6 +92,32 @@ func _ready() -> void:
 	_bikes()
 	_build_trails()
 	_build_steam()
+	_adopt_breakables()
+
+## BREAK-03 (C11): облик разрушаемого окружения — узлы этого объекта в LevelGeometry.break_visuals (падают и
+## прячутся вместе с ним): рябины, голубятня, «ракушки», ларьки, будка; гирлянда тополя и кормушка — с деревом,
+## велосипеды — с оградой двора, бельё между берёзой и тополем — прячется, пока сломано любое из двух.
+func _adopt_breakables() -> void:
+	var geo := get_parent()
+	if geo == null or not geo.has_method(&"_adopt"):
+		return
+	for spec in Layout.PROPS_SOLIDS:
+		var xz: Vector2 = spec[2]
+		var node_name: String = {"PropDovecote": "Dovecote", "PropShells": "Shells", "PropShawarma": "Shawarma",
+			"PropPress": "PressKiosk", "PropRowan": "Rowan_%d_%d" % [roundi(xz.x), roundi(xz.y)]}.get(spec[0], "")
+		if node_name != "" and get_node_or_null(node_name):
+			geo._adopt(get_node(node_name), [spec[0]], xz)
+	geo._adopt(get_node("DogHouse"), [], Layout.DOG_HOUSE_BOX[0])
+	geo._adopt(get_node("PoplarGarland"), ["Poplar"], POPLAR_GARLAND)
+	geo._adopt(get_node("Feeder"), ["Birch"], FEEDER_BIRCH)
+	for spec in Layout.SOLIDS:
+		if spec[0] == "Fence_Yard":
+			geo._adopt(get_node("Bikes"), ["Fence_Yard"], spec[2])
+	for end: Vector3 in LAUNDRY_LINE:
+		var xz := Vector2(end.x, end.z)
+		for p in Layout.TREES + Layout.POPLARS:
+			if p.distance_to(xz) < 0.5:
+				geo._adopt(get_node("Laundry"), ["Birch", "Poplar"], p, "cut")
 
 func _process(delta: float) -> void:
 	if _pigeons:
