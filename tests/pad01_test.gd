@@ -283,6 +283,17 @@ func _car_to_kiosk() -> void:
 	var mission := world.mission
 	var player := world.player
 	var car: Lada = world.car
+	# POLISH-03 B: прямой путь даёт ≈ 21–23 ₽ — пешком через двор мимо площадки (монеты entrance, playground), на «Ладе» —
+	# с вылазкой за гаражи двора (ROUTE_DRIVE_HUNT).
+	var yard_walk: Array = [player.global_position, Vector3(-44, 0, 100), Vector3(-52, 0, 88), Vector3(-67.3, 0, 87.5),
+		Vector3(-67.3, 0, 91.5), Vector3(-64, 0, 95.5), Vector3(-50, 0, 95.5)]
+	for i in range(1, yard_walk.size()):
+		var a: Vector3 = yard_walk[i - 1]
+		var b: Vector3 = yard_walk[i]
+		var n := maxi(1, int(ceil(a.distance_to(b) / 0.3)))
+		for k in n:
+			player.place(a.lerp(b, float(k) / n), 0.0)
+			await _frames(1)
 	player.place(car.global_position + Vector3(2.2, 0, 0), 0.0)
 	await _frames(4)
 	check(hud.prompt_label.text == "X — СЕСТЬ В МАШИНУ", "car: «X — СЕСТЬ В МАШИНУ» at the Lada (%s)" % hud.prompt_label.text)
@@ -290,7 +301,7 @@ func _car_to_kiosk() -> void:
 	await _frames(4)
 	check(world.control_mode == &"in_car" and mission.state == MissionDirector.DRIVE_TO_KIOSK, "car: X enters the Lada")
 	var driver := PadDriver.new(self, world)
-	var drove: bool = await driver.drive(Layout.ROUTE_DRIVE.slice(1), 12.0, 6.0)
+	var drove: bool = await driver.drive(Layout.ROUTE_DRIVE_HUNT.slice(1), 12.0, 6.0)
 	check(drove and mission.state == MissionDirector.BUY_BREAD, "car: RT and the left stick drive to the kiosk (state %s)" % mission.state)
 	# Ручник B: машина на ходу тормозит быстрее, удара нет (Илюша в машине).
 	_motion(JOY_AXIS_TRIGGER_RIGHT, 0.0)
@@ -355,10 +366,9 @@ func _car_back() -> void:
 	check(world.control_mode == &"in_car", "back: X re-enters the Lada")
 	var driver := PadDriver.new(self, world)
 	var turned: bool = await driver.drive(Layout.ROUTE_LEAVE_KIOSK, 8.0, 3.0)
-	var back: Array = Layout.ROUTE_DRIVE.slice(0, Layout.ROUTE_DRIVE.size() - 2)
-	back.reverse()
-	var returned: bool = turned and await driver.drive(back, 12.0, 6.0)
-	check(returned, "back: the Lada drove back to the yard on the gamepad")
+	# POLISH-03 B: улица Б перекрыта после покупки — домой в объезд (ROUTE_DETOUR).
+	var returned: bool = turned and await driver.drive(Layout.ROUTE_DETOUR.slice(1), 12.0, 6.0)
+	check(returned and not world.mission.road_closed, "back: the Lada drove home along the detour on the gamepad, closure lifted")
 	check(await driver.stop(), "back: stopped in the yard")
 	driver.world = null
 	driver.tree = null
@@ -387,10 +397,15 @@ func _turn_in() -> void:
 	await _button(JOY_BUTTON_A)
 	await _frames(3)
 	check(mission.state == MissionDirector.COMPLETE and hud.completion_panel.visible, "turn-in: A on СДАТЬ ХЛЕБ completes the quest")
-	check(_focus_text() == "ЗАКРЫТЬ", "turn-in: ЗАКРЫТЬ has focus (%s)" % _focus_text())
+	check(_focus_text() == QuestLines.PROTOCOL_BUTTON, "turn-in: «%s» has focus (%s)" % [QuestLines.PROTOCOL_BUTTON, _focus_text()])
 	await _button(JOY_BUTTON_A)
 	await _frames(3)
-	check(hud.is_end_card_open() and _focus_text() == "ЕЩЁ РАЗ", "turn-in: A on ЗАКРЫТЬ opens «Конец демо», focus on ЕЩЁ РАЗ (%s)" % _focus_text())
+	# POLISH-03 B: сцена этапа 10 перед «Конец демо»; A её пропускает.
+	check(flow.finale.playing and not hud.is_end_card_open(), "turn-in: A on the protocol starts the stage-10 scene")
+	await _frames(40)
+	await _button(JOY_BUTTON_A)
+	await _frames(4)
+	check(flow.finale.skipped == 1 and hud.is_end_card_open() and _focus_text() == "ЕЩЁ РАЗ", "turn-in: A skips the scene, «Конец демо» opens, focus on ЕЩЁ РАЗ (%s)" % _focus_text())
 
 # --- «Конец демо» и меню ---
 

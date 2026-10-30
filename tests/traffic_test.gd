@@ -34,8 +34,8 @@ func _initialize() -> void:
 	call_deferred("_run")
 
 func _run() -> void:
-	create_timer(900.0, true, false, true).timeout.connect(func():
-		push_error("FAIL: traffic test exceeded 900 simulated seconds")
+	create_timer(1400.0, true, false, true).timeout.connect(func():
+		push_error("FAIL: traffic test exceeded 1400 simulated seconds")
 		_finish(2))
 	main = load("res://game/main.tscn").instantiate()
 	root.add_child(main)
@@ -73,6 +73,7 @@ func _run() -> void:
 	await _part_player_block()
 	await _part_hard_brake()
 	await _part_pause_and_dialog()
+	await _part_closure()
 	drv.release_all()
 	_finish()
 
@@ -496,6 +497,49 @@ func _part_pause_and_dialog() -> void:
 	check(await drv.press_button("ПРИНЯТЬ"), "ПРИНЯТЬ closes the dialog (%s)" % drv.last_error)
 	await drv.frames(5)
 	check(not world.quest_flow.is_dialog_open() and world.mission.state == &"GO_TO_CAR", "dialog closed, mission GO_TO_CAR (%s)" % world.mission.state)
+
+# =====================================================================================
+# 8. POLISH-03 B: перекрытие улицы Б на возврате — транспорт встаёт у ограждения без касания и едет дальше, когда
+#    перекрытие сняли (Илюша дома или вышел срок RoadClosure.MAX_SECONDS); пробка не вечная.
+# =====================================================================================
+
+func _part_closure() -> void:
+	print("--- road closure ---")
+	var m := world.mission
+	var closure = world.get_node("LevelGeometry/Patrols/RoadClosure")
+	traffic.reset_positions()
+	world.player.place(Vector3(-20.0, 0.0, -88.0), 0.0)               # тротуар Выборной, вне YARD_HOME и полос
+	if m.state == &"GO_TO_CAR":
+		m.notify_entered_car()
+	m.notify_arrived_kiosk()
+	m.add_money(m.money_missing())
+	check(m.buy_bread() and m.road_closed, "closure: bought bread — street B closed (mission %s)" % m.state)
+	var waited: int = await _wait_until(func(): return closure.is_blocking(), 60 * 40)
+	check(closure.is_blocking(), "closure: fence and gap stand within 40 s (%.1f s)" % (waited / 60.0))
+	var queued := {}
+	var touching := {}
+	var own: Array = [closure.van, closure.get_node("Fence"), closure.get_node("GapSection")]
+	for frame in 60 * 90:
+		await physics_frame
+		for v in traffic.vehicles:
+			if own.has(v.blocked_by) and v.speed < 0.05:
+				queued[v.name] = true
+			var p: Vector3 = v.global_position
+			if absf(p.z - Layout.CLOSURE_Z) < v.size.z * 0.5 + 0.1 and p.x > Layout.CLOSURE_X.x and p.x < Layout.CLOSURE_X.y:
+				touching[v.name] = true
+	check(not queued.is_empty(), "closure: ring transport waits at the closure (%s)" % [queued.keys()])
+	check(touching.is_empty(), "closure: no vehicle body crosses the closure line while it stands %s" % [touching.keys()])
+	var dist: Array = traffic.vehicles.map(func(v): return v.distance_travelled)
+	# Илюша домой не спешит — перекрытие снимают по сроку, пробка рассасывается.
+	await _wait_until(func(): return not m.road_closed, int(60 * (closure.MAX_SECONDS + 5.0)))
+	check(not m.road_closed and not closure.active and closure.timeouts == 1, "closure: lifted after MAX_SECONDS %.0f s without going home (timeouts %d)" % [closure.MAX_SECONDS, closure.timeouts])
+	check(not closure.get_node("Fence").visible and closure.get_node("Fence").collision_layer == 0 and not closure.van.visible, "closure: fence and van gone")
+	await drv.frames(60 * 30)
+	var moved := 0
+	for i in traffic.vehicles.size():
+		if traffic.vehicles[i].distance_travelled > dist[i] + 20.0:
+			moved += 1
+	check(moved == traffic.vehicles.size(), "closure: all %d vehicles drive on after the lift (%d moved > 20 m)" % [traffic.vehicles.size(), moved])
 
 # =====================================================================================
 # Геометрия и служебное

@@ -581,6 +581,17 @@ func _real_car_pass() -> void:
 	flow.dialog.buttons[&"accept"].pressed.emit()
 	await _frames(3)
 	check(mission.state == MissionDirector.GO_TO_CAR, "real: quest accepted")
+	# POLISH-03 B: прямой путь даёт ≈ 21–23 ₽ — пешком через двор к машине мимо подъезда и площадки (монеты entrance и
+	# playground; постов во дворе нет — шаги place() по 0,3 м подбирают монеты как ходьба).
+	var yard_walk: Array = [near_babka, Vector3(-44, 0, 100), Vector3(-52, 0, 88), Vector3(-67.3, 0, 87.5), Vector3(-67.3, 0, 91.5),
+		Vector3(-64, 0, 95.5), Vector3(-50, 0, 95.5), car.global_position + Vector3(2.2, 0, 0)]
+	for i in range(1, yard_walk.size()):
+		var a: Vector3 = yard_walk[i - 1]
+		var b: Vector3 = yard_walk[i]
+		var n := maxi(1, int(ceil(a.distance_to(b) / 0.3)))
+		for k in n:
+			player.place(a.lerp(b, float(k) / n), 0.0)
+			await _frames(1)
 	player.place(car.global_position + Vector3(2.2, 0, 0), 0.0)
 	await _frames(4)
 	check(hud.prompt_label.visible and hud.prompt_label.text == "E — СЕСТЬ В МАШИНУ", "real: E prompt at the car")
@@ -627,7 +638,7 @@ func _real_car_pass() -> void:
 	var closure = world.get_node("LevelGeometry/Patrols/RoadClosure")
 	check(mission.road_closed and closure.active, "real: street B is closed after the purchase (closure stands)")
 	await _frames(2)
-	check(hud.minimap.route_points.size() >= 2 and hud.minimap.route_points[1].y < -45.0, "real: the minimap leads north along the detour, not south to street A (%s)" % [hud.minimap.route_points.slice(0, 3)])
+	check(Array(hud.minimap.route_points).any(func(p: Vector2) -> bool: return p.y < -90.0), "real: the minimap leads north along the detour, not south to street A (%s)" % [hud.minimap.route_points.slice(0, 3)])
 	var back: Array = Layout.ROUTE_DETOUR.slice(1)
 	var returned: bool = await driver.drive(back, 12.0, 6.0)
 	check(returned, "real: Lada drove home along the detour (ROUTE_DETOUR)")

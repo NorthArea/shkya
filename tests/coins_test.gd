@@ -81,6 +81,13 @@ func _fresh_world() -> bool:
 func _part_layout() -> void:
 	var pts := Layout.COIN_POINTS
 	check(pts.size() >= 60, "layout: ≥ 60 coins (%d)" % pts.size())
+	# POLISH-03 B: монеты на крышах («ракушки») — на высоте крыши, не внутри коробки; с земли не достать (REACH_HEIGHT).
+	var roof := pts.filter(func(p: Vector3) -> bool: return p.y > 0.0)
+	check(roof.size() == 3 and roof.all(func(p: Vector3) -> bool: return p.y > CoinsScript.REACH_HEIGHT), "layout: 3 roof coins above REACH_HEIGHT %.1f m (%s)" % [CoinsScript.REACH_HEIGHT, roof])
+	var direct := 0
+	for g in Layout.COIN_DIRECT_GROUPS:
+		direct += Layout.COIN_GROUPS[g][1]
+	check(direct >= 25 and direct < MissionDirector.BREAD_PRICE, "layout: the direct route has %d coins (< 35 — the rest is a hunt)" % direct)
 	var lanes := [Layout.ring_lane(), Layout.ring_lane(6.0, 6, true)]
 	var in_solid := []
 	var on_lane := []
@@ -94,7 +101,7 @@ func _part_layout() -> void:
 		for s in Layout.all_solids():
 			var c: Vector2 = s[2]
 			var size: Vector3 = s[3]
-			if absf(p.x - c.x) < size.x * 0.5 + SOLID_PAD and absf(p.z - c.y) < size.z * 0.5 + SOLID_PAD:
+			if p.y < size.y and absf(p.x - c.x) < size.x * 0.5 + SOLID_PAD and absf(p.z - c.y) < size.z * 0.5 + SOLID_PAD:
 				in_solid.append("%d %s@%s" % [i, s[0], c])
 		for lane in lanes:
 			var d := _polyline_distance(p, lane, true)
@@ -130,19 +137,29 @@ func _part_layout() -> void:
 # =====================================================================================
 
 func _part_route_math() -> void:
+	# POLISH-03 B: прямой путь не набирает 35 — нужна вылазка или охота (критик 30.10: «35 ₽ набираются сами»).
 	var walk := _picked(Layout.ROUTE_WALK, CoinsScript.PICKUP_FOOT)
-	check(walk.size() >= MissionDirector.BREAD_PRICE, "route: ROUTE_WALK at 0.9 m (no magnet, no detour) picks %d ≥ 35" % walk.size())
+	check(walk.size() >= 15 and walk.size() < MissionDirector.BREAD_PRICE, "route: ROUTE_WALK at 0.9 m picks %d — 15…34, the walker hunts for the rest" % walk.size())
 	var yard: Array = [Layout.SPAWN, Layout.BABKA + Vector3(0, 0, -2.2), Layout.CAR_SPAWN + Vector3(1.7, 0, 0)]
 	var foot := _picked(yard, CoinsScript.PICKUP_FOOT)
+	# От парковки к окну пешком честным путём SNEAK_EAST — так покупатель доходит до продавщицы.
+	var window: Array = [Layout.ROUTE_DRIVE[-1]] + Layout.SNEAK_EAST[0] + Layout.SNEAK_EAST[2]
+	for i in _picked(window, CoinsScript.PICKUP_FOOT):
+		if not foot.has(i):
+			foot.append(i)
 	var car := _picked(Layout.ROUTE_DRIVE, CoinsScript.PICKUP_CAR)
 	var both := foot.duplicate()
 	for i in car:
 		if not both.has(i):
 			both.append(i)
-	check(car.size() >= MissionDirector.BREAD_PRICE, "route: ROUTE_DRIVE alone at 1.6 m picks %d ≥ 35" % car.size())
-	check(both.size() >= MissionDirector.BREAD_PRICE, "route: yard on foot + ROUTE_DRIVE picks %d ≥ 35" % both.size())
+	check(both.size() >= 18 and both.size() <= 27, "route: yard + ROUTE_DRIVE + walk to the window picks %d — 18…27, no 35 without a detour" % both.size())
+	var hunt := foot.duplicate()
+	for i in _picked(Layout.ROUTE_DRIVE_HUNT, CoinsScript.PICKUP_CAR):
+		if not hunt.has(i):
+			hunt.append(i)
+	check(hunt.size() >= MissionDirector.BREAD_PRICE + 2, "route: yard + ROUTE_DRIVE_HUNT (one detour behind the yard garages) + walk to the window picks %d ≥ 37" % hunt.size())
 	var all := Layout.COIN_POINTS.size()
-	check(all - walk.size() >= 3 and all - car.size() >= 3, "route: some coins are temptations off the routes (%d / %d off)" % [all - walk.size(), all - car.size()])
+	check(all - walk.size() >= 30 and all - both.size() >= 30, "route: most coins are off the direct routes (%d / %d off)" % [all - walk.size(), all - both.size()])
 
 func _picked(path: Array, radius: float) -> Array:
 	var out := []
@@ -223,7 +240,7 @@ func _part_foot_and_magnet() -> void:
 	var hud := world.get_node("GameHUD")
 	var log := []
 	coins.collected.connect(func(p, total): log.append(total), CONNECT_ONE_SHOT)
-	var i := _index(&"garages_yard", 1)   # (20; 95): соседи в 5 м
+	var i := _index(&"garages_yard", 3)   # (20; 95): соседи в 5 м
 	var c: Vector3 = Layout.COIN_POINTS[i]
 	world.player.place(c + Vector3(-1.9, 0, 0), 0.0)   # западнее: восточнее — стена гаражей
 	await drv.frames(30)
@@ -241,7 +258,7 @@ func _part_foot_and_magnet() -> void:
 	check(log == [1], "foot: collected(total 1) emitted once (%s)" % [log])
 	await drv.frames(2)
 	check(hud.coin_counter_label.text == "1 / 35" and hud.coins_label.text == "Собери монеты: 1/35", "HUD: counter «1 / 35» and card line after the pickup")
-	var j := _index(&"garages_yard", 2)
+	var j := _index(&"garages_yard", 4)
 	world.player.place(Layout.COIN_POINTS[j] + Vector3(-0.6, 0, 0.3), 0.0)
 	await drv.frames(2)
 	check(not coins.is_available(j) and world.mission.money == 2, "foot: within 0.9 m — collected on the spot")
@@ -266,7 +283,7 @@ func _part_foot_and_magnet() -> void:
 func _part_car() -> void:
 	var start := world.mission.money
 	var car := world.car
-	var i := _index(&"road_b", 4)   # (70; 0)
+	var i := _index(&"road_b", 1)   # (70; −12)
 	var c: Vector3 = Layout.COIN_POINTS[i]
 	car.reset_to(c + Vector3(0, 0, 3.0), 0.0)
 	world.enter_car()
@@ -389,7 +406,7 @@ func _part_respawn_and_reset() -> void:
 	check(world.respawn_at_checkpoint(), "respawn: Ilyusha on the checkpoint")
 	await drv.frames(5)
 	check(coins.remaining() <= left and world.mission.money >= money, "respawn: collected coins stay collected, money kept (%d → %d)" % [left, coins.remaining()])
-	check(not coins.is_available(_index(&"garages_yard", 1)), "respawn: a collected coin does not come back")
+	check(not coins.is_available(_index(&"garages_yard", 3)), "respawn: a collected coin does not come back")
 	world.player.place(Layout.SPAWN, 0.0)
 	await drv.frames(2)
 	coins.spawn_burst(Vector3(10, 1.5, 60), 4)
@@ -469,34 +486,43 @@ func _part_route_walk_world() -> void:
 		await drv.frames(1)
 	await drv.frames(20)
 	var m := world.mission.money
-	check(m >= MissionDirector.BREAD_PRICE, "world route: walking ROUTE_WALK collects %d ≥ 35 without a detour" % m)
+	check(m >= 15 and m < MissionDirector.BREAD_PRICE, "world route: walking ROUTE_WALK collects %d — 15…34, the rest is a hunt (POLISH-03 B)" % m)
 
 func _part_route_drive_world() -> void:
-	if not await _fresh_world():
-		return
-	var yard: Array = _sample([Layout.SPAWN, Layout.BABKA + Vector3(0, 0, -2.2), Layout.CAR_SPAWN + Vector3(1.7, 0, 0)], 0.3)
-	for p in yard:
-		world.player.place(p, 0.0)
-		await drv.frames(1)
-	await drv.frames(10)
-	var foot := world.mission.money
-	world.car.reset_to(Layout.CAR_SPAWN, Layout.CAR_SPAWN_YAW)
-	world.enter_car()
-	await drv.frames(2)
-	var route: Array = _sample(Layout.ROUTE_DRIVE, 0.5)
-	for i in route.size():
-		var p: Vector3 = route[i]
-		var next: Vector3 = route[mini(i + 1, route.size() - 1)]
-		var d := next - p
-		world.car.reset_to(p, atan2(-d.x, -d.z) if d.length() > 0.01 else world.car.rotation.y)
-		await drv.frames(1)
-	await drv.frames(15)
-	var total := world.mission.money
-	check(total >= MissionDirector.BREAD_PRICE, "world route: yard on foot (%d) + ROUTE_DRIVE by car collects %d ≥ 35" % [foot, total])
-	check(coins.collected_in_car >= 30, "world route: most of it from the car (%d)" % coins.collected_in_car)
-	if capture:
+	for hunt in [false, true]:
+		if not await _fresh_world():
+			return
+		var yard: Array = _sample([Layout.SPAWN, Layout.BABKA + Vector3(0, 0, -2.2), Layout.CAR_SPAWN + Vector3(1.7, 0, 0)], 0.3)
+		for p in yard:
+			world.player.place(p, 0.0)
+			await drv.frames(1)
+		await drv.frames(10)
+		var foot := world.mission.money
+		world.car.reset_to(Layout.CAR_SPAWN, Layout.CAR_SPAWN_YAW)
+		world.enter_car()
+		await drv.frames(2)
+		var route: Array = _sample(Layout.ROUTE_DRIVE_HUNT if hunt else Layout.ROUTE_DRIVE, 0.5)
+		for i in route.size():
+			var p: Vector3 = route[i]
+			var next: Vector3 = route[mini(i + 1, route.size() - 1)]
+			var d := next - p
+			world.car.reset_to(p, atan2(-d.x, -d.z) if d.length() > 0.01 else world.car.rotation.y)
+			await drv.frames(1)
+		await drv.frames(15)
+		var in_car: int = coins.collected_in_car
 		world.exit_car()
-		await drv.frames(5)
+		await drv.frames(3)
+		for p in _sample([Layout.ROUTE_DRIVE[-1]] + Layout.SNEAK_EAST[0] + Layout.SNEAK_EAST[2], 0.3):
+			world.player.place(p, 0.0)
+			await drv.frames(1)
+		await drv.frames(15)
+		var total := world.mission.money
+		if hunt:
+			check(total >= MissionDirector.BREAD_PRICE, "world route: yard on foot (%d) + ROUTE_DRIVE_HUNT by car + walk to the window collects %d ≥ 35" % [foot, total])
+		else:
+			check(total >= 18 and total < MissionDirector.BREAD_PRICE, "world route: yard on foot (%d) + direct ROUTE_DRIVE + walk to the window collects %d — 18…34, no 35 without a detour" % [foot, total])
+			check(in_car >= 10, "world route: most of it from the car (%d)" % in_car)
+	if capture:
 		await _shot("02_counter_after_drive")
 
 # --- помощники ---

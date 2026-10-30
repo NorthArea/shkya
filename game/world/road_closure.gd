@@ -31,6 +31,9 @@ const GAG_DISTANCE := 22.0         # м от середины перекрыти
 const GAG_SECONDS := 3.0
 const GAP_FORCE_SECONDS := 40.0    # автобус этапа 7 так и не проехал — проём закрывается, если свободен
 const CLEAR_MASK := 1 | 2 | 4      # транспорт кольца (World), Илюша, «Лада»
+## Перекрытие стоит не дольше: потом его снимают и пробка кольца (C8: транспорт ждёт без объезда) рассасывается, даже
+## если Илюша домой не спешит. Объезд с покупки до двора на «Ладе» — 60–75 с, пешком через проход — меньше.
+const MAX_SECONDS := 150.0
 
 var van: CityVan
 var guard: Node3D
@@ -52,6 +55,9 @@ var _pending := false              # road_closed, но линия занята �
 var _radio_left := -1.0
 var _gag_done := false
 var _gap_wait := 0.0
+var _active_seconds := 0.0
+## Для проверок: сколько раз перекрытие сняли по сроку MAX_SECONDS.
+var timeouts := 0
 var _query := PhysicsShapeQueryParameters3D.new()
 
 func _init() -> void:
@@ -302,11 +308,17 @@ func _physics_process(delta: float) -> void:
 			_set_body(_gap, true)
 	if active:
 		_check_gag()
+		_active_seconds += delta
+		if _active_seconds >= MAX_SECONDS:
+			timeouts += 1
+			_mission.notify_home_reached()
+			return
 	_check_home()
 
 func _activate() -> void:
 	active = true
 	activations += 1
+	_active_seconds = 0.0
 	gap_closed = false
 	van.park(Layout.CLOSURE_VAN, Layout.CLOSURE_VAN_YAW)
 	_sensor_off()
