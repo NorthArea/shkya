@@ -94,6 +94,7 @@ func _run() -> void:
 	await _breakable_walk()
 	await _props_walk()   # PROPS-01: новые коробки арены
 	_park_car_away(false)
+	await _car_start_regression()
 	await _sweep_car()
 	await _geometry_car(scenarios)
 	await _breakable_car()
@@ -178,6 +179,29 @@ func _sweep_walk() -> void:
 	check(trapped.is_empty(), "Ilyusha is never trapped at a random free spot (%s)" % [trapped.slice(0, 5)])
 	check(escaped.is_empty(), "Ilyusha never falls or leaves the map (%s)" % [escaped.slice(0, 5)])
 
+# C11: старт в целой разрушаемой коробке не является свободной точкой для машины.
+func _car_start_regression() -> void:
+	var car := world.car
+	var spec: Array = Layout.BREAKABLES.filter(func(item): return item[0] == &"Z6_5")[0]
+	var center := Vector3(spec[2].x, 0.0, spec[2].y)
+	check(not _free(center, _car_box(0.3), Lada.SIZE.y * 0.5 + 0.1, spec[4], car.collision_mask), "car start rejects the intact carpet overlap")
+	var direction := Vector2.LEFT
+	var yaw := _yaw(direction)
+	var start: Vector3 = center + Vector3.RIGHT * (spec[3].x * 0.5 + Lada.SIZE.z * 0.5 + CAR_GAP)
+	check(_free(start, _car_box(0.3), Lada.SIZE.y * 0.5 + 0.1, yaw, car.collision_mask), "nearby legal carpet approach remains eligible")
+	var breakables = world.get_node("LevelGeometry/Breakables")
+	var carpet = breakables.objects.filter(func(item): return item.id == spec[0])[0]
+	world.enter_car()
+	car.reset_to(start, yaw)
+	await _frames(2)
+	await _drive(&"move_forward", &"", CAR_PUSH)
+	await _brake_to_stop()
+	check(not carpet.is_intact() and _car_issue() == "", "legal carpet approach breaks the object and stays on the ground")
+	check(await _car_leaves(car.position, car.rotation.y, CAR_ESCAPE, CAR_ESCAPE_MIN), "legal carpet approach still permits driving away")
+	car.reset_to(Layout.CAR_SPAWN, 0.0)
+	breakables.reset_positions()
+	await _frames(2)
+
 func _sweep_car() -> void:
 	var car := world.car
 	world.enter_car()
@@ -189,7 +213,7 @@ func _sweep_car() -> void:
 	while tested < CAR_POINTS:
 		var point := _random_point(2.5)
 		var yaw := rng.randf_range(-PI, PI)
-		if not _free(point, _car_box(0.3), Lada.SIZE.y * 0.5 + 0.1, yaw):
+		if not _free(point, _car_box(0.3), Lada.SIZE.y * 0.5 + 0.1, yaw, world.car.collision_mask):
 			continue
 		tested += 1
 		var moved := false
@@ -443,7 +467,7 @@ func _geometry_car(by_cat: Dictionary) -> void:
 		var pool: Array = by_cat[cat].filter(func(s): return not Array(s.name.split("/")).any(func(n): return snow_names.has(n)))
 		var picked := _pick(pool, CAR_CAP, func(s):
 			var p := _car_start(s)
-			return inner.has_point(Vector2(p.x, p.z)) and _free(p, _car_box(0.3), Lada.SIZE.y * 0.5 + 0.1, _yaw(s.dir)))
+			return inner.has_point(Vector2(p.x, p.z)) and _free(p, _car_box(0.3), Lada.SIZE.y * 0.5 + 0.1, _yaw(s.dir), world.car.collision_mask))
 		# EXT-01 fix6: полицейские у киоска — люди, как жители (их убирают выше): «Лада», упёртая носом в угол павильона
 		# остановки, не отъезжала назад на 1,5 м из-за тела первого на посту (62; −70). Тела выключены только на заездах —
 		# выборка сценариев (rng) та же, что с телами.
@@ -582,7 +606,7 @@ func _breakable_walk() -> void:
 	check(trapped.is_empty(), "Ilyusha walks away from heavy breakables (%s)" % [trapped.slice(0, 3)])
 	check(inside.is_empty(), "Ilyusha never ends inside a heavy breakable (%s)" % [inside.slice(0, 3)])
 
-## Коробка машины на старте не задевает разрушаемых (слой 32; _free их не видит): у качелей и карусели 4,2 м между
+## Дополнительная проверка полного габарита у разрушаемых (слой 32): у качелей и карусели 4,2 м между
 ## гранями — машина длиной 4,1 м, поставленная туда носом в одну, стояла бы в другой.
 func _clear_of_breakables(point: Vector3, yaw: float) -> bool:
 	var query := PhysicsShapeQueryParameters3D.new()
@@ -617,7 +641,7 @@ func _breakable_car() -> void:
 			var dir: Vector2 = side[1]
 			var start := Vector3(side[0].x - dir.x * (Lada.SIZE.z * 0.5 + 0.3), 0.0, side[0].y - dir.y * (Lada.SIZE.z * 0.5 + 0.3))
 			var yaw := _yaw(dir)
-			if not _free(start, _car_box(0.1), Lada.SIZE.y * 0.5 + 0.1, yaw) or not _clear_of_breakables(start, yaw):
+			if not _free(start, _car_box(0.1), Lada.SIZE.y * 0.5 + 0.1, yaw, world.car.collision_mask) or not _clear_of_breakables(start, yaw):
 				continue
 			tested += 1
 			car_low = 0.0
@@ -777,8 +801,8 @@ func _car_issue() -> String:
 		return " off ground y=%.2f" % p.y
 	if not Layout.BOUNDS.has_point(Vector2(p.x, p.z)):
 		return " off map"
-	if not _free(p, _car_box(-0.3), Lada.SIZE.y * 0.5, car.rotation.y):
-		return " inside %s" % _hit_name(p, _car_box(-0.3), Lada.SIZE.y * 0.5, car.rotation.y)
+	if not _free(p, _car_box(-0.3), Lada.SIZE.y * 0.5, car.rotation.y, car.collision_mask):
+		return " inside %s" % _hit_name(p, _car_box(-0.3), Lada.SIZE.y * 0.5, car.rotation.y, car.collision_mask)
 	return ""
 
 func _where(s: Dictionary, p: Vector3) -> String:
@@ -806,11 +830,11 @@ func _car_box(margin: float) -> Shape3D:
 	box.size = Lada.SIZE + Vector3(margin * 2.0, -0.2, margin * 2.0)
 	return box
 
-func _free(point: Vector3, shape: Shape3D, lift: float, yaw := 0.0, collision_mask := 1 | 4) -> bool:
+func _free(point: Vector3, shape: Shape3D, lift: float, yaw: float, collision_mask: int) -> bool:
 	return _overlaps(point, shape, lift, yaw, collision_mask).is_empty()
 
 ## Имя первого пересечённого тела — для отчёта о найденном месте.
-func _hit_name(point: Vector3, shape: Shape3D, lift: float, yaw := 0.0, collision_mask := 1 | 4) -> String:
+func _hit_name(point: Vector3, shape: Shape3D, lift: float, yaw: float, collision_mask: int) -> String:
 	var hits := _overlaps(point, shape, lift, yaw, collision_mask)
 	return String(hits[0].collider.name) if not hits.is_empty() else "?"
 
@@ -936,7 +960,7 @@ func _props_car() -> void:
 			var p2: Vector2 = side[0] - dir * (CAR_GAP + Lada.SIZE.z * 0.5)
 			var start := Vector3(p2.x, 0.0, p2.y)
 			var yaw := _yaw(dir)
-			if not inner.has_point(p2) or not _free(start, _car_box(0.3), Lada.SIZE.y * 0.5 + 0.1, yaw):
+			if not inner.has_point(p2) or not _free(start, _car_box(0.3), Lada.SIZE.y * 0.5 + 0.1, yaw, world.car.collision_mask):
 				continue
 			tested += 1
 			car_low = 0.0
