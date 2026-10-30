@@ -59,22 +59,14 @@ var _mission: Node
 var _world_node: Node
 var _moved := false
 
-const POLICE_APPEARANCES: Array[String] = ["police_long", "police_round"]
-const GUARD_APPEARANCES: Array[String] = ["omon_helmet", "omon_hood"]
-static var _appearance_cycle := 0
-
 func _init() -> void:
 	name = "Patrols"
 
 func _ready() -> void:
-	var appearance_index := _appearance_cycle % POLICE_APPEARANCES.size()
-	if _world() != null:
-		_appearance_cycle += 1
 	officer = PatrolNpcScript.new()
 	officer.name = "Officer"
 	officer.interaction_id = &"officer"
 	officer.character = "police"
-	officer.appearance = POLICE_APPEARANCES[appearance_index]
 	officer.height_m = 2.05   # фигура 0,861 холста = 1,77 м ≈ Илюша (1,80 м), как на e01 (LOOK-01)
 	officer.tint = Color(1.0, 1.0, 1.0)
 	officer.body_radius = 0.6
@@ -95,7 +87,6 @@ func _ready() -> void:
 	officer2.name = "Officer2"
 	officer2.interaction_id = &"officer2"   # без диалога: prompt_for даёт "", зона выключена
 	officer2.character = "guard"   # «росгвардеец» STEALTH_DESIGN: свой облик по e03 (ART-08), без эмблем
-	officer2.appearance = GUARD_APPEARANCES[appearance_index]
 	officer2.height_m = officer.height_m
 	officer2.tint = officer.tint
 	officer2.body_radius = officer.body_radius
@@ -118,7 +109,6 @@ func _ready() -> void:
 	account_officer.interaction_id = &"account_officer"
 	account_officer.character = "officer"
 	account_officer.height_m = 2.2   # фигура 0,948 холста = 2,09 м: в 1,18 раза выше полицейского (1,77 м), как на e03 (LOOK-01)
-	_opportunities_sign()
 	account_officer.tint = Color(1.0, 1.0, 1.0)
 	account_officer.body_radius = 0.45
 	account_officer.facing_yaw = Layout.ACCOUNT_OFFICER_YAW
@@ -128,6 +118,7 @@ func _ready() -> void:
 	van.name = "CityVan"
 	add_child(van)
 	van.park(Layout.VAN_PARK, Layout.VAN_PARK_YAW)
+	_opportunities_sign()
 	# POLISH-03 B: перекрытие улицы Б на возврате и микроавтобус финала (RoadClosure).
 	closure = RoadClosureScript.new()
 	add_child(closure)
@@ -136,6 +127,15 @@ func _ready() -> void:
 	var world := _world()
 	_world_node = world
 	_mission = world.get_node_or_null("MissionDirector") if world else null
+	if _mission and _mission.has_signal("bread_received"):
+		_mission.bread_received.connect(_on_bread_received)
+	var rig: Node = world.get_node_or_null("CameraRig") if world else null
+	if rig and rig.has_method("exclude_permanently"):
+		for npc in [officer, officer2, account_officer]:
+			var body: CollisionObject3D = npc.get_node_or_null("Body")
+			if body:
+				rig.call_deferred("exclude_permanently", body.get_rid())   # CameraRig готовится позже LevelGeometry
+
 func _opportunities_sign() -> void:
 	for side in [-1.0, 1.0]:
 		var label := Label3D.new()
@@ -149,15 +149,6 @@ func _opportunities_sign() -> void:
 		label.position = Vector3(side * 1.065, 1.65, 0.55)
 		label.rotation.y = side * PI * 0.5
 		van.add_child(label)
-
-	if _mission and _mission.has_signal("bread_received"):
-		_mission.bread_received.connect(_on_bread_received)
-	var rig: Node = world.get_node_or_null("CameraRig") if world else null
-	if rig and rig.has_method("exclude_permanently"):
-		for npc in [officer, officer2, account_officer]:
-			var body: CollisionObject3D = npc.get_node_or_null("Body")
-			if body:
-				rig.call_deferred("exclude_permanently", body.get_rid())   # CameraRig готовится позже LevelGeometry
 
 func _world() -> Node:
 	var node := get_parent()

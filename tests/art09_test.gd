@@ -6,10 +6,10 @@ const SpriteScript = preload("res://game/characters/character_sprite.gd")
 const Layout = preload("res://game/world/layout.gd")
 const PatrolsScript = preload("res://game/world/patrols.gd")
 const LifeScript = preload("res://game/world/life.gd")
-const CIVILIANS := {56: ["resident_parka", &"man"], 57: ["resident_scarf", &"woman"], 58: ["resident_parka", &"man"], 59: ["resident_scarf", &"woman"], 62: ["resident_parka", &"man"], 63: ["resident_scarf", &"woman"]}
+const CIVILIANS := {56: ["resident_kolpak", &"babka"], 57: ["resident_ushanka_walk", &"man"], 58: ["resident_shuba", &"babka"], 59: ["resident_turban", &"babka"], 62: ["resident_bow", &"babka"], 63: ["resident_tourist", &"man"]}
 const NpcScript = preload("res://game/npc/npc.gd")
 const SENSOR_PATHS: Array[String] = ["LevelGeometry/Patrols/Officer/DetectionSensor", "LevelGeometry/Patrols/Officer2/DetectionSensor", "LevelGeometry/Patrols/CityVan/DetectionSensor", "LevelGeometry/Patrols/RoadClosure/ClosureVan/DetectionSensor"]
-const TYPES: Array[String] = ["police_long", "police_round", "omon_helmet", "omon_hood", "resident_parka", "resident_scarf"]
+const TYPES: Array[String] = ["police_long", "police_round", "guard_alt"]
 var checks := 0
 var failures := 0
 var main: Node
@@ -87,10 +87,8 @@ func _run() -> void:
 	world = main.world
 	check(world.get_instance_id() != first_world_id, "restart creates a new actual world")
 	var second_drawings := _live_world(world, "second world")
-	check(first_drawings[0] != second_drawings[0] and first_drawings[1] != second_drawings[1], "two successive worlds use different police and OMON drawings")
-	var all_drawings: Array = first_drawings + second_drawings
-	for expected in ["police_long", "police_round", "omon_helmet", "omon_hood"]:
-		check(expected in all_drawings, "actual posts use " + expected + " across two worlds")
+	check(first_drawings == second_drawings, "new games retain the restored original police and guard drawings")
+	check(first_drawings == ["police", "guard"], "normal games keep original drawings while new variants remain candidates")
 	for audio in world.find_children("*", "AudioStreamPlayer", true, false) + world.find_children("*", "AudioStreamPlayer3D", true, false):
 		audio.stop()
 	main.return_to_menu()
@@ -101,7 +99,7 @@ func _run() -> void:
 	main.start_game()
 	for i in 5: await physics_frame
 	var third_drawings := _live_world(main.world, "world after menu")
-	check(third_drawings == first_drawings, "menu backdrop does not consume the gameplay appearance cycle")
+	check(third_drawings == first_drawings, "menu transitions retain the restored original drawings")
 	for audio in main.find_children("*", "AudioStreamPlayer", true, false) + main.find_children("*", "AudioStreamPlayer3D", true, false):
 		audio.stop()
 	main.queue_free()
@@ -126,11 +124,11 @@ func _live_world(world: DemoWorld, label: String) -> Array[String]:
 		check(npc.position.is_equal_approx(spec[3]) and npc.facings == spec[5], label + ": post keeps position and facings " + str(spec[2]))
 		check(is_equal_approx(npc.sensor.range_m, spec[4]) and npc.sensor.car_area == Layout.KIOSK_SQUARE, label + ": sensor keeps range and car area " + str(spec[2]))
 		check(npc.get_node("Body").collision_layer == 1 and is_equal_approx(npc.body_radius, 0.6), label + ": post keeps physical body " + str(spec[2]))
-		check(look.resolved_character() == npc.appearance and look.character == npc.character, label + ": real post receives its drawing " + str(spec[2]))
-		check(look.sprite.texture.resource_path.contains(npc.appearance + "_"), label + ": real post renders assigned texture " + str(spec[2]))
+		check(npc.appearance == "" and look.resolved_character() == npc.character and look.character == npc.character, label + ": real post retains its original drawing " + str(spec[2]))
+		check(look.sprite.texture.resource_path.contains("/" + npc.character + "_"), label + ": real post renders its original texture " + str(spec[2]))
 		drawing_ids.append(look.resolved_character())
 		sensor_ids.append(npc.sensor.get_instance_id())
-	check(drawing_ids[0] in ["police_long", "police_round"] and drawing_ids[1] in ["omon_helmet", "omon_hood"], label + ": both posts use supported variants")
+	check(drawing_ids == ["police", "guard"], label + ": rejected candidate drawings are not used at the posts")
 	check(not patrols.officer2.interactable.enabled and patrols.officer2.interactable.prompt == "", label + ": second post remains without dialogue")
 	check(patrols.account_officer.character == "officer" and patrols.account_officer.appearance == "" and patrols.account_officer.interaction_id == &"account_officer", label + ": account officer remains unchanged")
 	for npc in [world.player, world.babka, world.vendor]:

@@ -694,7 +694,7 @@ const RESIDENT_LOOKS: Array[StringName] = [&"shuba", &"violet", &"ushanka_walk",
 		&"violet", &"kolpak", &"dog", &"ushanka_walk", &"tourist", &"shuba",
 		&"turban", &"bow", &"beret", &"kolpak", &"ushanka_walk", &"tourist",
 		&"shuba", &"dog", &"bow", &"violet", &"beret", &"turban",
-		&"parka", &"scarf", &"parka", &"scarf", &"dog", &"violet", &"parka", &"scarf"]
+		&"kolpak", &"ushanka_walk", &"shuba", &"turban", &"dog", &"violet", &"bow", &"tourist"]
 
 # CITY-01 (часть P): посадка в троллейбус. Житель 2 (Residents.RIDER) ждёт у павильона A на точке 1 своего маршрута
 # и по doors_opened садится в ближайшую дверь (исчезает); на остановке B выходит из передней двери — она севернее

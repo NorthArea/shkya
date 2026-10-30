@@ -14,7 +14,7 @@ const WALK_SPEED_MIN := 0.4   # м/с: медленнее — стойка
 @export var character := "ilyusha"
 ## ART-09: рисунок задаётся до _ready, независимо от квестовой роли и interaction_id.
 ## Пустое значение сохраняет прежний облик. Имена ограничены готовыми комплектами.
-const APPEARANCES: Array[String] = ["police_long", "police_round", "omon_helmet", "omon_hood", "resident_parka", "resident_scarf"]
+const APPEARANCES: Array[String] = ["police_long", "police_round", "guard_alt"]
 @export var appearance := ""
 @export var height_m := 2.4     # высота холста в метрах
 @export var walk_stride := 0.32 # метров на кадр ходьбы
