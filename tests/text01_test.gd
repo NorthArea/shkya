@@ -111,6 +111,15 @@ func _quest_texts() -> void:
 	check(QuestLines.OFFICER_CHAIN.size() == 1, "officer: one line, no back-and-forth (%d)" % QuestLines.OFFICER_CHAIN.size())
 	check(QuestLines.VENDOR_CHAIN.size() <= 3 and QuestLines.RETURN_CHAIN.size() <= 2, "vendor ≤ 3 and return ≤ 2 lines (%d, %d)" % [QuestLines.VENDOR_CHAIN.size(), QuestLines.RETURN_CHAIN.size()])
 	check(QuestLines.OFFER.contains("за хлебом") and QuestLines.THANKS_AFTER.contains("за хлебом"), "the «за хлебом» gag opens and closes the quest")
+	# STORY-01: подзаголовки карточки провала — одна мысль, ≤ 8 слов, без повторов; заголовок ≤ 6 слов.
+	for text: String in CaughtPanel.SUBTITLES:
+		var words := QuestLines.word_count(text)
+		check(words >= 2 and words <= DIALOG_MAX_WORDS, "caught card «%s» — %d words (≤ %d)" % [text, words, DIALOG_MAX_WORDS])
+	var unique := {}
+	for text: String in CaughtPanel.SUBTITLES:
+		unique[text] = true
+	check(CaughtPanel.SUBTITLES.size() >= 3 and unique.size() == CaughtPanel.SUBTITLES.size(), "caught card: 3+ distinct subtitles (%d)" % unique.size())
+	check(QuestLines.word_count(CaughtPanel.HEADLINE) <= 6, "caught card headline ≤ 6 words")
 	for gag: Array in _gags():
 		check(gag.size() == 1, "hide gag is one line, not a radio dialog: %s" % [gag])
 	for text: String in _all_texts():
@@ -126,6 +135,8 @@ func _all_texts() -> Array:
 	texts.append_array(QuestLines.BREAK_LINES_BABKA)
 	texts.append_array(QuestLines.BREAK_LINES_DOMINO)
 	texts.append_array(IntroLines.all_texts())
+	texts.append_array(CaughtPanel.SUBTITLES)   # STORY-01: карточка провала
+	texts.append_array([CaughtPanel.HEADLINE, CaughtPanel.STAMP, CaughtPanel.FOOTER, CaughtPanel.AGAIN_TEXT, CaughtPanel.MENU_TEXT])
 	texts.append_array([QuestLines.RADIO, QuestLines.HIDE_BOX_VENDOR, QuestLines.HIDE_SNOW_TOAST, QuestLines.HIDE_BARREL_BUMP_TOAST,
 		CoinLines.task(0, 35), SuspicionMeter.HINT_TEXT, SuspicionMeter.FAIL_TEXT, DemoWorld.STEALTH_TOAST,
 		DemoWorld.STEALTH_TOAST_NO_BREAD, DemoWorld.STEALTH_TOAST_CAR, DemoWorld.HINT_NO_EXIT, DronesScript.PATROL_GAG,
@@ -171,8 +182,8 @@ func _timings() -> void:
 	for hint: String in [HideTuning.HINT_BOX, HideTuning.HINT_BARREL, HideTuning.HINT_SNOWDRIFT, HideTuning.HINT_EXIT_BLOCKED, QuestLines.HIDE_BOX_VENDOR]:
 		_enough(HideTuning.HINT_SECONDS, hint, "hide hint")
 	_enough(2.5, DronesScript.PATROL_GAG, "patrol gag")
-	for headline: String in IntroLines.HEADLINES:
-		_enough(Intro.HEADLINE_HOLD, headline, "intro headline")
+	for k in IntroLines.HEADLINES.size():
+		_enough(Intro.headline_hold(k), IntroLines.post_text(k), "intro post")
 	_enough(Intro.BUBBLE_SECONDS, IntroLines.GO_FOR_A_WALK, "intro bubble")
 	for text: String in QuestLines.all_street_lines() + QuestLines.BREAK_LINES_BABKA:
 		_enough(ResidentScript.bubble_seconds(text), text, "street bubble")

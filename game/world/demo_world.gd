@@ -39,6 +39,10 @@ var _fail_in_car := false
 var _fail_tow := false
 var _stealth_toast_left := 0.0
 var _stealth_toast_car := false
+## STORY-01: карточка «В ГОРОДЕ Н. НИЧЕГО НЕ ПРОИЗОШЛО» (CaughtPanel) — пока она есть, провал не кончается сам по
+## FAIL_SECONDS, а ждёт finish_stealth_fail() по кнопке «ЕЩЁ РАЗ»; экран HUD «ВАШ МАРШРУТ УТОЧНЁН» при ней не нужен.
+## Без неё (тесты на мире без карточки) провал прежний.
+var fail_presenter: Node = null
 ## EXT-02: подсказка-отказ в укрытии («СНИМИ КОРОБКУ», «ВЫХОД ЗАНЯТ»), HUD — get_hud_state()["hide_hint"].
 var _hide_hint := ""
 var _hide_hint_left := 0.0
@@ -86,7 +90,7 @@ func _physics_process(delta: float) -> void:
 	_hide_hint_left = maxf(_hide_hint_left - delta, 0.0)
 	# Заморозка шкалы на время диалога (C7); пауза — через process_mode, директор на ней не тикает.
 	stealth.set_frozen(quest_flow.is_dialog_open(), &"dialog")
-	if _fail_left > 0.0:
+	if _fail_left > 0.0 and not _has_fail_presenter():
 		_fail_left -= delta
 		if _fail_left <= 0.0:
 			_finish_fail()
@@ -224,6 +228,16 @@ func _on_player_detected() -> void:
 	player.input_enabled = false
 	player.velocity = Vector3.ZERO
 
+## STORY-01: игрок выбрал «ЕЩЁ РАЗ» на карточке провала — респавн на чекпоинте, как по окончании FAIL_SECONDS.
+func finish_stealth_fail() -> bool:
+	if _fail_left <= 0.0:
+		return false
+	_finish_fail()
+	return true
+
+func _has_fail_presenter() -> bool:
+	return fail_presenter != null and is_instance_valid(fail_presenter)
+
 func _finish_fail() -> void:
 	_fail_left = 0.0
 	_stealth_toast_car = _fail_tow
@@ -322,7 +336,7 @@ func get_hud_state() -> Dictionary:
 		# C7: шкала подозрения, состояние, экран провала и тост после респавна.
 		"suspicion": stealth.suspicion,
 		"stealth_state": stealth.state,
-		"stealth_fail": _fail_left > 0.0,
+		"stealth_fail": _fail_left > 0.0 and not _has_fail_presenter(),
 		"stealth_toast": _stealth_toast_text() if _stealth_toast_left > 0.0 else "",
 		# EXT-02: режим укрытия и подсказка-отказ (HUD показывает её вместо prompt, пока не пуста).
 		"hide_mode": player.hide_mode,

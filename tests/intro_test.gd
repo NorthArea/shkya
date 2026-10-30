@@ -54,17 +54,31 @@ func _default_skipped() -> void:
 
 func _texts() -> void:
 	var headlines := IntroLines.HEADLINES
-	check(headlines.size() >= 3 and headlines.size() <= 4, "texts: 3–4 headlines (%d)" % headlines.size())
-	check(headlines[0].contains("ничего не происходит") and headlines[0].contains("город"), "texts: first — nothing happens in the city")
+	var n := headlines.size()
+	check(n >= 3 and n <= 4, "texts: 3–4 posts (%d)" % n)
+	check(IntroLines.BODIES.size() == n and IntroLines.FOOTERS.size() == n and IntroLines.STAMPS.size() == n,
+		"texts: body, footer and stamp for every post")
+	check(headlines[0].contains("ничего не происходит") or headlines[0].contains("Ничего не происходит"), "texts: first — nothing happens")
+	check(IntroLines.BODIES[0].contains("город") and IntroLines.BODIES[0].contains("ничего не происходит"), "texts: first body — nothing happens in the city")
 	check(headlines.any(func(h): return h.contains("по плану")), "texts: 'всё идёт по плану' present")
-	check(headlines[-1] == "Очевидцев просим явиться", "texts: last headline is the radio callback")
-	check(IntroLines.STAMPS.size() == headlines.size(), "texts: one stamp per headline")
+	check(IntroLines.BODIES.any(func(b): return b.contains("не происходит") and b.contains("для вашего блага")),
+		"texts: «всё, что не происходит, — для вашего блага» (STORY-01)")
+	# STORY-01: последний пост — про патрули, «для вашего блага» и совет их обходить.
+	var last := IntroLines.post_text(n - 1)
+	check(headlines[-1].contains("Патрул") and last.contains("для вашего блага"), "texts: last post — patrols are for your good")
+	check(last.contains("Обходите патрули"), "texts: last post tells to avoid the patrols")
+	for k in n:
+		var hw := QuestLines.word_count(headlines[k])
+		var bw := QuestLines.word_count(IntroLines.BODIES[k])
+		check(hw <= 5 and bw <= 12, "texts: post %d — headline %d ≤ 5 words, body %d ≤ 12 words" % [k, hw, bw])
+		var need := QuestLines.READ_BASE + QuestLines.READ_PER_WORD * QuestLines.word_count(IntroLines.post_text(k))
+		check(IntroScript.headline_hold(k) >= need - 0.001, "timing: post %d shown %.2f s ≥ %.2f s to read it whole" % [k, IntroScript.headline_hold(k), need])
 	check(IntroLines.GO_FOR_A_WALK == "Пойду прогуляюсь", "texts: Ilyusha's line")
 	for text in IntroLines.all_texts():
 		var low := text.to_lower()
 		check(FORBIDDEN.all(func(w): return not low.contains(w)), "texts: forbidden words absent in '%s'" % text)
 	var total := IntroScript.total_seconds()
-	check(total >= 10.0 and total <= 15.0, "timing: total %.2f s within 10–15 s" % total)
+	check(total >= 15.0 and total <= 20.0, "timing: total %.2f s within 15–20 s (three posts read whole, STORY-01)" % total)
 
 # --- полный проход ---
 
@@ -107,9 +121,12 @@ func _full_play() -> void:
 			seen_headlines.append(k)
 		# Середина показа каждого заголовка: на экране он, свайпов сыграно k.
 		for j in IntroLines.HEADLINES.size():
-			var mid := IntroScript.headline_start(j) + IntroScript.HEADLINE_HOLD * 0.5
+			var mid := IntroScript.headline_start(j) + IntroScript.headline_hold(j) * 0.5
 			if absf(t - mid) < 0.5 / FPS:
 				check(intro.current_headline() == IntroLines.HEADLINES[j], "play: at %.2f s headline %d on screen" % [t, j])
+				var card: Control = intro._cards[j]
+				check(card.visible and absf(card.position.x) < 1.0 and (card.get_node("Body") as Label).text == IntroLines.BODIES[j]
+					and (card.get_node("Footer") as Label).text == IntroLines.FOOTERS[j], "play: post %d shows its body and footer" % j)
 				check(intro.swipe_count == j, "play: %d swipe sounds before headline %d" % [j, j])
 				check(intro.phone_panel.visible and intro.phase == &"phone", "play: phone screen shown at headline %d" % j)
 				var camera_pos: Vector3 = rig.camera.global_position
@@ -130,7 +147,7 @@ func _full_play() -> void:
 			bubble_hidden_after = false
 		if intro.is_running():
 			check_quiet(not player.input_enabled, "play: input stays disabled during the intro")
-	check(seen_headlines == [0, 1, 2, 3], "play: headlines in order %s" % [seen_headlines])
+	check(seen_headlines == range(IntroLines.HEADLINES.size()), "play: posts in order %s" % [seen_headlines])
 	check(phone_between, "play: the phone is between Ilyusha and the camera")
 	check(bubble_ok, "play: bubble '%s' shown after the feed, phone put away" % IntroLines.GO_FOR_A_WALK)
 	check(bubble_hidden_after, "play: bubble hidden during the pullback")
