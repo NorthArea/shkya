@@ -91,7 +91,7 @@ func _street_pools() -> void:
 # --- 2. диалоги квеста и гэги ---
 
 func _dialog_lines() -> Array:
-	var lines: Array = [QuestLines.OFFER] + QuestLines.OFFER_WARNING + [QuestLines.IDLE, QuestLines.IDLE_DONE, QuestLines.ACCOUNT_OFFICER_ASK["text"],
+	var lines: Array = [QuestLines.OFFER] + QuestLines.OFFER_WARNING + QuestLines.PATROL_TURN + [QuestLines.IDLE, QuestLines.IDLE_DONE, QuestLines.ACCOUNT_OFFICER_ASK["text"],
 		QuestLines.ACCOUNT_OFFICER_REPLY["text"], QuestLines.VENDOR_AGAIN, QuestLines.THANKS, QuestLines.THANKS_AFTER,
 		CoinLines.vendor_short(35)]
 	for chain in [QuestLines.OFFICER_CHAIN, QuestLines.VENDOR_CHAIN, QuestLines.RETURN_CHAIN]:

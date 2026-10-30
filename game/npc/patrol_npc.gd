@@ -18,7 +18,26 @@ extends "res://game/npc/npc.gd"
 ## EXT-01 fix5: facing_holds — удержание по номеру угла (Vector2 с, мин…макс); пусто или без записи — turn_every;
 ## facing_fovs — обзор сенсора по номеру угла (град), ставится в начале разворота на угол; без записи — sensor_fov.
 
+## POLISH-03 A (критик: стелс вслепую — из-за гаражей полицейского не видно): за WARN_LEAD с до разворота поста —
+## сигнал turn_warning(следующий угол), треск рации с поста (слышно ближе WARN_RADIUS) и силуэт желтеет; если следующий
+## угол накроет пешего Илюшу (не в укрытии) ближе WARN_RADIUS — субтитр QuestLines.PATROL_TURN (не чаще WARN_TEXT_COOLDOWN, не поверх
+## идущего гэга). Силуэт сквозь стены (patrol_xray.gdshader) — пока герой ближе XRAY_RADIUS: голубой, перед разворотом
+## жёлтый, когда сенсор видит Илюшу — красный. Время удержаний и углы не меняются — честный путь не проще (C7).
+
 const DetectionSensorScript = preload("res://game/stealth/detection_sensor.gd")
+const XRAY_SHADER := preload("res://game/stealth/patrol_xray.gdshader")
+const CRACKLE := preload("res://assets/audio/radio_mumble.wav")
+const HideTuning = preload("res://game/stealth/hide_tuning.gd")
+signal turn_warning(next_index: int)
+const WARN_LEAD := 1.0            # с до начала разворота
+const WARN_RADIUS := 25.0         # м: ближе — треск рации и субтитр
+const WARN_TEXT_COOLDOWN := 6.0   # с между субтитрами одного поста
+const WARN_CONE_SLACK := 20.0     # град к половине обзора: «повернётся к тебе», с запасом
+const CRACKLE_SECONDS := 0.7
+const XRAY_RADIUS := 25.0         # м от героя (или машины) до поста
+const XRAY_CALM := Color(0.62, 0.86, 1.0)
+const XRAY_WARN := Color(1.0, 0.85, 0.2)
+const XRAY_SEEN := Color(1.0, 0.3, 0.2)
 
 ## Углы корпуса в осях узла (yaw: 0 — на север), по кругу.
 @export var facings: Array = [0.0]
@@ -53,6 +72,17 @@ var _linger_target: Node3D
 var _linger_left := 0.0
 var _watching := false     # после диалога Илюша не ушёл — смотрим на него
 var _rng := RandomNumberGenerator.new()
+## POLISH-03 A: сколько раз предупредил о развороте и сколько из них — субтитром (для тестов).
+var warnings := 0
+var warning_texts := 0
+var _warned := false
+var _warn_cooldown := 0.0
+var _warn_glow := 0.0     # с: силуэт жёлтый после предупреждения
+var _crackle_left := 0.0
+var crackle: AudioStreamPlayer3D
+var xray: MeshInstance3D
+var _xray_material: ShaderMaterial
+var _look: Node   # CharacterSprite облика (npc.gd: Visual/Look)
 
 func _ready() -> void:
 	super()
@@ -63,13 +93,22 @@ func _ready() -> void:
 	_turn_to = _turn_from
 	facing_yaw = _turn_from
 	visual.rotation.y = _turn_from
-	_wait_left = _hold()
+	_reset_hold()
 	sensor = DetectionSensorScript.new()
 	sensor.name = "DetectionSensor"
 	sensor.range_m = sensor_range
 	sensor.fov_deg = _fov_for(0)
 	sensor.rotation.y = _turn_from
 	add_child(sensor)
+	crackle = AudioStreamPlayer3D.new()
+	crackle.name = "TurnCrackle"
+	crackle.stream = CRACKLE
+	crackle.volume_db = -6.0
+	crackle.max_distance = WARN_RADIUS
+	crackle.position.y = 1.6
+	add_child(crackle)
+	_look = visual.get_node_or_null("Look")
+	call_deferred(&"_build_xray")
 
 func _process(delta: float) -> void:
 	_breath_time += delta
@@ -94,10 +133,19 @@ func _process(delta: float) -> void:
 			visual.rotation.y = _turn_from + _turn_delta * k
 		else:
 			_wait_left -= delta
+			if not _warned and _wait_left <= WARN_LEAD and facings.size() > 1:
+				_warn()
 			if _wait_left <= 0.0:
 				_next_facing()
 	facing_yaw = visual.rotation.y
 	sensor.rotation.y = visual.rotation.y
+	_warn_cooldown = maxf(0.0, _warn_cooldown - delta)
+	_warn_glow = maxf(0.0, _warn_glow - delta)
+	if _crackle_left > 0.0:
+		_crackle_left -= delta
+		if _crackle_left <= 0.0:
+			crackle.stop()
+	_update_xray()
 
 func _physics_process(delta: float) -> void:
 	if _move_target == Vector3.INF:
@@ -112,7 +160,7 @@ func _physics_process(delta: float) -> void:
 		_turn_from = visual.rotation.y
 		_turn_to = float(facings[_facing_index])
 		_start_turn()
-		_wait_left = _hold()
+		_reset_hold()
 		sensor.enabled = true
 		return
 	global_position += to.normalized() * step
@@ -122,7 +170,7 @@ func _next_facing() -> void:
 	_turn_from = visual.rotation.y
 	_turn_to = float(facings[_facing_index])
 	_start_turn()
-	_wait_left = _hold()
+	_reset_hold()
 
 ## После диалога (P2-3, fix4): сразу на угол из facings без target в конусе — из таких дальше всего от away_point;
 ## если target во всех — дальше всего от target. Таймер разворотов заново; grace с — время уйти. Позже — _update_linger.
@@ -137,7 +185,7 @@ func turn_away_from(target: Node3D, grace: float) -> void:
 	_turn_from = visual.rotation.y
 	_turn_to = float(facings[_facing_index])
 	_start_turn()
-	_wait_left = _hold()
+	_reset_hold()
 
 func _update_linger(delta: float) -> void:
 	if not is_instance_valid(_linger_target):
@@ -163,6 +211,101 @@ func _update_linger(delta: float) -> void:
 ## Илюша задержался после диалога, полицейский смотрит на него (для тестов).
 func is_watching() -> bool:
 	return _watching
+
+## Новое удержание угла: таймер заново, предупреждение о развороте — снова впереди.
+func _reset_hold() -> void:
+	_wait_left = _hold()
+	_warned = false
+
+## POLISH-03 A: до разворота WARN_LEAD с — сигнал, треск рации рядом, силуэт желтеет; субтитр, если повернётся к Илюше.
+func _warn() -> void:
+	_warned = true
+	warnings += 1
+	var next := (_facing_index + 1) % facings.size()
+	_warn_glow = WARN_LEAD + TURN_SECONDS
+	turn_warning.emit(next)
+	var world := _world()
+	if world == null:
+		return
+	var p: Vector3 = world.player.global_position
+	if Vector2(p.x - global_position.x, p.z - global_position.z).length() > WARN_RADIUS:
+		return
+	crackle.play()
+	_crackle_left = CRACKLE_SECONDS
+	if world.control_mode != &"on_foot" or _warn_cooldown > 0.0 or not will_face(p, next):
+		return
+	if world.player.get("hide_mode") not in [null, HideTuning.NONE]:
+		return   # в укрытии — свои гэги с лимитом на попытку (HIDE_SPOTS, раздел 11); треск и силуэт остаются
+	var sound: Node = world.get_node_or_null("SoundDirector")
+	if sound and sound.has_method("show_gag") and not sound.gag_playing():
+		sound.show_gag(QuestLines.PATROL_TURN, QuestLines.PATROL_TURN_SECONDS)
+		_warn_cooldown = WARN_TEXT_COOLDOWN
+		warning_texts += 1
+
+## Накроет ли угол facings[index] точку p: дальность сенсора на этом угле (+4 м) и половина обзора + WARN_CONE_SLACK.
+func will_face(p: Vector3, index: int) -> bool:
+	var flat := Vector2(p.x - global_position.x, p.z - global_position.z)
+	if flat.length() > sensor.range_m + 4.0:
+		return false
+	return _angle_to_point(p, float(facings[index])) <= _fov_for(index) * 0.5 + WARN_CONE_SLACK
+
+## Время до следующего разворота, с (для тестов; во время разворота, перехода или взгляда на Илюшу — 0).
+func seconds_to_turn() -> float:
+	if _turn_t < 1.0 or _move_target != Vector3.INF or is_instance_valid(_look_target):
+		return 0.0
+	return maxf(_wait_left, 0.0)
+
+func _world() -> Node:
+	var node := get_parent()
+	while node:
+		if node.get("control_mode") != null and node.get("player") != null:
+			return node
+		node = node.get_parent()
+	return null
+
+## Силуэт сквозь стены: тот же рисунок, что у спрайта облика, на квадрате его размера; ребёнок спрайта (дыхание и
+## положение — его).
+func _build_xray() -> void:
+	if _look == null or _look.get("sprite") == null:
+		return
+	var sprite: Sprite3D = _look.sprite
+	_xray_material = ShaderMaterial.new()
+	_xray_material.shader = XRAY_SHADER
+	_xray_material.render_priority = 2
+	var quad := QuadMesh.new()
+	quad.size = Vector2(sprite.texture.get_width(), sprite.texture.get_height()) * sprite.pixel_size
+	xray = MeshInstance3D.new()
+	xray.name = "XRay"
+	xray.mesh = quad
+	xray.material_override = _xray_material
+	xray.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	xray.visible = false
+	sprite.add_child(xray)
+
+func _update_xray() -> void:
+	if xray == null:
+		return
+	var world := _world()
+	var hero: Node3D = null
+	if world:
+		hero = world.player if world.control_mode == &"on_foot" else world.get("car")
+	var near := hero != null and Vector2(hero.global_position.x - global_position.x, hero.global_position.z - global_position.z).length() <= XRAY_RADIUS
+	xray.visible = near and sensor.enabled
+	if not xray.visible:
+		return
+	var sprite: Sprite3D = _look.sprite
+	_xray_material.set_shader_parameter(&"albedo_tex", sprite.texture)
+	_xray_material.set_shader_parameter(&"flip", 1.0 if sprite.flip_h else 0.0)
+	var color := XRAY_CALM
+	if sensor.visibility() > 0.0:
+		color = XRAY_SEEN
+	elif _warn_glow > 0.0 or _turn_t < 1.0:
+		color = XRAY_WARN
+	_xray_material.set_shader_parameter(&"tint", color)
+
+## Силуэт сквозь стены показан (для тестов).
+func xray_shown() -> bool:
+	return xray != null and xray.visible
 
 ## Можно ли заговорить: target не за спиной — угол от направления корпуса не больше TALK_ANGLE.
 func can_talk_to(target: Node3D) -> bool:
@@ -259,7 +402,7 @@ func place_at(point: Vector3) -> void:
 	_turn_to = _turn_from
 	_turn_t = 1.0
 	visual.rotation.y = _turn_from
-	_wait_left = _hold()
+	_reset_hold()
 	sensor.fov_deg = _fov_for(0)
 	sensor.enabled = true
 

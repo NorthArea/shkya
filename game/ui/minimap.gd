@@ -8,6 +8,10 @@ const Layout = preload("res://game/world/layout.gd")
 
 const RADIUS := 130.0
 const SCALE := 1.25  # пикселей на метр
+## POLISH-03 A: у киоска карта приближается (CONE_ZOOM), чтобы секторы постов читались; плавно, ZOOM_STEP за кадр.
+const CONE_ZOOM := 2.2
+const ZOOM_STEP := 0.04
+var zoom := 1.0
 
 const COL_GROUND := Color(0.36, 0.37, 0.38)
 const COL_ROAD := Color(0.66, 0.67, 0.68)
@@ -28,6 +32,12 @@ var target_on_edge := false
 var route_points := PackedVector2Array()
 ## Ближе этого по маршруту — линия прямо к цели, без захода на маршрут, м.
 const ROUTE_SHORTCUT := 12.0
+## POLISH-03 A: полупрозрачные секторы обзора постов у киоска (HUD.patrol_cones): [центр x, z; курс; дальность м;
+## обзор град; видит Илюшу]. Пусто — не рисуются. Видит — сектор ярче и краснее.
+var cones: Array = []
+const CONE_FILL := Color(1.0, 0.42, 0.12, 0.36)
+const CONE_FILL_HOT := Color(1.0, 0.12, 0.06, 0.6)
+const CONE_EDGE := Color(0.5, 0.1, 0.04, 0.85)
 
 var _disc: PackedVector2Array
 var _n_label: Label
@@ -52,7 +62,7 @@ func set_view(new_center: Vector2, new_yaw: float, target: Variant, in_car := fa
 	has_target = target is Vector3 and target != Vector3.INF
 	if has_target:
 		target_world = Vector2(target.x, target.z)
-		var offset := (target_world - center_world) * SCALE
+		var offset := (target_world - center_world) * _px()
 		target_on_edge = offset.length() > RADIUS - 14.0
 		target_marker = offset.limit_length(RADIUS - 14.0)
 		route_points = route_between(center_world, target_world, Layout.ROUTE_DRIVE if in_car else Layout.ROUTE_WALK)
@@ -61,6 +71,15 @@ func set_view(new_center: Vector2, new_yaw: float, target: Variant, in_car := fa
 		target_marker = Vector2.ZERO
 		route_points = PackedVector2Array()
 	queue_redraw()
+
+func set_cones(new_cones: Array) -> void:
+	cones = new_cones
+	zoom = move_toward(zoom, CONE_ZOOM if not cones.is_empty() else 1.0, ZOOM_STEP)
+	queue_redraw()
+
+## Пикселей карты на метр с учётом приближения у киоска.
+func _px() -> float:
+	return SCALE * zoom
 
 ## Путь от from до to по ломаной route: к ближайшей точке маршрута, по нему до точки, ближайшей к цели, и к цели.
 ## Если обе точки на маршруте рядом — прямо.
@@ -116,21 +135,39 @@ func _draw() -> void:
 	_draw_arrow(mid)
 	if has_target:
 		_draw_diamond(mid + target_marker, 12.0)
+	for cone in cones:
+		_draw_cone(mid, cone)   # поверх ромба и стрелки: полупрозрачные, их не прячут
 	draw_polyline(_close(_translate(_disc, mid)), INK, 4.0, true)
 
 func _draw_box(center_xz: Vector2, size_xz: Vector2, color: Color, mid: Vector2) -> void:
 	var half := size_xz * 0.5
 	var corners := PackedVector2Array()
 	for sign in [Vector2(-1, -1), Vector2(1, -1), Vector2(1, 1), Vector2(-1, 1)]:
-		corners.append(mid + (center_xz + half * sign - center_world) * SCALE)
+		corners.append(mid + (center_xz + half * sign - center_world) * _px())
 	for piece in Geometry2D.intersect_polygons(corners, _translate(_disc, mid)):
 		if piece.size() >= 3 and not Geometry2D.triangulate_polygon(piece).is_empty():
 			draw_colored_polygon(piece, color)
 
+## Сектор обзора поста: вершина у поста, дуга радиуса дальности, обрезан кругом карты.
+func _draw_cone(mid: Vector2, cone: Array) -> void:
+	var apex: Vector2 = mid + (cone[0] - center_world) * _px()
+	var heading: Vector2 = cone[1]
+	var half := deg_to_rad(float(cone[3])) * 0.5
+	var reach := float(cone[2]) * _px()
+	var poly := PackedVector2Array([apex])
+	var steps := 12
+	for i in steps + 1:
+		poly.append(apex + heading.rotated(-half + 2.0 * half * i / steps) * reach)
+	var hot: bool = cone[4]
+	for piece in Geometry2D.intersect_polygons(poly, _translate(_disc, mid)):
+		if piece.size() >= 3 and not Geometry2D.triangulate_polygon(piece).is_empty():
+			draw_colored_polygon(piece, CONE_FILL_HOT if hot else CONE_FILL)
+			draw_polyline(_close(piece), CONE_EDGE, 1.5, true)
+
 func _draw_route(mid: Vector2) -> void:
 	var line := PackedVector2Array()
 	for p in route_points:
-		line.append(mid + (p - center_world) * SCALE)
+		line.append(mid + (p - center_world) * _px())
 	var disc := _translate(_circle_polygon(RADIUS - 4.0, 48), mid)
 	for piece in Geometry2D.intersect_polyline_with_polygon(line, disc):
 		if piece.size() >= 2:
