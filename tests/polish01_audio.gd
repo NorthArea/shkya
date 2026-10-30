@@ -1,5 +1,7 @@
 extends SceneTree
 ## POLISH-01, звук: шаги, мотор, занос, двери, интерфейс, хлеб, финал, фон — на настоящем main.tscn.
+## MUSIC-01: тема меню — играет и зациклена в меню и НАСТРОЙКАХ, затухает после «НАЧАТЬ», молчит в игре,
+## на паузе тише и приглушённая, снова в главном меню; уровень по данным дорожки.
 
 const Layout = preload("res://game/world/layout.gd")
 
@@ -17,6 +19,20 @@ func _run() -> void:
 	)
 	main = load("res://game/main.tscn").instantiate()
 	root.add_child(main)
+	await _frames(2)
+	var music = main.music
+	check(music.player.playing and music.player.stream == music.THEME and music.player.bus == music.BUS, "menu theme plays on the Music bus (MUSIC-01)")
+	check(music.THEME.loop_mode == AudioStreamWAV.LOOP_FORWARD and music.THEME.get_length() >= 60.0 and music.THEME.get_length() <= 90.0, "menu theme loops, %.1f s" % music.THEME.get_length())
+	var rms_db := _stream_rms_db(music.THEME)
+	check(absf(rms_db - music.THEME_RMS_DB) < 0.5, "menu theme track RMS %.1f dB matches THEME_RMS_DB" % rms_db)
+	var level: float = rms_db + music.MENU_DB + AudioServer.get_bus_volume_db(AudioServer.get_bus_index(music.BUS))
+	check(level >= -22.0 and level <= -20.0 and not music.muffled(), "menu theme level %.1f dB in −22…−20, unfiltered" % level)
+	await _frames(80)
+	check(music.player.volume_db > music.MENU_DB - 0.5, "menu theme faded in to %.1f dB" % music.player.volume_db)
+	main.menu.settings_button.pressed.emit()
+	await _frames(10)
+	check(music.player.playing and main.menu.settings.visible, "menu theme keeps playing in SETTINGS")
+	main.menu.settings.back_requested.emit()
 	await _frames(2)
 	main.menu.start_button.pressed.emit()  # настоящая кнопка меню: щелчок вне мира
 	check(main.ui_click.playing and main.ui_click.stream == main.UI_CLICK, "main menu button clicks")
@@ -37,6 +53,7 @@ func _run() -> void:
 	world.player.place(Layout.SPAWN + Vector3(0, 0, -5), 0.0)
 	await _frames(30)
 	check(sound.played["step"] == steps, "teleport and standing still make no steps")
+	check(not music.player.playing and music.state == music.State.GAME, "menu theme faded out and stopped in the game")
 	# Машина: дверь, мотор, высота тона, занос.
 	world.car.reset_to(Vector3(-80, 0, 32), -PI * 0.5)
 	world.enter_car()
@@ -133,7 +150,30 @@ func _run() -> void:
 		await _frames(30)
 		check(absf(sound.ambience.get_playback_position() - paused_at) < 0.05, "pause freezes world sound")
 		main.set_paused(false)
+	# MUSIC-01: пауза — та же тема тише и через ФНЧ; после паузы гаснет; в главном меню — снова.
+	main.set_paused(true)
+	await _frames(60)
+	check(music.player.playing and music.muffled() and absf(music.player.volume_db - music.PAUSE_DB) < 0.5 and music.PAUSE_DB < music.MENU_DB, "pause plays the theme quieter and muffled (%.1f dB)" % music.player.volume_db)
+	main.set_paused(false)
+	await _frames(40)
+	check(not music.player.playing and not music.muffled(), "theme stops after resuming the game")
+	main.return_to_menu()
+	await _frames(90)
+	check(main.world == null and music.player.playing and not music.muffled() and absf(music.player.volume_db - music.MENU_DB) < 0.5, "menu theme plays again in the main menu after the game")
 	_finish()
+
+## RMS дорожки (16-бит PCM — импорт без сжатия), дБ полной шкалы; каждый 16-й отсчёт.
+func _stream_rms_db(stream: AudioStreamWAV) -> float:
+	var data := stream.data
+	if stream.format != AudioStreamWAV.FORMAT_16_BITS or data.size() < 4:
+		return -INF
+	var total := 0.0
+	var count := 0
+	for i in range(0, data.size() - 1, 32):
+		var x := data.decode_s16(i) / 32768.0
+		total += x * x
+		count += 1
+	return 10.0 * log(total / count) / log(10.0)
 
 func _press(action: StringName) -> void:
 	var down := InputEventAction.new()
