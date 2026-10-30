@@ -12,9 +12,22 @@ const PROFILES := {
 const FOV_PER_SPEED := 0.16     # градусов на м/с в машине
 const FOV_SPEED_MAX := 6.0
 const FOV_SHARPNESS := 4.0
-const AUTO_FOLLOW_IDLE := 1.0   # с без мыши — камера начинает доворачивать за Илюшей
+const AUTO_FOLLOW_IDLE := 1.0   # с без мыши и правого стика — ручная камера в приоритете, доводка ждёт паузы
 const AUTO_FOLLOW_RATE := 2.2   # 1/с
-const AUTO_FOLLOW_MAX := 2.2    # рад: при ходьбе на камеру (разворот больше) не доворачивать
+## POLISH-03 C (критик 30.10, p0105/v05): доводка начинается через AUTO_FOLLOW_DELAY с ходьбы; при ходьбе на камеру
+## (разворот больше AUTO_FOLLOW_MAX) камера тоже заводится за спину — позже (TURN_AROUND_DELAY) и в одну сторону,
+## выбранную в начале облёта. Угловая скорость не больше AUTO_FOLLOW_SPEED и набирается за AUTO_FOLLOW_RAMP — без рывка.
+const AUTO_FOLLOW_DELAY := 0.5  # с ходьбы до начала доводки
+const AUTO_FOLLOW_MAX := 2.2    # рад: больше — «идёт на камеру», облёт за спину после TURN_AROUND_DELAY
+const TURN_AROUND_DELAY := 0.8  # с ходьбы на камеру до облёта
+const AUTO_FOLLOW_SPEED := 2.6  # рад/с: облёт на 180° ≈ 1,4 с
+const AUTO_FOLLOW_RAMP := 0.35  # с: разгон угловой скорости доводки от нуля
+## Тонкие столбы (фонари в валах, опоры, деревья, таблички) пружина камеры не замечает: за фонарём в валу камера
+## впрыгивала к затылку и лицо Илюши занимало пол-экрана (критик 30.10, v05). Порог — по ширине коробки в плане.
+const THIN_SOLID := 0.6         # м
+## Пружина сжата стеной — камера приподнимается и чуть смотрит вниз, а не садится в затылок (доля сжатия × значение).
+const WALL_LIFT := 0.5          # м
+const WALL_TILT := 0.2          # рад
 const PITCH_MIN := -1.1
 const PITCH_MAX := 0.35
 const FOLLOW_SHARPNESS := 14.0
@@ -36,6 +49,10 @@ var input_yaw := 0.0
 var follow_heading := 0.0
 var follow_speed := 0.0
 var _mouse_idle := 0.0
+var _walk_time := 0.0
+var _follow_ramp := 0.0
+var _swing_sign := 0.0          # сторона облёта при ходьбе на камеру (0 — не облетает)
+var _lift := 0.0                # 0…1: сжатие пружины пешком, сглаженное
 var pitch := -0.30
 var arm: SpringArm3D
 var camera: Camera3D
@@ -61,6 +78,7 @@ func _ready() -> void:
 	camera.fov = PROFILES[&"on_foot"]["fov"]
 	camera.current = true
 	arm.add_child(camera)
+	call_deferred(&"exclude_thin_solids", get_parent())
 
 ## instant = false: камера встаёт за новой целью сразу, а дистанция плавно меняется до профиля.
 func follow(new_target: Node3D, new_profile: StringName = &"on_foot", instant := true) -> void:
@@ -78,6 +96,37 @@ func follow(new_target: Node3D, new_profile: StringName = &"on_foot", instant :=
 func exclude_permanently(rid: RID) -> void:
 	permanent_exclusions.append(rid)
 	arm.add_excluded_object(rid)
+
+## Статичные тонкие тела мира (слой World, все формы в плане не шире THIN_SOLID) — в исключения пружины.
+func exclude_thin_solids(root: Node) -> void:
+	if root == null:
+		return
+	for body in root.find_children("*", "StaticBody3D", true, false):
+		if body is AnimatableBody3D or (body as StaticBody3D).collision_layer & arm.collision_mask == 0:
+			continue
+		if _is_thin(body):
+			exclude_permanently((body as StaticBody3D).get_rid())
+
+static func _is_thin(body: Node) -> bool:
+	var shapes := 0
+	for child in body.get_children():
+		if not (child is CollisionShape3D):
+			continue
+		var shape: Shape3D = (child as CollisionShape3D).shape
+		shapes += 1
+		if shape is BoxShape3D:
+			var size: Vector3 = (shape as BoxShape3D).size
+			if maxf(size.x, size.z) > THIN_SOLID:
+				return false
+		elif shape is CylinderShape3D:
+			if (shape as CylinderShape3D).radius * 2.0 > THIN_SOLID:
+				return false
+		elif shape is CapsuleShape3D:
+			if (shape as CapsuleShape3D).radius * 2.0 > THIN_SOLID:
+				return false
+		else:
+			return false
+	return shapes > 0
 
 ## Мгновенно поставить камеру за целью, без сглаживания.
 func snap(with_distance := true) -> void:
@@ -103,15 +152,9 @@ func _physics_process(delta: float) -> void:
 	if profile == &"in_car":
 		# Камера преследования: плавно встаёт за машиной по её курсу.
 		yaw = lerp_angle(yaw, target.global_rotation.y, 1.0 - exp(-CHASE_SHARPNESS * delta))
-	elif follow_speed > 0.2:
-		_mouse_idle += delta
-		var diff := wrapf(follow_heading - yaw, -PI, PI)
-		if _mouse_idle >= AUTO_FOLLOW_IDLE and absf(diff) < AUTO_FOLLOW_MAX:
-			var keep := input_yaw
-			yaw = yaw + diff * (1.0 - exp(-AUTO_FOLLOW_RATE * delta))
-			input_yaw = keep
 	else:
 		_mouse_idle += delta
+		_auto_follow(delta)
 	var fov: float = PROFILES[profile]["fov"]
 	if profile == &"in_car" and target is Lada:
 		fov += minf(FOV_PER_SPEED * (target as Lada).speed_kmh() / 3.6, FOV_SPEED_MAX)
@@ -121,7 +164,40 @@ func _physics_process(delta: float) -> void:
 		distance = TALK_DISTANCE
 	arm.spring_length = lerpf(arm.spring_length, distance, 1.0 - exp(-4.0 * delta))
 	_shoulder_now = lerpf(_shoulder_now, shoulder, 1.0 - exp(-SHOULDER_SHARPNESS * delta))
-	rotation = Vector3(pitch, yaw, 0.0)
+	var squeeze := 0.0
+	if profile == &"on_foot" and arm.spring_length > 0.5:
+		squeeze = clampf((arm.spring_length - arm.get_hit_length()) / arm.spring_length, 0.0, 1.0)
+	_lift = lerpf(_lift, squeeze, 1.0 - exp(-6.0 * delta))
+	rotation = Vector3(pitch - _lift * WALL_TILT, yaw, 0.0)
+
+## Доводка пешком (PLAY-02, POLISH-03 C): только после паузы ручной камеры и AUTO_FOLLOW_DELAY ходьбы; при ходьбе на
+## камеру — облёт за спину после TURN_AROUND_DELAY. Меняет только yaw: курс ходьбы (input_yaw) прежний, пока те же клавиши.
+func _auto_follow(delta: float) -> void:
+	if follow_speed <= 0.2:
+		_walk_time = 0.0
+		_follow_ramp = 0.0
+		_swing_sign = 0.0
+		return
+	_walk_time += delta
+	var diff := wrapf(follow_heading - yaw, -PI, PI)
+	var facing_camera := absf(diff) >= AUTO_FOLLOW_MAX
+	if facing_camera and _swing_sign == 0.0:
+		_swing_sign = 1.0 if diff >= 0.0 else -1.0
+	elif not facing_camera and absf(diff) < AUTO_FOLLOW_MAX - 0.3:
+		_swing_sign = 0.0
+	if _swing_sign != 0.0 and signf(diff) != _swing_sign:
+		diff += TAU * _swing_sign   # у ±π не перекидываться на другую сторону
+	var wait := TURN_AROUND_DELAY if _swing_sign != 0.0 else AUTO_FOLLOW_DELAY
+	if _mouse_idle < AUTO_FOLLOW_IDLE or _walk_time < wait:
+		_follow_ramp = 0.0
+		return
+	_follow_ramp = minf(_follow_ramp + delta / AUTO_FOLLOW_RAMP, 1.0)
+	var ease := _follow_ramp * _follow_ramp * (3.0 - 2.0 * _follow_ramp)
+	var step := diff * (1.0 - exp(-AUTO_FOLLOW_RATE * delta))
+	step = clampf(step, -AUTO_FOLLOW_SPEED * delta, AUTO_FOLLOW_SPEED * delta) * ease
+	var keep := input_yaw
+	yaw = wrapf(yaw + step, -PI, PI)
+	input_yaw = keep
 
 func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventMouseMotion and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
@@ -130,6 +206,7 @@ func _unhandled_input(event: InputEvent) -> void:
 ## Мышь вправо — камера вправо, мышь вверх — взгляд вверх.
 func apply_mouse(relative: Vector2) -> void:
 	_mouse_idle = 0.0
+	_follow_ramp = 0.0
 	yaw = wrapf(yaw - relative.x * mouse_sensitivity, -PI, PI)
 	pitch = clampf(pitch - relative.y * mouse_sensitivity, PITCH_MIN, PITCH_MAX)
 
@@ -139,4 +216,4 @@ func sync_input_yaw() -> void:
 
 func _goal() -> Vector3:
 	var right := Vector3(cos(yaw), 0.0, -sin(yaw))
-	return target.global_position + Vector3.UP * PROFILES[profile]["height"] + right * _shoulder_now
+	return target.global_position + Vector3.UP * (float(PROFILES[profile]["height"]) + _lift * WALL_LIFT) + right * _shoulder_now
