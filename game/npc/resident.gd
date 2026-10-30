@@ -32,10 +32,17 @@ extends "res://game/npc/npc.gd"
 ## перед коробкой Layout.all_solids() полёт укорачивается — flight_distance), облик кувыркается (спрайт: billboard
 ## выключен, облик лицом к камере и вращается в плоскости экрана; 3D-тело: вокруг оси поперёк полёта) и ложится на снег:
 ## облако снежной пыли, «пуф»; лежит KNOCK_DOWN_SECONDS со снежинками над головой, встаёт KNOCK_RISE_SECONDS,
-## отряхивается, говорит реплику HIT и возвращается на маршрут той же дорогой (back), дальше — как шёл. Тело выключено
-## на fly/down/getup; повторный наезд в эти фазы ничего не делает, после getup — KNOCK_IMMUNE_SECONDS неуязвимости.
+## отряхивается, говорит реплику HIT и возвращается на маршрут той же дорогой (back), дальше — как шёл.
 ## Пара: сбитый возвращается на своё место, второй тем временем стоит и смотрит на него. Медленнее KNOCK_MIN_SPEED —
-## прежний отход (_dodge_lada). Пассажир у дверей и на переходе (board/alight/transit) и скрытые не сбиваются.
+## прежний отход (_dodge_lada).
+## KNOCK-02 (жалобы владельца 30.10): сбивается любой видимый житель в любом состоянии — у дверей троллейбуса, только что
+## вышедший на B, на переходе и на пути от остановки (board/alight/transit — после подъёма продолжает тот же путь; к
+## двери, которая уже закрылась, — снова к остановке), сидящий (удар — по облику на сиденье), на занятии, в паре. Скрытые
+## (подъезд, магазин, салон троллейбуса, за краем карты) — нет. Сбитый не бесплотен: тело включено и в полёте, и лёжа
+## (капсула лежит вдоль полёта, KNOCK_LIE_RADIUS), и вставая — Илюша о него спотыкается, машины кольца тормозят;
+## «Лада» быстрее KNOCK_MIN_SPEED сбивает его снова (новый подлёт с текущей высоты; между ударами не меньше
+## KNOCK_REHIT_SECONDS — против двойного срабатывания одного удара), медленнее — толкает бампером (_lada_push) и
+## притормаживает о него. Неуязвимости после подъёма нет.
 ## Очков, денег и штрафов нет. Звук — сигналы knock_launched/knock_landed (Residents → SoundDirector).
 ##
 ## LIFE-01 (решение владельца 29.10, вечер: «у каждого NPC цель и маршрут»): errand = true — житель живёт не по петле,
@@ -136,7 +143,12 @@ const KNOCK_DOWN_SECONDS := Vector2(1.5, 2.5)   # лежит: от KNOCK_MIN_SPE
 const KNOCK_RISE_SECONDS := 0.8
 const KNOCK_SHAKE_SECONDS := 0.6          # отряхивается: два покачивания
 const KNOCK_SHAKE_ANGLE := 0.16           # рад
-const KNOCK_IMMUNE_SECONDS := 3.0         # после getup
+const KNOCK_REHIT_SECONDS := 0.25        # KNOCK-02: между ударами — один удар не срабатывает дважды
+const KNOCK_REHIT_POP := 0.6              # м: снова сбит в воздухе выше высоты подлёта — подскок хотя бы на столько
+const KNOCK_LIE_RADIUS := 0.6             # м: лежащий и встающий занимают больше места, чем стоящий
+const KNOCK_PUSH_PAD := 0.05              # м: бампер выталкивает лежащего на столько дальше габарита
+const KNOCK_PUSH_DRAG := 2.5              # 1/с: «Лада», толкающая человека, теряет скорость
+const KNOCK_TRANSIT: Array[StringName] = [&"board", &"alight", &"transit"]   # путь к двери и от двери: после — продолжить
 const KNOCK_DOWN_CENTER := 0.42           # м: центр лежащего спрайта над снегом (3D-тело — KNOCK_DOWN_CENTER_3D)
 const KNOCK_DOWN_CENTER_3D := 0.2
 const KNOCK_HEAD := 0.5                   # м от центра облика до головы
@@ -304,7 +316,12 @@ var _knock_sign := 1.0             # +1 — летит вправо по экр�
 var _knock_down := 2.0             # с лежит
 var _knock_center := 0.0           # м: центр облика над узлом
 var _knock_squash := Vector2.ONE
-var _knock_immune_until := -INF
+var _knock_last := -INF            # KNOCK-02: время прошлого удара
+var _knock_roll0 := 0.0            # угол облика в начале полёта
+var _knock_c0 := 0.0               # м: центр облика в начале полёта
+var _knock_h0 := 0.0               # м: высота, с которой начался полёт (снова сбит в воздухе)
+var _knock_prior: StringName = &""   # состояние до первого удара серии (board/alight/transit — продолжить путь)
+var car_pushes := 0                # KNOCK-02: кадров, когда «Лада» толкала жителя бампером (для проверок)
 var _knock_path: Array = []        # обратно на маршрут: точки XZ (последняя — на маршруте)
 var _knock_resume := [0, 1]        # target_point, direction — куда шёл до удара
 var _knock_waiting := false        # первый в паре ждёт сбитого второго
@@ -364,7 +381,7 @@ func _physics_process(delta: float) -> void:
 		if errand and leader == null:
 			_tick_hidden(delta)
 		return   # в троллейбусе или в магазине: ждёт doors_opened
-	_check_knock()
+	_check_knock(delta)
 	if state == &"knocked":
 		_tick_knock(delta)
 		return
@@ -607,12 +624,12 @@ func _resume_from(best: Vector3, best_seg: int) -> Array:
 	return [best_seg, -1]
 
 ## Точка p (XZ) ближе margin + BODY_RADIUS к габариту «Лады».
-func _lada_touches(p: Vector3, margin: float) -> bool:
+func _lada_touches(p: Vector3, margin: float, radius := BODY_RADIUS) -> bool:
 	if not is_instance_valid(lada):
 		return false
 	var local := lada.global_transform.affine_inverse() * Vector3(p.x, lada.global_position.y, p.z)
 	var half := Lada.SIZE * 0.5
-	return absf(local.x) < half.x + BODY_RADIUS + margin and absf(local.z) < half.z + BODY_RADIUS + margin
+	return absf(local.x) < half.x + radius + margin and absf(local.z) < half.z + radius + margin
 
 ## До Илюши; у первого в паре — до ближнего из двоих.
 func _player_distance() -> float:
@@ -1061,22 +1078,77 @@ func _lada_speed() -> float:
 	var v = lada.get("velocity")
 	return Vector2(v.x, v.z).length() if v is Vector3 else 0.0
 
-## Удар: «Лада» быстрее KNOCK_MIN_SPEED касается жителя (не в полёте, не лежит, не встаёт, не неуязвим).
-func _check_knock() -> void:
-	if knock_phase != &"" and knock_phase != &"back":
+## KNOCK-02: «Лада» касается видимого жителя (по облику: у сидящего — на сиденье) в любом состоянии. Быстрее
+## KNOCK_MIN_SPEED — удар (снова — не раньше KNOCK_REHIT_SECONDS после прошлого); медленнее — лежащего и встающего
+## толкает бампером, идущего к двери, от двери и обратно после удара — если едет (стоящую он обходит насквозь, как раньше).
+## Остальных на малой скорости решает _tick (_dodge_lada). Выше крыши (полёт, горка) машина не достаёт.
+func _check_knock(delta: float) -> void:
+	if not is_instance_valid(lada) or global_position.y > Lada.SIZE.y:
 		return
-	if clock < _knock_immune_until or state in [&"board", &"alight", &"transit"] or not is_instance_valid(lada):
+	var radius := _hit_radius()
+	if not _lada_touches(_hit_point(), LADA_MARGIN, radius):
 		return
-	if _lada_speed() >= KNOCK_MIN_SPEED and _lada_touches(global_position, LADA_MARGIN):
-		knock()
+	var car_speed := _lada_speed()
+	if car_speed >= KNOCK_MIN_SPEED:
+		if clock >= _knock_last + KNOCK_REHIT_SECONDS:
+			knock()
+		return
+	if knock_phase in [&"down", &"getup"] or ((knock_phase == &"back" or (state in KNOCK_TRANSIT and knock_phase == &"")) and car_speed > LADA_MOVING):
+		_lada_push(delta, radius)
+
+## Где «Лада» задевает жителя (XZ): узел, у сидящего — облик на сиденье (Layout.LIFE_SIT).
+func _hit_point() -> Vector3:
+	if _act_sit != 0.0 and _acting:
+		return _flat(global_position) + _forward(_act_yaw) * _act_sit
+	return _flat(global_position)
+
+func _hit_radius() -> float:
+	return KNOCK_LIE_RADIUS if knock_phase in [&"down", &"getup"] else BODY_RADIUS
+
+## Медленная «Лада» толкает жителя: на ближайшую грань её габарита (с запасом radius), куда путь не через коробку;
+## машина о него притормаживает, а если толкать некуда (стена) — упирается: скорость в его сторону гаснет.
+func _lada_push(delta: float, radius: float) -> void:
+	var p := _flat(global_position)
+	var xf := lada.global_transform
+	var local := xf.affine_inverse() * Vector3(p.x, lada.global_position.y, p.z)
+	var hx := Lada.SIZE.x * 0.5 + radius + KNOCK_PUSH_PAD
+	var hz := Lada.SIZE.z * 0.5 + radius + KNOCK_PUSH_PAD
+	var exits := [[hx - local.x, Vector3(hx, local.y, local.z)], [local.x + hx, Vector3(-hx, local.y, local.z)],
+		[hz - local.z, Vector3(local.x, local.y, hz)], [local.z + hz, Vector3(local.x, local.y, -hz)]]
+	exits.sort_custom(func(a, b): return a[0] < b[0])
+	var moved := false
+	for e in exits:
+		var q := _flat(xf * e[1])
+		if segment_clear(p, q):
+			if not _knock_path.is_empty() and not segment_clear(q, _knock_path[0]):
+				_knock_path.push_front(p)   # обратно — тем же путём
+			global_position = Vector3(q.x, global_position.y, q.z)
+			moved = true
+			break
+	car_pushes += 1
+	var car := lada as CharacterBody3D
+	if car == null:
+		return
+	var v := Vector3(car.velocity.x, 0.0, car.velocity.z) * exp(-KNOCK_PUSH_DRAG * delta)
+	if not moved:
+		var n := (p - _flat(car.global_position)).normalized()
+		var into := v.dot(n)
+		if into > 0.0:
+			v -= n * into
+	car.velocity.x = v.x
+	car.velocity.z = v.z
 
 ## Сбить: парабола от точки удара по ходу «Лады» и от её центра; дальность укорочена перед коробками all_solids().
+## KNOCK-02: снова сбит в полёте, лёжа или вставая — новый полёт с текущей высоты и угла облика (вершина — та же
+## высота подлёта, но не ниже KNOCK_REHIT_POP над ним); сидящий слетает с сиденья.
 func knock() -> void:
 	var lv: Vector3 = lada.get("velocity")
 	var v := Vector3(lv.x, 0.0, lv.z)
 	var car_speed := v.length()
 	var f := clampf((car_speed - KNOCK_MIN_SPEED) / (KNOCK_FULL_AT - KNOCK_MIN_SPEED), 0.0, 1.0)
-	var here := _flat(global_position)
+	var node_at := _flat(global_position)
+	var here := _hit_point()
+	var h0 := maxf(global_position.y, 0.0)   # в полёте, на раскате горки; лёжа и стоя — 0
 	var away := here - _flat(lada.global_position)
 	var dir := v / car_speed if car_speed > 0.01 else Vector3.ZERO
 	if away.length() > 0.01:
@@ -1091,31 +1163,47 @@ func knock() -> void:
 		_act_stop()
 	if state != &"knocked":
 		_knock_resume = [target_point, direction]
+		_knock_prior = state
 		_knock_path.clear()
-	if not knock_phase in KNOCK_PHASES:
+		if here.distance_to(node_at) > 0.01:
+			_knock_path.push_front(node_at)   # сидел: обратно — к месту у лавки, не в неё
+	var rolling := knock_phase in KNOCK_PHASES
+	if not rolling:
 		_knock_begin_pose()
+	if _knock_stars:
+		_knock_stars.visible = false
+	_set_lying(false)
 	_knock_path.push_front(here)
-	_knock_vy = sqrt(2.0 * KNOCK_GRAVITY * lerpf(KNOCK_HEIGHT.x, KNOCK_HEIGHT.y, f))
-	_knock_time = 2.0 * _knock_vy / KNOCK_GRAVITY
+	var height := lerpf(KNOCK_HEIGHT.x, KNOCK_HEIGHT.y, f)
+	_knock_h0 = h0
+	_knock_vy = sqrt(2.0 * KNOCK_GRAVITY * maxf(height - h0, KNOCK_REHIT_POP))
+	_knock_time = (_knock_vy + sqrt(_knock_vy * _knock_vy + 2.0 * KNOCK_GRAVITY * h0)) / KNOCK_GRAVITY
 	_knock_dir = dir
 	_knock_dist = flight_distance(here, dir, minf(KNOCK_FLY_BASE + KNOCK_FLY_GAIN * car_speed, KNOCK_FLY_MAX) * _knock_time)
-	_knock_spin = (lerpf(KNOCK_TURNS.x, KNOCK_TURNS.y, f) + 0.25) * TAU
 	_knock_down = lerpf(KNOCK_DOWN_SECONDS.x, KNOCK_DOWN_SECONDS.y, f)
 	var camera := get_viewport().get_camera_3d() if is_inside_tree() else null
 	_knock_sign = -1.0 if camera and dir.dot(camera.global_basis.x) < 0.0 else 1.0
+	_knock_roll0 = knock_roll if rolling else 0.0
+	_knock_c0 = _knock_center if rolling else _look_center()
+	# Кончить полёт лёжа (−знак · (обороты + ¼)): от текущего угла облика — не меньше полуоборота.
+	_knock_spin = _knock_sign * _knock_roll0 + (lerpf(KNOCK_TURNS.x, KNOCK_TURNS.y, f) + 0.25) * TAU
+	while _knock_spin < PI:
+		_knock_spin += TAU
 	_knock_t = 0.0
-	_knock_center = _look_center()
+	_knock_center = _knock_c0
 	_knock_squash = Vector2(0.92, 1.08)
-	knock_roll = 0.0
+	knock_roll = _knock_roll0
+	global_position = here + Vector3.UP * h0
 	knock_from = here
 	knock_to = here + dir * _knock_dist
 	knock_car_speed = car_speed
 	knock_peak = 0.0
 	knocks += 1
+	_knock_last = clock
 	state = &"knocked"
 	knock_phase = &"fly"
 	stop_looking()
-	body.collision_layer = 0
+	body.collision_layer = BODY_LAYER   # KNOCK-02: не бесплотен — Илюша и машины кольца его чувствуют
 	knock_log.append([clock, &"fly", here])
 	knock_launched.emit(self)
 
@@ -1125,11 +1213,11 @@ func _tick_knock(delta: float) -> void:
 			_knock_t += delta
 			var k := minf(_knock_t / _knock_time, 1.0)
 			var t := k * _knock_time
-			var y := maxf(_knock_vy * t - 0.5 * KNOCK_GRAVITY * t * t, 0.0)
+			var y := maxf(_knock_h0 + _knock_vy * t - 0.5 * KNOCK_GRAVITY * t * t, 0.0)
 			knock_peak = maxf(knock_peak, y)
 			global_position = knock_from + _knock_dir * _knock_dist * k + Vector3(0.0, y, 0.0)
-			knock_roll = -_knock_sign * _knock_spin * k
-			_knock_center = lerpf(_look_center(), _down_center(), k)
+			knock_roll = _knock_roll0 - _knock_sign * _knock_spin * k
+			_knock_center = lerpf(_knock_c0, _down_center(), k)
 			if k >= 1.0:
 				_knock_land()
 		&"down":
@@ -1161,7 +1249,7 @@ func _tick_knock(delta: float) -> void:
 				_knock_squash = Vector2.ONE
 			if _knock_t >= KNOCK_RISE_SECONDS + KNOCK_SHAKE_SECONDS:
 				_knock_end_pose()
-				_knock_immune_until = clock + KNOCK_IMMUNE_SECONDS
+				_set_lying(false)
 				knock_phase = &"back"
 				body.collision_layer = BODY_LAYER
 				_plan_back()
@@ -1174,6 +1262,7 @@ func _knock_land() -> void:
 	knock_roll = -_knock_sign * PI * 0.5   # лежит головой туда, куда летел
 	_knock_center = _down_center()
 	knock_phase = &"down"
+	_set_lying(true)
 	_wait = _knock_down
 	_puff()
 	_place_stars()
@@ -1183,7 +1272,13 @@ func _knock_land() -> void:
 ## Обратно на маршрут той же дорогой (полёт шёл мимо коробок). Одиночка, если на точке удара стоит «Лада», —
 ## на ближайшую свободную точку маршрута, если путь до неё не через коробку. Второй в паре — строго на своё место.
 func _plan_back() -> void:
-	if leader != null or follower != null or not is_instance_valid(lada) or _knock_path.is_empty():
+	# KNOCK-02: после серии ударов — не по всем полётам назад, а сразу к самой ранней точке, куда путь не через коробку.
+	var here := _flat(global_position)
+	for i in range(_knock_path.size() - 1, 0, -1):
+		if segment_clear(here, _knock_path[i]):
+			_knock_path = _knock_path.slice(i)
+			break
+	if leader != null or follower != null or not is_instance_valid(lada) or _knock_path.is_empty() or _knock_prior in KNOCK_TRANSIT:
 		return
 	var last: Vector3 = _knock_path[-1]
 	if not _lada_touches(last, LADA_CLEAR):
@@ -1216,7 +1311,15 @@ func _tick_back(delta: float) -> void:
 		_knock_finish()
 
 ## Снова на маршруте: куда шёл до удара (пауза, перекур, ожидание троллейбуса — дойдёт до своей точки и продолжит).
+## KNOCK-02: шёл к двери троллейбуса, от двери или ждал у неё — тот же путь дальше (_resume_transit).
 func _knock_finish() -> void:
+	var prior := _knock_prior
+	_knock_prior = &""
+	if prior in KNOCK_TRANSIT:
+		knock_phase = &""
+		_resume_transit(prior)
+		knock_log.append([clock, &"route", _flat(global_position)])
+		return
 	if errand and not _resume_act.is_empty() and _resume_act.spot == spot_id:
 		_resume_activity()
 		knock_phase = &""
@@ -1229,16 +1332,53 @@ func _knock_finish() -> void:
 	direction = _knock_resume[1]
 	knock_log.append([clock, &"route", _flat(global_position)])
 
+## KNOCK-02: встал после удара по пути к двери или от неё. К двери: троллейбус ещё ждёт с открытыми дверями — к ней,
+## уехал — снова на остановку (житель с целями — к свободному месту остановки, без целей — по маршруту). У двери на B
+## (ждёт, пока троллейбус отъедет) и на пути от двери — дальше тем же путём; тело — как было на этом отрезке.
+func _resume_transit(prior: StringName) -> void:
+	if prior == &"board":
+		if is_instance_valid(trolley) and trolley.get("doors_open") \
+				and _flat(trolley.global_position).distance_to(_flat(global_position)) < BUS_CLEAR_DISTANCE:
+			state = &"board"
+			body.collision_layer = BODY_LAYER if _transit_i >= _transit_body_from else 0
+			return
+		if errand and life != null and leader == null:
+			_go_to(_choose_next())
+			return
+		state = &"walk"
+		target_point = _knock_resume[0]
+		direction = _knock_resume[1]
+		return
+	state = prior
+	if prior == &"alight":
+		body.collision_layer = 0
+	else:
+		body.collision_layer = BODY_LAYER if _transit_i >= _transit_body_from else 0
+
+## Лежит: капсула тела — вдоль полёта, у земли; иначе — стоя.
+func _set_lying(on: bool) -> void:
+	if body == null or body.get_child_count() == 0:
+		return
+	var collider := body.get_child(0) as CollisionShape3D
+	var axis := Vector3.UP.cross(_knock_dir)
+	if on and axis.length() > 0.01:
+		collider.transform = Transform3D(Basis(axis.normalized(), PI * 0.5), Vector3(0.0, BODY_RADIUS, 0.0))
+	else:
+		collider.transform = Transform3D(Basis.IDENTITY, Vector3(0.0, BODY_HEIGHT * 0.5, 0.0))
+
 ## Перезапуск: облик и тело — как до удара, счётчики — с нуля.
 func _knock_reset() -> void:
 	if knock_phase in KNOCK_PHASES:
 		_knock_end_pose()
+	_set_lying(false)
 	knock_phase = &""
 	knocks = 0
+	car_pushes = 0
 	knock_roll = 0.0
 	knock_log.clear()
 	_knock_path.clear()
-	_knock_immune_until = -INF
+	_knock_last = -INF
+	_knock_prior = &""
 	_knock_waiting = false
 	if _knock_stars:
 		_knock_stars.visible = false
