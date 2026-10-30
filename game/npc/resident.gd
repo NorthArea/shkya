@@ -178,6 +178,7 @@ const WORK_PERIODS := {&"dig": 1.8, &"carpet": 1.2, &"hood": 2.1}
 const WORK_CONTACT := 0.55
 const STEALTH_STAY := 30.0                # м: Илюша ближе к троллейбусу на остановке B — пассажир едет дальше, до A
 const EDGE_RETRY := 3.0                   # с: край карты в кадре — подождать и проверить снова
+const EDGE_VISIBLE_WAIT := 8.0            # с: на наблюдаемом краю оглядеться и продолжить свои дела пешком
 const BUSY_KINDS: Array[StringName] = [&"slide", &"hockey", &"sled"]   # занятие в движении: на Илюшу и гудок не останавливается
 # PEOPLE-03 (P2)
 const HOCKEY_SPEED := 2.4                 # м/с: на коньках
@@ -1727,7 +1728,11 @@ func _choose_next(except := &"") -> StringName:
 func _go_to(id: StringName) -> void:
 	var s: Dictionary = life.spots[id]
 	spot_id = id
-	life.reserve(id, self)
+	if not life.reserve(id, self) and s.kind == &"edge":
+		plan_i += 1
+		goals += 1
+		_go_to(_choose_next(id))
+		return
 	state = &"walk"
 	direction = 1
 	_cross_ok = -1
@@ -1897,7 +1902,9 @@ func _tick_activity(delta: float) -> void:
 			return
 		&"edge":
 			if life.on_screen(s.pos):
-				return   # край карты в кадре — уйдёт, когда камера отвернётся
+				if _act_t >= EDGE_VISIBLE_WAIT:
+					_activity_done()
+				return
 			_hide(&"away")
 			_wait = rng.randf_range(s.dur.x, s.dur.y)
 			return

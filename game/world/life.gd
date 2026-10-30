@@ -139,6 +139,8 @@ func _init() -> void:
 		if s[1] == &"queue":
 			spots[s[0]]["service"] = s[8]
 			spots[s[0]]["rank"] = s[9]
+		elif s[1] == &"edge" and s.size() > 8:
+			spots[s[0]]["exit_node"] = s[8]
 
 func reset() -> void:
 	reserved.clear()
@@ -265,6 +267,8 @@ func reserve(id: StringName, resident: Node3D) -> bool:
 	if list.has(resident):
 		return true
 	var spot: Dictionary = spots[id]
+	if spot.kind == &"edge" and not is_free(id, resident):
+		return false
 	if spot.kind in [&"window", &"queue"]:
 		var from: Dictionary = spots.get(resident.spot_id, {})
 		var advancing: bool = from.get("kind", &"") == &"queue" \
@@ -377,7 +381,7 @@ func path(from: Vector3, spot_id: StringName, from_spot := &"") -> Dictionary:
 	_push(points, flags, here, &"")
 	var start: StringName
 	if from_spot != &"" and spots.has(from_spot) and here.distance_to(spots[from_spot].pos) <= AT_SPOT:
-		start = spots[from_spot].node
+		start = spots[from_spot].get("exit_node", spots[from_spot].node)
 	else:
 		var hit := nearest_on_graph(here)
 		var a: StringName = hit[1]

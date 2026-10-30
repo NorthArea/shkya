@@ -686,10 +686,10 @@ const RESIDENT_STARTS: Array[int] = [0, 1, 0, 1, 0, 0, 1, 1, 1, 1, 0, 1, 0, 2, 0
 # 7 C (первый пары), 8 D (второй), 9 C (второй), 10–11 курящие у подъезда, 12 «АПТЕКА», 13 A юг напротив остановки.
 const RESIDENT_LOOKS: Array[StringName] = [&"shuba", &"violet", &"ushanka_walk", &"kid", &"beret", &"dog", &"tourist", &"kid2",
 		&"kolpak", &"bow", &"ushanka", &"tourist", &"turban", &"kid",
-		&"kid2", &"ushanka_walk", &"ushanka", &"tourist", &"ushanka_walk", &"kid",   # LIFE-01: 14 горка, 15 рабочий, 16 дворник, 17 домино, 18 капот, 19 горка
+		&"kid2", &"ushanka_walk", &"ushanka", &"man", &"ushanka_walk", &"kid",   # LIFE-01: 14 горка, 15 рабочий, 16 дворник, 17 домино, 18 капот, 19 горка
 		&"kid2", &"kid", &"kid2", &"beret", &"violet",   # PEOPLE-03 (P2): 20–21 хоккей, 22 снежки, 23 торговка, 24 бабушка с санками
 		&"kolpak", &"bow", &"shuba", &"dog",             # LIFE-02: 25–28 прохожие улиц A и B
-		&"ushanka", &"ushanka_walk", &"ushanka"] + [
+		&"ushanka", &"woman", &"man"] + [
 		&"shuba", &"tourist", &"ushanka_walk", &"turban", &"bow", &"beret",
 		&"violet", &"kolpak", &"dog", &"ushanka_walk", &"tourist", &"shuba",
 		&"turban", &"bow", &"beret", &"kolpak", &"ushanka_walk", &"tourist",
@@ -1018,7 +1018,8 @@ const LIFE_NODES := {
 	&"dw_top": Vector2(-73.5, -2.5), &"dw_n": Vector2(-73.5, -25.0),
 	&"dw_h11n": Vector2(-73.5, -40.5), &"dw_h11": Vector2(-73.5, -70.5),
 	&"dw_door": Vector2(-82.0, -70.5), &"dw_s": Vector2(-73.5, -98.0),
-	&"dw_c": Vector2(-70.5, -110.5), &"dw_out": Vector2(-73.5, -122.0),
+	&"dw_c": Vector2(-70.5, -110.5), &"dw_out": Vector2(-75.5, -122.0),
+	&"dw_return": Vector2(-77.0, -121.0),
 	&"cn_w": Vector2(-50.0, -109.5), &"cn_mid": Vector2(-25.0, -109.5),
 	&"aw_out": Vector2(-97.5, 19.2),
 	&"press_q1": Vector2(-13.2, 20.6), &"press_q2": Vector2(-15.0, 20.6),
@@ -1089,7 +1090,7 @@ const LIFE_EDGES := [
 	[&"dw_top", &"dw_n"], [&"dw_n", &"dw_h11n"], [&"dw_h11n", &"dw_h11"],
 	[&"dw_h11", &"dw_door"], [&"dw_h11", &"dw_s"], [&"dw_s", &"dw_c"],
 	[&"dw_c", &"cn_w"], [&"cn_w", &"cn_mid"], [&"cn_mid", &"c_n_trade"],
-	[&"dw_s", &"dw_out"], [&"dw_gate", &"aw_out"],
+	[&"dw_s", &"dw_out"], [&"dw_out", &"dw_return"], [&"dw_return", &"dw_s"], [&"dw_gate", &"aw_out"],
 	[&"a_n_x", &"press_q1"], [&"press_q1", &"press_q2"],
 	[&"a_s_shaw", &"shaw_q1"], [&"shaw_q1", &"shaw_q2"],
 	[&"dw_h11n", &"dw_cross"], [&"dw_cross", &"d_e_40", &"cross"],
@@ -1135,10 +1136,12 @@ const LIFE_EDGES := [
 ## edge — уходит за край карты (вне кадра) и возвращается. PEOPLE-03 (P2): hockey — дети гоняют шайбу в хоккейной
 ## коробке (катаются по LIFE_RINK_AREA), snowball — дети кидаются снежками через крепость, trade — бабка торгует
 ## соленьями у прилавка, sled — бабушка катает внука на санках по петле LIFE_SLED_LOOP.
+## Дополнительное поле edge — узел обратного пути; без него выходят через узел подхода.
 const LIFE_SPOTS := [
 	[&"door_h11", &"door", &"dw_door", Vector2(-85.4, -70.5), PI * 0.5, Vector2(25, 55), 0, &""],
-	[&"edge_d_n", &"edge", &"dw_out", Vector2(-73.5, -123.0), 0.0, Vector2(40, 75), 0, &""],
-	[&"edge_a_w", &"edge", &"aw_out", Vector2(-98.0, 19.2), PI * 0.5, Vector2(35, 65), 0, &""],
+	# Один подход на выход; северный обратный путь идёт по другой стороне тротуара.
+	[&"edge_d_n", &"edge", &"dw_out", Vector2(-75.5, -123.0), 0.0, Vector2(40, 75), 1, &"", &"dw_return"],
+	[&"edge_a_w", &"edge", &"aw_out", Vector2(-98.0, 19.2), PI * 0.5, Vector2(35, 65), 1, &""],
 	[&"chat_h11a", &"chat", &"dw_h11n", Vector2(-75.0, -39.0), 0.0, Vector2(20, 40), 1, &""],
 	[&"chat_h11b", &"chat", &"dw_h11n", Vector2(-75.0, -40.4), PI, Vector2(20, 40), 1, &""],
 	[&"chat_i1", &"chat", &"ib_m", Vector2(-34.0, -32.0), 0.0, Vector2(25, 50), 1, &""],
@@ -1213,8 +1216,8 @@ const LIFE_SPOTS := [
 	[&"trade", &"trade", &"c_n_trade", Vector2(-3.6, -113.1), PI, Vector2(150, 300), 1, &"Z19_1"],
 	[&"sled", &"sled", &"ib_w", Vector2(-36.0, -50.0), 0.0, Vector2(90, 180), 1, &""],
 	# Края карты: восток улицы A (север и юг) — уходят из кадра и возвращаются.
-	[&"edge_ase", &"edge", &"e_a_se", Vector2(97.5, 43.3), -PI * 0.5, Vector2(40, 90), 0, &""],
-	[&"edge_ane", &"edge", &"e_a_ne", Vector2(97.5, 21.0), -PI * 0.5, Vector2(40, 90), 0, &""],
+	[&"edge_ase", &"edge", &"e_a_se", Vector2(97.5, 43.3), -PI * 0.5, Vector2(40, 90), 1, &""],
+	[&"edge_ane", &"edge", &"e_a_ne", Vector2(97.5, 21.0), -PI * 0.5, Vector2(40, 90), 1, &""],
 	# LIFE-02: look — прохожий стоит у витрины (без своего облика занятия): «ГАСТРОНОМ» и соседние витрины H8 на
 	# востоке B, витрины H6 на западе B. Лицом к стене.
 	[&"look_b1", &"look", &"b_lk1", Vector2(81.0, 3.0), -PI * 0.5, Vector2(15, 35), 1, &""],
