@@ -12,6 +12,10 @@ const FRONT_DOT := 0.55       # cos ≈ 57°: ближе к оси — лицо�
 const WALK_SPEED_MIN := 0.4   # м/с: медленнее — стойка
 
 @export var character := "ilyusha"
+## ART-09: рисунок задаётся до _ready, независимо от квестовой роли и interaction_id.
+## Пустое значение сохраняет прежний облик. Имена ограничены готовыми комплектами.
+const APPEARANCES: Array[String] = ["police_long", "police_round", "omon_helmet", "omon_hood", "resident_parka", "resident_scarf"]
+@export var appearance := ""
 @export var height_m := 2.4     # высота холста в метрах
 @export var walk_stride := 0.32 # метров на кадр ходьбы
 @export var shadow_size := Vector2(1.1, 0.75)
@@ -30,12 +34,16 @@ var _walk := {}
 var _distance := 0.0
 var _last := Vector3.INF
 
+func resolved_character() -> String:
+	return appearance if appearance in APPEARANCES else character
+
 func _ready() -> void:
+	var drawing := resolved_character()
 	for v in [&"front", &"back", &"side"]:
-		_idle[v] = load("%s%s_%s_idle.svg" % [DIR, character, v])
+		_idle[v] = load("%s%s_%s_idle.svg" % [DIR, drawing, v])
 		var frames: Array[Texture2D] = []
 		for k in 4:
-			var path := "%s%s_%s_walk%d.svg" % [DIR, character, v, k]
+			var path := "%s%s_%s_walk%d.svg" % [DIR, drawing, v, k]
 			if ResourceLoader.exists(path):
 				frames.append(load(path))
 		_walk[v] = frames

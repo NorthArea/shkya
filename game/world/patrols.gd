@@ -59,14 +59,22 @@ var _mission: Node
 var _world_node: Node
 var _moved := false
 
+const POLICE_APPEARANCES: Array[String] = ["police_long", "police_round"]
+const GUARD_APPEARANCES: Array[String] = ["omon_helmet", "omon_hood"]
+static var _appearance_cycle := 0
+
 func _init() -> void:
 	name = "Patrols"
 
 func _ready() -> void:
+	var appearance_index := _appearance_cycle % POLICE_APPEARANCES.size()
+	if _world() != null:
+		_appearance_cycle += 1
 	officer = PatrolNpcScript.new()
 	officer.name = "Officer"
 	officer.interaction_id = &"officer"
 	officer.character = "police"
+	officer.appearance = POLICE_APPEARANCES[appearance_index]
 	officer.height_m = 2.05   # фигура 0,861 холста = 1,77 м ≈ Илюша (1,80 м), как на e01 (LOOK-01)
 	officer.tint = Color(1.0, 1.0, 1.0)
 	officer.body_radius = 0.6
@@ -87,6 +95,7 @@ func _ready() -> void:
 	officer2.name = "Officer2"
 	officer2.interaction_id = &"officer2"   # без диалога: prompt_for даёт "", зона выключена
 	officer2.character = "guard"   # «росгвардеец» STEALTH_DESIGN: свой облик по e03 (ART-08), без эмблем
+	officer2.appearance = GUARD_APPEARANCES[appearance_index]
 	officer2.height_m = officer.height_m
 	officer2.tint = officer.tint
 	officer2.body_radius = officer.body_radius

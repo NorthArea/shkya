@@ -28,6 +28,7 @@ test: map
 	$(call godot_test,polish01_stuck,60,STUCK)
 	$(call godot_test,art01_sprite,60,ART01)
 	$(call godot_test,art01_sprite,120,ART01)
+	$(call godot_test,art09_test,60,ART09)
 	$(call godot_test,demo_acceptance,60,DEMO_ACCEPTANCE)
 	$(call godot_test,stealth_test,60,STEALTH)
 	$(call godot_test,traffic_test,60,TRAFFIC)

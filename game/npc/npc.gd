@@ -9,6 +9,8 @@ const InteractableScript = preload("res://game/interaction/interactable.gd")
 
 @export var interaction_id: StringName
 @export var character := "babka"
+## Только рисунок ART-09; роль, голос, диалог и сенсор остаются у прежнего NPC.
+@export var appearance := ""
 @export var height_m := 2.17  # Бабка крупнее Илюши (паспорт ART-01); ×0,83 вместе с Илюшей (PLAY-02)
 @export var tint := Color(1.06, 1.02, 0.88)  # тёплее, как лицо и платье Бабки на концептах 02, 10
 @export var facing_yaw := 0.0  # поворот облика относительно узла (зона взаимодействия не поворачивается)
@@ -33,6 +35,7 @@ func _ready() -> void:
 	var look = CharacterSpriteScript.new()
 	look.name = "Look"
 	look.character = character
+	look.appearance = appearance
 	look.height_m = height_m
 	look.tint = tint
 	visual.add_child(look)

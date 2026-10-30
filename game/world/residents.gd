@@ -48,13 +48,15 @@ const SILHOUETTES := {
 	&"kolpak": ["babka", 2.0],
 	&"bow": ["babka", 2.0],
 	&"turban": ["babka", 2.0],
+	&"parka": ["vendor", 2.0],
+	&"scarf": ["babka", 2.0],
 }
 
 ## Бабки ролика ШКЯ (PEOPLE-02) — голос бабки.
 const BABKA_LOOKS: Array[StringName] = [&"babka", &"shuba", &"beret", &"violet", &"dog", &"kolpak", &"bow", &"turban"]
 ## TEXT-01: голос реплик по облику (QuestLines.STREET_LINES); не названный облик — бабкин.
 const VOICE_BY_LOOK := {&"man": &"man", &"ushanka": &"man", &"ushanka_walk": &"man", &"tourist": &"man",
-	&"woman": &"woman", &"boy": &"kid", &"kid": &"kid", &"kid2": &"kid"}
+	&"parka": &"man", &"scarf": &"woman", &"woman": &"woman", &"boy": &"kid", &"kid": &"kid", &"kid2": &"kid"}
 const LineBagScript = preload("res://game/npc/line_bag.gd")
 ## TEXT-01: общий лимит «болтовни» (car, walk, idle) — не больше CHATTER_MAX таких пузырей на экране и не чаще
 ## CHATTER_GAP между их началами; hit, push и break — вне лимита (Resident.EVENT_KINDS).
