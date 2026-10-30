@@ -187,7 +187,7 @@ static func instance(parent: Node3D, name: String, mesh: ArrayMesh, overrides :=
 
 ## Колесо: шина с протектором, диск и колпак. Ось меша — Y, узел повёрнут на 90° по Z (как прежний цилиндр), поэтому
 ## вращение rotate_object_local(Vector3.UP, …) в path_vehicle.gd и city_van.gd работает без изменений.
-## Меш симметричен: одинаковый с обеих сторон. style: steel, volga, truck, bus.
+## Меш симметричен: одинаковый с обеих сторон. style: steel, classic (2106), volga, truck, bus.
 static func add_wheel(parent: Node3D, at: Vector3, radius: float, width: float, style := "steel") -> MeshInstance3D:
 	var mi := MeshInstance3D.new()
 	mi.name = "Wheel"
@@ -222,7 +222,7 @@ static func wheel_mesh(radius: float, width: float, style: String) -> ArrayMesh:
 			Vector2(rim_r * 0.72, s * (hw - dish)), Vector2(rim_r * 0.5, s * (hw - dish - 0.006)),
 			Vector2(rim_r * 0.42, s * (hw - dish * 0.55)), Vector2(0.001, s * (hw - dish * 0.55))])
 		b.lathe(rim_slot, rim, 20, Vector3.ZERO)
-		var cap_r := rim_r * (0.9 if style == "volga" else 0.36)
+		var cap_r := rim_r * (0.9 if style == "volga" else (0.76 if style == "classic" else 0.36))
 		var cap_slot := "chrome" if style != "bus" and style != "truck" else rim_slot
 		var cap := PackedVector2Array([
 			Vector2(cap_r, s * (hw - dish * 0.55)), Vector2(cap_r * 0.85, s * (hw - dish * 0.2)),
@@ -232,7 +232,7 @@ static func wheel_mesh(radius: float, width: float, style: String) -> ArrayMesh:
 				Vector2(cap_r * 0.25, s * (hw + 0.06)), Vector2(0.001, s * (hw + 0.065))])   # конус ступицы
 		b.lathe(cap_slot, cap, 16, Vector3.ZERO)
 		# Гайки и вентиляционные окна — чтобы было видно вращение.
-		var bolts := 8 if style == "bus" else (6 if style == "truck" else 4)
+		var bolts := 8 if style == "bus" else (6 if style == "truck" else (5 if style == "volga" else 4))
 		for k in bolts:
 			var a := TAU * k / bolts
 			var at := Vector3(cos(a) * rim_r * 0.5, s * (hw - dish * 0.5), sin(a) * rim_r * 0.5)

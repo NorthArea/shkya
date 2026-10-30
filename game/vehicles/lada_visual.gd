@@ -38,30 +38,30 @@ const REAR_BOTTOM := Vector2(0.99, 1.16)
 const SEDANS := {
 	&"vaz2105": {
 		"length": 4.13, "half_w": 0.81, "belt": 0.99,
-		"top": [[-2.065, 0.80], [-2.035, 0.875], [-1.9, 0.93], [-0.83, 0.985], [1.16, 0.99], [1.8, 0.97], [2.03, 0.93], [2.065, 0.86]],
+		"top": [[-2.065, 0.90], [-2.035, 0.93], [-1.9, 0.955], [-0.83, 0.985], [1.16, 0.99], [1.90, 0.97], [2.04, 0.955], [2.065, 0.93]],
 		"bottom": [[-2.065, 0.42], [-1.9, 0.27], [1.9, 0.28], [2.065, 0.42]],
 		"ws": [WINDSHIELD_BOTTOM, WINDSHIELD_TOP], "rear": [REAR_BOTTOM, REAR_TOP],
 		"glass_w": 0.77, "roof_w": 0.655, "b_z": 0.19, "c_z": [0.84, 0.72], "roof_y": 1.485,
-		"axles": [-1.26, 1.16], "wheel_r": 0.30, "wheel_w": 0.17, "track": 0.68, "round": 0.08,
-		"front": "rect", "wheel_style": "steel",
+		"axles": [-1.26, 1.16], "wheel_r": 0.30, "wheel_w": 0.17, "track": 0.68, "round": 0.04, "edge": 0.025,
+		"front": "rect", "wheel_style": "steel", "aerial_y": 1.767,
 	},
 	&"vaz2106": {
 		"length": 4.07, "half_w": 0.80, "belt": 0.98,
-		"top": [[-2.035, 0.80], [-2.0, 0.87], [-1.86, 0.925], [-0.83, 0.975], [1.14, 0.98], [1.78, 0.962], [2.0, 0.93], [2.035, 0.86]],
+		"top": [[-2.035, 0.89], [-2.0, 0.925], [-1.86, 0.945], [-0.83, 0.975], [1.14, 0.98], [1.82, 0.962], [2.0, 0.95], [2.035, 0.92]],
 		"bottom": [[-2.035, 0.40], [-1.88, 0.28], [1.88, 0.29], [2.035, 0.42]],
 		"ws": [Vector2(0.98, -0.83), Vector2(1.42, -0.50)], "rear": [Vector2(0.98, 1.14), Vector2(1.42, 0.88)],
 		"glass_w": 0.76, "roof_w": 0.645, "b_z": 0.19, "c_z": [0.83, 0.71], "roof_y": 1.455,
-		"axles": [-1.21, 1.21], "wheel_r": 0.32, "wheel_w": 0.17, "track": 0.69, "round": 0.08,
-		"front": "round4", "wheel_style": "steel",
+		"axles": [-1.21, 1.21], "wheel_r": 0.32, "wheel_w": 0.17, "track": 0.69, "round": 0.065, "edge": 0.04,
+		"front": "round4", "wheel_style": "classic", "aerial_y": 1.761,
 	},
 	&"volga": {
-		"length": 4.74, "half_w": 0.90, "belt": 0.93,
-		"top": [[-2.37, 0.79], [-2.33, 0.85], [-2.1, 0.885], [-0.95, 0.925], [1.38, 0.93], [2.15, 0.905], [2.34, 0.87], [2.37, 0.80]],
+		"length": 4.74, "half_w": 0.90, "belt": 0.95,
+		"top": [[-2.37, 0.90], [-2.33, 0.925], [-2.1, 0.945], [-0.95, 0.95], [1.24, 0.95], [2.15, 0.93], [2.34, 0.91], [2.37, 0.88]],
 		"bottom": [[-2.37, 0.40], [-2.2, 0.28], [2.2, 0.30], [2.37, 0.40]],
-		"ws": [Vector2(0.93, -0.95), Vector2(1.42, -0.42)], "rear": [Vector2(0.93, 1.38), Vector2(1.42, 0.92)],
-		"glass_w": 0.85, "roof_w": 0.73, "b_z": 0.22, "c_z": [1.0, 0.80], "roof_y": 1.475,
-		"axles": [-1.4, 1.4], "wheel_r": 0.34, "wheel_w": 0.19, "track": 0.75, "round": 0.12,
-		"front": "volga", "wheel_style": "volga",
+		"ws": [Vector2(0.95, -0.95), Vector2(1.42, -0.47)], "rear": [Vector2(0.95, 1.24), Vector2(1.42, 0.76)],
+		"glass_w": 0.85, "roof_w": 0.73, "b_z": 0.12, "c_z": [0.94, 0.66], "roof_y": 1.475,
+		"axles": [-1.4, 1.4], "wheel_r": 0.34, "wheel_w": 0.19, "track": 0.75, "round": 0.08, "edge": 0.045,
+		"front": "volga", "wheel_style": "volga", "aerial_y": 1.705,
 	},
 }
 
@@ -192,7 +192,8 @@ static func sedan_meshes(model: StringName) -> Dictionary:
 	var top: Array = spec["top"]
 	var bottom: Array = spec["bottom"]
 	# Нижний кузов: лофт сечений со скруглёнными рёбрами, завалом бортов и вырезами арок.
-	b.loft("paint", VehicleMesh.hull_stations(length, w, top, bottom, axles, r, arch, spec["round"], spec["round"]))
+	b.loft("paint", VehicleMesh.hull_stations(length, w, top, bottom, axles, r, arch, spec["round"], spec["round"],
+		0.018, 0.04, spec["edge"]))
 	_greenhouse(b, glass, spec)
 	_cabin(cabin, spec)
 	_details(b, spec, hl, w, belt, r, arch, axles, bottom)
@@ -250,6 +251,28 @@ static func _greenhouse(b: VehicleMesh.Builder, glass: VehicleMesh.Builder, spec
 			Vector3(s * (rw + 0.004), eave - 0.012, bz - 0.015), Vector3(s * (rw + 0.004), eave - 0.012, wsb.y + lean * (eave - 0.012 - wsb.x) + 0.04), out, 0.0, 2, 1)
 		glass.pane("glass", Vector3(s * (gw - 0.004), sill + 0.01, bz + 0.035), Vector3(s * (gw - 0.004), sill + 0.01, float(cz[0]) - 0.02),
 			Vector3(s * (rw + 0.004), eave - 0.012, float(cz[1]) - 0.015), Vector3(s * (rw + 0.004), eave - 0.012, bz + 0.055), out, 0.0, 2, 1)
+		# Водосток и обводы окон: у 2105 чёрная резина, у 2106/ГАЗ-24 заметный хром.
+		var frame := "trim" if spec["front"] == "rect" else "chrome"
+		var a_trim := Vector3(s * 0.025, 0, -0.012)
+		var c_trim := Vector3(s * 0.025, 0, 0.012)
+		b.tube(frame, a0 + a_trim, a1 + a_trim, 0.012, 4)
+		b.tube(frame, c0 + c_trim, c1 + c_trim, 0.012, 4)
+		b.tube(frame, Vector3(s * gw, sill, wsb.y + 0.01), Vector3(s * gw, sill, rb.y - 0.01), 0.012, 4)
+		b.tube(frame, Vector3(s * (rw + 0.019), eave + 0.018, wst.y),
+			Vector3(s * (rw + 0.019), eave + 0.018, rt.y), 0.013, 4)
+		if spec["front"] != "rect":
+			# Форточка передней двери — характерная вертикальная перемычка классических кузовов.
+			var quarter_z := wsb.y + 0.33
+			b.tube("chrome", Vector3(s * gw, sill + 0.015, quarter_z),
+				Vector3(s * (rw + 0.016), eave - 0.015, quarter_z + 0.025), 0.009, 4)
+		if spec["front"] == "volga":
+			# Вытяжные прорези на широкой задней стойке, не дополнительное окно.
+			for k in 3:
+				var y := sill + 0.12 + k * 0.06
+				var t := (y - sill) / (eave - sill)
+				var x := lerpf(gw, rw, t) + 0.008
+				var z := lerpf(float(cz[0]), float(cz[1]), t) + 0.07
+				b.box("trim", Vector3(0.009, 0.018, 0.10), Vector3(s * x, y, z))
 	# Лобовое и заднее — слегка выпуклые.
 	var front_out := Vector3(0.0, wst.y - wsb.y, -(wst.x - wsb.x)).normalized()
 	glass.pane("glass", Vector3(-gw + 0.03, sill, wsb.y), Vector3(gw - 0.03, sill, wsb.y),
@@ -257,6 +280,12 @@ static func _greenhouse(b: VehicleMesh.Builder, glass: VehicleMesh.Builder, spec
 	var back_out := Vector3(0.0, rb.y - rt.y, rt.x - rb.x).normalized()
 	glass.pane("glass", Vector3(gw - 0.03, sill, rb.y), Vector3(-gw + 0.03, sill, rb.y),
 		Vector3(-rw + 0.025, rt.x, rt.y), Vector3(rw - 0.025, rt.x, rt.y), back_out, 0.02, 6, 2)
+
+	var screen_frame := "trim" if spec["front"] == "rect" else "chrome"
+	for edge in [[wsb, gw - 0.03], [wst, rw - 0.025], [rb, gw - 0.03], [rt, rw - 0.025]]:
+		var at: Vector2 = edge[0]
+		var half_width: float = edge[1]
+		b.tube(screen_frame, Vector3(-half_width, at.x, at.y), Vector3(half_width, at.x, at.y), 0.009, 4)
 
 ## Салон силуэтами: тёмная обшивка по линии окон, торпедо, руль, спинка пассажира с подголовником, задний диван.
 ## У водительского кресла нет высокой спинки и подголовника — сзади видны голова и воротник Илюши (концепт 05).
@@ -302,67 +331,94 @@ static func _details(b: VehicleMesh.Builder, spec: Dictionary, hl: float, w: flo
 	var chrome := "alu" if front == "rect" else "chrome"
 	match front:
 		"rect":
-			# ВАЗ-2105: прямоугольные фары, чёрная решётка с алюминиевыми планками, поворотники снаружи фар.
-			b.rbox("trim", Vector3(0.62, 0.13, 0.03), Vector3(0, 0.70, fz - 0.008), 0.01)
-			for y in [0.665, 0.70, 0.735]:
-				b.box("alu", Vector3(0.6, 0.012, 0.012), Vector3(0, y, fz - 0.026))
+			# 2105: единая плоская маска, широкие блок-фары и чёрные горизонтальные рёбра.
+			b.box("dark", Vector3(1.49, 0.235, 0.026), Vector3(0, 0.765, fz - 0.008))
+			for y in [0.68, 0.72, 0.76, 0.80, 0.84]:
+				b.box("trim", Vector3(0.73, 0.014, 0.022), Vector3(0, y, fz - 0.03))
 			for s in [-1.0, 1.0]:
-				b.rbox("trim", Vector3(0.34, 0.15, 0.03), Vector3(s * 0.5, 0.70, fz - 0.006), 0.012)
-				b.rbox("head", Vector3(0.29, 0.115, 0.02), Vector3(s * 0.49, 0.70, fz - 0.02), 0.012)
-				b.rbox("lens_amber", Vector3(0.05, 0.115, 0.02), Vector3(s * 0.665, 0.70, fz - 0.018), 0.01)
+				b.box("alu", Vector3(0.33, 0.203, 0.018), Vector3(s * 0.535, 0.765, fz - 0.026))
+				b.box("head", Vector3(0.303, 0.18, 0.018), Vector3(s * 0.535, 0.765, fz - 0.04))
+				b.box("lens_amber", Vector3(0.064, 0.18, 0.02), Vector3(s * 0.727, 0.765, fz - 0.035))
 		"round4":
-			# ВАЗ-2106: четыре круглые фары в хромированной рамке, поворотники под фарами.
-			b.rbox("chrome", Vector3(1.32, 0.19, 0.02), Vector3(0, 0.72, fz - 0.002), 0.02)
-			b.rbox("trim", Vector3(1.26, 0.15, 0.03), Vector3(0, 0.72, fz - 0.01), 0.015)
-			for y in [0.69, 0.75]:
-				b.box("chrome", Vector3(0.44, 0.01, 0.01), Vector3(0, y, fz - 0.028))
+			# 2106: две пары фар в отдельных чёрных чашках; между ними хромированная сетка.
+			b.rbox("chrome", Vector3(1.51, 0.25, 0.022), Vector3(0, 0.77, fz - 0.004), 0.012)
+			b.box("trim", Vector3(1.47, 0.218, 0.028), Vector3(0, 0.77, fz - 0.016))
+			for y in [0.68, 0.725, 0.77, 0.815, 0.86]:
+				b.box("chrome", Vector3(0.63, 0.009, 0.012), Vector3(0, y, fz - 0.035))
+			for k in 13:
+				b.box("chrome", Vector3(0.007, 0.19, 0.009), Vector3(-0.3 + k * 0.05, 0.77, fz - 0.036))
 			for s in [-1.0, 1.0]:
-				for x in [0.36, 0.53]:
-					_disc(b, "head", Vector3(s * x, 0.72, fz - 0.026), 0.066, false)
-					_disc(b, "chrome", Vector3(s * x, 0.72, fz - 0.022), 0.078, false, true)
-				b.rbox("lens_amber", Vector3(0.12, 0.05, 0.02), Vector3(s * 0.52, 0.585, fz - 0.07), 0.01)
+				for x in [0.425, 0.635]:
+					_disc(b, "head", Vector3(s * x, 0.77, fz - 0.04), 0.087, false)
+					_disc(b, "chrome", Vector3(s * x, 0.77, fz - 0.035), 0.099, false, true)
+				b.rbox("chrome", Vector3(0.22, 0.075, 0.022), Vector3(s * 0.63, 0.595, fz - 0.035), 0.008)
+				b.box("lens_amber", Vector3(0.14, 0.055, 0.023), Vector3(s * 0.655, 0.595, fz - 0.05))
+				b.box("lens_white", Vector3(0.055, 0.055, 0.023), Vector3(s * 0.55, 0.595, fz - 0.05))
 		"volga":
-			# ГАЗ-24: широкая хромированная решётка с вертикальными планками, круглые фары по краям, «олень».
-			b.rbox("chrome", Vector3(1.40, 0.22, 0.025), Vector3(0, 0.66, fz - 0.004), 0.02)
-			b.rbox("trim", Vector3(1.0, 0.17, 0.03), Vector3(0, 0.66, fz - 0.012), 0.01)
-			for k in 17:
-				b.box("chrome", Vector3(0.012, 0.16, 0.012), Vector3(-0.48 + k * 0.06, 0.66, fz - 0.03))
+			# ГАЗ-24: высокая широкая решётка с частыми вертикальными зубьями и две фары.
+			b.rbox("chrome", Vector3(1.68, 0.305, 0.025), Vector3(0, 0.745, fz - 0.005), 0.018)
+			b.box("trim", Vector3(1.16, 0.27, 0.03), Vector3(0, 0.745, fz - 0.02))
+			for k in 29:
+				var x := -0.55 + k * 1.1 / 28.0
+				b.tube("chrome", Vector3(x, 0.615, fz - 0.034), Vector3(x * 0.96, 0.875, fz - 0.034), 0.009, 4)
 			for s in [-1.0, 1.0]:
-				_disc(b, "head", Vector3(s * 0.6, 0.66, fz - 0.03), 0.085, false)
-				_disc(b, "chrome", Vector3(s * 0.6, 0.66, fz - 0.026), 0.1, false, true)
-				b.rbox("lens_amber", Vector3(0.14, 0.05, 0.02), Vector3(s * 0.6, 0.55, fz - 0.07), 0.01)
-			b.rbox("chrome", Vector3(0.03, 0.06, 0.2), Vector3(0, profile_y(spec, fz + 0.3) + 0.03, fz + 0.3), 0.01, Basis(Vector3.RIGHT, 0.4))
+				_disc(b, "trim", Vector3(s * 0.715, 0.745, fz - 0.025), 0.135, false)
+				_disc(b, "head", Vector3(s * 0.715, 0.745, fz - 0.046), 0.108, false)
+				_disc(b, "chrome", Vector3(s * 0.715, 0.745, fz - 0.038), 0.126, false, true)
+				b.rbox("chrome", Vector3(0.22, 0.075, 0.022), Vector3(s * 0.72, 0.56, fz - 0.035), 0.008)
+				b.box("lens_amber", Vector3(0.20, 0.055, 0.025), Vector3(s * 0.72, 0.56, fz - 0.05))
 	# Бамперы: у «пятёрки» алюминиевый брус с пластиковыми концами и резиновой полосой, у остальных — хром с клыками.
 	for end in [-1.0, 1.0]:
 		var e: float = end
 		var z := e * (hl + 0.055)
 		b.rbox(chrome, Vector3(face * 2.0 - 0.1, 0.11, 0.07), Vector3(0, 0.49, z), 0.03)
-		b.rbox("trim", Vector3(face * 2.0 - 0.14, 0.022, 0.075), Vector3(0, 0.545, z), 0.01)
+		b.rbox("trim", Vector3(face * 2.0 - 0.14, 0.055 if front == "rect" else 0.022, 0.075), Vector3(0, 0.545, z), 0.01)
 		for s in [-1.0, 1.0]:
 			b.rbox("trim" if front == "rect" else chrome, Vector3(0.2, 0.12, 0.1), Vector3(s * (face - 0.02), 0.49, e * (hl + 0.03)), 0.035,
 				Basis(Vector3.UP, s * e * 0.25))
 			b.rbox("trim" if front == "rect" else chrome, Vector3(0.05, 0.11, 0.24), Vector3(s * (w - 0.01), 0.49, e * (hl - 0.07)), 0.02)
 			if front != "rect":
-				b.rbox(chrome, Vector3(0.05, 0.17, 0.07), Vector3(s * 0.34, 0.5, e * (hl + 0.085)), 0.02)
+				b.rbox(chrome, Vector3(0.05, 0.17, 0.054), Vector3(s * 0.34, 0.5, e * (hl + 0.085)), 0.02)
+				b.box("trim", Vector3(0.035, 0.145, 0.008), Vector3(s * 0.34, 0.5, e * (hl + 0.116)))
 		# Номер: белая пластина в чёрной рамке.
 		var plate_at := Vector3(0, 0.49, -hl - 0.1) if e < 0.0 else Vector3(0, 0.66, hl + 0.012)
 		b.box("trim", Vector3(0.53, 0.122, 0.006), plate_at + Vector3(0, 0, -e * 0.004))
 		b.box("plate", Vector3(0.52, 0.112, 0.008), plate_at)
-	# Зад: фонари (красная секция — слот tail, янтарная, белая заднего хода), замок багажника.
+	# Зад: у каждой модели свой рисунок оптики, красный слот tail сохраняет режим торможения.
 	for s in [-1.0, 1.0]:
 		if front == "volga":
-			b.rbox("chrome", Vector3(0.11, 0.3, 0.025), Vector3(s * (face - 0.07), 0.74, rz + 0.004), 0.015)
-			b.rbox("tail", Vector3(0.085, 0.2, 0.02), Vector3(s * (face - 0.07), 0.77, rz + 0.018), 0.01)
-			b.rbox("lens_amber", Vector3(0.085, 0.06, 0.02), Vector3(s * (face - 0.07), 0.635, rz + 0.018), 0.01)
+			# Вертикальные трапеции ГАЗ-24: красный верх, янтарная середина, белый низ.
+			var x: float = s * 0.766
+			_tail_trapezoid(b, "chrome", x, 0.735, rz + 0.014, 0.165, 0.32, s)
+			_tail_trapezoid(b, "tail", x, 0.805, rz + 0.029, 0.131, 0.14, s)
+			_tail_trapezoid(b, "lens_amber", x, 0.695, rz + 0.03, 0.133, 0.074, s)
+			_tail_trapezoid(b, "lens_white", x, 0.622, rz + 0.03, 0.126, 0.052, s)
+		elif front == "round4":
+			# 2106: янтарный внешний край и белое окошко внутри красного прямоугольника.
+			b.rbox("chrome", Vector3(0.43, 0.19, 0.028), Vector3(s * 0.53, 0.75, rz + 0.008), 0.015)
+			b.box("tail", Vector3(0.30, 0.155, 0.023), Vector3(s * 0.48, 0.75, rz + 0.026))
+			b.box("lens_amber", Vector3(0.085, 0.155, 0.025), Vector3(s * 0.683, 0.75, rz + 0.027))
+			b.box("lens_white", Vector3(0.15, 0.055, 0.026), Vector3(s * 0.49, 0.742, rz + 0.03))
+			b.box("trim", Vector3(0.04, 0.175, 0.025), Vector3(s * 0.315, 0.75, rz + 0.023))
 		else:
-			var trim_slot := "trim" if front == "rect" else "chrome"
-			b.rbox(trim_slot, Vector3(0.42, 0.16, 0.03), Vector3(s * 0.52, 0.76, rz + 0.005), 0.012)
-			b.rbox("tail", Vector3(0.21, 0.13, 0.02), Vector3(s * 0.6, 0.76, rz + 0.018), 0.01)
-			b.rbox("lens_amber", Vector3(0.09, 0.13, 0.02), Vector3(s * 0.445, 0.76, rz + 0.018), 0.01)
-			b.rbox("lens_white", Vector3(0.07, 0.13, 0.02), Vector3(s * 0.36, 0.76, rz + 0.018), 0.01)
+			b.box("trim", Vector3(0.44, 0.185, 0.03), Vector3(s * 0.53, 0.755, rz + 0.005))
+			b.box("tail", Vector3(0.235, 0.15, 0.02), Vector3(s * 0.61, 0.755, rz + 0.025))
+			b.box("lens_amber", Vector3(0.095, 0.15, 0.021), Vector3(s * 0.435, 0.755, rz + 0.026))
+			b.box("lens_white", Vector3(0.065, 0.15, 0.021), Vector3(s * 0.35, 0.755, rz + 0.026))
+	if front != "rect":
+		b.box("chrome", Vector3(1.30 if front == "volga" else 1.43, 0.018, 0.015), Vector3(0, 0.89, rz + 0.014))
 	b.rbox("chrome", Vector3(0.05, 0.03, 0.02), Vector3(0, 0.84, rz + 0.008), 0.008)
 	b.tube("dark", Vector3(-0.45, 0.3, rz - 0.12), Vector3(-0.45, 0.29, rz + 0.04), 0.026, 8, true)   # глушитель
 	b.tube("steel", Vector3(-0.45, 0.29, rz + 0.03), Vector3(-0.45, 0.29, rz + 0.06), 0.028, 8, true)
+	# Швы крышек удерживают три отдельных объёма даже под тонким слоем снега.
+	var rear_bottom: Vector2 = spec["rear"][0]
+	for side in [-1.0, 1.0]:
+		var seam_x: float = side * (w - 0.13)
+		for ends in [[fz + 0.16, wsb.y - 0.04], [rear_bottom.y + 0.05, rz - 0.12]]:
+			var za: float = ends[0]
+			var zb: float = ends[1]
+			b.tube("trim", Vector3(seam_x, profile_y(spec, za) + 0.003, za),
+				Vector3(seam_x, profile_y(spec, zb) + 0.003, zb), 0.0035, 4)
 	# Борта: швы дверей (обходят арку), ручки, молдинг, повторитель поворота, зеркала, лючок бензобака.
 	for side in [-1.0, 1.0]:
 		var s: float = side
@@ -389,8 +445,19 @@ static func _details(b: VehicleMesh.Builder, spec: Dictionary, hl: float, w: flo
 		b.tube("trim", Vector3(x0, wsb.x + 0.02, wsb.y + 0.03), Vector3(x0 + 0.5, wsb.x + 0.035, wsb.y + 0.06), 0.009, 4)
 		b.tube("trim", Vector3(x0 + 0.1, wsb.x - 0.01, wsb.y - 0.06), Vector3(x0 + 0.22, wsb.x + 0.03, wsb.y + 0.045), 0.007, 4)
 	var mast := Vector3(w - 0.09, profile_y(spec, -hl + 0.85), -hl + 0.85)
-	b.tube("trim", mast, mast + Vector3(0.03, 0.8, 0.24), 0.004, 4)
+	var mast_top := Vector3(mast.x + 0.03, float(spec["aerial_y"]), mast.z + 0.24)
+	b.tube("trim", mast, mast_top, 0.004, 4)
 	b.tube("chrome", mast - Vector3(0, 0.01, 0), mast + Vector3(0, 0.03, 0), 0.012, 6, true)
+
+## Плоская трапеция фонаря: внешний край наклонён, как на задних крыльях ГАЗ-24.
+static func _tail_trapezoid(b: VehicleMesh.Builder, slot: String, x: float, y: float, z: float,
+		width: float, height: float, side: float) -> void:
+	var hw := width * 0.5
+	var hh := height * 0.5
+	b.poly(slot, PackedVector3Array([
+		Vector3(x - hw, y - hh, z), Vector3(x + hw, y - hh, z),
+		Vector3(x + hw - side * 0.025, y + hh, z), Vector3(x - hw - side * 0.025, y + hh, z),
+	]), Vector3.BACK)
 
 ## Высота верха нижнего кузова в точке z.
 static func profile_y(spec: Dictionary, z: float) -> float:
