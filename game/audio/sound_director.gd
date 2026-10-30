@@ -92,6 +92,7 @@ func _setup() -> void:
 	_setup_break()   # BREAK-01: разрушаемые объекты, сигнализация, крышки
 	_setup_drive02()   # DRIVE-02: колёса в снегу, скрип при заносе
 	_setup_life()   # PEOPLE-03: занятия жителей и птицы
+	_setup_car_radio()   # POLISH-03 C: радио «Лады» при езде
 
 ## Текст субтитра радио, пока он на экране ("" — нет).
 func radio_text() -> String:
@@ -865,3 +866,31 @@ func life_play(kind: StringName, at: Vector3) -> bool:
 	player.play()
 	played["life_%s" % kind] += 1
 	return true
+
+# --- POLISH-03 C: радио «Лады» при езде — позывные «ничего необычного» и объявления (game/audio/car_radio.gd) ---
+const CarRadioScript = preload("res://game/audio/car_radio.gd")
+var car_radio: Node
+
+func _setup_car_radio() -> void:
+	car_radio = CarRadioScript.new()
+	car_radio.name = "CarRadio"
+	add_child(car_radio)
+	car_radio.setup(self)
+
+## Строка радио внизу экрана, как разовое радио EXT-01; поверх гэга не встаёт (false).
+func show_radio_line(text: String, seconds: float) -> bool:
+	if subtitle_card == null or gag_playing():
+		return false
+	_subtitle_slot(false)
+	subtitle_label.text = text
+	_subtitle_left = seconds
+	subtitle_card.visible = true
+	DialogPanelScript.pop(subtitle_card, 0.6)
+	return true
+
+## Убрать строку радио (диалог начался); строку гэга не трогает.
+func hide_radio_line() -> void:
+	if subtitle_card == null or gag_playing():
+		return
+	_subtitle_left = 0.0
+	subtitle_card.visible = false

@@ -250,6 +250,47 @@ def radio_mumble(seed: int, seconds: float) -> list[float]:
     return to_rms(out, -21.0)
 
 
+def radio_jingle(seed: int, motif: list[tuple[float, float, float]], bpm: float, talk: float) -> list[float]:
+    """Радио «Лады» (POLISH-03 C): позывной «ничего необычного» — свой короткий мотив колокольчиком (синус с обертоном,
+    как chime) над мягким аккордом, затем бубнёж диктора (radio_mumble, не речь), всё через полосу приёмника
+    ≈300…3000 Гц с шорохом эфира. motif — [(доля начала, длительность в долях, частота)]; talk — с бубнежа."""
+    rng = random.Random(seed)
+    beat = 60.0 / bpm
+    music_len = max(start + length for start, length, _ in motif) * beat + 0.35
+    n_music = samples(music_len)
+    music = [0.0] * n_music
+    for start_beat, length_beats, freq in motif:
+        start = samples(start_beat * beat)
+        m = min(samples(length_beats * beat + 0.3), n_music - start)
+        for i in range(m):
+            t = i / RATE
+            env = (1 - math.exp(-t / 0.004)) * math.exp(-t / 0.28)
+            music[start + i] += (math.sin(2 * math.pi * freq * t) + 0.35 * math.sin(4 * math.pi * freq * t)
+                                 + 0.12 * math.sin(6 * math.pi * freq * t)) * env * 0.5
+    # Подложка: мажорное трезвучие от первой ноты мотива на всю музыкальную часть, мягко нарастает и гаснет.
+    root = motif[0][2] / 2.0
+    for i in range(n_music):
+        t = i / RATE
+        u = t / music_len
+        env = min(1.0, t / 0.15) * min(1.0, (1.0 - u) / 0.25) * 0.18
+        music[i] += sum(math.sin(2 * math.pi * root * r * t) for r in (1.0, 1.26, 1.5)) * env
+    talk_part = voice(seed, 118.0 + rng.uniform(-6.0, 6.0), talk, 6.2, 0.05) if talk > 0.0 else []
+    gap = [0.0] * samples(0.12)
+    out = to_rms(music, -20.0) + gap + talk_part
+    narrow = highpass(lowpass(out, 3000, stages=2), 300)
+    n = len(narrow)
+    hiss = highpass(lowpass([rng.uniform(-1, 1) for _ in range(n)], 4500), 1500)
+    res = []
+    for i in range(n):
+        crackle = 1.0 + (1.5 if rng.random() < 0.0003 else 0.0)
+        res.append(narrow[i] * crackle + hiss[i] * 0.04)
+    fade = samples(0.06)
+    for i in range(fade):
+        res[i] *= i / fade
+        res[-1 - i] *= i / fade
+    return to_rms(res, -20.0)
+
+
 def trolley_hum_loop() -> list[float]:
     """Троллейбус (ARENA-01): тихий гул тягового двигателя и преобразователя — 100 Гц с гармониками,
     призвук 400 Гц и мягкий шум, 2 с ровно целым числом периодов. Генерируется 2,1 с, хвост вшивается в начало."""
@@ -989,6 +1030,11 @@ def main() -> None:
     write("voice_officer.wav", voice(43, 125.0, 1.2, 5.5, 0.06))
     write("voice_account_officer.wav", voice(47, 108.0, 1.2, 5.0, 0.03))
     write("radio_mumble.wav", radio_mumble(53, 4.5))
+    # POLISH-03 C: радио «Лады» при езде — три позывных «ничего необычного» (свой мотив + бубнёж диктора).
+    c5, d5, e5, f5, g5, a5, c6 = 523.3, 587.3, 659.3, 698.5, 784.0, 880.0, 1046.5
+    write("radio_jingle_1.wav", radio_jingle(301, [(0, 1, c5), (1, 1, e5), (2, 1, g5), (3, 2, c6)], 132.0, 1.6))
+    write("radio_jingle_2.wav", radio_jingle(307, [(0, 0.5, g5), (0.5, 0.5, e5), (1, 1, c5), (2, 0.5, d5), (2.5, 0.5, e5), (3, 2, c5)], 126.0, 1.8))
+    write("radio_jingle_3.wav", radio_jingle(311, [(0, 1, f5), (1, 1, a5), (2, 1, g5), (3, 1, e5), (4, 2, f5)], 120.0, 1.5))
     # ARENA-01 (T): троллейбус на кольце — тихий гул (цикл) и пневматические двери на остановках.
     write("trolley_hum_loop.wav", trolley_hum_loop())
     write("trolley_doors.wav", trolley_doors(67))
