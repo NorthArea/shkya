@@ -224,6 +224,7 @@ func _on_choice(id: StringName) -> void:
 		&"accept":
 			if mission.accept():
 				accept_player.play()
+				_warn_patrols()
 		&"decline":
 			mission.decline()
 		&"buy":
@@ -260,6 +261,12 @@ func _turn_in_shown() -> void:
 	_block()
 
 # --- блокировка ввода ---
+
+## Решение владельца 30.10: после «ПРИНЯТЬ» Бабка предупреждает — патрулей беречься, ничего не подписывать.
+func _warn_patrols() -> void:
+	var sound: Node = world.get_node_or_null("SoundDirector") if world else null
+	if sound and sound.has_method("show_gag"):
+		sound.show_gag(QuestLines.OFFER_WARNING, QuestLines.OFFER_WARNING_SECONDS)
 
 func _open(speaker: String, text: String, specs: Array, portrait: StringName) -> void:
 	_open_chain([{"speaker": speaker, "text": text, "portrait": portrait}], specs, portrait)

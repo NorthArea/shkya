@@ -176,6 +176,9 @@ func _step03_accept() -> void:
 	flow.dialog.buttons[&"accept"].pressed.emit()
 	await _frames(3)
 	check(mission.state == MissionDirector.GO_TO_CAR, "03: ПРИНЯТЬ starts the quest (GO_TO_CAR)")
+	var sd: Node = world.get_node_or_null("SoundDirector")
+	check(sd != null and sd.subtitle_card.visible and sd.subtitle_label.text == "\n".join(PackedStringArray(QuestLines.OFFER_WARNING)),
+		"03: after ПРИНЯТЬ Babka warns about patrols and papers ('%s')" % (sd.subtitle_label.text if sd else ""))
 	check(not flow.is_dialog_open() and not world.ui_blocking and world.player.input_enabled, "03: dialog closed, input restored")
 	check(not flow.marker.visible and flow.marker.text == "", "03: no marker above Babka after acceptance")
 	check(hud.title_label.text == "ЗА ХЛЕБОМ" and hud.task_label.text == "Сядь в машину", "03: card is 'ЗА ХЛЕБОМ' / 'Сядь в машину'")
