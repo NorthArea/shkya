@@ -13,6 +13,8 @@ uniform vec4 lane_bounds[2];
 uniform vec2 lane_radii;
 uniform vec4 road_bounds[4];
 uniform int road_count = 0;
+// CROSS-01: отдельный пакет краски использует то же поле снега, колеи и нормали, что и дорога.
+uniform bool crosswalk_paint = false;
 // Мокрый асфальт (CITY-01 L): у перекрёстков и остановок каша темнеет и блестит, в лужах отражаются фонари (SSR).
 // xy — центр x/z, z — радиус, w — сила; задаёт lighting.gd (WET_SPOTS) через materials.gd.
 uniform vec4 wet_spots[8];
@@ -147,6 +149,17 @@ void fragment() {
 	vec3 n = normalize(vec3(-(hx - h0) / e, 1.0, -(hz - h0) / e));
 	n = normalize(mix(n, vec3(0.0, 1.0, 0.0), puddle));
 	NORMAL = normalize((VIEW_MATRIX * vec4(n, 0.0)).xyz);
+	if (crosswalk_paint) {
+		float edge = min(min(UV.x, 1.0 - UV.x), min(UV.y, 1.0 - UV.y));
+		float wear = noise(xz * 5.0) * 0.75 + noise(xz * 17.0) * 0.25;
+		float coverage = smoothstep(0.23, 0.48, wear) * smoothstep(0.0, 0.07, edge);
+		// Снежная каша прикрывает старую краску; пропуски открывают настоящий асфальт и его колею.
+		coverage *= 1.0 - smoothstep(0.45, 0.88, slushiness);
+		if (coverage < 0.24) { discard; }
+		vec3 paint = mix(vec3(0.63, 0.62, 0.56), vec3(0.89, 0.88, 0.80), wear);
+		color = mix(color, paint, coverage * 0.92);
+		roughness = mix(roughness, 0.72, coverage * 0.65);
+	}
 	ALBEDO = color;
 	ROUGHNESS = roughness;
 	SPECULAR = specular;

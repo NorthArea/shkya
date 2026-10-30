@@ -58,6 +58,7 @@ test: map
 	$(call godot_test,arena03_activity_test,60,ARENA03_ACTIVITY)
 	$(call godot_test,road01_test,60,ROAD01)
 	$(call godot_test,arena03_city_life_test,60,ARENA03_CITY_LIFE)
+	$(call godot_test,cross01_test,60,CROSS01)
 capture: map
 	./tools/run.command --fixed-fps 60 --resolution 1920x1080 --script tools/capture/capture.gd
 

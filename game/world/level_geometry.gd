@@ -59,6 +59,7 @@ func _ready() -> void:
 	_build_canopy()
 	_build_entrance()
 	_build_surfaces()
+	add_child(preload("res://game/world/crosswalks.gd").new())
 	_build_bounds()
 	_build_signs()
 	_build_kiosk_sign()
@@ -1406,7 +1407,6 @@ func _kiosk_inside(root: Node3D, size: Vector3) -> void:
 	bulb_light.position = bulb_at + Vector3(0.15, -0.1, 0)
 	root.add_child(bulb_light)
 	# Ценник «Батон 35» за стеклом, в правом нижнем углу окна (если смотреть с улицы).
-	var tag_at := Vector3(hx - 0.07, floor_y + 1.2, 1.35)
 	# Маленький товар на большой подложке: уменьшение видно ещё до разговора с продавщицей.
 	var tray_at := Vector3(hx - 0.31, floor_y + 1.05, 0.75)
 	_part(root, Vector3(0.32, 0.025, 0.64), tray_at, Materials.plain(Color(0.80, 0.77, 0.68), 0.8))
@@ -1422,6 +1422,7 @@ func _kiosk_inside(root: Node3D, size: Vector3) -> void:
 	sample.position = tray_at + Vector3(0, 0.065, 0)
 	sample.material_override = Materials.plain(Color(0.83, 0.55, 0.25), 0.8)
 	root.add_child(sample)
+	var tag_at := Vector3(hx - 0.07, floor_y + 1.2, 1.35)
 	_part(root, Vector3(0.01, 0.2, 0.32), tag_at, Materials.plain(Color(0.95, 0.94, 0.88), 0.9))
 	var tag := _label("Батон\n35 р.", 40, Color(0.12, 0.10, 0.10))
 	tag.pixel_size = 0.0028
