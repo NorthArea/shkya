@@ -77,9 +77,15 @@ const LifeScript = preload("res://game/world/life.gd")   # PEOPLE-03: конст
 const SPEEDS: Array[float] = [1.2, 1.45, 1.35, 1.6, 1.3, 1.25, 1.5, 1.4, 1.5, 1.4, 1.3, 1.35, 1.25, 1.45,
 	1.75, 1.4, 1.15, 1.3, 1.45, 1.8,
 	1.7, 1.75, 1.65, 1.2, 1.15,
-	1.3, 1.25, 1.2, 1.35, 1.3, 1.4, 1.35]   # LIFE-02: 25–28 прохожие улиц, 29 доминошник, 30–31 рабочие; м/с; у второго в паре — как у первого; LIFE-01: дети 14 и 19 бегают, дворник не спешит; PEOPLE-03: 20–22 дети, 23 торговка, 24 с санками
+	1.3, 1.25, 1.2, 1.35, 1.3, 1.4, 1.35,
+	1.25, 1.4, 1.6, 1.2, 1.3, 1.3, 1.15, 1.35, 1.2, 1.45, 1.55, 1.3,
+	1.25, 1.4, 1.3, 1.2, 1.6, 1.45, 1.35, 1.25, 1.3, 1.2, 1.15, 1.3,
+	1.25, 1.45, 1.3, 1.2, 1.15, 1.25, 1.35, 1.5]   # м/с; ARENA-03: 32 новых жителя, личные дела тихих улиц и дворов
 const PAUSES: Array[float] = [4.0, 2.5, 3.5, 2.0, 3.0, 4.5, 2.5, 5.0, 2.5, 5.0, 3.0, 4.0, 5.0, 3.5, 2.0, 3.0, 4.0, 3.0, 3.5, 2.0,
-	2.0, 2.5, 2.0, 4.0, 3.5, 3.0, 3.5, 4.0, 2.5, 3.0, 3.0, 3.5]   # с, 2–5
+	2.0, 2.5, 2.0, 4.0, 3.5, 3.0, 3.5, 4.0, 2.5, 3.0, 3.0, 3.5,
+	3.0, 2.5, 2.0, 4.0, 3.0, 3.5, 4.0, 3.0, 3.5, 2.5, 2.0, 3.0,
+	4.0, 3.0, 3.0, 3.5, 2.0, 2.5, 3.0, 3.5, 3.0, 4.0, 4.0, 3.5,
+	3.0, 2.5, 3.0, 3.5, 4.0, 4.0, 3.0, 2.5]   # с, 2–5
 const NOTICE_DISTANCE := 3.0
 const RELEASE_DISTANCE := 4.0
 const STARE_SECONDS := 2.0
@@ -273,6 +279,7 @@ var errand := false                # true — цепочка целей (Residen
 var life                           # game/world/life.gd
 var home := &""                    # подъезд персоны
 var plan: Array = []               # шаги цепочки
+var plan_start := 0                # начальная фаза личной цепочки (Life.PERSONAS), сохраняется при reset
 var plan_i := 0
 var spot_id := &""                 # текущая цель (точка интереса)
 var route_flags: Array = []        # флаг отрезка route[i] → route[i + 1]
@@ -804,10 +811,11 @@ func pick_line(kind: StringName) -> String:
 	var lines := QuestLines.street_lines(voice, kind)
 	var key := StringName("%s/%s" % [voice, kind])
 	if _acting and (kind == &"idle" or kind == &"walk"):
-		var own: Array = QuestLines.activity_lines(_act_kind)
+		var activity_kind := &"dig_watch" if _act_kind == &"dig" and spot_id != &"dig_1" else _act_kind
+		var own: Array = QuestLines.activity_lines(activity_kind)
 		if not own.is_empty():
 			lines = own
-			key = StringName("activity/%s" % _act_kind)
+			key = StringName("activity/%s" % activity_kind)
 	if bag == null:
 		bag = LineBagScript.new(SEED + index)
 	var text: String = bag.next(key, lines)
@@ -1674,7 +1682,7 @@ func _errand_begin() -> void:
 
 ## Сброс цепочки: стартовый отрезок, первая цель (у второго в паре — нет, его ведёт первый).
 func _errand_reset() -> void:
-	plan_i = 0
+	plan_i = plan_start
 	spot_id = &""
 	visits = []
 	activity_log = []
@@ -1762,6 +1770,22 @@ func _on_errand_point() -> void:
 ## На месте точки: занятие по её виду.
 func _arrive() -> void:
 	var s: Dictionary = life.spots[spot_id]
+	if s.kind in [&"window", &"queue"]:
+		if _flat(global_position).distance_to(s.pos) > life.AT_SPOT:
+			_go_to(spot_id)
+			return
+		var admitted: StringName = life.window_arrival(self)
+		if admitted == &"":
+			_activity_done()
+			return
+		if admitted != spot_id:
+			life.release(spot_id, self)
+			_from_spot = spot_id
+			_go_to(admitted)
+			return
+		if not life.reserve(spot_id, self):
+			_activity_done()
+			return
 	place(s.pos)
 	facing_yaw = s.yaw
 	_act_yaw = s.yaw
@@ -1860,6 +1884,17 @@ func _tick_activity(delta: float) -> void:
 		return
 	var s: Dictionary = life.spots[spot_id]
 	match _act_kind:
+		&"queue":
+			if not life.anchor_intact(s.service):
+				_activity_done()
+				return
+			var next: StringName = life.queue_next(self)
+			if next != &"" and life.reserve(next, self):
+				_act_stop()
+				life.release(spot_id, self)
+				_from_spot = spot_id
+				_go_to(next) # тот же шаг личного плана; обслужат только после прихода к окну
+			return
 		&"edge":
 			if life.on_screen(s.pos):
 				return   # край карты в кадре — уйдёт, когда камера отвернётся
@@ -2142,7 +2177,7 @@ func _pose_activity() -> void:
 	if visual == null:
 		return
 	if _work_tool:
-		_work_tool.visible = is_playing(_act_kind) and WORK_PERIODS.has(_act_kind)
+		_work_tool.visible = WORK_PERIODS.has(_act_kind) and _working_now()
 	var offset := Vector3.ZERO
 	if _acting and not hidden:
 		var t := _act_t + index * 0.37
@@ -2164,7 +2199,7 @@ func _pose_activity() -> void:
 					offset.y -= 0.035 * nod
 					visual.scale.y *= 1.0 - 0.025 * nod
 			&"hood", &"dig", &"carpet":
-				if is_playing(_act_kind):
+				if _working_now():
 					var stroke := _work_stroke()
 					visual.scale.y *= 1.0 - 0.09 * stroke
 					offset.y -= 0.04 * stroke
@@ -2201,8 +2236,12 @@ func _work_stroke() -> float:
 	var phase := fposmod(_act_t / float(WORK_PERIODS[_act_kind]) + index * 0.17, 1.0)
 	return 0.5 + 0.5 * cos((phase - WORK_CONTACT) * TAU)
 
+## У раскопки одна рабочая позиция; двое остальных смотрят, а не копают воздух сбоку.
+func _working_now() -> bool:
+	return is_playing(_act_kind) and (_act_kind != &"dig" or spot_id == &"dig_1")
+
 func _tick_work(delta: float) -> void:
-	if not is_playing(_act_kind):
+	if not _working_now():
 		return
 	var period: float = WORK_PERIODS[_act_kind]
 	var now := _act_t / period + index * 0.17 - WORK_CONTACT
@@ -2335,7 +2374,7 @@ func _lod_delta(delta: float) -> float:
 
 ## Играет ли сейчас в kind (на занятии, не уходит, не скрыт, не сбит): life.players и шайба.
 func is_playing(kind: StringName) -> bool:
-	return _acting and _act_kind == kind and state == &"activity" and _wait > 0.0 and not hidden and knock_phase == &""
+	return _acting and _act_kind == kind and state == &"activity" and (kind == &"queue" or _wait > 0.0) and not hidden and knock_phase == &""
 
 func is_hockey_active() -> bool:
 	return is_playing(&"hockey")

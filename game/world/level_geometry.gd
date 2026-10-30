@@ -70,6 +70,7 @@ func _ready() -> void:
 	_build_bus_stop()
 	_build_skyline()
 	_build_chimneys()
+	_houses().build_store_entrances()
 	_build_instances()
 	add_child(Patrols.new())   # EXT-01 N: наблюдатели и автобус (точки — Layout, C1)
 	add_child(preload("res://game/world/traffic.gd").new())   # ARENA-01: транспорт кольца (C8)

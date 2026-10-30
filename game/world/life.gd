@@ -66,6 +66,40 @@ const PERSONAS := [
 	{"home": &"door_h1e", "plan": [&"domino", &"smoke", &"domino", &"bins", &"domino"]},                 # 29 доминошник в ушанке
 	{"home": &"door_h1e", "plan": [&"dig", &"dig", &"shaw", &"dig", &"dig", &"home"]},                   # 30 рабочий
 	{"home": &"door_h3e", "plan": [&"dig", &"dig", &"dig", &"press", &"dig"]},                           # 31 рабочий с сигаретой
+	# ARENA-03: личные дела западной/северной сторон, внутреннего двора и торговых узлов.
+	{"home": &"door_h11", "plan": [&"apteka", &"home", &"shop24", &"home"]}, # 32
+	{"home": &"door_h11", "plan": [&"chat_h11a", &"notice_h11", &"home", &"chat_h11a", &"notice_h11", &"home", &"shop24", &"home"]}, # 33
+	{"home": &"door_h11", "plan": [&"edge_d_n", &"home", &"gastro", &"home"]}, # 34
+	{"home": &"door_h11", "plan": [&"notice_h11", &"chat_h11b", &"home", &"notice_h11", &"chat_h11b", &"home", &"apteka", &"home"], "phase": 1}, # 35
+	{"home": &"door_h9a", "plan": [&"buy_pickles", &"home", &"edge_d_n", &"home"]}, # 36
+	{"home": &"door_h10e", "plan": [&"buy_pickles", &"bench", &"home", &"shop24"]}, # 37
+	{"home": &"door_h10w", "plan": [&"bench", &"bins_h10", &"home", &"press"]}, # 38
+	{"home": &"door_h7", "plan": [&"chat_i1", &"bench", &"bins_h10", &"shop24", &"chat_i1", &"home"]}, # 39
+	{"home": &"door_h10w", "plan": [&"chat_i2", &"watch_yard", &"bench", &"home", &"shop24", &"chat_i2"], "phase": 1}, # 40
+	{"home": &"door_h7", "plan": [&"watch_yard", &"bins_h10", &"chat_i1", &"bench", &"home", &"shaw"]}, # 41
+	{"home": &"door_h11", "plan": [&"edge_d_n", &"apteka", &"home", &"shop24"]}, # 42
+	{"home": &"door_h9a", "plan": [&"edge_d_n", &"buy_pickles", &"home", &"gastro"]}, # 43
+	{"home": &"door_h11", "plan": [&"apteka", &"press", &"home", &"edge_a_w"]}, # 44
+	{"home": &"door_h11", "plan": [&"notice_h11", &"home", &"chat_h11b", &"notice_h11", &"chat_h11b", &"home", &"shop24", &"home"]}, # 45
+	{"home": &"door_h7", "plan": [&"press", &"home", &"shop24", &"bench"]}, # 46
+	{"home": &"door_h10w", "plan": [&"press", &"bench", &"home", &"bins_h10"]}, # 47
+	{"home": &"door_h4", "plan": [&"shaw", &"wait_a1", &"home", &"edge_ase"]}, # 48
+	{"home": &"door_h9b", "plan": [&"shaw", &"gastro", &"home", &"edge_ane"]}, # 49
+	{"home": &"door_h9a", "plan": [&"gastro", &"home", &"stop", &"look_b2"]}, # 50
+	{"home": &"door_h9b", "plan": [&"look_b2", &"gastro", &"edge_ane", &"home"]}, # 51
+	{"home": &"door_h9a", "plan": [&"chat_b1", &"gastro", &"home", &"look_b3"]}, # 52
+	{"home": &"door_h3e", "plan": [&"press", &"home", &"bins_yard", &"edge_a_w"]}, # 53
+	{"home": &"door_h7", "plan": [&"bench", &"chat_i2", &"bins_h10", &"home", &"shop24"], "phase": 2}, # 54
+	{"home": &"door_h9b", "plan": [&"buy_pickles", &"edge_d_n", &"home", &"gastro"]}, # 55
+	{"home": &"door_h11", "plan": [&"home", &"notice_h11", &"chat_h11a", &"home", &"chat_h11a", &"notice_h11", &"home", &"edge_a_w"]}, # 56
+	{"home": &"door_h10e", "plan": [&"shop24", &"bench", &"bins_h10", &"home", &"shop24", &"home"]}, # 57
+	{"home": &"door_h11", "plan": [&"buy_pickles", &"home", &"apteka", &"chat_h11b"]}, # 58
+	{"home": &"door_h9b", "plan": [&"buy_pickles", &"home", &"gastro", &"edge_d_n"]}, # 59
+	{"home": &"door_h10w", "plan": [&"watch_yard", &"bench", &"bins_h10", &"chat_i2", &"home", &"shop24"], "phase": 1}, # 60
+	{"home": &"door_h7", "plan": [&"bins_h10", &"notice_h7", &"chat_i1", &"bench", &"home", &"press"], "phase": 1}, # 61
+	{"home": &"door_h7", "plan": [&"look_bw1", &"chat_bw1", &"press", &"home"]}, # 62
+	{"home": &"door_h4", "plan": [&"shaw", &"edge_ase", &"home", &"stop", &"gastro", &"home"]}, # 63
+
 ]
 const PAIR_KINDS: Array[StringName] = [&"door", &"shop", &"window", &"bins", &"edge"]
 
@@ -102,6 +136,9 @@ func _init() -> void:
 		var p: Vector2 = s[3]
 		spots[s[0]] = {"id": s[0], "kind": s[1], "node": s[2], "pos": Vector3(p.x, 0.0, p.y), "yaw": s[4],
 			"dur": s[5], "cap": s[6], "anchor": s[7]}
+		if s[1] == &"queue":
+			spots[s[0]]["service"] = s[8]
+			spots[s[0]]["rank"] = s[9]
 
 func reset() -> void:
 	reserved.clear()
@@ -124,7 +161,7 @@ func choose(resident: Node3D, step: StringName, home: StringName, rng: RandomNum
 	var at := Vector3(resident.global_position.x, 0.0, resident.global_position.z)
 	for id in spots:
 		var s: Dictionary = spots[id]
-		if id == except:
+		if id == except or s.kind == &"queue":
 			continue
 		if step == &"home":
 			if id != home:
@@ -133,8 +170,13 @@ func choose(resident: Node3D, step: StringName, home: StringName, rng: RandomNum
 			continue
 		if pair and not PAIR_KINDS.has(s.kind):
 			continue
-		if not is_free(id, resident) or not anchor_intact(id):
+		if not anchor_intact(id):
 			continue
+		var candidate: StringName = id
+		if not is_free(id, resident) or not _queue_members(id).is_empty():
+			candidate = _queue_tail(id, resident)
+			if candidate == &"" or candidate == except:
+				continue
 		var score := -at.distance_to(s.pos) / DIST_SCALE + rng.randf() * RANDOM_WEIGHT
 		if at.distance_to(s.pos) < AT_SPOT:
 			score += 1.0   # уже стоит на месте точки (курящий у подъезда)
@@ -144,8 +186,70 @@ func choose(resident: Node3D, step: StringName, home: StringName, rng: RandomNum
 			score += SOCIAL_JOIN_BONUS
 		if score > best_score:
 			best_score = score
-			best = id
+			best = candidate
 	return best
+
+## Бронь места задаёт очередь ещё на подходе. Новые покупатели занимают только хвост;
+## передние места освобождаются по мере реального движения, а не отдельным таймером.
+func _queue_members(service: StringName) -> Array:
+	var out: Array = []
+	for id in reserved:
+		var spot: Dictionary = spots[id]
+		if spot.kind != &"queue" or spot.service != service:
+			continue
+		for resident in reserved[id]:
+			if is_instance_valid(resident) and resident.state != &"knocked" and not resident.hidden:
+				out.append([spot.rank, resident])
+	out.sort_custom(func(a, b): return a[0] < b[0])
+	return out
+
+func _queue_tail(service: StringName, resident: Node3D) -> StringName:
+	var tail := 0
+	for entry in _queue_members(service):
+		tail = maxi(tail, entry[0])
+	var best := &""
+	var rank := 2147483647
+	for id in spots:
+		var spot: Dictionary = spots[id]
+		if spot.kind == &"queue" and spot.service == service and spot.rank > tail \
+				and spot.rank < rank and is_free(id, resident):
+			best = id
+			rank = spot.rank
+	return best
+
+## Доступное следующее место уже прибывшего покупателя. Сбитый не держит всю очередь;
+## сама бронь остаётся его безопасной точкой возвращения по контракту KNOCK-02.
+func queue_next(resident: Node3D) -> StringName:
+	if not spots.has(resident.spot_id):
+		return &""
+	var spot: Dictionary = spots[resident.spot_id]
+	if spot.kind != &"queue" or not anchor_intact(spot.service):
+		return &""
+	var members := _queue_members(spot.service)
+	if not members.is_empty() and members[0][1] == resident and is_free(spot.service, resident):
+		return spot.service
+	var best := &""
+	var rank: int = spot.rank
+	for id in spots:
+		var candidate: Dictionary = spots[id]
+		if candidate.kind == &"queue" and candidate.service == spot.service \
+				and candidate.rank < rank and is_free(id, resident):
+			best = id
+			rank = candidate.rank
+	return best
+
+## Дальний путь — намерение. У окна/в очереди место выдаётся по настоящему приходу;
+## уже стоящий в очереди обслуживается раньше нового прохожего у свободного окна.
+func window_arrival(resident: Node3D) -> StringName:
+	var spot: Dictionary = spots[resident.spot_id]
+	var service: StringName = spot.service if spot.kind == &"queue" else spot.id
+	if not anchor_intact(service):
+		return &""
+	if reserved.get(spot.id, []).has(resident):
+		return spot.id
+	if spot.kind == &"window" and is_free(service, resident) and _queue_members(service).is_empty():
+		return service
+	return _queue_tail(service, resident)
 
 func is_free(id: StringName, resident: Node3D = null) -> bool:
 	var cap: int = spots[id].cap
@@ -154,13 +258,29 @@ func is_free(id: StringName, resident: Node3D = null) -> bool:
 	var list: Array = reserved.get(id, [])
 	return list.has(resident) or list.size() < cap
 
-func reserve(id: StringName, resident: Node3D) -> void:
+func reserve(id: StringName, resident: Node3D) -> bool:
 	if id == &"":
-		return
+		return false
 	var list: Array = reserved.get(id, [])
-	if not list.has(resident):
-		list.append(resident)
+	if list.has(resident):
+		return true
+	var spot: Dictionary = spots[id]
+	if spot.kind in [&"window", &"queue"]:
+		var from: Dictionary = spots.get(resident.spot_id, {})
+		var advancing: bool = from.get("kind", &"") == &"queue" \
+				and reserved.get(resident.spot_id, []).has(resident) and queue_next(resident) == id
+		if not advancing:
+			if _flat(resident.global_position).distance_to(spot.pos) > AT_SPOT:
+				return false
+			if spot.kind == &"window" and not _queue_members(id).is_empty():
+				return false
+			if spot.kind == &"queue" and _queue_tail(spot.service, resident) != id:
+				return false
+		if not is_free(id, resident):
+			return false
+	list.append(resident)
 	reserved[id] = list
+	return true
 
 func release(id: StringName, resident: Node3D) -> void:
 	if reserved.has(id):

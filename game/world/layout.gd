@@ -485,7 +485,7 @@ static func snow_banks() -> Array:
 	# Начала внутренних валов C (x −53) и D (z −88) подобраны так, чтобы опоры D_SPANS/C_SPANS стояли в валу, а не
 	# в разрыве: столб посреди разрыва зажимал «Ладу» (STUCK, TrolleyPole@(4.8,−91.1)).
 	for span in [[63.4, -60.0, 19.0, [[-60.0, -40.0]]], [76.6, -110.0, 15.0, [[-120.0, -107.2]]],
-			[-66.6, -107.2, 21.0, [[-2.0, 16.0]]], [-53.4, -88.0, 21.0, [[-2.0, 16.0]]]]:
+			[-66.6, -107.2, 21.0, [[-2.0, 16.0], [-43.0, -37.0]]], [-53.4, -88.0, 21.0, [[-2.0, 16.0], [-43.0, -37.0]]]]:
 		for run in _bank_runs(span[1], span[2], span[3]):
 			banks.append([Vector2(span[0], (run[0] + run[1]) * 0.5), Vector2(w, run[1] - run[0])])
 	return banks
@@ -553,6 +553,42 @@ static func ground_point(id: StringName) -> Vector3:
 ## Площадка у подъезда (между двором и стеной H1): x −44…−4, z 100…107.
 const RESIDENT_ENTRANCE_AREA := Rect2(-44.0, 100.0, 40.0, 7.0)
 
+
+# ARENA-03: жители тихих сторон квартала, покупки и пешие продолжения улиц.
+const ARENA_RESIDENT_ROUTES: Array = [
+	[Vector3(-82, 0, -70.5), Vector3(-74, 0, -70.5)],
+	[Vector3(-73.5, 0, -44), Vector3(-73.5, 0, -52)],
+	[Vector3(-73.5, 0, -85), Vector3(-73.5, 0, -96)],
+	[Vector3(-73.5, 0, -12), Vector3(-73.5, 0, -24)],
+	[Vector3(-22, 0, -109.5), Vector3(-5, 0, -109.5)],
+	[Vector3(18, 0, -90.9), Vector3(3.5, 0, -90.9)],
+	[Vector3(-29, 0, -64), Vector3(-36, 0, -62)],
+	[Vector3(-16, 0, -30), Vector3(-27, 0, -31.7)],
+	[Vector3(-36, 0, -38), Vector3(-36, 0, -34)],
+	[Vector3(-8, 0, -62), Vector3(-16, 0, -58.5)],
+	[Vector3(-92, 0, -2.5), Vector3(-83, 0, -2.5)],
+	[Vector3(-47, 0, -109.5), Vector3(-60, 0, -109.5)],
+	[Vector3(-91, 0, 19.2), Vector3(-79, 0, 19.2)],
+	[Vector3(-73.5, 0, -32), Vector3(-73.5, 0, -46)],
+	[Vector3(-11.5, 0, 20.6), Vector3(-13.2, 0, 20.6)],
+	[Vector3(-17.5, 0, 20.6), Vector3(-15, 0, 20.6)],
+	[Vector3(66, 0, 43.3), Vector3(62, 0, 43.3)],
+	[Vector3(72, 0, 43.3), Vector3(64, 0, 43.3)],
+	[Vector3(79.6, 0, -48), Vector3(79.6, 0, -30)],
+	[Vector3(79.6, 0, -78), Vector3(79.6, 0, -60)],
+	[Vector3(79.6, 0, -19), Vector3(79.6, 0, -15)],
+	[Vector3(-37, 0, 43.6), Vector3(-26, 0, 43.6)],
+	[Vector3(-36, 0, -59), Vector3(-36, 0, -48)],
+	[Vector3(24, 0, -109.5), Vector3(10, 0, -109.5)],
+	[Vector3(-73.5, 0, -58), Vector3(-73.5, 0, -65)],
+	[Vector3(-50.8, 0, -76), Vector3(-50.8, 0, -60)],
+	[Vector3(-60, 0, -109.5), Vector3(-46, 0, -109.5)],
+	[Vector3(60, 0, -109.5), Vector3(48, 0, -109.5)],
+	[Vector3(-36, 0, -55), Vector3(-36, 0, -42)],
+	[Vector3(-16, 0, -61), Vector3(-16, 0, -58.5)],
+	[Vector3(57.4, 0, 17), Vector3(57.4, 0, 3)],
+	[Vector3(86, 0, 43.3), Vector3(81, 0, 43.3)],
+]
 const RESIDENT_ROUTES: Array = [
 	# 0. Двор, вдоль H1 от подъезда на восток. z 103,4: от лавки (−34, 105) 1,2 м, от тополя (−28, 101) 2,0 м,
 	#    от берёзы (−12, 102) 1,25 м; от SPAWN 5,9 м, от Бабки 6,1 м.
@@ -626,16 +662,19 @@ const RESIDENT_ROUTES: Array = [
 	[Vector3(-8.0, 0, 103.4), Vector3(-4.0, 0, 98.8)],
 	[Vector3(8.5, 0, 58.5), Vector3(8.5, 0, 52.0)],
 	[Vector3(-21.0, 0, 43.6), Vector3(-11.5, 0, 43.6)],
-]
+] + ARENA_RESIDENT_ROUTES
 
 ## Индексы точек с паузой (у подъезда, остановки, магазинов, на концах тротуаров).
 const RESIDENT_PAUSES: Array = [[0, 1], [0, 1], [1], [0, 1], [0, 1], [1, 2], [1, 2], [0, 1],
 		[1, 2], [0, 1], [0, 1], [0, 1], [0, 1], [0, 1, 2], [1], [1], [1], [1], [1], [1], [1], [1], [1], [1], [1],
-		[1], [1], [1], [1], [1], [1], [1]]   # LIFE-02: 25–31
+		[1], [1], [1], [1], [1], [1], [1]] + [[1], [1], [1], [1], [1], [1], [1], [1], [1], [1], [1], [1],
+		[1], [1], [1], [1], [1], [1], [1], [1], [1], [1], [1], [1],
+		[1], [1], [1], [1], [1], [1], [1], [1]]
 
 ## Старт — индекс точки маршрута; житель сразу идёт к следующей.
 const RESIDENT_STARTS: Array[int] = [0, 1, 0, 1, 0, 0, 1, 1, 1, 1, 0, 1, 0, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-		0, 0, 0, 0, 0, 0, 0]
+		0, 0, 0, 0, 0, 0, 0] + [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
 
 ## Силуэт каждого жителя (PEOPLE-01, часть A): resident_<силуэт>_<ракурс>_idle.svg.
 # PEOPLE-02 (прохожие из артов ШКЯ, docs/art/CHARACTERS.md): shuba — бабка в бордовой шубе с пакетами,
@@ -650,7 +689,12 @@ const RESIDENT_LOOKS: Array[StringName] = [&"shuba", &"violet", &"ushanka_walk",
 		&"kid2", &"ushanka_walk", &"ushanka", &"tourist", &"ushanka_walk", &"kid",   # LIFE-01: 14 горка, 15 рабочий, 16 дворник, 17 домино, 18 капот, 19 горка
 		&"kid2", &"kid", &"kid2", &"beret", &"violet",   # PEOPLE-03 (P2): 20–21 хоккей, 22 снежки, 23 торговка, 24 бабушка с санками
 		&"kolpak", &"bow", &"shuba", &"dog",             # LIFE-02: 25–28 прохожие улиц A и B
-		&"ushanka", &"ushanka_walk", &"ushanka"]         # LIFE-02: 29 доминошник, 30–31 рабочие раскопки
+		&"ushanka", &"ushanka_walk", &"ushanka"] + [
+		&"shuba", &"tourist", &"ushanka_walk", &"turban", &"bow", &"beret",
+		&"violet", &"kolpak", &"dog", &"ushanka_walk", &"tourist", &"shuba",
+		&"turban", &"bow", &"beret", &"kolpak", &"ushanka_walk", &"tourist",
+		&"shuba", &"dog", &"bow", &"violet", &"beret", &"turban",
+		&"kolpak", &"ushanka_walk", &"shuba", &"turban", &"dog", &"violet", &"bow", &"tourist"]
 
 # CITY-01 (часть P): посадка в троллейбус. Житель 2 (Residents.RIDER) ждёт у павильона A на точке 1 своего маршрута
 # и по doors_opened садится в ближайшую дверь (исчезает); на остановке B выходит из передней двери — она севернее
@@ -924,8 +968,6 @@ const PROPS_BREAKABLES := [
 	[&"Z18_1_00", &"fence", Vector2(-84.6, -78), Vector3(0.1, 0.6, 2.4), 0.0, &"light"],
 	[&"Z18_1_01", &"fence", Vector2(-84.6, -75.6), Vector3(0.1, 0.6, 2.4), 0.0, &"light"],
 	[&"Z18_1_02", &"fence", Vector2(-84.6, -73.2), Vector3(0.1, 0.6, 2.4), 0.0, &"light"],
-	[&"Z18_1_03", &"fence", Vector2(-84.6, -70.8), Vector3(0.1, 0.6, 2.4), 0.0, &"light"],
-	[&"Z18_1_04", &"fence", Vector2(-84.6, -68.4), Vector3(0.1, 0.6, 2.4), 0.0, &"light"],
 	[&"Z18_1_05", &"fence", Vector2(-84.6, -66), Vector3(0.1, 0.6, 2.4), 0.0, &"light"],
 	[&"Z18_1_06", &"fence", Vector2(-84.6, -63.6), Vector3(0.1, 0.6, 2.4), 0.0, &"light"],
 	[&"Z18_1_07", &"fence", Vector2(-84.6, -61.2), Vector3(0.1, 0.6, 2.4), 0.0, &"light"],
@@ -956,6 +998,9 @@ const PROPS_BREAKABLES := [
 const LIFE_CLEARANCE := 1.0
 ## Газоны и дворы, где жители ходят вне тротуаров (снег утоптан): Rect2(x, z, ширина, длина).
 const LIFE_GROUNDS: Array[Rect2] = [
+	Rect2(-96.0, -125.0, 25.0, 146.0), # H11 и обход торца H5; дороги не входят в путь
+	Rect2(-99.0, 14.0, 25.0, 7.0),    # западное продолжение тротуара A
+
 	Rect2(-78.0, 59.5, 30.0, 48.5),     # западная часть двора (Z2–Z4): от H2 до Yard_Drive, от H3 до H1
 	Rect2(-24.0, 44.0, 46.0, 12.0),     # газон выезда со двора (Z7) между тротуаром A и Yard_Drive
 	Rect2(8.0, 44.0, 22.0, 64.0),       # восток двора до гаражей (Z5) и газон у раскопки
@@ -968,6 +1013,19 @@ const LIFE_GROUNDS: Array[Rect2] = [
 	Rect2(56.0, -30.0, 2.5, 50.0),      # LIFE-02: полоса вдоль витрин H6 до тротуара B, запад (путь Илюши — x 59,5)
 ]
 const LIFE_NODES := {
+	# ARENA-03: обход узкого торца H5, жилой фасад H11, север C и пути за кадр.
+	&"dw_gate": Vector2(-92.0, 19.2), &"dw_back": Vector2(-92.0, -2.5),
+	&"dw_top": Vector2(-73.5, -2.5), &"dw_n": Vector2(-73.5, -25.0),
+	&"dw_h11n": Vector2(-73.5, -40.5), &"dw_h11": Vector2(-73.5, -70.5),
+	&"dw_door": Vector2(-82.0, -70.5), &"dw_s": Vector2(-73.5, -98.0),
+	&"dw_c": Vector2(-70.5, -110.5), &"dw_out": Vector2(-73.5, -122.0),
+	&"cn_w": Vector2(-50.0, -109.5), &"cn_mid": Vector2(-25.0, -109.5),
+	&"aw_out": Vector2(-97.5, 19.2),
+	&"press_q1": Vector2(-13.2, 20.6), &"press_q2": Vector2(-15.0, 20.6),
+	&"shaw_q1": Vector2(62.0, 43.3), &"shaw_q2": Vector2(64.0, 43.3),
+	&"d_e_shop": Vector2(-50.8, -41.35),
+	&"dw_cross": Vector2(-70.5, -40.0),
+
 	# Двор H1: подъезды, лавка, курилка, домино, «Жигули» под капотом.
 	&"y_smoke": Vector2(-31.0, 106.6), &"y_ent_w": Vector2(-30.0, 103.4), &"y_ent_e": Vector2(-13.5, 103.4),
 	&"y_ent_x": Vector2(-8.0, 103.4), &"y_car_s": Vector2(-4.0, 98.8), &"y_dom_w": Vector2(5.0, 99.5),
@@ -1027,6 +1085,15 @@ const LIFE_NODES := {
 	&"bw_n": Vector2(57.4, 20.2), &"bw_1": Vector2(57.4, 2.0), &"bw_2": Vector2(57.4, -22.0),
 }
 const LIFE_EDGES := [
+	[&"a_n_apt", &"dw_gate"], [&"dw_gate", &"dw_back"], [&"dw_back", &"dw_top"],
+	[&"dw_top", &"dw_n"], [&"dw_n", &"dw_h11n"], [&"dw_h11n", &"dw_h11"],
+	[&"dw_h11", &"dw_door"], [&"dw_h11", &"dw_s"], [&"dw_s", &"dw_c"],
+	[&"dw_c", &"cn_w"], [&"cn_w", &"cn_mid"], [&"cn_mid", &"c_n_trade"],
+	[&"dw_s", &"dw_out"], [&"dw_gate", &"aw_out"],
+	[&"a_n_x", &"press_q1"], [&"press_q1", &"press_q2"],
+	[&"a_s_shaw", &"shaw_q1"], [&"shaw_q1", &"shaw_q2"],
+	[&"dw_h11n", &"dw_cross"], [&"dw_cross", &"d_e_40", &"cross"],
+
 	[&"y_smoke", &"y_ent_w"], [&"y_ent_w", &"y_ent_e"], [&"y_ent_e", &"y_ent_x"], [&"y_ent_x", &"y_car_s"],
 	[&"y_car_s", &"y_dom_w"], [&"y_dom_w", &"y_dom_s"], [&"y_dom_s", &"y_east"], [&"y_east", &"y_hood"],
 	[&"y_car_s", &"y_mid"], [&"y_mid", &"y_w66"], [&"y_w66", &"y_exit"], [&"y_exit", &"y_exit_e"],
@@ -1048,7 +1115,7 @@ const LIFE_EDGES := [
 	[&"b_3", &"b_ce"], [&"b_ce", &"c_n_e"], [&"c_n_e", &"c_n_x"], [&"c_n_x", &"c_n_h9"],
 	[&"c_n_x", &"c_s_x", &"cross"], [&"c_s_x", &"c_s_41"], [&"c_s_41", &"c_s_40"], [&"c_s_40", &"c_s_31"], [&"c_s_31", &"c_s_20"],
 	[&"c_s_20", &"c_s_3"], [&"c_s_3", &"c_s_m"], [&"c_s_m", &"c_s_w"], [&"c_s_w", &"d_e_c"], [&"d_e_c", &"d_e_84"],
-	[&"d_e_84", &"d_e_46"], [&"d_e_46", &"d_e_40"], [&"d_e_40", &"d_e_25"], [&"d_e_25", &"d_e_n"],
+	[&"d_e_84", &"d_e_46"], [&"d_e_46", &"d_e_shop"], [&"d_e_shop", &"d_e_40"], [&"d_e_40", &"d_e_25"], [&"d_e_25", &"d_e_n"],
 	[&"d_e_46", &"ib_w"], [&"d_e_25", &"ib_m"], [&"d_e_n", &"ib_n3"],
 	[&"a_n_pass", &"ib_n1"], [&"ib_n1", &"ib_n2"], [&"ib_n2", &"ib_n3"], [&"ib_n3", &"ib_h7"], [&"ib_h7", &"ib_m"],
 	[&"ib_m", &"ib_play"], [&"ib_m", &"ib_w"], [&"ib_play", &"ib_w"], [&"ib_play", &"ib_bench"],
@@ -1069,6 +1136,23 @@ const LIFE_EDGES := [
 ## коробке (катаются по LIFE_RINK_AREA), snowball — дети кидаются снежками через крепость, trade — бабка торгует
 ## соленьями у прилавка, sled — бабушка катает внука на санках по петле LIFE_SLED_LOOP.
 const LIFE_SPOTS := [
+	[&"door_h11", &"door", &"dw_door", Vector2(-85.4, -70.5), PI * 0.5, Vector2(25, 55), 0, &""],
+	[&"edge_d_n", &"edge", &"dw_out", Vector2(-73.5, -123.0), 0.0, Vector2(40, 75), 0, &""],
+	[&"edge_a_w", &"edge", &"aw_out", Vector2(-98.0, 19.2), PI * 0.5, Vector2(35, 65), 0, &""],
+	[&"chat_h11a", &"chat", &"dw_h11n", Vector2(-75.0, -39.0), 0.0, Vector2(20, 40), 1, &""],
+	[&"chat_h11b", &"chat", &"dw_h11n", Vector2(-75.0, -40.4), PI, Vector2(20, 40), 1, &""],
+	[&"chat_i1", &"chat", &"ib_m", Vector2(-34.0, -32.0), 0.0, Vector2(25, 50), 1, &""],
+	[&"chat_i2", &"chat", &"ib_m", Vector2(-34.0, -33.4), PI, Vector2(25, 50), 1, &""],
+	[&"watch_yard", &"look", &"ib_w", Vector2(-37.5, -37.0), -PI * 0.25, Vector2(15, 35), 1, &""],
+	[&"notice_h11", &"look", &"dw_door", Vector2(-83.0, -71.85), PI * 0.5, Vector2(20, 40), 1, &""],
+	[&"notice_h7", &"look", &"ib_h7", Vector2(-6.5, -10.35), -PI * 0.5, Vector2(15, 30), 1, &""],
+	[&"buy_pickles", &"look", &"c_n_trade", Vector2(-3.6, -110.7), 0.0, Vector2(8, 15), 1, &"Z19_1"],
+	# Последние поля очереди: обслуживающее окно, порядок места (ближайшее первым).
+	[&"press_q1", &"queue", &"press_q1", Vector2(-13.2, 20.6), 0.0, Vector2(0, 0), 1, &"", &"press", 1],
+	[&"press_q2", &"queue", &"press_q2", Vector2(-15.0, 20.6), 0.0, Vector2(0, 0), 1, &"", &"press", 2],
+	[&"shaw_q1", &"queue", &"shaw_q1", Vector2(62.0, 43.3), PI, Vector2(0, 0), 1, &"", &"shaw", 1],
+	[&"shaw_q2", &"queue", &"shaw_q2", Vector2(64.0, 43.3), PI, Vector2(0, 0), 1, &"", &"shaw", 2],
+
 	# Подъезды (двери — buildings.gd, _entrance_kit): H1 восточный и западный, H3 западный и восточный, H4, H7,
 	# H10 западный и восточный, H9 два. Подъезд Бабки (−40; 108) не используется.
 	[&"door_h1e", &"door", &"y_ent_e", Vector2(-13.5, 107.4), 0.0, Vector2(30, 80), 0, &""],
@@ -1082,7 +1166,7 @@ const LIFE_SPOTS := [
 	[&"door_h9a", &"door", &"c_n_h9", Vector2(37.7, -111.4), 0.0, Vector2(30, 80), 0, &""],
 	[&"door_h9b", &"door", &"c_n_e", Vector2(63.7, -111.4), 0.0, Vector2(30, 80), 0, &""],
 	# Магазины: «ПРОДУКТЫ 24» (витрина на запад), «ГАСТРОНОМ» (H8), «АПТЕКА» (H5_West).
-	[&"shop24", &"shop", &"d_e_40", Vector2(-47.6, -40.0), -PI * 0.5, Vector2(20, 40), 0, &""],
+	[&"shop24", &"shop", &"d_e_shop", Vector2(-47.6, -41.35), -PI * 0.5, Vector2(20, 40), 0, &""],
 	[&"gastro", &"shop", &"b_gastro", Vector2(81.4, -10.0), -PI * 0.5, Vector2(25, 45), 0, &""],
 	[&"apteka", &"shop", &"a_n_apt", Vector2(-77.5, 14.6), 0.0, Vector2(15, 30), 0, &""],
 	# Окна киосков: «ПРЕССА» (окно на юг) и «ШАУРМА» (окно на север).

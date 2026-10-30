@@ -653,7 +653,31 @@ func _part_reset() -> void:
 	check(worst < 0.001, "reset_positions(): everyone on the start (worst %.4f m)" % worst)
 	check(visible, "reset_positions(): visible, logs cleared")
 	var smokers := residents.filter(func(r): return r.state == &"smoke" or life.spots.get(r.spot_id, {}).get("kind") == &"smoke")
-	check(held == residents.filter(func(r): return r.spot_id != &"" and r.leader == null).size(), "reset_positions(): only the first goals reserved (%d)" % held)
+	var ordinary_reserved := true
+	for r in residents:
+		if r.spot_id == &"" or r.leader != null:
+			continue
+		if life.spots[r.spot_id].kind not in [&"window", &"queue"]:
+			ordinary_reserved = ordinary_reserved and life.reserved.get(r.spot_id, []).has(r)
+	var only_first := true
+	var windows_at_arrival := true
+	var owners := {}
+	for id in life.reserved:
+		if not life.spots.has(id):
+			only_first = false
+			continue
+		for r in life.reserved[id]:
+			if not is_instance_valid(r):
+				only_first = false
+				continue
+			only_first = only_first and r.leader == null and r.spot_id == id and not owners.has(r)
+			owners[r] = true
+			if life.spots[id].kind in [&"window", &"queue"]:
+				var at := Vector3(r.global_position.x, 0.0, r.global_position.z)
+				windows_at_arrival = windows_at_arrival and at.distance_to(life.spots[id].pos) <= life.AT_SPOT
+	check(ordinary_reserved, "reset_positions(): ordinary first goals keep their reservations")
+	check(only_first, "reset_positions(): no stale, duplicate or unrelated reservations (%d)" % held)
+	check(windows_at_arrival, "reset_positions(): windows and queues are reserved only by physically arrived residents")
 	check(smokers.size() == 2 and residents[10].state == &"smoke", "the two smokers go for a smoke at the entrance, resident 10 already smoking (%d)" % smokers.size())
 
 # =====================================================================================

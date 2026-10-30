@@ -573,9 +573,12 @@ const SWEEP_LINES := [
 	"Обходи, тут подметено!",
 	"Метёшь, метёшь — а оно опять…",
 ]
+## Оригинальные бытовые черновики ARENA-03; не цитаты из референса владельца.
+const QUEUE_LINES := ["Я за последним.", "Очередь быстро стоит.", "Я тут только спросить.", "Тут всегда так.", "Я никуда не тороплюсь."]
+const WORKSITE_WATCH_LINES := ["Я бы не трогал.", "Нормально же было.", "Главное — не мешайте.", "Они ещё не начали.", "Смотрю, чтоб не отвлекали."]
 ## Вид занятия (Layout.LIFE_SPOTS) → пул.
 const ACTIVITY_LINES := {&"domino": DOMINO_LINES, &"trade": TRADE_LINES, &"sled": SLED_LINES, &"hockey": HOCKEY_LINES,
-	&"snowball": SNOWBALL_LINES, &"sweep": SWEEP_LINES}
+	&"snowball": SNOWBALL_LINES, &"sweep": SWEEP_LINES, &"queue": QUEUE_LINES, &"dig_watch": WORKSITE_WATCH_LINES}
 
 ## Пул занятия kind (нет своего — пусто: житель говорит пулы своего голоса).
 static func activity_lines(kind: StringName) -> Array:

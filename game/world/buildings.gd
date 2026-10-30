@@ -53,6 +53,35 @@ const LOW_PATTERNS := [[2, 3, 7], [1, 2, 7, 8], [3, 4, 8]]
 ## LIFE-01: точки дверей подъездов на стене (x, 0, z), которые построил _entrance_kit — тест сверяет с ними двери жителей.
 static var door_log: Array[Vector3] = []
 
+## Входы магазинов строятся у тех же целей, к которым действительно подходят жители.
+## Дверь «ПРОДУКТОВ 24» — часть собственного павильона LevelGeometry._shop24.
+func build_store_entrances() -> void:
+	for spot in Layout.LIFE_SPOTS:
+		if spot[1] != &"shop" or spot[0] == &"shop24":
+			continue
+		var facing := Vector3(-sin(spot[4]), 0.0, -cos(spot[4]))
+		var out := -facing
+		var right := Vector3(out.z, 0.0, -out.x)
+		var basis := Basis(right, Vector3.UP, out)
+		var p: Vector2 = spot[3]
+		var at := Vector3(p.x, 0.0, p.y) + facing * 0.58
+		var entrance := Node3D.new()
+		entrance.name = "StoreEntrance_%s" % spot[0]
+		entrance.transform = Transform3D(basis, at)
+		add_child(entrance)
+		# Узел отмечает настоящий порог; детали входят в существующие общие пакеты.
+		for item in [
+			[Vector3(1.45, 2.35, 0.1), Vector3(0, 1.175, 0), Color(0.11, 0.14, 0.14)],
+			[Vector3(1.12, 2.15, 0.05), Vector3(0, 1.075, 0.07), Color(0.23, 0.28, 0.25)],
+			[Vector3(0.83, 1.2, 0.04), Vector3(0, 1.42, 0.11), Color(0.12, 0.14, 0.14)],
+			[Vector3(0.045, 0.32, 0.08), Vector3(0.39, 1.03, 0.17), METAL],
+			[Vector3(1.85, 0.14, 0.75), Vector3(0, 2.43, 0.3), CONCRETE],
+			[Vector3(1.85, 0.10, 0.75), Vector3(0, 2.55, 0.3), Color(0.88, 0.90, 0.94)],
+			[Vector3(1.35, 0.025, 0.58), Vector3(0, 0.035, 0.35), Color(0.27, 0.23, 0.20)]]:
+			var size: Vector3 = item[0]
+			var offset: Vector3 = item[1]
+			_put("paint", Transform3D(basis * Basis.from_scale(size), at + basis * offset), item[2])
+
 const NEAR_CELL := 30.0    # клетка ближних пакетов, м (меньше узлов и draw call)
 const NEAR_RANGE := 60.0   # дальше — мелочь скрыта (C9: LOD по расстоянию)
 

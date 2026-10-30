@@ -122,6 +122,7 @@ func _ready() -> void:
 			resident.life = life
 			resident.home = persona.get("home", &"")
 			resident.plan = persona.get("plan", [])
+			resident.plan_start = int(persona.get("phase", 0))
 			resident.rider = true
 			resident.trolley = trolley
 			resident.carry = persona.get("carry", &"")   # PEOPLE-03: санки с внуком
