@@ -1,0 +1,779 @@
+extends Node3D
+## CITY-03: летающие пакеты города Н. — по превью ролика Евы Морозовой «весна в России» (зелёный пакет над серым
+## двором) и поручению владельца 30.10. Пакеты-«майки» без брендов: красно-зелёный с надписью собственного сочинения
+## «ВСЁ ПО ПЛАНУ», белый «СПАСИБО ЗА ПОКУПКУ!» и чёрный мусорный.
+##
+## Своя простая физика, без тел и коллизий (C2 не трогается, на игру не влияет — только облик):
+## - ветер: направление Lighting.WIND, качается с периодом HEADING_PERIOD; сила и поворот — от порывов
+##   LightingAndWeather.gust (те же, что у снегопада); турбулентность — гладкие синусы по месту и времени;
+## - у стен домов (коробки Layout выше WALL_HEIGHT) ветер, бьющий в стену, уходит вверх и вдоль неё — вихрь;
+##   с подветренной стороны — обратный завиток;
+## - пакет тянет к ветру (DRAG), тянет вниз (SINK × вес) и поднимает сильным ветром (LIFT); на снегу и крышах
+##   низких коробок он ложится (rest) и взлетает от порыва сильнее своего порога; цепляется за ветки деревьев, столбы
+##   и заборы (snag) на SNAG_TIME, трепещет по ветру и срывается порывом;
+## - «Лада», транспорт кольца и Илюша пешком отбрасывают пакет (подброс по скорости, кувырок), за быстрой машиной
+##   пакет затягивает следом;
+## - улетевший за BOUNDS дольше OUT_RESPAWN или залежавшийся вне кадра — возвращается к одному из SOURCES вне кадра;
+## - на старте (и потом изредка) один пакет пролетает перед камерой (flyby).
+## Облик — сетка двух стенок со своим шейдером (shaders/bag.gdshader): раздув, трепет, вырез ручек; надпись —
+## один раз отрисованная в SubViewport маска. Теней нет (C9: мелочь). Звук — шуршание у камеры (bag_rustle_loop.wav,
+## tools/generate_audio.py). Всё детерминировано: SEED.
+
+const Layout = preload("res://game/world/layout.gd")
+const SnowField = preload("res://game/world/snow_field.gd")
+const Lighting = preload("res://game/world/lighting.gd")
+const BagShader = preload("res://game/world/shaders/bag.gdshader")
+const RUSTLE := preload("res://assets/audio/bag_rustle_loop.wav")
+const FONT := preload("res://assets/fonts/Pangolin-Regular.ttf")
+
+const GROUP := &"wind_bags"
+const SEED := 3003
+
+## Пакеты: [вид, точка старта x/z]. Вид: &"shop" — красно-зелёная «майка» «ВСЁ ПО ПЛАНУ», &"white" — белый
+## «СПАСИБО ЗА ПОКУПКУ!», &"black" — чёрный мусорный (тяжелее, летает ниже).
+const BAGS: Array = [
+	[&"shop", Vector2(-36.0, 63.5)],    # двор, у контейнеров BINS
+	[&"white", Vector2(-24.0, 23.8)],   # остановка A
+	[&"shop", Vector2(57.0, -58.5)],    # у KIOSK_BINS, площадка киоска
+	[&"black", Vector2(-28.0, -72.0)],  # у контейнеров H10
+	[&"shop", Vector2(64.0, -66.0)],    # павильон остановки у киоска
+	[&"white", Vector2(-47.0, -44.0)],  # «ПРОДУКТЫ 24» у улицы D
+	[&"shop", Vector2(-12.0, 95.0)],    # двор у подъездов
+]
+## Куда возвращается пакет (вне кадра): на землю у мусорок, остановок и магазинов.
+const SOURCES: Array[Vector2] = [
+	Vector2(-36.0, 63.5), Vector2(-24.0, 23.8), Vector2(57.0, -58.5), Vector2(-28.0, -72.0), Vector2(64.0, -66.0),
+	Vector2(-47.0, -44.0), Vector2(-12.0, 95.0), Vector2(-60.0, 44.5), Vector2(20.0, 44.0), Vector2(40.0, 20.0),
+	Vector2(80.0, -20.0), Vector2(-68.0, -80.0), Vector2(0.0, -94.0), Vector2(45.0, -110.0), Vector2(-4.0, 70.0),
+]
+
+const BAG_SIZE := Vector2(0.44, 0.64)   # м, ширина и высота «майки» с ручками
+const BAG_SCALE := 1.25                 # крупнее настоящего: читается с игровой камеры
+const GRID := Vector2i(8, 12)
+
+# --- ветер ---
+const WIND_BASE := 1.7          # м/с в затишье
+const GUST_GAIN := 2.0          # в порыв ветер сильнее в (1 + GUST_GAIN) раз
+const HEADING_SWING := 1.1      # рад, медленное качание направления — пакеты гуляют по арене, а не копятся в углу
+const HEADING_PERIOD := 83.0    # с
+const TURB := 0.9               # м/с, горизонтальная турбулентность
+const TURB_UP := 0.7            # м/с, вертикальная
+const WALL_HEIGHT := 5.0        # м: коробка выше — стена дома (вихрь, пакет отталкивается); ниже — крыша, на неё ложатся
+const VORTEX_RANGE := 4.5       # м от стены
+const UPDRAFT := 1.1            # доля ветра в стену, уходящая вверх
+const SWIRL := 0.8              # доля, уходящая вдоль стены
+
+# --- полёт ---
+const DRAG := 2.0               # 1/с, горизонталь
+const DRAG_UP := 1.6            # 1/с, вертикаль
+const SINK := 1.5               # м/с², «тяжесть» пакета (× вес вида)
+const LIFT := 0.9               # м/с² на 1 м/с ветра сверх LIFT_MIN
+const LIFT_MIN := 1.6           # м/с
+const CEILING := 7.5            # м: выше пакет мягко прижимает вниз
+const GROUND_LIFT := 0.035      # м над землёй, где пакет лежит
+
+# --- лежит / цепляется ---
+const LIFTOFF_GUST := Vector2(0.45, 0.8)   # порог порыва для взлёта, у каждого пакета свой
+const REST_MIN := Vector2(2.0, 6.0)         # с лежит не меньше
+const REST_RECYCLE := 40.0                  # с: залежался вне кадра — к новому источнику
+const SNAG_CHANCE := 0.55                   # доля «цепких» пар пакет × точка
+const SNAG_TIME := Vector2(3.5, 11.0)       # с висит
+const SNAG_MAX := 18.0                      # с: дольше не висит даже в затишье
+const SNAG_RELEASE_GUST := 0.35             # после SNAG_TIME срывает порыв не слабее этого
+const SNAG_COOLDOWN := 5.0                  # с: за ту же точку сразу снова не цепляется
+
+# --- реакции ---
+const CAR_PAD := 0.5            # м к габариту машины
+const CAR_MIN_SPEED := 1.5      # м/с: медленнее — не отбрасывает
+const HIT_CARRY := 1.1          # доля скорости машины, которую получает пакет
+const HIT_UP := Vector2(2.4, 0.16)       # м/с подброса: база + на 1 м/с скорости машины
+const HIT_SIDE := Vector2(1.4, 0.07)     # в сторону от оси машины
+const HIT_COOLDOWN := 0.7       # с
+const WAKE_RANGE := 7.0         # м за быстрой машиной — затягивает следом
+const WAKE_SPEED := 6.0         # м/с
+const KICK_RADIUS := 0.9        # м от Илюши
+const KICK_UP := 2.2            # м/с
+const LADA_HALF := Vector2(0.9, 2.1)     # полугабарит «Лады» x/z
+const CAR_HALF := Vector2(0.95, 2.4)     # машины кольца
+const TROLLEY_HALF := Vector2(1.3, 6.0)  # ЗиУ-9
+
+# --- границы и возврат ---
+const OUT_RESPAWN := 1.5        # с вне BOUNDS (или выше OUT_HEIGHT) — возврат
+const OUT_HEIGHT := 14.0
+const HIDDEN_DISTANCE := 38.0   # м: дальше — пакет не виден, даже если в кадре
+
+# --- пролёт перед камерой ---
+const FLYBY_DELAY := 1.8        # с после начала игры (после заставки)
+const FLYBY_INTERVAL := Vector2(150.0, 240.0)
+const FLYBY_SECONDS := 2.2      # с ведомого пролёта
+const FLYBY_SPEED := 4.5        # м/с поперёк кадра
+const FLYBY_AHEAD := 4.0        # м перед камерой
+
+# --- звук ---
+const RUSTLE_RANGE := 8.0       # м от камеры
+const RUSTLE_DB := -9.0         # RMS файла −24 → −33 дБ у источника: ниже сигналов квеста (−23…−25), около фона двора
+
+var bags: Array = []
+var hits := {&"car": 0, &"player": 0, &"traffic": 0}
+var snags := 0
+var releases := 0
+var liftoffs := 0
+var respawns := 0
+var flybys := 0
+var clock := 0.0
+var rustle: AudioStreamPlayer3D
+
+var _rng := RandomNumberGenerator.new()
+var _world: Node
+var _lighting: Node
+var _player: Node3D
+var _lada: Node3D
+var _walls := []            # [Rect2 XZ, высота]
+var _wall_cells := {}       # Vector2i → индексы _walls
+var _snag_points := []      # [Vector3 (x, низ, z), радиус, верх]
+var _snag_cells := {}
+var _prev := {}             # Node3D → прошлая позиция (скорость машин и Илюши по разности)
+var _vel := {}
+var _intro_gone := -1.0
+var _next_flyby := INF
+var _materials := {}
+
+const CELL := 10.0
+
+func _init() -> void:
+	name = "WindBags"
+
+func _ready() -> void:
+	add_to_group(GROUP)
+	_rng.seed = SEED
+	_world = _find_world()
+	if _world:
+		_player = _world.get_node_or_null("Ilyusha")
+		_lada = _world.get_node_or_null("Car")
+		_lighting = _world.get_node_or_null("LightingAndWeather")
+	_collect_walls()
+	_collect_snags()
+	var mesh := bag_mesh()
+	for i in BAGS.size():
+		var spec: Array = BAGS[i]
+		var bag := Bag.new()
+		bag.name = "Bag%d_%s" % [i, spec[0]]
+		bag.kind = spec[0]
+		bag.index = i
+		bag.weight = 1.6 if bag.kind == &"black" else (0.85 if bag.kind == &"white" else 1.0)
+		bag.liftoff_gust = _rng.randf_range(LIFTOFF_GUST.x, LIFTOFF_GUST.y)
+		add_child(bag)
+		bag.look = MeshInstance3D.new()
+		bag.look.name = "Look"
+		bag.look.mesh = mesh
+		bag.look.material_override = _material(bag.kind)
+		bag.look.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		bag.look.scale = Vector3.ONE * BAG_SCALE * (1.15 if bag.kind == &"black" else 1.0)
+		bag.look.set_instance_shader_parameter("phase", float(i) * 1.9)
+		bag.add_child(bag.look)
+		var p: Vector2 = spec[1]
+		_put_down(bag, Vector3(p.x, 0.0, p.y), _rng.randf_range(0.0, TAU))
+		bag.rest_left = _rng.randf_range(0.0, REST_MIN.y)
+		bags.append(bag)
+	rustle = AudioStreamPlayer3D.new()
+	rustle.name = "Rustle"
+	rustle.stream = RUSTLE
+	rustle.volume_db = RUSTLE_DB
+	rustle.unit_size = 2.5
+	rustle.max_distance = RUSTLE_RANGE + 4.0
+	add_child(rustle)
+
+func _find_world() -> Node:
+	var node := get_parent()
+	while node:
+		if node is DemoWorld:
+			return node
+		node = node.get_parent()
+	return null
+
+# --- данные арены ---
+
+func _collect_walls() -> void:
+	for spec in Layout.all_solids():
+		var size: Vector3 = spec[3]
+		if size.y < 1.2 or minf(size.x, size.z) < 0.6 or spec[1] in ["snow", "snow_bank", "parked_car", "bins", "bench"]:
+			continue
+		var xz: Vector2 = spec[2]
+		var rect := Rect2(xz - Vector2(size.x, size.z) * 0.5, Vector2(size.x, size.z))
+		var k := _walls.size()
+		_walls.append([rect, size.y])
+		_register(_wall_cells, rect.grow(VORTEX_RANGE), k)
+
+func _collect_snags() -> void:
+	for p in Layout.TREES:
+		_add_snag(Vector3(p.x, 2.2, p.y), 1.1, 6.5)
+	for p in Layout.POPLARS:
+		_add_snag(Vector3(p.x, 3.0, p.y), 1.6, 9.5)
+	for p in Layout.street_lamps() + Layout.trolley_poles():
+		_add_snag(Vector3(p.x, 0.6, p.y), 0.32, 7.6)
+	for spec in Layout.all_solids():
+		if spec[1] != "fence" and spec[1] != "carpet_bar" and spec[1] != "sign_post":
+			continue
+		var xz: Vector2 = spec[2]
+		var size: Vector3 = spec[3]
+		var along := Vector2(size.x, 0) if size.x >= size.z else Vector2(0, size.z)
+		var n := maxi(1, int(along.length()))
+		for k in n:
+			var c := xz - along * 0.5 + along * ((k + 0.5) / float(n))
+			_add_snag(Vector3(c.x, 0.05, c.y), 0.4, size.y + 0.15)
+
+func _add_snag(at: Vector3, radius: float, top: float) -> void:
+	var k := _snag_points.size()
+	_snag_points.append([at, radius, top])
+	_register(_snag_cells, Rect2(at.x - radius, at.z - radius, radius * 2.0, radius * 2.0), k)
+
+func _register(cells: Dictionary, rect: Rect2, k: int) -> void:
+	for gx in range(floori(rect.position.x / CELL), floori(rect.end.x / CELL) + 1):
+		for gz in range(floori(rect.position.y / CELL), floori(rect.end.y / CELL) + 1):
+			var key := Vector2i(gx, gz)
+			if not cells.has(key):
+				cells[key] = []
+			cells[key].append(k)
+
+static func _cell(p: Vector3) -> Vector2i:
+	return Vector2i(floori(p.x / CELL), floori(p.z / CELL))
+
+## Высота, на которую ложится пакет: снег валов (C10) или крыша низкой коробки (гараж, киоск, павильон).
+func ground_at(p: Vector3) -> float:
+	var h := SnowField.height_at(p.x, p.z)
+	for k in _wall_cells.get(_cell(p), []):
+		var w: Array = _walls[k]
+		if (w[0] as Rect2).has_point(Vector2(p.x, p.z)) and float(w[1]) < WALL_HEIGHT and p.y > float(w[1]) - 0.5:
+			h = maxf(h, float(w[1]))
+	return h + GROUND_LIFT
+
+# --- ветер ---
+
+func gust() -> float:
+	if _lighting and is_instance_valid(_lighting):
+		return float(_lighting.get("gust"))
+	var wave := sin(clock * TAU / Lighting.GUST_PERIOD) * (0.6 + 0.4 * sin(clock * TAU / (Lighting.GUST_PERIOD * 0.37) + 1.1))
+	return smoothstep(0.15, 0.9, 0.5 + 0.5 * wave)
+
+## Средний ветер (без турбулентности и стен), м/с.
+func wind_mean() -> Vector3:
+	var g := gust()
+	var base := Lighting.WIND.normalized()   # снег, позёмка и пакеты летят в одну сторону
+	var turn := HEADING_SWING * (0.75 * sin(clock * TAU / HEADING_PERIOD) + 0.25 * sin(clock * TAU / (HEADING_PERIOD * 0.41) + 2.0))
+	return base.rotated(Vector3.UP, turn + Lighting.GUST_TURN * (g - 0.3)) * WIND_BASE * (1.0 + GUST_GAIN * g)
+
+func wind_at(p: Vector3, mean: Vector3) -> Vector3:
+	var t := clock
+	var w := mean
+	w.x += TURB * (sin(p.z * 0.37 + t * 1.3) * 0.6 + sin(p.x * 0.21 - t * 0.7 + 1.3) * 0.4)
+	w.z += TURB * (sin(p.x * 0.33 - t * 1.1 + 0.4) * 0.6 + sin(p.z * 0.17 + t * 0.9) * 0.4)
+	w.y += TURB_UP * (sin(p.x * 0.29 + p.z * 0.23 + t * 1.7) * 0.7 + sin(t * 0.6 + p.x * 0.1) * 0.3)
+	for k in _wall_cells.get(_cell(p), []):
+		var wall: Array = _walls[k]
+		if float(wall[1]) < WALL_HEIGHT or p.y > float(wall[1]) + 1.0:
+			continue
+		var rect: Rect2 = wall[0]
+		var q := Vector2(clampf(p.x, rect.position.x, rect.end.x), clampf(p.z, rect.position.y, rect.end.y))
+		var off := Vector2(p.x, p.z) - q
+		var d := off.length()
+		if d > VORTEX_RANGE or d < 0.001:
+			continue
+		var n := Vector3(off.x, 0.0, off.y) / d   # наружу от стены
+		var fall := 1.0 - d / VORTEX_RANGE
+		var into := -(w.x * n.x + w.z * n.z)      # > 0 — ветер бьёт в стену
+		var along := Vector3.UP.cross(n)
+		if into > 0.0:
+			w += n * into * fall                    # в стену не дует
+			w.y += into * UPDRAFT * fall            # вверх по фасаду
+			w += along * into * SWIRL * fall * sin(t * 0.7 + float(k))
+		else:
+			w += n * into * 0.5 * fall               # завиток за домом: тянет обратно к стене
+			w.y += -into * 0.35 * fall
+			w += along * into * 0.6 * fall * cos(t * 0.9 + float(k))
+	return w
+
+# --- шаг ---
+
+func _physics_process(delta: float) -> void:
+	if delta <= 0.0:
+		return
+	clock += delta
+	_track_movers(delta)
+	var mean := wind_mean()
+	var g := gust()
+	var movers := _movers()
+	for bag: Bag in bags:
+		bag.hit_cooldown = maxf(bag.hit_cooldown - delta, 0.0)
+		bag.flyby_left = maxf(bag.flyby_left - delta, 0.0)
+		if bag.hidden_wait > 0.0:
+			bag.hidden_wait -= delta
+			if bag.hidden_wait <= 0.0:
+				_respawn(bag, mean)
+			continue
+		_react(bag, movers)
+		match bag.state:
+			&"fly": _fly(bag, mean, delta)
+			&"rest": _rest(bag, mean, g, delta)
+			&"snag": _snagged(bag, mean, g, delta)
+		_bounds(bag, mean, delta)
+		_animate(bag, mean, delta)
+	_flyby(mean)
+	_rustle()
+
+func _fly(bag: Bag, mean: Vector3, delta: float) -> void:
+	var p := bag.position
+	var w := wind_at(p, mean)
+	var wh := Vector2(w.x, w.z).length()
+	if bag.flyby_left > 0.0:
+		p += bag.velocity * delta   # ведомый пролёт перед камерой: курс задан, ветер ждёт
+		bag.position = p
+		return
+	var v := bag.velocity
+	v.x += (w.x - v.x) * DRAG * delta
+	v.z += (w.z - v.z) * DRAG * delta
+	v.y += (w.y - v.y) * DRAG_UP * delta
+	v.y += (LIFT * maxf(wh - LIFT_MIN, 0.0) / bag.weight - SINK * bag.weight) * delta
+	if p.y > CEILING:
+		v.y -= (p.y - CEILING) * 2.0 * delta
+	p += v * delta
+	# Стены домов: не сквозь, отскок мягкий.
+	for k in _wall_cells.get(_cell(p), []):
+		var wall: Array = _walls[k]
+		var rect: Rect2 = (wall[0] as Rect2).grow(0.15)
+		var top := float(wall[1])
+		if p.y > top or not rect.has_point(Vector2(p.x, p.z)):
+			continue
+		if top < WALL_HEIGHT and p.y > top - 0.5:
+			continue   # над низкой коробкой — ляжет на крышу
+		var dx := minf(p.x - rect.position.x, rect.end.x - p.x)
+		var dz := minf(p.z - rect.position.y, rect.end.y - p.z)
+		if dx < dz:
+			p.x = rect.position.x if p.x - rect.position.x < rect.end.x - p.x else rect.end.x
+			v.x *= -0.3
+		else:
+			p.z = rect.position.y if p.z - rect.position.y < rect.end.y - p.z else rect.end.y
+			v.z *= -0.3
+		v.y += 0.6
+	var ground := ground_at(p)
+	if p.y <= ground:
+		p.y = ground
+		if v.y < 0.0:
+			v.y = -v.y * 0.25
+		v.x *= 0.6
+		v.z *= 0.6
+		if Vector2(v.x, v.z).length() < 1.2 and LIFT * maxf(wh - LIFT_MIN, 0.0) < SINK * bag.weight * bag.weight:
+			bag.position = p
+			_put_down(bag, p, bag.yaw)
+			bag.rest_left = _rng.randf_range(REST_MIN.x, REST_MIN.y)
+			return
+	bag.velocity = v
+	bag.position = p
+	_try_snag(bag)
+
+func _try_snag(bag: Bag) -> void:
+	var p := bag.position
+	for k in _snag_cells.get(_cell(p), []):
+		if k == bag.last_snag and clock - bag.snag_released < SNAG_COOLDOWN:
+			continue
+		var s: Array = _snag_points[k]
+		var at: Vector3 = s[0]
+		if p.y < at.y or p.y > float(s[2]) or Vector2(p.x - at.x, p.z - at.z).length() > float(s[1]):
+			continue
+		if _hash(bag.index * 131 + k * 7) > SNAG_CHANCE:
+			continue
+		bag.state = &"snag"
+		bag.snag_point = p
+		bag.last_snag = k
+		bag.snag_left = _rng.randf_range(SNAG_TIME.x, SNAG_TIME.y)
+		bag.snag_time = 0.0
+		bag.velocity = Vector3.ZERO
+		bag.snag_count += 1
+		snags += 1
+		return
+
+func _snagged(bag: Bag, mean: Vector3, g: float, delta: float) -> void:
+	bag.snag_left -= delta
+	bag.snag_time += delta
+	var w := wind_at(bag.snag_point, mean)
+	# Висит на ручках: тело вытянуто по ветру, в затишье опускается; качается.
+	var flow := Vector3(w.x, 0.0, w.z) * 0.35
+	var hang := (flow + Vector3.DOWN).normalized()
+	var swing := Vector3(sin(clock * 3.1 + bag.index), 0.0, cos(clock * 2.3 + bag.index * 0.7)) * 0.12
+	bag.hang_dir = (hang + swing).normalized()
+	bag.position = bag.snag_point + bag.hang_dir * BAG_SIZE.y * 0.5 * BAG_SCALE
+	if (bag.snag_left <= 0.0 and g >= SNAG_RELEASE_GUST) or bag.snag_time >= SNAG_MAX:
+		_release(bag, w)
+
+func _release(bag: Bag, w: Vector3) -> void:
+	bag.state = &"fly"
+	bag.snag_released = clock
+	bag.velocity = Vector3(w.x, 0.0, w.z) * 0.8 + Vector3.UP * 1.2
+	bag.spin = Vector3(_rng.randf_range(-6.0, 6.0), _rng.randf_range(-3.0, 3.0), _rng.randf_range(-6.0, 6.0))
+	releases += 1
+
+func _rest(bag: Bag, mean: Vector3, g: float, delta: float) -> void:
+	bag.rest_left -= delta
+	bag.rest_time += delta
+	var p := bag.position
+	var w := wind_at(p, mean)
+	# В порыв лежащий пакет ползёт по снегу.
+	if g > 0.4:
+		var crawl := Vector3(w.x, 0.0, w.z) * 0.12 * (g - 0.4) / bag.weight
+		p += crawl * delta
+		p.y = ground_at(p)
+		bag.position = p
+	if bag.rest_left <= 0.0 and g >= bag.liftoff_gust * bag.weight:
+		_lift_off(bag, w, 2.4)
+	elif bag.rest_time > REST_RECYCLE and not _seen(p):
+		bag.hidden_wait = 0.5
+		bag.visible = false
+
+func _lift_off(bag: Bag, w: Vector3, up: float) -> void:
+	bag.state = &"fly"
+	bag.rest_time = 0.0
+	bag.velocity = Vector3(w.x * 0.6, up, w.z * 0.6)
+	bag.spin = Vector3(_rng.randf_range(-5.0, 5.0), _rng.randf_range(-2.0, 2.0), _rng.randf_range(-5.0, 5.0))
+	liftoffs += 1
+
+func _put_down(bag: Bag, p: Vector3, yaw: float) -> void:
+	bag.state = &"rest"
+	bag.yaw = yaw
+	bag.rest_time = 0.0
+	bag.velocity = Vector3.ZERO
+	bag.spin = Vector3.ZERO
+	p.y = ground_at(p)
+	bag.position = p
+
+func _bounds(bag: Bag, mean: Vector3, delta: float) -> void:
+	var p := bag.position
+	var out := not Layout.BOUNDS.grow(1.0).has_point(Vector2(p.x, p.z)) or p.y > OUT_HEIGHT
+	bag.out_time = bag.out_time + delta if out else 0.0
+	bag.max_out_time = maxf(bag.max_out_time, bag.out_time)
+	if bag.out_time > OUT_RESPAWN:
+		bag.visible = false
+		_respawn(bag, mean)
+
+## Вернуть пакет на землю у источника вне кадра — с наветренной стороны арены; если все видны — ждать.
+func _respawn(bag: Bag, mean: Vector3) -> void:
+	var dir := mean.normalized()
+	var best := -INF
+	var pick := Vector2.INF
+	for i in SOURCES.size():
+		var s: Vector2 = SOURCES[i]
+		var at := Vector3(s.x, 0.3, s.y)
+		if _seen(at):
+			continue
+		var busy := false
+		for other: Bag in bags:
+			if other != bag and other.visible and Vector2(other.position.x, other.position.z).distance_to(s) < 4.0:
+				busy = true
+		if busy:
+			continue
+		var score := -(s.x * dir.x + s.y * dir.z) + _hash(i * 17 + respawns * 5) * 60.0
+		if score > best:
+			best = score
+			pick = s
+	if pick == Vector2.INF:
+		bag.hidden_wait = 1.0
+		bag.visible = false
+		return
+	bag.visible = true
+	bag.hidden_wait = 0.0
+	bag.out_time = 0.0
+	_put_down(bag, Vector3(pick.x, 0.0, pick.y), _rng.randf_range(0.0, TAU))
+	bag.rest_left = _rng.randf_range(REST_MIN.x, REST_MIN.y)
+	respawns += 1
+
+func _seen(p: Vector3) -> bool:
+	var cam := get_viewport().get_camera_3d() if is_inside_tree() else null
+	if cam == null:
+		return false
+	return cam.global_position.distance_to(p) < HIDDEN_DISTANCE and cam.is_position_in_frustum(p)
+
+# --- реакции на машины и Илюшу ---
+
+func _track_movers(delta: float) -> void:
+	for node in _movers_nodes():
+		var p: Vector3 = node.global_position
+		_vel[node] = (p - _prev[node]) / delta if _prev.has(node) else Vector3.ZERO
+		_prev[node] = p
+
+func _movers_nodes() -> Array:
+	var out := []
+	if _lada and is_instance_valid(_lada):
+		out.append(_lada)
+	if _player and is_instance_valid(_player):
+		out.append(_player)
+	for v in get_tree().get_nodes_in_group(&"traffic_vehicles"):
+		out.append(v)
+	return out
+
+## [узел, вид, полугабарит x/z (Vector2.ZERO — Илюша), скорость].
+func _movers() -> Array:
+	var out := []
+	if _lada and is_instance_valid(_lada):
+		out.append([_lada, &"car", LADA_HALF, _vel.get(_lada, Vector3.ZERO)])
+	var on_foot: bool = _world == null or _world.get("control_mode") != &"in_car"
+	if _player and is_instance_valid(_player) and _player.visible and on_foot:
+		out.append([_player, &"player", Vector2.ZERO, _vel.get(_player, Vector3.ZERO)])
+	for v in get_tree().get_nodes_in_group(&"traffic_vehicles"):
+		out.append([v, &"traffic", TROLLEY_HALF if v is Trolleybus else CAR_HALF, _vel.get(v, Vector3.ZERO)])
+	return out
+
+func _react(bag: Bag, movers: Array) -> void:
+	if bag.hit_cooldown > 0.0:
+		return
+	var p := bag.position
+	for m in movers:
+		var node: Node3D = m[0]
+		var v: Vector3 = m[3]
+		var speed := Vector2(v.x, v.z).length()
+		var half: Vector2 = m[2]
+		if half == Vector2.ZERO:
+			var off := Vector3(p.x - node.global_position.x, 0.0, p.z - node.global_position.z)
+			if off.length() > KICK_RADIUS or p.y > 1.4:
+				continue
+			var away := off.normalized() if off.length() > 0.01 else -node.global_basis.z
+			_hit(bag, Vector3(v.x, 0, v.z) * 1.3 + away * 1.5 + Vector3.UP * KICK_UP, &"player")
+			return
+		if speed < CAR_MIN_SPEED:
+			continue
+		var local := node.global_transform.affine_inverse() * p
+		var top := 3.6 if half == TROLLEY_HALF else 1.9
+		if absf(local.x) < half.x + CAR_PAD and absf(local.z) < half.y + CAR_PAD and p.y < top:
+			var side := node.global_basis.x * signf(local.x if absf(local.x) > 0.01 else 1.0)
+			_hit(bag, Vector3(v.x, 0, v.z) * HIT_CARRY + side * (HIT_SIDE.x + HIT_SIDE.y * speed) + Vector3.UP * (HIT_UP.x + HIT_UP.y * speed), m[1])
+			return
+		# Затягивает за быстрой машиной.
+		if speed > WAKE_SPEED and bag.state == &"fly" and p.y < 3.0:
+			var behind := local.z - half.y   # вперёд у машины −z: позади — положительное local.z
+			if behind > 0.0 and behind < WAKE_RANGE and absf(local.x) < half.x + 1.5:
+				bag.velocity += (Vector3(v.x, 0, v.z) * 0.6 - bag.velocity) * 0.04
+
+func _hit(bag: Bag, velocity: Vector3, by: StringName) -> void:
+	if bag.state == &"snag":
+		bag.snag_released = clock
+		releases += 1
+	bag.state = &"fly"
+	bag.rest_time = 0.0
+	bag.velocity = velocity
+	bag.position.y = maxf(bag.position.y, ground_at(bag.position) + 0.1)
+	bag.spin = Vector3(_rng.randf_range(-12.0, 12.0), _rng.randf_range(-6.0, 6.0), _rng.randf_range(-12.0, 12.0))
+	bag.hit_cooldown = HIT_COOLDOWN
+	bag.last_hit = clock
+	hits[by] += 1
+
+# --- облик ---
+
+func _animate(bag: Bag, mean: Vector3, delta: float) -> void:
+	var look := bag.look
+	match bag.state:
+		&"fly":
+			var v := bag.velocity
+			var heading := atan2(-v.x, -v.z) if Vector2(v.x, v.z).length() > 0.3 else bag.yaw
+			bag.yaw = lerp_angle(bag.yaw, heading, 1.0 - exp(-2.0 * delta))
+			var target_spin := Vector3(sin(clock * 0.9 + bag.index) * 4.0, 0.0, cos(clock * 0.7 + bag.index * 1.3) * 3.0) * clampf(v.length() / 4.0, 0.3, 1.5)
+			bag.spin = bag.spin.lerp(target_spin, 1.0 - exp(-1.2 * delta))
+			bag.tumble += Vector3(bag.spin.x, 0.0, bag.spin.z) * delta
+			bag.basis = Basis.from_euler(Vector3(bag.tumble.x, bag.yaw, bag.tumble.z))
+			look.set_instance_shader_parameter("puff", 0.07 + 0.03 * sin(clock * 2.0 + bag.index))
+			look.set_instance_shader_parameter("flutter", 0.035 + 0.01 * minf(v.length(), 4.0))
+			look.set_instance_shader_parameter("flap_speed", 10.0 + v.length() * 2.0)
+		&"snag":
+			# Ручки — у точки зацепа (верх сетки), тело — по hang_dir.
+			var down := bag.hang_dir
+			var side := down.cross(Vector3.UP)
+			if side.length() < 0.05:
+				side = Vector3.RIGHT
+			side = side.normalized()
+			var face := side.cross(down).normalized()
+			bag.basis = Basis(side, -down, face)
+			look.set_instance_shader_parameter("puff", 0.09)
+			look.set_instance_shader_parameter("flutter", 0.05)
+			look.set_instance_shader_parameter("flap_speed", 16.0)
+		&"rest":
+			var lift := 0.012 + 0.03 * gust()
+			bag.basis = Basis(Vector3.UP, bag.yaw) * Basis(Vector3.RIGHT, -PI * 0.5)
+			look.set_instance_shader_parameter("puff", 0.015 + 0.02 * gust())
+			look.set_instance_shader_parameter("flutter", lift)
+			look.set_instance_shader_parameter("flap_speed", 7.0)
+
+# --- пролёт перед камерой ---
+
+func _flyby(mean: Vector3) -> void:
+	if _world == null:
+		return
+	if _intro_gone < 0.0:
+		if _world.get_node_or_null("Intro") == null:
+			_intro_gone = clock
+			_next_flyby = clock + FLYBY_DELAY
+		return
+	if clock < _next_flyby:
+		return
+	_next_flyby = clock + _rng.randf_range(FLYBY_INTERVAL.x, FLYBY_INTERVAL.y)
+	var cam := get_viewport().get_camera_3d()
+	if cam == null or _world.get("control_mode") != &"on_foot" or _world.get("ui_blocking"):
+		return
+	var pick: Bag = null
+	for bag: Bag in bags:
+		if not _seen(bag.position) and bag.hidden_wait <= 0.0 and (pick == null or bag.state == &"rest"):
+			pick = bag
+	if pick == null:
+		return
+	var fwd := -cam.global_basis.z
+	fwd = Vector3(fwd.x, 0.0, fwd.z).normalized()
+	var right := Vector3(-fwd.z, 0.0, fwd.x)
+	var dir := 1.0 if mean.dot(right) >= 0.0 else -1.0   # слева направо — по ветру
+	var start := cam.global_position + fwd * FLYBY_AHEAD - right * dir * FLYBY_SPEED * FLYBY_SECONDS * 0.5
+	start.y = maxf(cam.global_position.y - 0.4, ground_at(start) + 0.8)
+	pick.visible = true
+	pick.state = &"fly"
+	pick.position = start
+	pick.velocity = right * dir * FLYBY_SPEED + Vector3.UP * 0.35
+	pick.spin = Vector3(5.0, 0.0, -3.0)
+	pick.flyby_left = FLYBY_SECONDS
+	pick.out_time = 0.0
+	flybys += 1
+
+# --- звук ---
+
+func _rustle() -> void:
+	var cam := get_viewport().get_camera_3d()
+	if cam == null:
+		return
+	var best: Bag = null
+	var best_d := RUSTLE_RANGE
+	for bag: Bag in bags:
+		if not bag.visible or (bag.state == &"rest" and clock - bag.last_hit > 1.0 and gust() < 0.6):
+			continue
+		var d := cam.global_position.distance_to(bag.position)
+		if d < best_d:
+			best_d = d
+			best = bag
+	if best == null:
+		if rustle.playing:
+			rustle.stop()
+		return
+	rustle.global_position = best.position
+	rustle.pitch_scale = 0.9 + 0.04 * float(best.index % 5)
+	if not rustle.playing:
+		rustle.play(fposmod(clock * 0.37, 1.5))
+
+# --- сетка и материалы ---
+
+## Две стенки «майки» (COLOR.r ±1), сшитые по краям: вершины краёв у стенок совпадают (раздув там 0).
+static func bag_mesh() -> ArrayMesh:
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	for side: float in [1.0, -1.0]:
+		for j in GRID.y:
+			for i in GRID.x:
+				var quad := [Vector2i(i, j), Vector2i(i + 1, j), Vector2i(i + 1, j + 1), Vector2i(i, j + 1)]
+				var order := [0, 1, 2, 0, 2, 3] if side > 0.0 else [0, 2, 1, 0, 3, 2]
+				for o in order:
+					var c: Vector2i = quad[o]
+					var uv := Vector2(float(c.x) / GRID.x, float(c.y) / GRID.y)
+					st.set_color(Color(side, 0, 0))
+					st.set_normal(Vector3(0, 0, side))
+					st.set_uv(uv)
+					st.add_vertex(Vector3((uv.x - 0.5) * BAG_SIZE.x, (uv.y - 0.5) * BAG_SIZE.y, 0.0))
+	var mesh := st.commit()
+	mesh.custom_aabb = AABB(Vector3(-0.5, -0.5, -0.3), Vector3(1.0, 1.0, 0.6))   # раздув и трепет в шейдере
+	return mesh
+
+func _material(kind: StringName) -> ShaderMaterial:
+	if _materials.has(kind):
+		return _materials[kind]
+	var m := ShaderMaterial.new()
+	m.shader = BagShader
+	m.set_shader_parameter("bag_size", BAG_SIZE)
+	match kind:
+		&"shop":
+			m.set_shader_parameter("base_color", Color(0.93, 0.92, 0.88))
+			m.set_shader_parameter("band_color", Color(0.80, 0.09, 0.07))
+			m.set_shader_parameter("band2_color", Color(0.12, 0.55, 0.20))
+			m.set_shader_parameter("band_mode", 1.0)
+			m.set_shader_parameter("ink_color", Color(1.0, 0.97, 0.88))
+			m.set_shader_parameter("gloss", 0.3)
+			m.set_shader_parameter("backlight_k", 0.35)
+			_print(m, ["ВСЁ", "ПО ПЛАНУ"], "продукты у дома")
+		&"white":
+			m.set_shader_parameter("base_color", Color(0.90, 0.90, 0.87))
+			m.set_shader_parameter("band_color", Color(0.20, 0.38, 0.75))
+			m.set_shader_parameter("band_mode", 2.0)
+			m.set_shader_parameter("ink_color", Color(0.20, 0.38, 0.75))
+			m.set_shader_parameter("gloss", 0.4)
+			m.set_shader_parameter("backlight_k", 0.6)
+			_print(m, ["СПАСИБО", "ЗА ПОКУПКУ!"], "приходите ещё")
+		_:
+			m.set_shader_parameter("base_color", Color(0.035, 0.035, 0.04))
+			m.set_shader_parameter("band_mode", 0.0)
+			m.set_shader_parameter("gloss", 0.18)
+			m.set_shader_parameter("backlight_k", 0.05)
+	_materials[kind] = m
+	return m
+
+## Надпись — маска (альфа) из SubViewport, отрисованная один раз (UPDATE_ONCE). Без рендера (headless) — без надписи.
+func _print(m: ShaderMaterial, lines: Array, small: String) -> void:
+	if DisplayServer.get_name() == "headless":
+		return
+	var vp := SubViewport.new()
+	vp.name = "Print_%d" % _materials.size()
+	vp.size = Vector2i(256, 256)
+	vp.transparent_bg = true
+	vp.render_target_update_mode = SubViewport.UPDATE_ONCE
+	vp.disable_3d = true
+	add_child(vp)
+	var box := VBoxContainer.new()
+	box.size = Vector2(256, 256)
+	box.alignment = BoxContainer.ALIGNMENT_CENTER
+	box.add_theme_constant_override("separation", -10)
+	vp.add_child(box)
+	for k in lines.size():
+		var label := Label.new()
+		label.text = lines[k]
+		label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		label.add_theme_font_override("font", FONT)
+		label.add_theme_font_size_override("font_size", 64 if lines[k].length() <= 8 else 44)
+		label.rotation = -0.04 + 0.05 * k   # от руки, чуть вкось
+		box.add_child(label)
+	var tag := Label.new()
+	tag.text = small
+	tag.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	tag.add_theme_font_override("font", FONT)
+	tag.add_theme_font_size_override("font_size", 24)
+	box.add_child(tag)
+	m.set_shader_parameter("print_tex", vp.get_texture())
+	m.set_shader_parameter("has_print", 1.0)
+
+static func _hash(n: int) -> float:
+	return fposmod(sin(float(n) * 12.9898 + 78.233) * 43758.5453, 1.0)
+
+## Один пакет: состояние полёта; облик — ребёнок Look.
+class Bag:
+	extends Node3D
+	var kind: StringName = &"shop"
+	var index := 0
+	var look: MeshInstance3D
+	var state: StringName = &"rest"   # fly, rest, snag
+	var velocity := Vector3.ZERO
+	var spin := Vector3.ZERO
+	var tumble := Vector3.ZERO
+	var yaw := 0.0
+	var weight := 1.0
+	var liftoff_gust := 0.6
+	var rest_left := 0.0
+	var rest_time := 0.0
+	var snag_point := Vector3.ZERO
+	var snag_left := 0.0
+	var snag_time := 0.0
+	var snag_released := -100.0
+	var last_snag := -1
+	var snag_count := 0
+	var hang_dir := Vector3.DOWN
+	var hit_cooldown := 0.0
+	var last_hit := -100.0
+	var out_time := 0.0
+	var max_out_time := 0.0
+	var hidden_wait := 0.0
+	var flyby_left := 0.0
