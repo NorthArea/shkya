@@ -1,13 +1,17 @@
 extends SceneTree
 ## KNOCK-01: сбивание жителей «Ладой» без вреда на настоящей сцене main.tscn (набор KNOCK).
-## Проверки: константы (порог 3 м/с, потолок полёта 9 м/с, высота 1,5–3 м, лежит 1,5–2,5 с, встаёт 0,8 с, 3 с
-## неуязвимости); наезд на 5 м/с — state knocked, фазы fly → down → getup → back → маршрут, взлёт ≥ 1,5 м и ≤ 3 м,
+## Проверки: константы (порог 3 м/с, потолок полёта 9 м/с, высота 1,5–3 м, лежит 1,5–2,5 с, встаёт 0,8 с, между
+## ударами ≤ 0,3 с); наезд на 5 м/с — state knocked, фазы fly → down → getup → back → маршрут, взлёт ≥ 1,5 м и ≤ 3 м,
 ## дальность ≥ 3 м по ходу машины, кувырок 1–2 оборота (угол облика и наклон Visual), billboard спрайта выключен в
-## полёте и включён после, тело выключено на fly/down/getup, приземление на y = 0, пыль и звуки «вжух»/«пуф»
+## полёте и включён после, тело включено и на fly/down/getup (лёжа — капсула вдоль земли), приземление на y = 0,
+## пыль и звуки «вжух»/«пуф»
 ## (played["knock"], ["knock_thud"]), снежинки кружат над головой лежащего, getup с репликой HIT, обратно на маршрут
 ## и дальше по нему; траектория не входит в коробки Layout.all_solids() (в том числе наезд к стене дома — полёт
 ## укорочен) и flight_distance режет луч перед коробкой; на 2 м/с — прежний отход (lada_bumps), без полёта; повторный
-## наезд в полёте, лёжа и вставая — без эффекта, сразу после getup — тоже (неуязвимость), через 3 с — снова сбивает;
+## KNOCK-02: один удар — один подлёт (машина на жителе 8 кадров подряд); повторный удар в полёте, лёжа, вставая и
+## сразу после подъёма — новый подлёт; лежащего медленная «Лада» не проезжает насквозь — толкает и притормаживает;
+## на 8 м/с сбивается житель в каждом состоянии: идёт, стоит, на занятии, сидит, курит, ждёт троллейбус, в LOD, на
+## переходе, у двери троллейбуса (посадка), вышедший на B (у двери и на пути к «ГАСТРОНОМУ») — и потом продолжает своё;
 ## пара — сбит один, второй ждёт на месте и смотрит на него, после — прежний сдвиг пары; Бабка, продавщица, патрули — не
 ## Resident, Бабка от наезда не сдвигается и не сбивается; денег и состояния миссии сбивание не меняет;
 ## reset_positions() посреди полёта — все на стартах, облик и тело как до удара, счётчики с нуля.
@@ -70,6 +74,9 @@ func _run() -> void:
 	await _part_knock()
 	await _part_slow()
 	await _part_repeat()
+	await _part_lying_push()
+	await _part_states()
+	await _part_trolley()
 	await _part_wall()
 	await _part_pair()
 	await _part_not_residents()
@@ -85,7 +92,7 @@ func _part_constants() -> void:
 	check(Resident.KNOCK_HEIGHT == Vector2(1.5, 3.0), "flight height 1.5–3 m by speed %s" % Resident.KNOCK_HEIGHT)
 	check(Resident.KNOCK_DOWN_SECONDS.x >= 1.5 and Resident.KNOCK_DOWN_SECONDS.y <= 2.5, "lies 1.5–2.5 s %s" % Resident.KNOCK_DOWN_SECONDS)
 	check(Resident.KNOCK_RISE_SECONDS == 0.8, "gets up in 0.8 s")
-	check(Resident.KNOCK_IMMUNE_SECONDS == 3.0, "3 s immunity after getup")
+	check(Resident.KNOCK_REHIT_SECONDS > 0.0 and Resident.KNOCK_REHIT_SECONDS <= 0.3, "re-hit guard %.2f s (≤ 0.3: one hit — one flight)" % Resident.KNOCK_REHIT_SECONDS)
 	check(Resident.KNOCK_TURNS.x >= 1.0 and Resident.KNOCK_TURNS.y + 0.25 <= 2.0, "1–2 turns in flight %s (+¼ to lie down)" % Resident.KNOCK_TURNS)
 
 # --- 2. flight_distance режет луч перед коробкой ---
@@ -117,7 +124,7 @@ func _part_knock() -> void:
 	check(hit >= 0 and r.state == &"knocked" and r.knock_phase == &"fly", "Lada at 5 m/s knocks %s (state %s, phase %s, after %d frames)" % [r.name, r.state, r.knock_phase, hit])
 	check(r.knocks == 1 and residents_node.knocks() == 1, "knock counted (%d, total %d)" % [r.knocks, residents_node.knocks()])
 	check(r.knock_car_speed > 4.8 and r.knock_car_speed < 5.1, "car speed at the hit %.2f m/s" % r.knock_car_speed)
-	check(r.body.collision_layer == 0, "body off in flight")
+	check(r.body.collision_layer == Resident.BODY_LAYER, "body on in flight (KNOCK-02)")
 	var sprite := r._look_sprite()
 	if sprite:
 		check(sprite.billboard == BaseMaterial3D.BILLBOARD_DISABLED and r._look().look_material.billboard_mode == BaseMaterial3D.BILLBOARD_DISABLED, "sprite billboard off in flight")
@@ -131,6 +138,7 @@ func _part_knock() -> void:
 	var min_up := 1.0
 	var inside := []
 	var layers_ok := true
+	var lying_ok := true
 	var shot_fly := false
 	var down_at := -1.0
 	var down_frame := -1
@@ -198,7 +206,9 @@ func _part_knock() -> void:
 				route_at = t
 				break
 		if r.knock_phase in Resident.KNOCK_PHASES:
-			layers_ok = layers_ok and r.body.collision_layer == 0
+			layers_ok = layers_ok and r.body.collision_layer == Resident.BODY_LAYER
+		if r.knock_phase == &"down":
+			lying_ok = lying_ok and absf(r.body.get_child(0).transform.basis.y.normalized().dot(Vector3.UP)) < 0.01
 	print("INFO: phases %s, peak %.2f m, distance %.2f m, roll %.2f rad, down %.2f s, getup %.2f s, back %.2f s" % [phases, peak,
 		Vector2(r.knock_to.x - from.x, r.knock_to.z - from.z).length(), max_roll, getup_at - down_at, back_at - getup_at, route_at - back_at])
 	check(phases == [&"fly", &"down", &"getup", &"back", &""], "phases fly → down → getup → back → route (%s)" % [phases])
@@ -217,7 +227,8 @@ func _part_knock() -> void:
 	check(absf(back_at - getup_at - Resident.KNOCK_RISE_SECONDS - Resident.KNOCK_SHAKE_SECONDS) < 0.05, "gets up 0.8 s and shakes off (%.2f s)" % (back_at - getup_at))
 	check(hit_line, "says a HIT line getting up ('%s')" % r.bubble_text)
 	check(r.bubble_log.size() == lines + 1 and r.bubble_log[-1][1] == &"hit", "one bubble per knock, HIT")
-	check(layers_ok and r.body.collision_layer == Resident.BODY_LAYER, "body off while flying, lying and getting up; back on after")
+	check(layers_ok and r.body.collision_layer == Resident.BODY_LAYER, "body on while flying, lying and getting up, and after")
+	check(lying_ok and r.body.get_child(0).transform.basis.y.dot(Vector3.UP) > 0.999, "lying — capsule along the ground; upright again after")
 	check(not r._knock_stars.visible and not r._knock_shadow.visible, "snowflakes and flight shadow gone")
 	if sprite:
 		check(sprite.billboard == BaseMaterial3D.BILLBOARD_FIXED_Y and r._look().look_material.billboard_mode == BaseMaterial3D.BILLBOARD_FIXED_Y and sprite.rotation == Vector3.ZERO, "sprite billboard back to fixed-Y")
@@ -244,37 +255,213 @@ func _part_slow() -> void:
 	check(r.knocks == 0 and r.state != &"knocked" and r.global_position.y == 0.0, "no flight at 2 m/s (knocks %d, state %s)" % [r.knocks, r.state])
 	_park()
 
-# --- 5. Повторный наезд в полёте, лёжа, вставая и сразу после — без эффекта; через 3 с — снова ---
+# --- 5. KNOCK-02: один удар — один подлёт; снова сбит в полёте, лёжа, вставая и сразу после ---
 
 func _part_repeat() -> void:
-	print("--- repeat hits ---")
+	print("--- repeat hits (KNOCK-02) ---")
 	residents_node.reset_positions()
 	var r: Resident = residents[4]   # улица A, южный тротуар z 43,3, идёт на восток от x = 44
 	await _wait_until(func(): return r.global_position.x > 47.0, 10 * 60)
 	var dir := Vector3(1, 0, 0)
 	check(await _ram(r, dir, 5.0) >= 0 and r.knocks == 1, "first knock (%d)" % r.knocks)
-	_stop_car()
-	var thuds: int = sound.played["knock_thud"]
-	for phase in [&"fly", &"down", &"getup"]:
-		await _wait_until(func(): return r.knock_phase == phase, 6 * 60)
-		var before := r.knock_phase
-		await _run_over(r, dir, 5.0, 8)
-		check(r.knocks == 1 and r.knock_phase == before, "second hit while %s — no effect (knocks %d, phase %s)" % [phase, r.knocks, r.knock_phase])
+	await _run_over(r, dir, 5.0, 8)   # 0,13 с машина на нём — тот же удар
+	check(r.knocks == 1, "one hit — one flight: car on him for 8 frames, knocks %d" % r.knocks)
+	_park()
+	var n := 1
+	for phase in [&"fly", &"down", &"getup", &"back"]:
+		if phase == &"fly":   # снижается ниже крыши «Лады»
+			await _wait_until(func(): return r.knock_phase == &"fly" and r._knock_t > r._knock_time * 0.6 and r.global_position.y < 1.2, 6 * 60)
+		else:
+			await _wait_until(func(): return r.knock_phase == phase, 8 * 60)
+		var y0 := r.global_position.y
+		var was := r.knock_phase
+		var ok := await _strike(r, 8.0)
 		_park()
-	await _wait_until(func(): return r.knock_phase == &"back", 4 * 60)
-	await _run_over(r, dir, 5.0, 8)
-	check(r.knocks == 1, "hit right after getting up — immune (knocks %d)" % r.knocks)
+		n += 1
+		check(ok and r.knocks == n and r.knock_phase == &"fly", "hit again while %s (%.2f m up) — new flight (knocks %d, phase %s)" % [was, y0, r.knocks, r.knock_phase])
+		var peak := 0.0
+		var inside := []
+		while r.knock_phase == &"fly":
+			await physics_frame
+			peak = maxf(peak, r.global_position.y)
+			for e in _rects:
+				if e[1].has_point(Vector2(r.global_position.x, r.global_position.z)):
+					inside.append(e[0])
+		check(peak >= y0 + Resident.KNOCK_REHIT_POP * 0.9 and peak <= Resident.KNOCK_HEIGHT.y + 0.01 and r.global_position.y == 0.0 and inside.is_empty(),
+			"…flies up to %.2f m, lands on the ground, no box on the way %s" % [peak, inside.slice(0, 3)])
+	await _wait_until(func(): return r.knock_phase == &"", 60 * 60)   # пять полётов унесли его на ~40 м — идёт назад
+	check(r.state != &"knocked" and r.body.collision_layer == Resident.BODY_LAYER, "after the series — up and on the way (%s)" % r.state)
 	_park()
-	check(sound.played["knock_thud"] == thuds + 1, "one landing for one knock (%d → %d)" % [thuds, sound.played["knock_thud"]])
-	await drv.frames(int(Resident.KNOCK_IMMUNE_SECONDS * 60) + 10)
-	if r.state != &"walk":
-		await _wait_until(func(): return r.state == &"walk", 20 * 60)
-	var ahead := (_flat3(r.route[r.target_point]) - _flat3(r.global_position)).normalized()
-	check(await _ram(r, ahead, 5.0) >= 0 and r.knocks == 2, "after 3 s — knocked again (%d)" % r.knocks)
-	_stop_car()
+
+# --- 5b. KNOCK-02: лежащего «Лада» не проезжает насквозь — толкает бампером, притормаживает, не застревает ---
+
+func _part_lying_push() -> void:
+	print("--- lying: no pass-through (KNOCK-02) ---")
+	residents_node.reset_positions()
+	var r: Resident = residents[3]
+	await _wait_until(func(): return r.global_position.x < 38.0 and r.state == &"walk", 30 * 60)
+	var dir := Vector3(-1, 0, 0)
+	check(await _ram(r, dir, 5.0) >= 0, "knocked %s" % r.name)
+	_park()
+	await _wait_until(func(): return r.knock_phase == &"down", 4 * 60)
+	var lie := _flat3(r.global_position)
+	var car: Lada = world.car
+	car.reset_to(lie - dir * (Lada.SIZE.z * 0.5 + Resident.KNOCK_LIE_RADIUS + 0.8), atan2(-dir.x, -dir.z))
+	var pushes := r.car_pushes
+	var overlap := 0
+	var slowed := false
+	var frames := 0
+	var phases := {}
+	while r.knock_phase in [&"down", &"getup"] and frames < 4 * 60:
+		car.velocity = dir * 2.0
+		await physics_frame
+		frames += 1
+		phases[r.knock_phase] = true
+		var local := car.global_transform.affine_inverse() * Vector3(r.global_position.x, car.global_position.y, r.global_position.z)
+		if absf(local.x) < Lada.SIZE.x * 0.5 + Resident.BODY_RADIUS and absf(local.z) < Lada.SIZE.z * 0.5 + Resident.BODY_RADIUS:
+			overlap += 1
+		if r.car_pushes > pushes and Vector2(car.velocity.x, car.velocity.z).length() < 1.98:
+			slowed = true
+	var moved := _flat(r.global_position).distance_to(_flat(lie))
+	print("INFO: pushed %d frames, moved %.2f m, phases %s" % [r.car_pushes - pushes, moved, phases.keys()])
+	check(r.car_pushes > pushes and moved > 1.0 and phases.has(&"down") and phases.has(&"getup"), "Lada at 2 m/s pushes the lying and getting-up %s ahead (%.2f m)" % [r.name, moved])
+	check(overlap == 0, "never drives through him (%d frames inside the car)" % overlap)
+	check(slowed, "the car loses speed against him")
+	check(r.knocks == 1, "slow push does not launch him (knocks %d)" % r.knocks)
+	var at := car.global_position
+	for frame in 30:
+		car.velocity = -dir * 3.0
+		await physics_frame
+	check(car.global_position.distance_to(at) > 1.0, "car backs off freely (%.2f m) — not stuck" % car.global_position.distance_to(at))
+	_park()
 	await _wait_until(func(): return r.knock_phase == &"", 20 * 60)
-	check(r.state == &"walk" and _route_distance(r) < 0.01, "back on the route after the second knock")
+	check(r.state != &"knocked", "%s back on the way after the push (%s)" % [r.name, r.state])
+
+# --- 5c. KNOCK-02: сбивается в любом состоянии и потом продолжает своё ---
+
+func _part_states() -> void:
+	print("--- every state (KNOCK-02) ---")
+	world.player.place(Layout.SPAWN, Layout.SPAWN_YAW)
+	residents_node.reset_positions()
 	_park()
+	var kinds := {
+		"standing at an activity": func(x: Resident): return x.state == &"activity" and x._act_sit == 0.0 and x.global_position.y < 0.1,
+		"sitting": func(x: Resident): return x.state == &"activity" and x._act_sit != 0.0 and x._acting,
+		"smoking": func(x: Resident): return x.state == &"smoke",
+		"waiting for the trolleybus": func(x: Resident): return x.state == &"wait_trolley",
+		"in LOD far away": func(x: Resident): return x._lod_n > 0 and x.state in [&"walk", &"activity", &"smoke", &"wait_trolley", &"pause"] and x.global_position.y < 0.1,
+		"on a crossing": func(x: Resident): return x.state == &"walk" and x.leader == null and x.on_crossing() and x.target_point >= 1 \
+			and _flat(x.global_position).distance_to(_flat(x.route[x.target_point - 1])) > 1.5 and _flat(x.global_position).distance_to(_flat(x.route[x.target_point])) > 1.5,
+	}
+	for label in kinds:
+		var pick: Callable = kinds[label]
+		var found: Resident = null
+		for frame in 240 * 60:
+			for x: Resident in residents:
+				if not x.hidden and x.state != &"knocked" and x.knock_phase == &"" and pick.call(x):
+					found = x
+					break
+			if found:
+				break
+			await physics_frame
+		if not check(found != null, "found a resident %s" % label):
+			continue
+		var was := found.state
+		var spot := found.spot_id
+		var ok := await _strike(found, 8.0)
+		_park()
+		check(ok and found.state == &"knocked" and found.knock_phase == &"fly", "Lada at 8 m/s knocks %s %s (was %s)" % [found.name, label, was])
+		await _wait_until(func(): return found.knock_phase == &"", 20 * 60)
+		check(found.state != &"knocked" and found.spot_id == spot, "…gets up and keeps the goal %s (%s, %s)" % [spot, found.spot_id, found.state])
+
+# --- 5d. KNOCK-02: троллейбус — у двери на посадке, вышедший на B у двери и по пути в «ГАСТРОНОМ» ---
+
+func _part_trolley() -> void:
+	print("--- trolleybus passengers (KNOCK-02) ---")
+	var traffic: Node = world.get_node_or_null("LevelGeometry/Traffic")
+	var bus: Trolleybus = traffic.trolleybus if traffic else null
+	if not check(bus != null, "trolleybus 13 exists"):
+		return
+	world.player.place(Layout.SPAWN, Layout.SPAWN_YAW)
+	residents_node.reset_positions()
+	traffic.reset_positions()
+	_park()
+	await drv.frames(2)
+	var life = residents_node.life
+	var r: Resident = residents[25]   # LIFE-02: прохожий улиц, не в паре
+	# Едет: троллейбус у остановки B открывает двери — выходит из передней двери.
+	life.release(r.spot_id, r)
+	r._act_stop()
+	r._hide(&"ride")
+	bus.setup(bus.path, bus.stop_offsets[1] - 0.05)
+	bus.next_stop = 1
+	bus.dwell_left = 0.0
+	var out := await _wait_until(func(): return r.state == &"alight" and not r.hidden, 10 * 60)
+	if not check(out >= 0, "%s steps out at stop B (%s)" % [r.name, r.state]):
+		return
+	check(r.body.collision_layer == 0, "at the door on B the body is off as before (KIOSK_ZONE)")
+	# у самой двери, троллейбус ещё стоит: «Лада» вдоль борта
+	var fwd := -_flat3(bus.global_basis.z).normalized()
+	var side := _flat3(bus.global_basis.x).normalized()
+	var at := _flat3(r.global_position)
+	var car: Lada = world.car
+	car.reset_to(at + side * 1.1 - fwd * (Lada.SIZE.z * 0.5 + 1.2), atan2(-fwd.x, -fwd.z))
+	var hit := -1
+	for frame in 60:
+		car.velocity = fwd * 8.0
+		await physics_frame
+		if r.state == &"knocked":
+			hit = frame
+			break
+	_park()
+	check(hit >= 0 and bus.doors_open, "Lada at 8 m/s along the trolleybus knocks %s right at the door on B (frame %d, doors open %s)" % [r.name, hit, bus.doors_open])
+	await _wait_until(func(): return r.knock_phase == &"", 20 * 60)
+	check(r.state in [&"alight", &"transit"], "…gets up and goes on from the door (%s)" % r.state)
+	await _wait_until(func(): return r.state == &"transit" and r._transit_i >= 1 and r._transit_i < r._transit.size(), 30 * 60)
+	await drv.frames(30)
+	var on_way := r.state == &"transit"
+	var ok := on_way and await _strike(r, 8.0)
+	_park()
+	check(ok and r.state == &"knocked", "knocked on the way from stop B to the shop (was transit %s)" % on_way)
+	await _wait_until(func(): return r.knock_phase == &"", 20 * 60)
+	check(r.state == &"transit", "…gets up and walks on to the shop (%s)" % r.state)
+	var inside := await _wait_until(func(): return r.hidden and r.state == &"inside", 90 * 60)
+	check(inside >= 0 and r.spot_id == &"gastro", "…and goes into the shop (%s, %s)" % [r.state, r.spot_id])
+	# Посадка на A: ждёт на остановке, троллейбус открывает двери, по пути к двери — удар.
+	residents_node.reset_positions()
+	traffic.reset_positions()
+	await drv.frames(2)
+	var q: Resident = residents[26]
+	life.release(q.spot_id, q)
+	q._act_stop()
+	q.spot_id = &"stop_a2"
+	life.reserve(&"stop_a2", q)
+	q._arrive()
+	check(q.state == &"wait_trolley", "%s waits at stop A (%s)" % [q.name, q.state])
+	bus.setup(bus.path, bus.stop_offsets[0] - 0.05)
+	bus.next_stop = 0
+	bus.dwell_left = 0.0
+	var boarding := await _wait_until(func(): return q.state == &"board", 10 * 60)
+	if not check(boarding >= 0, "%s walks to the door (%s)" % [q.name, q.state]):
+		return
+	await drv.frames(20)
+	ok = q.state == &"board" and await _strike(q, 8.0)
+	_park()
+	check(ok and q.state == &"knocked", "knocked on the way to the trolleybus door")
+	var boards := q.events.filter(func(e): return e[1] == &"board").size()
+	var sneaked := false
+	for frame in 40 * 60:
+		await physics_frame
+		# сел в салон — только пока троллейбус у остановки A с открытыми дверями (или в шаг их закрытия)
+		if q.events.filter(func(e): return e[1] == &"board").size() > boards:
+			boards += 1
+			if _flat(bus.global_position).distance_to(_flat(Layout.TROLLEY_STOPS[0])) > 3.0:
+				sneaked = true
+		if q.knock_phase == &"" and frame > 60 and (q.hidden or q.state in [&"wait_trolley", &"walk", &"board"]):
+			break
+	check(not sneaked and q.state != &"knocked", "…then boards if the doors are still open, else back to the stop (%s, hidden %s)" % [q.state, q.hidden])
+	residents_node.reset_positions()
+	traffic.reset_positions()
 
 # --- 6. К стене дома: полёт укорочен, обратно на точку удара ---
 
@@ -419,6 +606,42 @@ func _run_over(r: Resident, dir: Vector3, speed: float, frames: int) -> void:
 		world.car.reset_to(_flat3(r.global_position), atan2(-dir.x, -dir.z))
 		world.car.velocity = dir * speed
 		await physics_frame
+
+## KNOCK-02: «Лада» вплотную к облику жителя (у сидящего — на сиденье) со свободной стороны — без коробок
+## all_solids() и целых разрушаемых под габаритом — едет на него со скоростью speed; true — сбит.
+func _strike(r: Resident, speed: float, frames := 6) -> bool:
+	var dir := _clear_dir(r._hit_point())
+	var knocks := r.knocks
+	for i in frames:
+		var at := r._hit_point()
+		world.car.reset_to(at - dir * (Lada.SIZE.z * 0.5 + 0.3), atan2(-dir.x, -dir.z))
+		world.car.velocity = dir * speed
+		await physics_frame
+		if r.knocks > knocks:
+			return true
+	return false
+
+## Направление удара в точку hit, при котором габарит «Лады» перед ней не задевает коробок и разрушаемых.
+func _clear_dir(hit: Vector3) -> Vector3:
+	var boxes: Array = []
+	for e in _rects:
+		boxes.append(e[1].grow(-Resident.BODY_RADIUS))
+	boxes.append_array(Breakables.intact_rects(0.05))
+	for k in 16:
+		var a := TAU * k / 16.0
+		var dir := Vector3(cos(a), 0.0, sin(a))
+		var side := Vector3(-dir.z, 0.0, dir.x)
+		var center := hit - dir * (Lada.SIZE.z * 0.5 + 0.3)
+		var clear := true
+		for u in [-0.5, -0.25, 0.0, 0.25, 0.5]:
+			for w in [-0.5, 0.0, 0.5]:
+				var p: Vector3 = center + dir * Lada.SIZE.z * u + side * Lada.SIZE.x * w
+				for rect: Rect2 in boxes:
+					if rect.has_point(Vector2(p.x, p.z)):
+						clear = false
+		if clear:
+			return dir
+	return Vector3(1, 0, 0)
 
 ## Остановить «Ладу» на месте.
 func _stop_car() -> void:
