@@ -70,6 +70,8 @@ func _run() -> void:
 	await _part_laps()
 	await _part_oncoming()
 	await _part_lada_block()
+	await _part_lada_head_on()
+	await _part_lada_head_on_drive()
 	await _part_player_block()
 	await _part_hard_brake()
 	await _part_pause_and_dialog()
@@ -383,6 +385,85 @@ func _part_lada_block() -> void:
 	world.car.reset_to(Layout.CAR_SPAWN, Layout.CAR_SPAWN_YAW)
 	var resumed := await _wait_until(func(): return car.speed > 1.0, 5 * 60)
 	check(resumed >= 0, "%s drives on after the Lada leaves (%d frames)" % [car.name, resumed])
+
+# =====================================================================================
+# 5б. POLISH-03 C: «Лада» встала носом навстречу в полосе машин (критик 30.10, k_09_back_pt04: 27 с лоб в лоб у A∩B).
+# Машина тормозит, ждёт не дольше YIELD_DELAY, прижимается вправо к обочине и медленно разъезжается, не касаясь
+# «Лады» и коробок Layout; за «Ладой» возвращается в полосу.
+# =====================================================================================
+
+func _part_lada_head_on() -> void:
+	print("--- Lada head-on in the car lane ---")
+	traffic.reset_positions()
+	var lada_point := Vector3(58.9, 0, 34.3)   # улица A, полоса машин на восток; точка застревания бота критика
+	var at := car_lane.offset_of(lada_point)
+	var car: PathVehicle = _vehicle_behind(at, car_lane)
+	world.car.reset_to(lada_point, PI * 0.5)   # носом на запад, навстречу
+	await drv.frames(2)
+	var lada_at: Vector3 = world.car.global_position
+	var lada_box := [_flat(lada_at), Vector2(-1, 0), Vector2(Lada.SIZE.x, Lada.SIZE.z)]
+	var first_block := -1.0
+	var passed_at := -1.0
+	var max_blocked := 0.0
+	var min_gap := INF
+	var max_side := 0.0
+	var yield_at := -1.0
+	var solid_hits := {}
+	var t0 := _sim_time
+	for frame in 60 * 60:
+		await physics_frame
+		if car.blocked_by == world.car and car.speed < 0.05 and first_block < 0.0:
+			first_block = _sim_time - t0   # встала перед «Ладой»
+		if car.yielding and yield_at < 0.0:
+			yield_at = _sim_time - t0
+		max_blocked = maxf(max_blocked, car.blocked_time)
+		max_side = maxf(max_side, absf(car.side))
+		min_gap = minf(min_gap, _poly_distance(_footprint_corners(car), _obb_corners(lada_box[0], lada_box[1], lada_box[2])))
+		if frame % 10 == 0:
+			for solid in _overlaps(car.global_transform, car.size):
+				solid_hits[solid[0]] = "%s@(%.0f,%.0f)" % [solid[0], solid[1].x, solid[1].y]
+		var ahead := fposmod(at - car.s, car_lane.length)
+		if passed_at < 0.0 and first_block >= 0.0 and ahead > car_lane.length * 0.5:
+			passed_at = _sim_time - t0
+		if passed_at >= 0.0 and _sim_time - t0 > passed_at + 6.0:
+			break
+	check(car is TrafficCar and first_block >= 0.0, "%s comes up and stops for the oncoming Lada (after %.1f s)" % [car.name, first_block])
+	check(yield_at >= 0.0 and yield_at - first_block <= PathVehicle.YIELD_DELAY + 0.5, "%s starts pulling over %.1f s after stopping (≤ %.1f)" % [car.name, yield_at - first_block, PathVehicle.YIELD_DELAY + 0.5])
+	var stand_max := PathVehicle.YIELD_DELAY + PathVehicle.SIDE_MAX / PathVehicle.SIDE_RATE + 0.5
+	check(max_blocked <= stand_max, "%s stands nose to nose no longer than %.1f s (%.1f s)" % [car.name, stand_max, max_blocked])
+	check(passed_at >= 0.0 and passed_at - first_block <= 10.0, "%s squeezes past the Lada %.1f s after stopping (≤ 10 s)" % [car.name, passed_at - first_block if passed_at >= 0.0 else -1.0])
+	check(max_side > 0.5 and max_side <= PathVehicle.SIDE_MAX + 0.01, "%s pulls over to the kerb by %.2f m (≤ %.1f)" % [car.name, max_side, PathVehicle.SIDE_MAX])
+	check(min_gap > 0.2, "%s never touches the Lada (min body gap %.2f m)" % [car.name, min_gap])
+	check(solid_hits.is_empty(), "%s stays out of Layout solids while yielding%s" % [car.name, "" if solid_hits.is_empty() else " — " + ", ".join(solid_hits.values())])
+	check(absf(car.side) < 0.05, "%s is back in its lane after the Lada (side %.2f m)" % [car.name, car.side])
+	check(_flat(world.car.global_position).distance_to(_flat(lada_at)) < 0.05, "Lada not pushed (moved %.3f m)" % _flat(world.car.global_position).distance_to(_flat(lada_at)))
+	world.car.reset_to(Layout.CAR_SPAWN, Layout.CAR_SPAWN_YAW)
+	await drv.frames(2)
+
+## Как бот критика: «Лада» после поворота с B на A едет на запад по полосе машин (z ≈ 34,3) к (0; 32), навстречу —
+## машина кольца. Проезд не блокируется дольше нескольких секунд.
+func _part_lada_head_on_drive() -> void:
+	print("--- Lada drives west in the car lane ---")
+	traffic.reset_positions()
+	var start := Vector3(66, 0, 34.3)
+	var at := car_lane.offset_of(Vector3(50, 0, 35))
+	var car: PathVehicle = _vehicle_behind(at, car_lane)
+	# Машину — за 30 м до встречи, чтобы встреча была сразу; Илюша за рулём.
+	car.setup(car_lane, at - 30.0)
+	world.car.reset_to(start, PI * 0.5)
+	world.enter_car()
+	await drv.frames(5)
+	var t0 := _sim_time
+	var ok: bool = await drv.drive_path([Vector3(30, 0, 32)], 9.0)
+	var took := _sim_time - t0
+	drv.release_all()
+	check(ok, "Lada gets past the oncoming %s along A (%s)" % [car.name, "ok" if ok else drv.last_error])
+	check(took < 12.0, "36 m along A take %.1f s (< 12, nobody stands nose to nose)" % took)
+	await drv.brake()
+	world.exit_car()
+	await drv.frames(30)
+	world.car.reset_to(Layout.CAR_SPAWN, Layout.CAR_SPAWN_YAW)
+	await drv.frames(2)
 
 # =====================================================================================
 # 6. Илюша стоит на полосе перед троллейбусом

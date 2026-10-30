@@ -11,6 +11,10 @@ extends AnimatableBody3D
 ## аварийное торможение до HARD_DECEL (12 м/с²) с остановкой за CONTACT_MARGIN до него (ARENA-01 fix P3). Перед шагом —
 ## последняя страховка: корпус на новом месте никого не задевает, иначе стоит (никого не толкает).
 ## Без случайностей: всё задаётся смещением старта.
+## POLISH-03 C (критик 30.10: 27 с лоб в лоб у A∩B): машина (can_yield), перед которой «Лада» стоит носом навстречу,
+## ждёт YIELD_DELAY, затем прижимается вправо к обочине (side ≤ SIDE_MAX, не ближе YIELD_CLEAR к коробкам
+## Layout.all_solids()) и разъезжается на YIELD_SPEED по сдвинутому датчику; за «Ладой» возвращается в полосу.
+## Попутная «Лада» на полосе — по-прежнему ожидание без объезда.
 
 const Materials = preload("res://game/world/materials.gd")
 const Layout = preload("res://game/world/layout.gd")
@@ -31,6 +35,12 @@ const STOP_MARGIN := 3.5        # м: стоп, когда препятстви�
 const FOLLOW_GAP := 10.0        # м между бамперами своих (C8)
 const FOLLOW_DECEL := 3.0
 const SENSOR_MASK := 1 | 2 | 4 # World (транспорт, автобус ГСУМ), Player, Car
+const YIELD_DELAY := 1.0        # с стоять перед встречной «Ладой», прежде чем прижаться к обочине
+const SIDE_MAX := 2.2           # м вправо от оси полосы
+const SIDE_RATE := 1.2          # м/с поперёк
+const YIELD_SPEED := 3.0        # м/с — разъезд со встречной «Ладой»
+const YIELD_CLEAR := 0.25       # м от корпуса до коробок Layout при сдвиге
+const ONCOMING_DOT := -0.5      # «Лада» носом навстречу: косинус между курсами меньше этого
 const GROUP := &"traffic_vehicles"
 
 ## Габарит корпуса (ширина, высота, длина), перед — −Z. Задаётся до добавления в дерево.
@@ -56,6 +66,11 @@ var last_decel := 0.0
 ## Расстояние от бампера до препятствия датчика в последнем кадре (INF — нет).
 var obstacle_gap := INF
 var visual: Node3D
+## POLISH-03 C: уступать встречной «Ладе» (TrafficCar); поперечный сдвиг вправо от оси полосы, м; идёт разъезд.
+var can_yield := false
+var side := 0.0
+var yielding := false
+var _yield_lada: Node3D = null
 
 var _wheels: Array[Node3D] = []
 var _tail: StandardMaterial3D
@@ -103,6 +118,9 @@ func setup(lane_path: LanePath, offset: float) -> void:
 	path = lane_path
 	s = fposmod(offset, path.length)
 	speed = 0.0
+	side = 0.0
+	yielding = false
+	_yield_lada = null
 	if is_inside_tree():
 		_apply_transform()
 
@@ -114,6 +132,8 @@ func _physics_process(delta: float) -> void:
 	if path == null or delta <= 0.0:
 		return
 	_tick(delta)
+	if can_yield:
+		_yield_step(delta)
 	var target := _target_speed()
 	var braking := target < speed - 0.01
 	var before := speed
@@ -160,6 +180,9 @@ func _target_speed() -> float:
 	if obstacle < v:
 		v = obstacle
 		limit_reason = &"sensor"
+	if yielding and YIELD_SPEED < v:
+		v = YIELD_SPEED
+		limit_reason = &"yield"
 	return maxf(v, 0.0)
 
 func _corner_limit() -> float:
@@ -212,14 +235,15 @@ func _brake_decel() -> float:
 		return HARD_DECEL
 	return clampf(speed * speed / (2.0 * room), EMERGENCY_DECEL, HARD_DECEL)
 
-## [расстояние от бампера до начала коробки, корпус] или null.
-func scan_ahead() -> Variant:
+## [расстояние от бампера до начала коробки, корпус] или null. at_side — поперечный сдвиг датчика (по умолчанию свой).
+func scan_ahead(at_side := NAN) -> Variant:
 	var space := get_world_3d().direct_space_state
 	var steps := int(round(SENSOR_RANGE / SENSOR_STEP))
+	var offset := side if is_nan(at_side) else at_side
 	for k in steps:
 		var at := s + size.z * 0.5 + SENSOR_STEP * (k + 0.5)
-		var p := path.position_at(at)
 		var dir := path.direction_at(at)
+		var p := path.position_at(at) + LanePath.right_of(dir) * offset
 		_sensor_query.transform = Transform3D(Basis(Vector3.UP, atan2(-dir.x, -dir.z)), p + Vector3.UP * 1.1)
 		for result in space.intersect_shape(_sensor_query, 8):
 			var body: Object = result["collider"]
@@ -234,9 +258,9 @@ static func _is_obstacle(body: Object) -> bool:
 		return false
 	return true
 
-## Корпус на смещении at не задевает никого подвижного (Lada, Илюша, транспорт).
-func _free_at(at: float) -> bool:
-	var xf := _transform_at(at)
+## Корпус на смещении at (и сдвиге at_side) не задевает никого подвижного (Lada, Илюша, транспорт).
+func _free_at(at: float, at_side := NAN) -> bool:
+	var xf := _transform_at(at, at_side)
 	xf.origin.y = minf(size.y, 1.8) * 0.5 + 0.05
 	_body_query.transform = xf
 	for result in get_world_3d().direct_space_state.intersect_shape(_body_query, 8):
@@ -247,12 +271,61 @@ func _free_at(at: float) -> bool:
 func _apply_transform() -> void:
 	global_transform = _transform_at(s)
 
-func _transform_at(at: float) -> Transform3D:
+func _transform_at(at: float, at_side := NAN) -> Transform3D:
 	var front := path.position_at(at + wheelbase * 0.5)
 	var rear := path.position_at(at - wheelbase * 0.5)
 	var dir := front - rear
 	var center := (front + rear) * 0.5
+	var offset := side if is_nan(at_side) else at_side
+	if offset != 0.0:
+		center += LanePath.right_of(dir.normalized()) * offset
 	return Transform3D(Basis(Vector3.UP, atan2(-dir.x, -dir.z)), Vector3(center.x, 0.0, center.z))
+
+# --- POLISH-03 C: разъезд со встречной «Ладой» ---
+
+## Встречная «Лада» в датчике дольше YIELD_DELAY — прижаться вправо; «Лада» позади или ушла с полосы — вернуться.
+func _yield_step(delta: float) -> void:
+	var lada := blocked_by as Lada
+	if not yielding and lada != null and blocked_time >= YIELD_DELAY and _oncoming(lada):
+		yielding = true
+		_yield_lada = lada
+	if yielding and not _lada_still_ahead():
+		yielding = false
+		_yield_lada = null
+	var want := minf(SIDE_MAX, _room_ahead()) if yielding else 0.0
+	if is_equal_approx(side, want):
+		return
+	var next := move_toward(side, want, SIDE_RATE * delta)
+	if _free_at(s, next):   # ни в «Ладу», ни в Илюшу; коробки Layout отсекает _room_ahead
+		side = next
+		_apply_transform()
+
+func _oncoming(body: Node3D) -> bool:
+	var f := -global_basis.z
+	var g := -body.global_basis.z
+	return Vector2(f.x, f.z).normalized().dot(Vector2(g.x, g.z).normalized()) < ONCOMING_DOT
+
+## «Лада» ещё впереди: несдвинутый датчик её видит или она не позади корпуса и рядом с осью полосы.
+func _lada_still_ahead() -> bool:
+	if not is_instance_valid(_yield_lada):
+		return false
+	var hit: Variant = scan_ahead(0.0)
+	if hit != null and hit[1] == _yield_lada:
+		return true
+	var rel := _yield_lada.global_position - global_position
+	var f := -global_basis.z
+	var along := rel.x * f.x + rel.z * f.z
+	var across := absf(rel.x * -f.z + rel.z * f.x)
+	return along > -(size.z * 0.5 + Lada.SIZE.z * 0.5 + 0.5) and along < SENSOR_RANGE + size.z and across < size.x + 1.5
+
+## Насколько можно сдвинуться вправо на участке от задка до SENSOR_RANGE впереди, не подходя к коробкам Layout.
+func _room_ahead() -> float:
+	var room := SIDE_MAX
+	var at := s - size.z * 0.5
+	while at <= s + size.z * 0.5 + SENSOR_RANGE:
+		room = minf(room, path.side_room(at, size, YIELD_CLEAR, SIDE_MAX))
+		at += 1.0
+	return room
 
 # --- для потомков ---
 
@@ -368,6 +441,9 @@ class LanePath:
 	var axis: Array[Vector3] = []
 	var lane := 0.0
 	var radius := 0.0
+	## POLISH-03 C: свободный сдвиг вправо по метрам пути (лениво, общий для машин на этом пути).
+	var _room := {}
+	var _solids: Array = []
 
 	## ring — вершины осей по ходу движения; lane — смещение вправо; radius — скругление.
 	static func build(ring: Array, lane_offset: float, turn_radius: float, arc_steps := 24) -> LanePath:
@@ -426,6 +502,50 @@ class LanePath:
 			var arc := path.arcs[a]
 			path.arcs[a] = Vector2(path.cumulative[int(arc.x)], path.cumulative[int(arc.y)])
 		return path
+
+	## Наибольший сдвиг вправо 0…max_side (шаг 0,1 м), при котором корпус size в точке at не ближе clear к коробкам
+	## Layout.all_solids() (валы, припаркованные, столбы, павильоны). Кэш по целому метру пути.
+	func side_room(at: float, size: Vector3, clear: float, max_side: float) -> float:
+		var key := int(floor(fposmod(at, length)))
+		if _room.has(key):
+			return _room[key]
+		if _solids.is_empty():
+			for spec in Layout.all_solids():
+				_solids.append([spec[2], Vector2(spec[3].x, spec[3].z) * 0.5])
+		var p := position_at(key + 0.5)
+		var d := direction_at(key + 0.5)
+		var f := Vector2(d.x, d.z).normalized()
+		var r := Vector2(-f.y, f.x)
+		var hw := size.x * 0.5 + clear
+		var hl := size.z * 0.5 + clear
+		var near: Array = []
+		for solid in _solids:
+			if (solid[0] as Vector2).distance_to(Vector2(p.x, p.z)) < max_side + hl + (solid[1] as Vector2).length() + 1.0:
+				near.append(solid)
+		var best := 0.0
+		var k := 1
+		while k * 0.1 <= max_side + 0.001:
+			var c := Vector2(p.x, p.z) + r * k * 0.1
+			var hit := false
+			for solid in near:
+				if _obb_overlaps_box(c, f, r, hw, hl, solid[0], solid[1]):
+					hit = true
+					break
+			if hit:
+				break
+			best = k * 0.1
+			k += 1
+		_room[key] = best
+		return best
+
+	static func _obb_overlaps_box(c: Vector2, f: Vector2, r: Vector2, hw: float, hl: float, center: Vector2, h: Vector2) -> bool:
+		for axis in [Vector2(1, 0), Vector2(0, 1), f, r]:
+			var a: Vector2 = axis
+			var rv := absf(f.dot(a)) * hl + absf(r.dot(a)) * hw
+			var rb := absf(a.x) * h.x + absf(a.y) * h.y
+			if absf((c - center).dot(a)) >= rv + rb:
+				return false
+		return true
 
 	## Вправо по ходу для направления d (x — восток, z — юг): на запад → север, на юг → запад.
 	static func right_of(d: Vector3) -> Vector3:
