@@ -289,6 +289,7 @@ const CONTROLS := [
 	["Выбор в меню", "Enter", "A"],
 	["Назад", "Esc", "B"],
 	["Пауза", "Esc", "Start"],
+	["Телефон пешком", "P", "View"],
 ]
 
 func _on_pressed(id: StringName) -> void:

@@ -15,6 +15,7 @@ const KEYS := {
 	"jump": [KEY_SPACE],      # прыжок пешком (та же клавиша: пешком ручника нет)
 	"punch": [KEY_F],         # удар пешком (PUNCH-01); ещё ЛКМ — MOUSE
 	"pause": [KEY_ESCAPE],    # пауза, перезапуск, сброс автомобиля
+	"phone": [KEY_P],        # телефон пешком (PHONE-01)
 	"look_left": [], "look_right": [], "look_up": [], "look_down": [],
 }
 
@@ -41,6 +42,7 @@ const JOY := {
 	"handbrake": [JOY_BUTTON_B],
 	"punch": [JOY_BUTTON_B],   # PUNCH-01: пешком B — удар, в машине — ручник (Илюша в машине ввод не читает)
 	"pause": [JOY_BUTTON_START],
+	"phone": [JOY_BUTTON_BACK],
 }
 
 static func install() -> void:

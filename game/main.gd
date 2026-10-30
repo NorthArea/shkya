@@ -8,6 +8,7 @@ const MainMenu = preload("res://game/ui/main_menu.gd")
 const PauseMenu = preload("res://game/ui/pause_menu.gd")
 const IntroScript = preload("res://game/ui/intro.gd")
 const CaughtPanelScript = preload("res://game/ui/caught_panel.gd")
+const PhoneScript = preload("res://game/ui/phone.gd")
 const PadInput = preload("res://game/ui/pad_input.gd")
 const MusicDirectorScript = preload("res://game/audio/music_director.gd")
 const UI_CLICK := preload("res://assets/audio/ui_click.wav")
@@ -73,6 +74,7 @@ func _swap_world(new_game: bool) -> void:
 		# INTRO-01: заставка «Ничего не происходит»; в тестах, headless и с --skip-intro её нет — мир как раньше.
 		IntroScript.attach(world)
 		_connect_caught_panel(world)
+		PhoneScript.attach(world)
 		set_paused(false)
 	else:
 		set_paused(false)
