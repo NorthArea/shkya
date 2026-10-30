@@ -15,7 +15,7 @@ extends SceneTree
 ## 5. После восстановления коллизия на месте и ни с кем не пересекается; на занятое место (Илюша стоит) не возвращается.
 ## 6. Жители: ближайший ближе 8 м оглядывается и говорит реплику BREAK_LINES, не чаще раза в 15 с на всех, и идёт
 ##    дальше; квестовая Бабка ближе 15 м — пузырь, не диалог; reset_positions() — всё целое.
-## 7. BREAK-02: все 90 записей (BREAKABLES_YARD + PROPS_BREAKABLES) со своим обликом (без заглушки), запечённые сетки —
+## 7. BREAK-02: все 88 записей после прохода H11 (BREAKABLES_YARD + PROPS_BREAKABLES) со своим обликом (без заглушки), запечённые сетки —
 ##    не больше MM_BUDGET узлов MultiMesh; монеты: «Лада» — засчитываются сами (+N по виду, без остановки, и при
 ##    35 ₽ и больше — как у дронов), удар — разлетаются и подбираются проходом; повторно — не раньше COIN_COOLDOWN, со
 ##    всех — не больше COIN_WINDOW_CAP за COIN_WINDOW; выброс у каждого объекта ложится вне коробок, полос кольца и
@@ -28,7 +28,7 @@ extends SceneTree
 const Layout = preload("res://game/world/layout.gd")
 const Driver = preload("res://tests/playthrough_driver.gd")
 const OUT := "res://builds/screenshots/BREAK-01"
-const MM_BUDGET := 200     # узлов MultiMesh у Breakables: 90 объектов, 22 вида, части запечены (BREAK-02)
+const MM_BUDGET := 200     # узлов MultiMesh у Breakables: 88 объектов, 22 вида, части запечены (BREAK-02)
 
 var failures: Array[String] = []
 var checks := 0
@@ -86,8 +86,25 @@ func _run() -> void:
 
 func _part_margins() -> void:
 	print("--- margins (check.py rules) ---")
-	check(Layout.BREAKABLES_YARD.size() == 10 and Layout.BREAKABLES.size() == 10 + Layout.PROPS_BREAKABLES.size() and Layout.BREAKABLES.size() == 90,
-		"BREAKABLES = 10 of BREAK-01 + %d of PROPS-01 = %d" % [Layout.PROPS_BREAKABLES.size(), Layout.BREAKABLES.size()])
+	check(Layout.BREAKABLES_YARD.size() == 10 and Layout.BREAKABLES.size() == 10 + Layout.PROPS_BREAKABLES.size() and Layout.BREAKABLES.size() == 88,
+		"BREAKABLES = 10 of BREAK-01 + %d of PROPS-01 = %d after the permanent H11 opening" % [Layout.PROPS_BREAKABLES.size(), Layout.BREAKABLES.size()])
+	# ARENA-03 d437e90 removes only two sections from the original d437e90^ railing catalogue.
+	# The permanent opening lets residents reach H11 without breaking or crossing the remaining railing.
+	var ids := {}
+	var fence_ids: Array[StringName] = []
+	for spec in Layout.BREAKABLES:
+		ids[spec[0]] = true
+		if spec[1] == &"fence": fence_ids.append(spec[0])
+	check(ids.size() == Layout.BREAKABLES.size(), "all base breakable ids are unique")
+	check(not ids.has(&"Z18_1_03") and not ids.has(&"Z18_1_04"), "the two H11 opening sections stay absent from the complete base catalogue")
+	var expected_fences: Array[StringName] = [&"Z5_1a", &"Z5_1b", &"Z5_1c", &"Z5_1d"]
+	for i in 19:
+		expected_fences.append(StringName("Z9_1_%02d" % i))
+	for i in 16:
+		if i not in [3, 4]: expected_fences.append(StringName("Z18_1_%02d" % i))
+	fence_ids.sort()
+	expected_fences.sort()
+	check(fence_ids == expected_fences, "all original railing sections except H11 03/04 remain fences, including both opening edges 02/05 (%s)" % [fence_ids])
 	var lines := []   # [имя, точки Vector2, замкнута, запас]
 	lines.append(["ROUTE_WALK", _pts(Layout.ROUTE_WALK), false, 2.0])
 	lines.append(["ROUTE_DRIVE", _pts(Layout.ROUTE_DRIVE), false, 3.5])
@@ -670,7 +687,7 @@ func _part_coins() -> void:
 	coins.reset()
 	await drv.frames(2)
 
-## Выброс у каждого из 90 объектов: 5 монет с проверкой места ложатся вне коробок all_solids() (+0,3 м), дальше 2,3 м
+## Выброс у каждого из 88 объектов: 5 монет с проверкой места ложатся вне коробок all_solids() (+0,3 м), дальше 2,3 м
 ## от осей полос кольца, вне KIOSK_SQUARE/ROOF_AREA и в BOUNDS (независимо от Breakables.coin_spot_ok).
 func _part_coin_spots() -> void:
 	print("--- coin spots ---")
