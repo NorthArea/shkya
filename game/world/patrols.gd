@@ -30,6 +30,7 @@ const Layout = preload("res://game/world/layout.gd")
 const NpcScript = preload("res://game/npc/npc.gd")
 const PatrolNpcScript = preload("res://game/npc/patrol_npc.gd")
 const CityVanScript = preload("res://game/vehicles/city_van.gd")
+const RoadClosureScript = preload("res://game/world/road_closure.gd")
 
 const PROMPT_TALK := "E — ПОГОВОРИТЬ"
 const OFFICER_RANGE := 14.0              # fix6: было 12 — путь вдоль x ≈ 74 в 12,2 м от поста не накрывался
@@ -52,6 +53,8 @@ var officer: Node3D
 var officer2: Node3D
 var account_officer: Node3D
 var van: CityVan
+## POLISH-03 B: перекрытие улицы Б на возврате (Layout.CLOSURE_*) и микроавтобус финала.
+var closure: Node3D
 var _mission: Node
 var _world_node: Node
 var _moved := false
@@ -115,6 +118,9 @@ func _ready() -> void:
 	van.name = "CityVan"
 	add_child(van)
 	van.park(Layout.VAN_PARK, Layout.VAN_PARK_YAW)
+	# POLISH-03 B: перекрытие улицы Б на возврате и микроавтобус финала (RoadClosure).
+	closure = RoadClosureScript.new()
+	add_child(closure)
 	for npc in [officer, account_officer]:
 		npc.interactable.prompt = PROMPT_TALK
 	var world := _world()

@@ -19,6 +19,8 @@ signal bread_received
 signal quest_completed(xp: int)
 ## COINS-01: деньги изменились — подобрана монета (delta > 0), куплен батон (−35) или reset().
 signal money_changed(money: int, delta: int)
+## POLISH-03 B: подэтап возврата «ПРОЕЗД ЗАКРЫТ» включён (покупка) или снят (Илюша дома, сдача, reset()).
+signal road_closed_changed(closed: bool)
 
 const NOT_STARTED := &"NOT_STARTED"
 const OFFERED := &"OFFERED"
@@ -54,6 +56,10 @@ var state: StringName = NOT_STARTED
 var has_bread := false
 var xp := 0
 var money := START_MONEY
+## POLISH-03 B: подэтап возврата внутри RETURN_HOME — улицу Б (Троллейную) перекрыл ГСУМ, на машине домой в объезд по
+## Выборной и Богаткова (RoadClosure, Layout.ROUTE_DETOUR). Включается покупкой, снимается notify_home_reached() (Илюша
+## во дворе), сдачей и reset(). Переходы FSM раздела 6 он не меняет и сам их не вызывает.
+var road_closed := false
 ## С кем Илюша сейчас рядом (зона E или открытый диалог): &"babka", &"vendor" или &"".
 ## Только для текста задачи по ситуации (кадры 02, 07, 09); переходы и проверки FSM его не читают.
 ## Задаёт QuestFlow через set_nearby().
@@ -73,6 +79,7 @@ func interact(id: StringName) -> StringName:
 					if has_bread:
 						has_bread = false
 						xp += REWARD_XP
+						_set_road_closed(false)
 						_set_state(COMPLETE)
 						quest_completed.emit(REWARD_XP)
 						return R_TURN_IN
@@ -127,8 +134,17 @@ func buy_bread() -> bool:
 	money -= BREAD_PRICE
 	money_changed.emit(money, -BREAD_PRICE)
 	has_bread = true
+	_set_road_closed(true)
 	_set_state(RETURN_HOME)
 	bread_received.emit()
+	return true
+
+
+## POLISH-03 B: Илюша (пешком или на «Ладе») вернулся во двор — перекрытие снимают. Только при road_closed.
+func notify_home_reached() -> bool:
+	if not road_closed:
+		return false
+	_set_road_closed(false)
 	return true
 
 
@@ -137,6 +153,7 @@ func reset() -> void:
 	state = NOT_STARTED
 	has_bread = false
 	xp = 0
+	_set_road_closed(false)
 	var old_money := money
 	money = START_MONEY
 	nearby = &""
@@ -225,6 +242,13 @@ func prompt_for(id: StringName) -> String:
 		&"officer", &"account_officer":
 			return PROMPT_TALK
 	return ""
+
+
+func _set_road_closed(on: bool) -> void:
+	if road_closed == on:
+		return
+	road_closed = on
+	road_closed_changed.emit(on)
 
 
 func _set_state(new_state: StringName) -> void:
