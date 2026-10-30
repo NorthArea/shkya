@@ -1,8 +1,10 @@
-.PHONY: run editor test capture fps
-run:
+.PHONY: run editor test capture fps map
+run: map
 	./tools/run.command
-editor:
+editor: map
 	./tools/run.command --editor
+map:
+	python3 tools/generate_arena_map.py
 # Каждый набор: лог в builds/checks/make-test/, зелёным считается только итоговая строка
 # «ИМЯ: N checks, 0 failures» — Godot выходит с кодом 0 и при ошибке разбора скрипта (QA-01, З1).
 # $(1) — скрипт в tests/, $(2) — частота кадров, $(3) — метка итоговой строки.
@@ -15,7 +17,7 @@ define godot_test
 	{ echo "FAIL: $(1) ($(2) fps), лог builds/checks/make-test/$(1)-$(2).log"; grep -E 'FAIL|SCRIPT ERROR|Parse Error' builds/checks/make-test/$(1)-$(2).log | head -20; exit 1; }
 endef
 
-test:
+test: map
 	$(call godot_test,smoke_runner,60,SMOKE)
 	$(call godot_test,intro_test,60,INTRO)
 	$(call godot_test,mission_director_test,60,MISSION)
@@ -54,8 +56,8 @@ test:
 	$(call godot_test,arena03_activity_test,60,ARENA03_ACTIVITY)
 	$(call godot_test,road01_test,60,ROAD01)
 	$(call godot_test,arena03_city_life_test,60,ARENA03_CITY_LIFE)
-capture:
+capture: map
 	./tools/run.command --fixed-fps 60 --resolution 1920x1080 --script tools/capture/capture.gd
 
-fps:
+fps: map
 	./tools/run.command --resolution 1920x1080 --script tools/fps_probe.gd
