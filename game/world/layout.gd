@@ -686,10 +686,10 @@ const RESIDENT_STARTS: Array[int] = [0, 1, 0, 1, 0, 0, 1, 1, 1, 1, 0, 1, 0, 2, 0
 # 7 C (первый пары), 8 D (второй), 9 C (второй), 10–11 курящие у подъезда, 12 «АПТЕКА», 13 A юг напротив остановки.
 const RESIDENT_LOOKS: Array[StringName] = [&"shuba", &"violet", &"ushanka_walk", &"kid", &"beret", &"dog", &"tourist", &"kid2",
 		&"kolpak", &"bow", &"ushanka", &"tourist", &"turban", &"kid",
-		&"kid2", &"ushanka_walk", &"ushanka", &"man", &"ushanka_walk", &"kid",   # LIFE-01: 14 горка, 15 рабочий, 16 дворник, 17 домино, 18 капот, 19 горка
+		&"kid2", &"ushanka_walk", &"ushanka", &"ushanka_walk", &"ushanka_walk", &"kid",   # LIFE-01: 14 горка, 15 рабочий, 16 дворник, 17 домино, 18 капот, 19 горка
 		&"kid2", &"kid", &"kid2", &"beret", &"violet",   # PEOPLE-03 (P2): 20–21 хоккей, 22 снежки, 23 торговка, 24 бабушка с санками
 		&"kolpak", &"bow", &"shuba", &"dog",             # LIFE-02: 25–28 прохожие улиц A и B
-		&"ushanka", &"woman", &"man"] + [
+		&"ushanka", &"tourist", &"ushanka"] + [
 		&"shuba", &"tourist", &"ushanka_walk", &"turban", &"bow", &"beret",
 		&"violet", &"kolpak", &"dog", &"ushanka_walk", &"tourist", &"shuba",
 		&"turban", &"bow", &"beret", &"kolpak", &"ushanka_walk", &"tourist",
