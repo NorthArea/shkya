@@ -5,7 +5,7 @@
 """Звуки демо «За хлебом» (POLISH-01): синтез без чужих записей, только стандартная библиотека.
 
 Запуск из корня репозитория: uv run tools/generate_audio.py
-Пишет WAV 44,1 кГц моно в assets/audio/. Генерация детерминирована (фиксированный seed).
+Пишет WAV 44,1 кГц моно в assets/audio/ (тема меню MUSIC-01 — 22,05 кГц). Генерация детерминирована (фиксированный seed).
 """
 from __future__ import annotations
 
@@ -47,15 +47,15 @@ def normalize(signal: list[float], peak: float = 0.8) -> list[float]:
     return [x * peak / top for x in signal]
 
 
-def write(name: str, signal: list[float]) -> None:
+def write(name: str, signal: list[float], rate: int = RATE) -> None:
     OUT.mkdir(parents=True, exist_ok=True)
     path = OUT / name
     with wave.open(str(path), "wb") as wav:
         wav.setnchannels(1)
         wav.setsampwidth(2)
-        wav.setframerate(RATE)
+        wav.setframerate(rate)
         wav.writeframes(b"".join(struct.pack("<h", int(max(-1.0, min(1.0, x)) * 32767)) for x in signal))
-    print(f"AUDIO: {path.relative_to(ROOT)} {len(signal) / RATE:.2f} s")
+    print(f"AUDIO: {path.relative_to(ROOT)} {len(signal) / rate:.2f} s")
 
 
 def loop_crossfade(signal: list[float], fade_seconds: float) -> list[float]:
@@ -1008,6 +1008,222 @@ def wings_flap(seed: int) -> list[float]:
     return to_rms(_fade_out(out, 0.1), -20.0)
 
 
+# --- MUSIC-01: тема главного меню. Оригинальная мелодия проекта (не цитата песен и игр). ---
+# Медленный вальс 3/4, ре минор, 84 уд/мин, 32 такта = 68,6 с; форма A (8) — A' (8) — B (8, фа мажор) — A'' (8).
+# Баян: правая рука — три расстроенных язычка «мюзет» (0, +7, −6 центов) с тремоло меха, левая — «бас — аккорд —
+# аккорд»; мягкий синус-бас на сильную долю, щёточки, шорох снега, челеста на верхах в A' и A''. Синтез на 44,1 кГц,
+# запись 22,05 кГц моно (файл вдвое меньше; выше 9 кГц в теме ничего нет). Шов цикла — круговой: хвосты нот и
+# реверберации за концом 32-го такта доклеиваются в начало, поэтому стык без щелчка и без «дыры».
+
+MUSIC_BPM = 84.0
+MUSIC_BAR_BEATS = 3
+MUSIC_OUT_RATE = 22050
+
+# Аккорды по тактам: (бас MIDI, голоса аккорда MIDI). Бас «левой руки» баяна — 2-я–3-я октава.
+_CHORDS = {
+    "Dm": (50, [53, 57, 62]), "Dm5": (45, [53, 57, 62]), "Gm": (43, [55, 58, 62]), "A7": (45, [55, 61, 64]),
+    "Bb": (46, [53, 58, 62]), "Edim": (40, [55, 58, 64]), "F": (41, [57, 60, 65]), "C7": (48, [55, 58, 64]),
+}
+_HARMONY = (["Dm", "Dm5", "Gm", "A7", "Bb", "Gm", "Edim", "A7"]      # A — полукаденция
+            + ["Dm", "Dm5", "Gm", "A7", "Bb", "Gm", "A7", "Dm"]      # A' — к тонике
+            + ["F", "C7", "F", "Dm", "Bb", "C7", "F", "A7"]          # B — параллельный мажор
+            + ["Dm", "Dm5", "Gm", "A7", "Bb", "Gm", "Edim", "A7"])   # A'' — на доминанте, тянет обратно к началу
+
+# Мелодия по тактам: [(длительность в долях, MIDI или None — пауза)]. Мотив-«вздох» A4–Bb4–A4 и спуск к тонике.
+_A_HEAD = [[(1.5, 69), (0.5, 70), (1, 69)], [(2, 65), (1, 62)], [(1.5, 67), (0.5, 69), (1, 70)], [(2, 69), (1, 64)],
+           [(1, 65), (1, 70), (1, 74)], [(1.5, 74), (0.5, 72), (1, 70)]]
+_MELODY = (_A_HEAD + [[(1, 69), (1, 67), (1, 64)], [(2.5, 69), (0.5, None)]]
+           + _A_HEAD[:4] + [[(1, 65), (1, 70), (1, 74)], [(1, 74), (1, 76), (1, 77)], [(1.5, 76), (0.5, 73), (1, 69)],
+                            [(2.7, 74), (0.3, None)]]
+           + [[(1, 72), (1, 69), (1, 72)], [(1.5, 70), (0.5, 67), (1, 64)], [(1, 65), (1, 69), (1, 72)],
+              [(2, 74), (1, 69)], [(1, 70), (1, 74), (1, 77)], [(1.5, 76), (0.5, 74), (1, 72)],
+              [(1, 72), (1, 69), (1, 65)], [(1, 64), (1, 69), (1, 73)]]
+           + _A_HEAD + [[(1, 70), (1, 69), (1, 67)], [(1.5, 64), (0.5, 65), (1, 64)]])
+# Громкость меха по частям формы: тише в первом A, полнее в B.
+_SECTION_GAIN = [0.8, 0.92, 1.0, 0.9]
+
+
+def _midi(note: float) -> float:
+    return 440.0 * 2 ** ((note - 69) / 12)
+
+
+def _add(out: list[float], start: int, voice: list[float]) -> None:
+    """Сложить голос в буфер с позиции start (за концом буфера — отбросить: буфер с запасом под хвосты)."""
+    m = min(len(voice), len(out) - start)
+    for i in range(m):
+        out[start + i] += voice[i]
+
+
+def _reed_note(freq: float, length: float, gain: float, rng: random.Random, detune=(0.0, 7.0, -6.0),
+               attack: float = 0.035, release: float = 0.09, tremolo: float = 0.09) -> list[float]:
+    """Нота баяна: несколько пилообразных язычков (PolyBLEP, без алиасинга) с расстройкой «мюзет», атака меха,
+    лёгкий спад давления к концу ноты, тремоло меха 5,3 Гц и мягкое снятие."""
+    n = samples(length + release)
+    held = samples(length)
+    out = [0.0] * n
+    for cents in detune:
+        dt = freq * 2 ** (cents / 1200) / RATE
+        phase = rng.random()
+        for i in range(n):
+            v = 2.0 * phase - 1.0
+            if phase < dt:
+                x = phase / dt
+                v -= x + x - x * x - 1.0
+            elif phase > 1.0 - dt:
+                x = (phase - 1.0) / dt
+                v -= x * x + x + x + 1.0
+            out[i] += v
+            phase += dt
+            if phase >= 1.0:
+                phase -= 1.0
+    k = gain / len(detune)
+    trem_phase = rng.random() * math.tau
+    for i in range(n):
+        t = i / RATE
+        env = min(1.0, t / attack) * (1.0 - 0.12 * min(1.0, t / max(length, 0.01)))
+        if i >= held:
+            env *= math.exp(-(i - held) / RATE / (release / 3.0))
+        trem = 1.0 - tremolo * (0.5 + 0.5 * math.sin(math.tau * 5.3 * t + trem_phase))
+        out[i] *= env * trem * k
+    return out
+
+
+def _celesta_note(freq: float, gain: float, rng: random.Random) -> list[float]:
+    """Челеста: почти чистый тон с быстро гаснущими обертонами 2 и 3,9 и тихим стуком молоточка."""
+    n = samples(1.8)
+    out = []
+    for i in range(n):
+        t = i / RATE
+        v = (math.sin(math.tau * freq * t) * math.exp(-t / 0.9)
+             + 0.18 * math.sin(math.tau * freq * 2.0 * t) * math.exp(-t / 0.25)
+             + 0.07 * math.sin(math.tau * freq * 3.9 * t) * math.exp(-t / 0.08))
+        if t < 0.004:
+            v += rng.uniform(-0.3, 0.3) * (1.0 - t / 0.004)
+        out.append(v * min(1.0, t / 0.002) * gain)
+    return out
+
+
+def _rms_stem(signal: list[float], rms_db: float) -> list[float]:
+    """Стем к заданному RMS — баланс инструментов не зависит от числа нот и фильтров."""
+    rms = math.sqrt(sum(x * x for x in signal) / len(signal)) or 1.0
+    g = 10 ** (rms_db / 20) / rms
+    return [x * g for x in signal]
+
+
+def _schroeder_reverb(signal: list[float], wet: float) -> list[float]:
+    """Небольшая «комната»: четыре гребенчатых фильтра с затуханием в петле и два всепропускающих (Шрёдер)."""
+    combs = [(1307, 0.80), (1637, 0.78), (1811, 0.77), (1931, 0.76)]
+    acc = [0.0] * len(signal)
+    for delay, fb in combs:
+        buf = [0.0] * delay
+        idx, damp = 0, 0.0
+        for i, x in enumerate(signal):
+            y = buf[idx]
+            damp += 0.35 * (y - damp)          # потеря верхов в петле: хвост темнее, теплее
+            buf[idx] = x + damp * fb
+            idx = idx + 1 if idx + 1 < delay else 0
+            acc[i] += y
+    for delay, g in [(225, 0.7), (75, 0.7)]:
+        buf = [0.0] * delay
+        idx, out = 0, []
+        for x in acc:
+            b = buf[idx]
+            y = -g * x + b
+            buf[idx] = x + g * y
+            idx = idx + 1 if idx + 1 < delay else 0
+            out.append(y)
+        acc = out
+    return [x + a * wet * 0.25 for x, a in zip(signal, acc)]
+
+
+def menu_theme_loop() -> list[float]:
+    """Тема меню (MUSIC-01): см. комментарий раздела. Возвращает сигнал 22,05 кГц, RMS −21 дБ."""
+    assert len(_MELODY) == len(_HARMONY) and all(sum(d for d, _ in m) == MUSIC_BAR_BEATS for m in _MELODY)
+    rng = random.Random(311)
+    beat = samples(60.0 / MUSIC_BPM)                      # 31 500 отсчётов — целое, шов ровно на доле
+    bar = beat * MUSIC_BAR_BEATS
+    n = bar * len(_HARMONY)
+    tail = samples(4.0)
+    beat_s = beat / RATE
+    melody = [0.0] * (n + tail)
+    left_bass = [0.0] * (n + tail)
+    left_chord = [0.0] * (n + tail)
+    sub = [0.0] * (n + tail)
+    celesta = [0.0] * (n + tail)
+    brushes = [0.0] * (n + tail)
+
+    for b, (name, notes) in enumerate(zip(_HARMONY, _MELODY)):
+        section = b // 8
+        bar_start = b * bar
+        swell = _SECTION_GAIN[section] * (0.88 + 0.12 * math.sin(math.pi * ((b % 4) + 0.5) / 4))
+        # Правая рука: в A'' добавлен тихий язычок октавой ниже — звук полнее к концу круга.
+        pos = 0.0
+        for length, note in notes:
+            if note is not None:
+                start = bar_start + samples(pos * beat_s) + rng.randint(-200, 200)   # ±5 мс «живой» руки
+                voice = _reed_note(_midi(note), length * beat_s * 0.97, swell, rng)
+                if section == 3:
+                    low = _reed_note(_midi(note - 12), length * beat_s * 0.97, swell * 0.35, rng, detune=(0.0, 4.0))
+                    voice = [a + c for a, c in zip(voice, low)] + low[len(voice):]
+                _add(melody, max(0, start), voice)
+            pos += length
+        # Левая рука: бас на раз, аккорд на два (чуть раньше — венский вальс) и на три, отрывисто.
+        bass_note, chord = _CHORDS[name]
+        _add(left_bass, bar_start, _reed_note(_midi(bass_note), beat_s * 0.85, 1.0, rng, detune=(0.0, 5.0),
+                                              attack=0.015, release=0.07, tremolo=0.04))
+        for beat_at in (0.94, 2.0):
+            start = bar_start + samples(beat_at * beat_s)
+            for v in chord:
+                _add(left_chord, start, _reed_note(_midi(v), beat_s * 0.4, 0.6, rng, detune=(0.0, 6.0),
+                                                   attack=0.012, release=0.06, tremolo=0.04))
+        # Мягкий бас: синус октавой ниже баса, затухание 0,5 с.
+        f_sub = _midi(bass_note - 12 if bass_note >= 45 else bass_note)
+        _add(sub, bar_start, [math.sin(math.tau * f_sub * i / RATE) * min(1.0, i / 350) * math.exp(-i / RATE / 0.5)
+                              for i in range(beat)])
+        # Челеста: в A' — колокольчик на раз через такт, в A'' — ломаный аккорд на «два-и-три», в B — тишина.
+        top = [c + 24 for c in chord]
+        if section == 1 and b % 2 == 0:
+            _add(celesta, bar_start + samples(0.02), _celesta_note(_midi(max(top)), 0.8, rng))
+        elif section == 3:
+            for k, at in enumerate((1.0, 1.5, 2.0)):
+                _add(celesta, bar_start + samples(at * beat_s), _celesta_note(_midi(sorted(top)[k]), 0.55, rng))
+        # Щёточки: длинный «шшух» на раз, короткие касания на два и три.
+        for beat_at, length, level in ((0.0, 0.2, 0.7), (0.94, 0.07, 1.0), (2.0, 0.07, 0.85)):
+            m = samples(length)
+            start = bar_start + samples(beat_at * beat_s)
+            swish = [rng.uniform(-1, 1) * level * (math.sin(math.pi * i / m) if length > 0.1
+                                                    else min(1.0, i / 90) * math.exp(-i / (0.25 * m)))
+                     for i in range(m)]
+            _add(brushes, start, swish)
+
+    melody = lowpass(melody, 2600.0, stages=2)
+    melody = [x + 0.25 * r for x, r in zip(melody, resonator(melody, 1150.0, 420.0))]   # носовая форманта язычка
+    left_bass = lowpass(left_bass, 520.0, stages=2)
+    left_chord = highpass(lowpass(left_chord, 1700.0, stages=2), 160.0)
+    celesta = lowpass(celesta, 6000.0)
+    brushes = highpass(lowpass(brushes, 6500.0, stages=2), 1800.0)
+    mix = [0.0] * (n + tail)
+    for stem, db in ((melody, -17.0), (left_bass, -23.0), (left_chord, -27.0), (sub, -25.0), (celesta, -28.0),
+                     (brushes, -33.0)):
+        stem = _rms_stem(stem, db)
+        for i, x in enumerate(stem):
+            mix[i] += x
+    mix = _schroeder_reverb(mix, 0.6)
+    # Круговой шов: всё, что звучит за концом круга, ложится в его начало.
+    loop = mix[:n]
+    for i in range(tail):
+        loop[i] += mix[n + i]
+    # Шорох снега: тихий шум ниже 1,5 кГц, «порывы» — синусы с целым числом периодов на круг (шов непрерывен).
+    snow = highpass(lowpass([rng.uniform(-1, 1) for _ in range(n)], 1500.0, stages=2), 300.0)
+    snow = [x * (0.6 + 0.25 * math.sin(math.tau * 3 * i / n) + 0.15 * math.sin(math.tau * 7 * i / n + 1.3))
+            for i, x in enumerate(snow)]
+    snow = _rms_stem(snow, -40.0)
+    loop = highpass([x + s for x, s in zip(loop, snow)], 35.0)
+    # 44,1 → 22,05 кГц: срез 9 кГц и каждый второй отсчёт (n чётно — шов остаётся на месте).
+    smooth = lowpass(loop, 9000.0, stages=2)
+    return to_rms(smooth[::2], -21.0, peak=0.9)
+
+
 def main() -> None:
     rng = random.Random(1)
     for k in range(1, 5):
@@ -1083,6 +1299,8 @@ def main() -> None:
     write("hockey_stick.wav", hockey_stick())
     write("pigeon_coo.wav", pigeon_coo(233))
     write("wings_flap.wav", wings_flap(239))
+    # MUSIC-01: тема главного меню — оригинальный вальс на баяне, цикл 32 такта (22,05 кГц, RMS −21 дБ).
+    write("menu_theme_loop.wav", menu_theme_loop(), MUSIC_OUT_RATE)
 
 
 if __name__ == "__main__":
