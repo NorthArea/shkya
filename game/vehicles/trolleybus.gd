@@ -9,6 +9,7 @@ extends PathVehicle
 ## (сигналы doors_opened / doors_closed — звук даёт SoundDirector), затем дальше по кругу. Скорость 7 м/с.
 
 const VehicleMesh = preload("res://game/vehicles/vehicle_mesh.gd")
+const CabinScript = preload("res://game/vehicles/trolley_cabin.gd")
 
 signal doors_opened(stop_index: int)
 signal doors_closed(stop_index: int)
@@ -26,6 +27,8 @@ var stops_made := 0
 var doors_open := false
 var _door_panels: Array[Node3D] = []
 var _door_openings: Array[Node3D] = []
+## TROLLEY-01: водитель и пассажиры (trolley_cabin.gd) — ребёнок Body, без коллизий.
+var people: Node3D
 
 func _init() -> void:
 	super._init()
@@ -49,6 +52,8 @@ func setup(lane_path: LanePath, offset: float) -> void:
 			next_stop = i
 
 func _tick(delta: float) -> void:
+	if people:
+		people.tick(delta, doors_open)
 	if dwell_left <= 0.0:
 		return
 	dwell_left -= delta
@@ -126,6 +131,8 @@ func _build_visual() -> Node3D:
 		opening.visible = false
 		_door_openings.append(opening)
 	_labels(body)
+	people = CabinScript.new()
+	body.add_child(people)
 	# Тёплый свет в салоне — виден в окна и в открытые двери; без теней.
 	var light := OmniLight3D.new()
 	light.name = "CabinLight"
@@ -140,6 +147,11 @@ func _build_visual() -> Node3D:
 		for x in [-1.1, 1.1]:
 			_wheels.append(VehicleMesh.add_wheel(root, Vector3(x, wheel_radius, z), wheel_radius, 0.3, "bus"))
 	return root
+
+## TROLLEY-01: жители в поездке (Residents) — в салон тем же обликом; вышедшие пропадают из салона.
+func set_riders(list: Array) -> void:
+	if people:
+		people.set_riders(list)
 
 ## Надписи: табло «13» спереди (с конечными) и сзади, табличка «13» у передней двери с обеих сторон, бортовой номер
 ## 3271 (первые цифры жёлтые, последние белые) спереди и на бортах.

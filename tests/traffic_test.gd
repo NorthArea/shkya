@@ -67,6 +67,7 @@ func _run() -> void:
 	_part_path()
 	_part_start()
 	_part_sweep()
+	_part_people()
 	await _part_laps()
 	await _part_oncoming()
 	await _part_lada_block()
@@ -75,6 +76,75 @@ func _run() -> void:
 	await _part_pause_and_dialog()
 	drv.release_all()
 	_finish()
+
+# =====================================================================================
+# TROLLEY-01: водитель и пассажиры в салоне
+# =====================================================================================
+
+## Водитель за рулём виден снаружи: геометрический луч от точки обзора до головы проходит через стекло (лобовое —
+## между стойками, боковое — в оконном поясе и не по простенку); пассажиров 3–8, головы в оконном поясе, все внутри
+## салона; ни тел, ни коллизий; дальше 60 м не рисуются.
+func _part_people() -> void:
+	print("--- TROLLEY-01 people ---")
+	var bus: Trolleybus = traffic.trolleybus
+	var people: Node3D = bus.people
+	if not check(people != null and people.driver != null, "trolleybus has Passengers with a driver"):
+		return
+	var driver: Node3D = people.driver
+	var head: Vector3 = driver.position + Vector3(0, 1.62, 0)   # центр головы мужика в ушанке (рост 1,8 м на холсте 2,0)
+	var top := _sprite_top(driver)
+	check(driver.visible and driver.sprite != null and driver.character.begins_with("resident_"), "driver: resident look %s, visible" % driver.character)
+	check(top > Trolleybus.SILL + 0.4 and top < Trolleybus.EAVE - 0.05, "driver's head in the window band: head top %.2f m (%.2f–%.2f)" % [top, Trolleybus.SILL + 0.4, Trolleybus.EAVE - 0.05])
+	check(driver.position.x < -0.3 and driver.position.z < -4.6 and driver.position.z > -Trolleybus.HALF_LEN + 0.5, "driver sits left, behind the wheel (%s)" % driver.position)
+	# Лобовое: точка обзора спереди-слева на высоте глаз камеры.
+	for eye in [Vector3(-1.5, 2.8, -16.0), Vector3(1.0, 3.2, -12.0)]:
+		var t: float = (-Trolleybus.HALF_LEN - eye.z) / (head.z - eye.z)
+		var hit: Vector3 = eye.lerp(head, t)
+		check(hit.x > -1.08 and hit.x < -0.06 and hit.y > Trolleybus.SILL + 0.05 and hit.y < Trolleybus.EAVE - 0.05,
+			"driver seen through the windscreen from %s (crosses at x %.2f, y %.2f)" % [eye, hit.x, hit.y])
+	# Боковое слева: стёкла между простенками (как в trolleybus.gd _meshes).
+	var posts: Array[float] = []
+	for span in Trolleybus._free_spans(false):
+		var count := maxi(1, ceili((float(span[1]) - float(span[0])) / 1.45))
+		for k in count + 1:
+			posts.append(float(span[0]) + (float(span[1]) - float(span[0])) / count * k)
+	for eye in [Vector3(-9.0, 3.0, -5.0), Vector3(-7.0, 3.5, -2.0)]:
+		var t: float = (-Trolleybus.HALF_W - eye.x) / (head.x - eye.x)
+		var hit: Vector3 = eye.lerp(head, t)
+		var clear := hit.y > Trolleybus.SILL + 0.05 and hit.y < Trolleybus.EAVE - 0.05 and hit.z > -Trolleybus.HALF_LEN + 0.45
+		for p in posts:
+			clear = clear and absf(hit.z - p) > 0.1
+		check(clear, "driver seen through the left side window from %s (crosses at y %.2f, z %.2f)" % [eye, hit.y, hit.z])
+	# Стенка за водителем и руль не на голове.
+	check(head.z < -4.6 and head.y > Trolleybus.SILL + 0.25 + 0.3, "driver's head clear of the partition (z −4.55) and the wheel (y %.2f)" % (Trolleybus.SILL + 0.25))
+	var shown: Array = people.shown()
+	check(shown.size() >= 3 and shown.size() <= 8, "passengers in the cabin: %d (3–8)" % shown.size())
+	var looks := {}
+	var inside := true
+	var heads := true
+	for p in shown:
+		looks[p.character] = true
+		inside = inside and absf(p.position.x) < Trolleybus.HALF_W - 0.3 and absf(p.position.z) < Trolleybus.HALF_LEN - 0.6
+		var y := _sprite_top(p)
+		heads = heads and y > Trolleybus.SILL + 0.35 and y < Trolleybus.EAVE - 0.05
+	check(looks.size() == shown.size(), "passengers all look different (%s)" % [looks.keys()])
+	var allowed := {}
+	for l in Layout.RESIDENT_LOOKS:
+		allowed["resident_%s" % l] = true
+	check(looks.keys().all(func(c): return allowed.has(c)) and allowed.has(driver.character), "driver and passengers — only RESIDENT_LOOKS")
+	check(inside, "every passenger inside the cabin (|x| < %.2f, |z| < %.2f)" % [Trolleybus.HALF_W - 0.3, Trolleybus.HALF_LEN - 0.6])
+	check(heads, "every passenger's head in the window band")
+	var bodies := people.find_children("*", "CollisionObject3D", true, false).size() + people.find_children("*", "CollisionShape3D", true, false).size()
+	check(bodies == 0, "no bodies or collision shapes among the people (C2): %d" % bodies)
+	var lod := true
+	for p in shown + [driver]:
+		lod = lod and is_equal_approx(p.sprite.visibility_range_end, 60.0) and p.get_node_or_null("Shadow") == null
+	check(lod, "people sprites hidden beyond 60 m, no ground shadow blobs")
+	check(not shown.any(func(p): return p.is_in_group(&"residents") or p.is_in_group(&"detection_sensors")), "people in the cabin are not residents and not stealth sensors")
+
+## Макушка облика в осях троллейбуса, м: самый высокий житель — 1,83 м на холсте 2,0 м (Residents.SILHOUETTES).
+func _sprite_top(p: Node3D) -> float:
+	return p.position.y + 1.83 * p.height_m / 2.0
 
 # =====================================================================================
 # 1. Путь: правая полоса, по часовой стрелке, скругление 6 м
@@ -231,8 +301,17 @@ func _part_laps() -> void:
 	_door_events.clear()
 	var max_frames := 200 * 60
 	var lap_done_at := -1.0
+	var turn_at_stop := 0.0      # TROLLEY-01: голова водителя к дверям на стоянке
+	var turn_driving := 0.0      # и прямо в пути (через 3 с после отправления)
+	var since_dwell := 0.0
 	for frame in max_frames:
 		await physics_frame
+		var bus: Trolleybus = traffic.trolleybus
+		since_dwell = 0.0 if bus.doors_open else since_dwell + 1.0 / 60.0
+		if bus.doors_open:
+			turn_at_stop = minf(turn_at_stop, bus.people.driver.rotation.y)
+		elif since_dwell > 3.0:
+			turn_driving = maxf(turn_driving, absf(bus.people.driver.rotation.y))
 		for v in traffic.vehicles:
 			var front: float = v.s + v.wheelbase * 0.5
 			var rear: float = v.s - v.wheelbase * 0.5
@@ -280,6 +359,7 @@ func _part_laps() -> void:
 		check(absf(dwell - Trolleybus.DWELL) <= 0.1 and off < 0.3 and still < 0.01 and c[1] == "close", "trolley stop %d %s: stood %.2f s (≈6), %.2f m from the stop point, moved %.3f m while doors open" % [e[2], stop, dwell, off, still])
 		served[e[2]] = true
 	check(served.size() == Layout.TROLLEY_STOPS.size(), "trolleybus served both TROLLEY_STOPS (%s)" % [served.keys()])
+	check(turn_at_stop < -0.6 and turn_driving < 0.05, "driver turns his head to the doors at stops (%.2f rad) and looks ahead while driving (%.2f)" % [turn_at_stop, turn_driving])
 	var sound: Node = world.get_node_or_null("SoundDirector")
 	if sound:
 		check(sound.played.get("trolley_doors", 0) >= 4, "door sound played at the stops (%d times)" % sound.played.get("trolley_doors", 0))
