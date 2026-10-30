@@ -335,12 +335,13 @@ func _dodge_target() -> float:
 func _fade_near_poles() -> void:
 	if _thin.is_empty() or camera == null:
 		return
+	var on_foot := profile == &"on_foot"   # в машине камера проносится мимо столбов — без смены прозрачности
 	var at := camera.global_position
 	for body in _thin.values():
 		var node := body as Node3D
 		if not is_instance_valid(node):
 			continue
-		var near := Vector2(node.global_position.x - at.x, node.global_position.z - at.z).length() < POLE_FADE_NEAR
+		var near := on_foot and Vector2(node.global_position.x - at.x, node.global_position.z - at.z).length() < POLE_FADE_NEAR
 		if near == _faded.has(node):
 			continue
 		if near:

@@ -330,6 +330,9 @@ func _update_glints() -> void:
 	for i in _glint_near.size():
 		_glint_near[i] = near[i][1]
 	var count := _glint_near.size()
+	if _glint_near == _glint_sent:
+		return   # тот же набор фонарей — материалы не трогать
+	_glint_sent = _glint_near.duplicate()
 	var padded := _glint_near.duplicate()
 	padded.resize(16)
 	for m in _road_materials:
@@ -613,6 +616,7 @@ var _spark_lamps := PackedVector4Array()
 var _glint_lamps := PackedVector4Array()
 var _road_materials: Array[ShaderMaterial] = []
 var _glint_near := PackedVector4Array()
+var _glint_sent := PackedVector4Array([Vector4.INF])
 var _spark_colors := PackedVector4Array()
 var _spark_sky := Vector3.UP
 
