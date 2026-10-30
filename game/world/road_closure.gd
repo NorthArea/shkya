@@ -234,9 +234,9 @@ func _build_sign() -> void:
 		face.rotation.y = side
 		sign.add_child(face)
 		var dz := -0.04 if side == 0.0 else -0.04
-		face.add_child(_label(QuestLines.CLOSURE_SIGN, 110, RED, Vector3(0, 1.85, dz)))
-		face.add_child(_label(QuestLines.CLOSURE_SIGN_SMALL, 56, Color(0.12, 0.10, 0.08), Vector3(0, 1.45, dz)))
-		face.add_child(_label(QuestLines.CLOSURE_SIGN_DETOUR, 56, Color(0.12, 0.10, 0.08), Vector3(0, 1.15, dz)))
+		face.add_child(_label(QuestLines.CLOSURE_SIGN, 86, RED, Vector3(0, 1.85, dz)))
+		face.add_child(_label(QuestLines.CLOSURE_SIGN_SMALL, 50, Color(0.12, 0.10, 0.08), Vector3(0, 1.45, dz)))
+		face.add_child(_label(QuestLines.CLOSURE_SIGN_DETOUR, 50, Color(0.12, 0.10, 0.08), Vector3(0, 1.15, dz)))
 
 ## Подпись щита: лицом в −Z узла (на север для лицевой стороны).
 func _label(text: String, size: int, color: Color, at: Vector3) -> Label3D:

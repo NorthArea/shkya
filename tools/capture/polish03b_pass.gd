@@ -102,7 +102,38 @@ func _groups() -> String:
 		acc.append("%s %d/%d%s" % [g, taken, spec[1], (" miss %s" % [missed]) if taken > 0 and not missed.is_empty() else ""])
 	return ", ".join(acc)
 
+## Кадры перекрытия (здесь можно ставить миссию и героя — смотрим вид, не проход): с севера (от киоска) и с юга.
+func _views() -> void:
+	var intro = w.get_node_or_null("Intro")
+	while is_instance_valid(intro) and intro.is_running():
+		await drv.frames(1)
+	var m := w.mission
+	m.interact(&"babka")
+	m.accept()
+	m.notify_entered_car()
+	m.notify_arrived_kiosk()
+	m.add_money(m.money_missing())
+	m.buy_bread()
+	w.player.place(Vector3(-20, 0, -88), 0.0)
+	var closure = w.get_node("LevelGeometry/Patrols/RoadClosure")
+	for i in 60 * 40:
+		await drv.frames(1)
+		if closure.is_blocking():
+			break
+	_log("closure blocking %s" % closure.is_blocking())
+	for spec in [["09_closure_from_north", Vector3(66, 0, -15), PI], ["10_closure_from_south", Vector3(63, 0, 13), 0.0],
+			["11_closure_wide_north", Vector3(70, 0, -26), PI]]:
+		w.player.place(spec[1], spec[2])
+		w.camera_rig.yaw = spec[2]
+		w.camera_rig.pitch = -0.12
+		w.camera_rig.snap()
+		await drv.frames(90)
+		await _save(spec[0])
+
 func _pass(mode: String) -> void:
+	if mode == "views":
+		await _views()
+		return
 	var intro = w.get_node_or_null("Intro")
 	while is_instance_valid(intro) and intro.is_running():
 		await drv.frames(1)
