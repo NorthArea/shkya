@@ -7,6 +7,7 @@ const WorldScene = preload("res://game/world/demo_world.tscn")
 const MainMenu = preload("res://game/ui/main_menu.gd")
 const PauseMenu = preload("res://game/ui/pause_menu.gd")
 const IntroScript = preload("res://game/ui/intro.gd")
+const CaughtPanelScript = preload("res://game/ui/caught_panel.gd")
 const PadInput = preload("res://game/ui/pad_input.gd")
 const MusicDirectorScript = preload("res://game/audio/music_director.gd")
 const UI_CLICK := preload("res://assets/audio/ui_click.wav")
@@ -71,6 +72,7 @@ func _swap_world(new_game: bool) -> void:
 		_connect_end_card(world)
 		# INTRO-01: заставка «Ничего не происходит»; в тестах, headless и с --skip-intro её нет — мир как раньше.
 		IntroScript.attach(world)
+		_connect_caught_panel(world)
 		set_paused(false)
 	else:
 		set_paused(false)
@@ -86,6 +88,16 @@ func _connect_end_card(new_world: Node) -> void:
 	hud.restart_requested.connect(start_game)
 	hud.menu_requested.connect(return_to_menu)
 	for button in hud.end_buttons.values():
+		button.pressed.connect(ui_click.play)
+
+## STORY-01: провал стелса — карточка «В ГОРОДЕ Н. НИЧЕГО НЕ ПРОИЗОШЛО»; «В ГЛАВНОЕ МЕНЮ» — как из паузы.
+## В тестах и headless её нет (как заставки) — провал прежний. Музыка на ней не играет (обоснование — caught_panel.gd).
+func _connect_caught_panel(new_world: Node) -> void:
+	var caught := CaughtPanelScript.attach(new_world)
+	if caught == null:
+		return
+	caught.menu_requested.connect(return_to_menu)
+	for button in caught.buttons.values():
 		button.pressed.connect(ui_click.play)
 
 func _notification(what: int) -> void:

@@ -11,6 +11,7 @@ extends SceneTree
 const Layout = preload("res://game/world/layout.gd")
 const IntroScript = preload("res://game/ui/intro.gd")
 const PadInput = preload("res://game/ui/pad_input.gd")
+const CaughtPanelScript = preload("res://game/ui/caught_panel.gd")
 
 ## Автопилот quest01_driver, но руль — левый стик, газ и тормоз — курки RT/LT (как игрок с геймпадом).
 class PadDriver extends "res://tests/quest01_driver.gd":
@@ -73,6 +74,7 @@ func _run() -> void:
 	await _car_back()
 	await _turn_in()
 	await _end_card_and_menu()
+	await _caught_card()
 	_finish()
 
 func _bind() -> void:
@@ -436,6 +438,58 @@ func _end_card_and_menu() -> void:
 	# Клавиатура работает как раньше.
 	await _key(KEY_UP)
 	check(_focus_text() == "НАСТРОЙКИ", "keyboard: the Up arrow still moves the focus")
+
+# --- STORY-01: карточка провала «В ГОРОДЕ Н. НИЧЕГО НЕ ПРОИЗОШЛО» ---
+
+func _caught_card() -> void:
+	CaughtPanelScript.force_enabled = true
+	await _button(JOY_BUTTON_DPAD_UP)
+	check(_focus_text() == "НАЧАТЬ", "caught: back to НАЧАТЬ (%s)" % _focus_text())
+	await _button(JOY_BUTTON_A)
+	await _frames(3)
+	_bind()
+	CaughtPanelScript.force_enabled = false
+	if world == null:
+		return
+	await _intro_skip(JOY_BUTTON_A, "A (caught)")
+	var panel: CaughtPanel = world.get_node_or_null("CaughtPanel")
+	check(panel != null, "caught: the card is attached to the new world")
+	if panel == null:
+		return
+	for s in get_nodes_in_group(&"detection_sensors"):
+		s.enabled = false
+	var card_frames := int(ceil(CaughtPanel.off_seconds() * 60.0)) + 3
+	world.stealth.alert_now()
+	await _frames(card_frames)
+	check(panel.is_open() and _focus_text() == CaughtPanel.AGAIN_TEXT, "caught: the card opens with focus on ЕЩЁ РАЗ (%s)" % _focus_text())
+	await _button(JOY_BUTTON_DPAD_RIGHT)
+	check(_focus_text() == CaughtPanel.MENU_TEXT, "caught: d-pad right → В ГЛАВНОЕ МЕНЮ (%s)" % _focus_text())
+	await _button(JOY_BUTTON_DPAD_DOWN)
+	check(_focus_text() == CaughtPanel.MENU_TEXT, "caught: d-pad down keeps the focus on the card (%s)" % _focus_text())
+	await _stick_push(JOY_AXIS_LEFT_X, -1.0)
+	check(_focus_text() == CaughtPanel.AGAIN_TEXT, "caught: left stick left → ЕЩЁ РАЗ (%s)" % _focus_text())
+	await _button(JOY_BUTTON_START)
+	check(panel.is_open() and not main.pause_menu.visible, "caught: Start does not open the pause over the card")
+	await _button(JOY_BUTTON_B)
+	await _frames(2)
+	check(not panel.is_open() and not paused and world.player.input_enabled
+		and Vector2(world.player.global_position.x - Layout.STEALTH_CHECKPOINT.x, world.player.global_position.z - Layout.STEALTH_CHECKPOINT.z).length() < 0.5,
+		"caught: B = ЕЩЁ РАЗ — back at the checkpoint, control on")
+	await _frames(int(ceil(world.stealth.protection_left() * 60.0)) + 5)
+	world.stealth.alert_now()
+	await _frames(card_frames)
+	await _button(JOY_BUTTON_A)
+	await _frames(2)
+	check(not panel.is_open() and not paused and not world.is_stealth_failing(), "caught: A on ЕЩЁ РАЗ continues from the checkpoint")
+	await _frames(int(ceil(world.stealth.protection_left() * 60.0)) + 5)
+	world.stealth.alert_now()
+	await _frames(card_frames)
+	await _button(JOY_BUTTON_DPAD_RIGHT)
+	await _button(JOY_BUTTON_A)
+	await _frames(4)
+	check(main.world == null and main.menu.visible and not paused, "caught: A on В ГЛАВНОЕ МЕНЮ returns to the menu")
+	await _frames(2)
+	check(_focus_text() == "НАЧАТЬ", "caught: НАЧАТЬ has focus in the menu (%s)" % _focus_text())
 
 # --- ввод ---
 
