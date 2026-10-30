@@ -20,13 +20,14 @@ extends "res://game/npc/npc.gd"
 
 ## POLISH-03 A (критик: стелс вслепую — из-за гаражей полицейского не видно): за WARN_LEAD с до разворота поста —
 ## сигнал turn_warning(следующий угол), треск рации с поста (слышно ближе WARN_RADIUS) и силуэт желтеет; если следующий
-## угол накроет пешего Илюшу ближе WARN_RADIUS — субтитр QuestLines.PATROL_TURN (не чаще WARN_TEXT_COOLDOWN, не поверх
+## угол накроет пешего Илюшу (не в укрытии) ближе WARN_RADIUS — субтитр QuestLines.PATROL_TURN (не чаще WARN_TEXT_COOLDOWN, не поверх
 ## идущего гэга). Силуэт сквозь стены (patrol_xray.gdshader) — пока герой ближе XRAY_RADIUS: голубой, перед разворотом
 ## жёлтый, когда сенсор видит Илюшу — красный. Время удержаний и углы не меняются — честный путь не проще (C7).
 
 const DetectionSensorScript = preload("res://game/stealth/detection_sensor.gd")
 const XRAY_SHADER := preload("res://game/stealth/patrol_xray.gdshader")
 const CRACKLE := preload("res://assets/audio/radio_mumble.wav")
+const HideTuning = preload("res://game/stealth/hide_tuning.gd")
 signal turn_warning(next_index: int)
 const WARN_LEAD := 1.0            # с до начала разворота
 const WARN_RADIUS := 25.0         # м: ближе — треск рации и субтитр
@@ -233,6 +234,8 @@ func _warn() -> void:
 	_crackle_left = CRACKLE_SECONDS
 	if world.control_mode != &"on_foot" or _warn_cooldown > 0.0 or not will_face(p, next):
 		return
+	if world.player.get("hide_mode") not in [null, HideTuning.NONE]:
+		return   # в укрытии — свои гэги с лимитом на попытку (HIDE_SPOTS, раздел 11); треск и силуэт остаются
 	var sound: Node = world.get_node_or_null("SoundDirector")
 	if sound and sound.has_method("show_gag") and not sound.gag_playing():
 		sound.show_gag(QuestLines.PATROL_TURN, QuestLines.PATROL_TURN_SECONDS)
