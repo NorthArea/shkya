@@ -1183,6 +1183,30 @@ def menu_theme_loop() -> list[float]:
     return to_rms(smooth[::2], -21.0, peak=0.9)
 
 
+def bag_rustle_loop() -> list[float]:
+    """Пакет на ветру (CITY-03): шуршание полиэтилена — частые сухие «хрусты» (короткие вспышки шума выше 2,5 кГц
+    с затуханием 4–12 мс, плотность волнами по 0,3–0,6 с, как хлопает плёнка) поверх тихого шипения выше 1,5 кГц.
+    Цикл 2 с, RMS −24 дБ; громкость у камеры задаёт WindBags (RUSTLE_DB)."""
+    rng = random.Random(3003)
+    n = samples(2.2)
+    out = [0.0] * n
+    t = 0.0
+    while t < 2.2:
+        flap = 0.5 + 0.5 * math.sin(2 * math.pi * t / 0.45 + 0.7 * math.sin(2 * math.pi * t / 1.1))
+        gap = 0.004 + 0.03 * (1.0 - flap) * rng.random()
+        start = samples(t)
+        length = samples(rng.uniform(0.004, 0.012))
+        gain = rng.uniform(0.3, 1.0) * (0.35 + 0.65 * flap)
+        for k in range(length):
+            if start + k < n:
+                out[start + k] += rng.uniform(-1, 1) * gain * math.exp(-k / (length * 0.35))
+        t += gap
+    crackle = highpass(out, 2500.0)
+    hiss = highpass([rng.uniform(-1, 1) * 0.08 for _ in range(n)], 1500.0)
+    mix = lowpass([a + b for a, b in zip(crackle, hiss)], 9000.0)
+    return to_rms(loop_crossfade(mix, 0.2), -24.0)
+
+
 def main() -> None:
     rng = random.Random(1)
     for k in range(1, 5):
@@ -1255,6 +1279,8 @@ def main() -> None:
     write("wings_flap.wav", wings_flap(239))
     # MUSIC-01: тема главного меню — оригинальный вальс на баяне, цикл 32 такта (22,05 кГц, RMS −21 дБ).
     write("menu_theme_loop.wav", menu_theme_loop(), MUSIC_OUT_RATE)
+    # CITY-03: шуршание летающего пакета у камеры (цикл, 3D у ближнего пакета).
+    write("bag_rustle_loop.wav", bag_rustle_loop())
 
 
 if __name__ == "__main__":
