@@ -27,6 +27,16 @@ uniform float slush_bump = 0.012;         // м, комья каши
 uniform float puddle_roughness = 0.04;
 uniform float puddle_level = 0.45;        // доля каши, до которой колею в мокром пятне заливает вода
 
+// POLISH-03 C: блеск мокрых колей под фонарями (концепты 05/06/e05) — отражение светильника полосой, вытянутой к
+// камере: по азимуту узко (glint_width), по высоте широко (glint_stretch). Только в колеях и лужах, цвет — натрий.
+// Лампы (xyz — светильник, w — дальность, м) и ручки задаёт lighting.gd (GLINT_*); glint_gain = 0 — выключено.
+uniform vec4 glint_lamps[48];
+uniform int glint_count = 0;
+uniform vec3 glint_color = vec3(1.0, 0.35, 0.01);
+uniform float glint_gain = 0.0;
+uniform float glint_width = 0.0025;
+uniform float glint_stretch = 0.06;
+
 varying vec3 world_pos;
 
 float hash(vec2 p) { return fract(sin(dot(p, vec2(41.3, 289.1))) * 43758.5453); }
@@ -123,6 +133,26 @@ void fragment() {
 	vec3 n = normalize(vec3(-(hx - h0) / e, 1.0, -(hz - h0) / e));
 	n = normalize(mix(n, vec3(0.0, 1.0, 0.0), puddle));
 	NORMAL = normalize((VIEW_MATRIX * vec4(n, 0.0)).xyz);
+	float rut = max(1.0 - smoothstep(0.12, 0.6, slushiness), puddle);
+	if (glint_gain > 0.0 && rut > 0.02) {
+		vec3 v = normalize(CAMERA_POSITION_WORLD - world_pos);
+		vec3 r = vec3(-v.x, v.y, -v.z);   // отражённый луч взгляда от горизонтальной глади
+		vec2 rh = normalize(r.xz + vec2(1e-5));
+		float glint = 0.0;
+		for (int i = 0; i < glint_count; i++) {
+			vec3 to = glint_lamps[i].xyz - world_pos;
+			float d2 = dot(to, to);
+			float reach = glint_lamps[i].w;
+			if (d2 > reach * reach) {
+				continue;
+			}
+			vec3 l = to * inversesqrt(d2);
+			float az = 1.0 - dot(normalize(l.xz + vec2(1e-5)), rh);
+			float el = l.y - r.y;
+			glint += exp(-az / glint_width - el * el / glint_stretch) * (1.0 - d2 / (reach * reach));
+		}
+		EMISSION = glint_color * glint * glint_gain * rut;
+	}
 	ALBEDO = color;
 	ROUGHNESS = roughness;
 	SPECULAR = specular;

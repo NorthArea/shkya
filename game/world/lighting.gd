@@ -18,7 +18,9 @@ const WARM := Color(1.0, 0.74, 0.42)       # подъезд, окно киоск
 # светлее и желтее, сильнее, а общий свет слабее — снег под фонарём уходит в оранжевый.
 # Итоговая сверка ART-05 (И1): цвет света Godot переводит из sRGB в линейный — G 0,56 становился ≈0,28,
 # и с голубым общим светом выходила маджента. Зелёного больше, синего меньше.
-const SODIUM := Color(1.0, 0.74, 0.10)     # уличные фонари (итоговая сверка ART-06, С9: без сиреневого снега у киоска)
+# POLISH-03 C (критик 30.10, концепты 05/06/e05): натрий теплее и оранжевее — G 0,74 → 0,64 (линейный 0,52 → 0,37),
+# синий почти ноль, чтобы с голубым общим светом не уйти в сиреневое (И1).
+const SODIUM := Color(1.0, 0.64, 0.06)     # уличные фонари (итоговая сверка ART-06, С9: без сиреневого снега у киоска)
 const YARD_POOL := Color(1.0, 0.90, 0.78)  # пятно света на стоянке: белая «Лада» остаётся белой (Н3)
 const SnowShader = preload("res://game/world/shaders/wet_snow.gdshader")
 const HaloShader = preload("res://game/world/shaders/lamp_halo.gdshader")
@@ -165,6 +167,11 @@ const WET_SPOTS: Array[Vector4] = [
 const WET_GLOSS := 0.9                 # насколько каша в пятне становится глянцевой
 const WET_DARKEN := 0.55               # во сколько раз темнеет мокрая каша
 const WET_ROUGHNESS := 0.16            # шероховатость мокрого: блик фонаря — мягкая полоса, не точка
+# POLISH-03 C: блеск мокрых колей под уличными фонарями (shaders/road: glint_*): отражение светильника полосой к камере.
+const GLINT_GAIN := 1.6                # яркость отражения (≥ 1 — светится через glow)
+const GLINT_WIDTH := 0.0025            # ширина полосы по азимуту (1 − cos угла)
+const GLINT_STRETCH := 0.06            # длина полосы по высоте (квадрат разности синусов)
+const GLINT_REACH := 26.0              # м от светильника до точки дороги
 
 # --- окна: температура света и телевизоры; читает Materials.facade ---
 const WINDOW_WARM := Color(1.0, 0.68, 0.32)     # лампа накаливания (принято ART-05)
@@ -284,6 +291,7 @@ func _ready() -> void:
 	for p in Layout.street_lamps():
 		var tip: Vector2 = p + Layout.lamp_arm(p)
 		_street_lamp(Vector3(tip.x, Layout.POLE_HEIGHT - 0.8, tip.y), index)
+		_glint_lamps.append(Vector4(tip.x, Layout.POLE_HEIGHT - 0.8, tip.y, GLINT_REACH))
 		_halos.append([Vector3(tip.x, Layout.POLE_HEIGHT - 0.5, tip.y), HALO_SIZE, SODIUM])
 		index += 1
 	# Контрастные пятна тёплого света на земле (раздел 2 канона): стоянка «Лады» под дворовым фонарём и площадка у окна киоска.
@@ -575,6 +583,7 @@ func _apply_surface_fx() -> void:
 				_surface_fx(m)
 
 var _spark_lamps := PackedVector4Array()
+var _glint_lamps := PackedVector4Array()
 var _spark_colors := PackedVector4Array()
 var _spark_sky := Vector3.UP
 
@@ -610,6 +619,13 @@ func _surface_fx(m: ShaderMaterial) -> void:
 		m.set_shader_parameter("slush_bump", SLUSH_BUMP)
 		m.set_shader_parameter("puddle_roughness", PUDDLE_ROUGHNESS)
 		m.set_shader_parameter("puddle_level", PUDDLE_LEVEL)
+		var sodium := SODIUM.srgb_to_linear()
+		m.set_shader_parameter("glint_lamps", _glint_lamps)
+		m.set_shader_parameter("glint_count", mini(_glint_lamps.size(), 48))
+		m.set_shader_parameter("glint_color", Vector3(sodium.r, sodium.g, sodium.b))
+		m.set_shader_parameter("glint_gain", GLINT_GAIN)
+		m.set_shader_parameter("glint_width", GLINT_WIDTH)
+		m.set_shader_parameter("glint_stretch", GLINT_STRETCH)
 	elif m.shader == TrailShader:
 		m.set_shader_parameter("print_depth", PRINT_DEPTH)
 		m.set_shader_parameter("print_step", PRINT_STEP)
