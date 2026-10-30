@@ -13,8 +13,8 @@ define godot_test
 	@./tools/run.command --headless --fixed-fps $(2) --script tests/$(1).gd > builds/checks/make-test/$(1)-$(2).log 2>&1; \
 	status=$$?; grep -E '^$(3): [0-9]+ checks, [0-9]+ failures' builds/checks/make-test/$(1)-$(2).log; \
 	grep -qE '^$(3): [0-9]+ checks, 0 failures' builds/checks/make-test/$(1)-$(2).log && \
-	! grep -q '^SCRIPT ERROR:' builds/checks/make-test/$(1)-$(2).log && [ $$status -eq 0 ] || \
-	{ echo "FAIL: $(1) ($(2) fps), лог builds/checks/make-test/$(1)-$(2).log"; grep -E 'FAIL|SCRIPT ERROR|Parse Error' builds/checks/make-test/$(1)-$(2).log | head -20; exit 1; }
+	! grep -qE '^SCRIPT ERROR:|^ERROR: Condition "p_elem->_root" is true' builds/checks/make-test/$(1)-$(2).log && [ $$status -eq 0 ] || \
+	{ echo "FAIL: $(1) ($(2) fps), лог builds/checks/make-test/$(1)-$(2).log"; grep -E 'FAIL|SCRIPT ERROR|Parse Error|p_elem->_root' builds/checks/make-test/$(1)-$(2).log | head -20; exit 1; }
 endef
 
 test: map

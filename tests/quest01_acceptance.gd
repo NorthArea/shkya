@@ -575,6 +575,8 @@ func _step_esc_with_dialog() -> void:
 	await _frames(3)
 	check(paused and main.pause_menu.visible, "esc: Esc over the dialog opens the pause menu")
 	check(flow.is_dialog_open(), "esc: the dialog stays open under the pause menu")
+	# PAUSE-01: сигнал GUI не должен возобновлять физику между flush_queries и step.
+	await process_frame
 	main.pause_menu.resume_requested.emit()
 	await _frames(3)
 	check(not paused and flow.is_dialog_open() and world.ui_blocking and not player.input_enabled, "esc: after resume the dialog is still open and input still blocked")

@@ -418,6 +418,8 @@ func _check_pause(world: DemoWorld) -> void:
 	await _frames(30)
 	Input.action_release(&"move_forward")
 	check(world.player.global_position.distance_to(before) < 0.01, "Ilyusha does not move while paused")
+	# PAUSE-01: сигнал GUI не должен возобновлять физику между flush_queries и step.
+	await process_frame
 	main.pause_menu.resume_requested.emit()
 	await _frames(2)
 	check(not paused and not main.pause_menu.visible, "ПРОДОЛЖИТЬ resumes")
