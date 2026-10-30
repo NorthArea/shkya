@@ -63,3 +63,5 @@
 [hr-goto]: https://github.com/3UR/Simpsons-Hit-Run/blob/c84f9ff9ae9b27a5d34dca7985ac819e70f62bc6/src/game/mission/objectives/gotoobjective.cpp#L139-L218
 [hr-collect]: https://github.com/3UR/Simpsons-Hit-Run/blob/c84f9ff9ae9b27a5d34dca7985ac819e70f62bc6/src/game/mission/objectives/collectibleobjective.cpp#L535-L604
 [hr-race]: https://github.com/3UR/Simpsons-Hit-Run/blob/c84f9ff9ae9b27a5d34dca7985ac819e70f62bc6/src/game/mission/objectives/raceobjective.cpp#L112-L170
+
+**Доводка по независимому ревью 31.10:** адресно закрыть накопление/наложение людей у северного выхода при наблюдаемом крае и стоящем герое; сохранить 64 персоны/цели/границы, не допустить видимого исчезновения. Перераспределить существующие облики в соседних группах и сделать контактные фазы инструментов/хоккея читаемее. Сначала воспроизведение stress-case и обычного прохода. buy_pickles сейчас kind=look: отсутствие торговки не доказывает покупку без продавца, новую экономику не вводить; уточнить визуальную семантику при необходимости. Логи/кадры той же задачи, не новый прогресс-документ.
