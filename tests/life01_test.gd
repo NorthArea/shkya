@@ -316,8 +316,50 @@ func _part_city() -> void:
 	var frames := int(SIM_SECONDS / dt)
 	var density := {}
 	var samples := 0
+	# TROLLEY-01: салон троллейбуса синхронен с поездками жителей (допуск — 2 шага физики на обновление списка).
+	var bus: Trolleybus = residents_node.trolley
+	var people: Node3D = bus.people
+	var lag := {}                  # житель → шагов рассинхрона подряд
+	var desync := {}
+	var seen_seat := {}            # житель → в салоне был тем же обликом
+	var wrong_look := {}
+	var alights_ok := 0
+	var alights_bad := {}
+	var was_riding := {}
+	var count_bad := {}
+	var bg_moved := {}
+	var bg_at := {}
+	for p in people.shown():
+		bg_at[p] = p.position
 	for frame in frames:
 		await physics_frame
+		var shown_n: int = people.shown().size()
+		if shown_n < 3 or shown_n > 8:
+			count_bad[frame] = "%d passengers at %.0f s" % [shown_n, frame * dt]
+		for p in people.shown():
+			if bg_at.has(p) and is_instance_valid(p) and p.position != bg_at[p]:
+				bg_moved[p.name] = p.name
+		for r in residents:
+			var riding: bool = r.hidden and r.state == &"ride"
+			var seat: Node3D = people.seat_of(r)
+			if riding != (seat != null):
+				lag[r] = int(lag.get(r, 0)) + 1
+				if lag[r] > 2:
+					desync[r.name] = "%s riding %s, in cabin %s at %.0f s" % [r.name, riding, seat != null, frame * dt]
+			else:
+				lag[r] = 0
+			if seat != null:
+				seen_seat[r] = true
+				if seat.character != r.character:
+					wrong_look[r.name] = "%s as %s" % [r.character, seat.character]
+			if was_riding.get(r, false) and not riding:
+				# Вышел: виден снаружи у правого борта (у двери), а не в салоне.
+				var local: Vector3 = bus.global_transform.affine_inverse() * r.global_position
+				if not r.hidden and local.x > Trolleybus.HALF_W and local.x < Trolleybus.HALF_W + 1.0 and absf(local.z) < Trolleybus.HALF_LEN:
+					alights_ok += 1
+				elif not r.hidden:
+					alights_bad[r.name] = "%s out at local %s" % [r.name, local]
+			was_riding[r] = riding
 		if frame % 30 == 0 and frame * dt >= DENSITY_SKIP:
 			samples += 1
 			_sample_density(density)
@@ -377,6 +419,13 @@ func _part_city() -> void:
 	print("INFO: activity lines said %s" % [act_said])
 	check(not act_said.is_empty(), "residents at their activities speak lines from the activity pools %s" % [act_said])
 	check(rides >= 1, "someone rode trolleybus 13 (%d boardings)" % rides)
+	print("INFO: TROLLEY-01 riders seen in the cabin %d, alighted at a door %d" % [seen_seat.size(), alights_ok])
+	check(not seen_seat.is_empty() and seen_seat.size() <= rides, "boarded residents appear in the cabin (%d of %d boardings)" % [seen_seat.size(), rides])
+	check(desync.is_empty(), "cabin follows rides: riding ⇔ seated, ≤ 2 physics steps late%s" % ("" if desync.is_empty() else " — " + ", ".join(desync.values().slice(0, 4))))
+	check(wrong_look.is_empty(), "a rider sits in the cabin with the same look %s" % [wrong_look.values().slice(0, 4)])
+	check(alights_ok >= 1 and alights_bad.is_empty(), "alighted residents leave the cabin and step out at the right side by a door (%d)%s" % [alights_ok, "" if alights_bad.is_empty() else " — " + ", ".join(alights_bad.values().slice(0, 4))])
+	check(count_bad.is_empty(), "3–8 passengers in the cabin all the time%s" % ("" if count_bad.is_empty() else " — " + ", ".join(count_bad.values().slice(0, 4))))
+	check(bg_moved.is_empty(), "background passengers stay in their seats (never walk through walls) %s" % [bg_moved.keys()])
 	_check_density(density, samples)
 	check(max_screen >= 1 and max_screen <= MAX_ON_SCREEN, "residents on screen within 60 m: max %d (1–%d)" % [max_screen, MAX_ON_SCREEN])
 

@@ -239,6 +239,16 @@ func _physics_process(delta: float) -> void:
 		_connect_breakables()
 	if life:
 		_update_life()
+	if trolley and trolley.has_method("set_riders"):
+		trolley.set_riders(riders())
+
+## TROLLEY-01: жители в поездке — скрыты в троллейбусе (Resident: hidden и state &"ride"); их облики — в салоне.
+func riders() -> Array:
+	var out := []
+	for r in residents:
+		if r.hidden and r.state == &"ride":
+			out.append(r)
+	return out
 
 # --- LIFE-01 ---
 
