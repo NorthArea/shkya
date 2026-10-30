@@ -52,6 +52,10 @@ const ENGAGE_DISTANCE := 6.0     # м по горизонтали от Илюш�
 const DISENGAGE_DISTANCE := 12.0 # м: Илюша убежал — дрон бросает и улетает
 const HOVER_DISTANCE := 2.0      # м перед Илюшей
 const HOVER_SIDE := 0.6          # м вбок, чтобы из-за спины камеры дрон не прятался за головой
+const HOVER_SIDE_MAX := 1.0      # м: всё ещё внутри сферы удара при HOVER_DISTANCE и HOVER_HEIGHT
+const VIEW_DRONE_RADIUS := 0.5   # м: охватывает кольца ×1,9 при любом yaw (размах по диагонали ≈0,98 м)
+const VIEW_PLAYER_RADIUS := 0.28 # м: полуширина фигуры, которую оставляем свободной в проекции
+const VIEW_CLEARANCE := 0.08     # м дополнительного просвета в плоскости героя
 const HOVER_HEIGHT := 1.9        # м над землёй: на уровне лица фигуры 1,8 м, над головой в кадре камеры
 const HOVER_SECONDS := 5.0
 const IGNORE_SECONDS := 12.0     # после «осмотра» — не подлетать снова
@@ -91,9 +95,11 @@ var _player: Node3D
 var _engaged: Drone
 var _last_gag := -INF
 var _loops: Array = []      # [{points: Array[Vector3], lengths: Array[float], total, height, speed}]
+var _hover_shape := SphereShape3D.new()
 
 func _init() -> void:
 	name = "Drones"
+	_hover_shape.radius = VIEW_DRONE_RADIUS
 
 func _ready() -> void:
 	add_to_group(GROUP)
@@ -255,8 +261,9 @@ func set_agitated(on: bool) -> void:
 func engage_distance() -> float:
 	return AGITATED_ENGAGE if agitated else ENGAGE_DISTANCE
 
-## Точка зависания перед Илюшей: HOVER_DISTANCE по взгляду облика, HOVER_SIDE вправо, HOVER_HEIGHT над землёй;
-## стена или машина между — ближе, перед препятствием (луч по World|Car).
+## Точка зависания остаётся перед Илюшей в пределах его удара. Боковую точку выбираем по настоящей камере:
+## радиусы силуэтов приводятся к глубине героя, поэтому камера спереди/сбоку тоже не получает дрон на линии лица.
+## Объём колец не должен заходить в стену или машину; их проверяет сфера, а не только луч до центра.
 func hover_point(watcher: Node3D) -> Vector3:
 	var look: Node3D = watcher.get("visual") if watcher.get("visual") is Node3D else watcher
 	var forward := -look.global_basis.z
@@ -264,17 +271,47 @@ func hover_point(watcher: Node3D) -> Vector3:
 	forward = forward.normalized() if forward.length_squared() > 0.0001 else Vector3.FORWARD
 	var right := forward.cross(Vector3.UP)
 	var base := watcher.global_position
-	var target := base + forward * HOVER_DISTANCE + right * HOVER_SIDE
-	target.y = base.y + HOVER_HEIGHT
 	var from := base + Vector3.UP * HOVER_HEIGHT
-	var query := PhysicsRayQueryParameters3D.create(from, target, 1 | 4)
+	var camera := get_viewport().get_camera_3d()
+	var target := _hover_clear_point(from, from + forward * HOVER_DISTANCE + right * HOVER_SIDE, watcher)
+	var margin := _hover_view_margin(target, watcher, camera)
+	if margin >= VIEW_CLEARANCE:
+		return target
+	for side: float in [HOVER_SIDE_MAX, -HOVER_SIDE, -HOVER_SIDE_MAX]:
+		var candidate := _hover_clear_point(from, from + forward * HOVER_DISTANCE + right * side, watcher)
+		var candidate_margin := _hover_view_margin(candidate, watcher, camera)
+		if candidate_margin > margin:
+			target = candidate
+			margin = candidate_margin
+	return target
+
+func _hover_clear_point(from: Vector3, target: Vector3, watcher: Node3D) -> Vector3:
+	var query := PhysicsShapeQueryParameters3D.new()
+	query.shape = _hover_shape
+	query.transform = Transform3D(Basis.IDENTITY, from)
+	query.motion = target - from
+	query.collision_mask = 1 | 4
 	if watcher is CollisionObject3D:
 		query.exclude = [(watcher as CollisionObject3D).get_rid()]
-	var hit := get_world_3d().direct_space_state.intersect_ray(query)
-	if not hit.is_empty():
-		var dir := (target - from).normalized()
-		target = hit["position"] - dir * 0.4
-	return target
+	var fractions := get_world_3d().direct_space_state.cast_motion(query)
+	return from.lerp(target, fractions[0])
+
+## Положительное значение — просвет между горизонтальными проекциями дрона и фигуры. Дрон за камерой
+## не мешает кадру; очень близкий к камере получает худшую оценку. Высота не используется как способ скрыть дрон.
+func _hover_view_margin(target: Vector3, watcher: Node3D, camera: Camera3D) -> float:
+	if camera == null:
+		return INF
+	var to_player := _flat(watcher.global_position - camera.global_position)
+	var distance := to_player.length()
+	if distance < 0.1:
+		return 0.0
+	var direction := to_player / distance
+	var to_drone := _flat(target - camera.global_position)
+	var depth := to_drone.dot(direction)
+	if depth <= 0.0:
+		return INF
+	var side := absf(to_drone.dot(direction.cross(Vector3.UP)))
+	return (side - VIEW_DRONE_RADIUS) * distance / maxf(depth, 0.1) - VIEW_PLAYER_RADIUS
 
 func _leave(drone: Drone) -> void:
 	if _engaged == drone:
@@ -461,10 +498,10 @@ shader_type spatial;
 render_mode unshaded, blend_add, depth_draw_never, cull_disabled, shadows_disabled, fog_disabled, skip_vertex_transform;
 instance uniform vec3 tint = vec3(1.0);
 instance uniform float power = 1.0;
-uniform float energy = 1.6;
+uniform float energy = 1.1;
 uniform float core = 22.0;
 uniform float wide = 3.5;
-uniform float wide_share = 0.35;
+uniform float wide_share = 0.22;
 uniform float near_fade = 3.5;    // м: ближе дрон крупный и читается сам — ореол не заливает корпус
 uniform float near_push = -0.35;  // м: за дроном — корпус закрывает ядро и не окрашивается, свечение вокруг силуэта
 varying float fade;

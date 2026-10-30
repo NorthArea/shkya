@@ -41,6 +41,7 @@ test: map
 	$(call godot_test,hide_barrel_test,60,HIDE_BARREL)
 	$(call godot_test,coins_test,60,COINS)
 	$(call godot_test,punch_test,60,PUNCH)
+	$(call godot_test,punch02_view_test,60,PUNCH02_VIEW)
 	$(call godot_test,knock_test,60,KNOCK)
 	$(call godot_test,break_test,60,BREAK)
 	$(call godot_test,drive02_snow,60,DRIVE02)
