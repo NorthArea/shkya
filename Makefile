@@ -60,6 +60,8 @@ test: map
 	$(call godot_test,stealth_test,60,STEALTH)
 	$(call godot_test,traffic_test,60,TRAFFIC)
 	$(call godot_test,car02_family_test,60,CAR02_INDEPENDENT)
+	$(call godot_test,car02_gazelle_test,60,CAR02_GAZELLE)
+	$(call godot_test,car02_gazelle_runtime_test,60,CAR02_GAZELLE_RUNTIME)
 	$(call godot_test,residents_test,60,RESIDENTS)
 	$(call godot_test,ambient_test,60,AMBIENT)
 	$(call godot_test,hide_core_test,60,HIDE_CORE)
