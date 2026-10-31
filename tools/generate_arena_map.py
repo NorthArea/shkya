@@ -14,7 +14,8 @@ from PIL import Image, ImageDraw, ImageFont, PngImagePlugin
 
 ROOT = Path(__file__).resolve().parents[1]
 SOURCES = ["game/world/layout.gd", "game/world/ambient.gd", "game/world/props.gd",
-           "game/world/level_geometry.gd", "tools/export_arena_map.gd", "tools/generate_arena_map.py",
+           "game/world/level_geometry.gd", "game/world/perimeter.gd", "game/vehicles/er2k_train_visual.gd",
+           "tools/export_arena_map.gd", "tools/generate_arena_map.py",
            "tools/godot.sh", "project.godot", "assets/fonts/Pangolin-Regular.ttf"]
 FONT = ROOT / "assets/fonts/Pangolin-Regular.ttf"
 PAPER, INK, SNOW, ROAD = "#f5f2e9", "#263e49", "#eaf0f1", "#7e8d94"
@@ -175,6 +176,12 @@ def render(data, output, digest):
         kind=item["kind"]; size=item["size"]; box=rect(item["center"],[size[0],size[2]])
         if kind in ("snow","snow_bank"):
             d.rect(box,"#fdfefe","#b7cbd4",1)
+        elif kind.startswith("perimeter_"):
+            fill = "#38715b" if kind in ("perimeter_train", "perimeter_gangway") else "#42668c" if kind=="perimeter_police" else "#7c8783"
+            x0, y0 = max(left, box[0]), max(top, box[1])
+            x1, y1 = min(left+mw, box[0]+box[2]), min(top+mh, box[1]+box[3])
+            if x1 > x0 and y1 > y0:
+                d.rect((x0,y0,x1-x0,y1-y0),fill)
         elif kind in ("panel","panel_low","garage","kiosk","shop24","pavilion","parked_car","props","fence"):
             fill = "#4b626b" if kind in ("panel","panel_low") else "#b6a995" if kind=="garage" else "#ad957a" if kind=="parked_car" else "#9ea9a6"
             if kind=="kiosk": fill=ORANGE

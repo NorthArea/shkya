@@ -11,6 +11,7 @@ const Patrols = preload("res://game/world/patrols.gd")   # EXT-01 N: полиц�
 const Buildings = preload("res://game/world/buildings.gd")   # CITY-02 B: дома, подъезды, крыши
 const EnvDress = preload("res://game/world/environment_dress.gd")   # CITY-02 E: валы, деревья, тротуары, провода
 const Skyline = preload("res://game/world/skyline.gd")   # CITY-02 E: панорама за краем карты
+const Perimeter = preload("res://game/world/perimeter.gd")
 const SnowField = preload("res://game/world/snow_field.gd")   # DRIVE-02 (C10): форма валов для вида и колёс
 
 const WALL_HEIGHT := 12.0
@@ -74,6 +75,7 @@ func _ready() -> void:
 	var solids := Layout.all_solids()
 	for i in solids.size():
 		_build_solid(i, solids[i])
+	add_child(Perimeter.new())
 	_build_canopy()
 	_build_entrance()
 	_build_surfaces()
@@ -132,6 +134,9 @@ func _build_solid(index: int, spec: Array) -> void:
 	var xz: Vector2 = spec[2]
 	var size: Vector3 = spec[3]
 	var body := Greybox.solid_box(spec[0] if index < Layout.SOLIDS.size() else "%s_%d" % [spec[0], index], Vector3(xz.x, size.y * 0.5, xz.y), size, Greybox.COLORS.get(kind, Color.GRAY))
+	# These boxes are slices of continuous structures, even when one slice is small.
+	if kind in ["perimeter_wall", "perimeter_shutter", "perimeter_train", "perimeter_gangway"]:
+		body.set_meta(&"camera_occluder", true)
 	# BREAK-03 (C11): окружение, которое ломается, — здесь только облик; коллизию слоя 6 строит Breakables, облик
 	# (узел и экземпляры пакетов EnvDress) записан в break_visuals под id записи.
 	var breakable: Array = Layout.env_break_at(index)
@@ -155,6 +160,14 @@ func _build_solid_look(index: int, spec: Array, body: StaticBody3D) -> void:
 	var size: Vector3 = spec[3]
 	var mesh := body.get_child(1) as MeshInstance3D
 	match kind:
+		"perimeter_train", "perimeter_gangway", "perimeter_police", "perimeter_sign", "perimeter_pedestal":
+			mesh.queue_free() # Rendered once by Perimeter; collision remains canonical.
+		"perimeter_wall":
+			mesh.material_override = Materials.plain(Color(0.41, 0.43, 0.42))
+		"perimeter_shutter":
+			mesh.material_override = Materials.plain(Color(0.19, 0.25, 0.25), 0.6)
+		"perimeter_barrier":
+			mesh.material_override = Materials.plain(Color(0.78, 0.78, 0.72))
 		"panel", "panel_low":
 			_dress_house(spec[0], kind == "panel_low", xz, size, index, body, mesh)
 		"garage":

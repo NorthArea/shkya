@@ -377,12 +377,14 @@ func _streets_out() -> void:
 		# Машины на ходу: пары фар (белые — навстречу камере с края, красные — от неё), бегут по своей полосе.
 		for k in 6:
 			var way := 1.0 if k % 2 == 0 else -1.0
-			var path := d3 * length * way
+			var traffic_start := 22.0 if along_x else 0.0
+			var traffic_length := length - traffic_start
+			var path := d3 * traffic_length * way
 			var lane := c3 * (-way) * width * 0.22
 			var custom := Color(2.0, _rand(i * 7 + k, 1), 0.012 + 0.008 * _rand(i * 7 + k, 2), 0)
 			var tint := Color(1.0, 0.92, 0.75, 0.8) if way < 0.0 else Color(1.0, 0.1, 0.05, 0.6)
 			for pair: float in [-0.7, 0.7]:
-				_lights.append([_path_xf(a3 + d3 * length * 0.5 + lane + c3 * pair + Vector3(0, 0.75, 0), path, 0.35), tint, custom])
+				_lights.append([_path_xf(a3 + d3 * (traffic_start + traffic_length * 0.5) + lane + c3 * pair + Vector3(0, 0.75, 0), path, 0.35), tint, custom])
 
 ## «Жигули» силуэтом: кузов, кабина с тёмными стёклами, снег на крыше и капоте (дальше 30 м деталей не видно).
 func _car(at: Vector3, yaw: float, color: Color) -> void:
@@ -481,7 +483,7 @@ func _belt() -> void:
 			pos += 8.0 + 8.0 * _rand(seed, 2)
 	# Гаражи: ряд за двором на юго-востоке и ряд за H2 на западе — воротами к арене.
 	_garages(Vector3(34, 0, 133), Vector3(1, 0, 0), Vector3(0, 0, -1), 16, 31)
-	_garages(Vector3(-110, 0, 48), Vector3(0, 0, 1), Vector3(1, 0, 0), 14, 47)
+	_garages(Vector3(-122, 0, 48), Vector3(0, 0, 1), Vector3(1, 0, 0), 14, 47)
 	# Бетонный забор плитами за H10 и гаражами улицы C; разрыв — проезд улицы D.
 	var x := -98.0
 	var k := 0

@@ -26,6 +26,9 @@ func _initialize() -> void:
 			"size": _point(spec[3]), "label": road_names.get(spec[0], "")})
 	for spec in Layout.all_solids():
 		data.solids.append(_solid(spec[0], spec[1], spec[2], spec[3]))
+		if spec[0] == "LeninPoliceCar":
+			_landmark(data, "police_exit", "Полицейское перекрытие", spec[2], "post")
+	_landmark(data, "rail_exit", "ЭР2К • переезд закрыт", Layout.TRAIN_CENTRE, "place")
 	for spec in Layout.BREAKABLES:
 		var item := _solid(String(spec[0]), String(spec[1]), spec[2], spec[3])
 		item["yaw"] = spec[4]

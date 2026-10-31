@@ -164,6 +164,8 @@ func exclude_thin_solids(root: Node) -> void:
 			_thin[(body as StaticBody3D).get_rid()] = body
 
 static func _is_thin(body: Node) -> bool:
+	if body.get_meta(&"camera_occluder", false):
+		return false
 	var shapes := 0
 	for child in body.get_children():
 		if not (child is CollisionShape3D):

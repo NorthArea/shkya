@@ -535,7 +535,153 @@ static func decor_solids() -> Array:
 
 ## SOLIDS + декор: для геометрии и проверок свободного места.
 static func all_solids() -> Array:
-	return SOLIDS + decor_solids()
+	return SOLIDS + decor_solids() + perimeter_solids()
+
+# PERIMETER-01: permanent scenery. Existing SOLIDS/decor indices stay stable (C11).
+# Every collider is an ordinary canonical AABB; curved stock is cut into inscribed
+# strips so navigation, coin placement, camera and physics see the same geometry.
+const ER2K = preload("res://game/vehicles/er2k_train_visual.gd")
+const TRAIN_COUNT := 10
+const TRAIN_CENTRE := Vector2(-100.2, 32.0)
+const TRAIN_CURVE := 0.0016
+const PERIMETER_STRIP := 0.5
+const PERIMETER_WALLS := [
+	[Vector2(-99.2, 10), Vector2(-86, -30), 0.65, 4.2],
+	[Vector2(-99.2, 110), Vector2(-89, 110), 0.7, 4.2],
+	[Vector2(99, 18), Vector2(96, 18), 0.55, 4.2],
+	[Vector2(99, 46), Vector2(99, 49), 0.55, 4.2],
+	[Vector2(99, 49), Vector2(89.8, 49), 0.55, 4.2],
+	# Transverse returns close the rear strip between shutter and map edge.
+	[Vector2(99, 18), Vector2(100.4, 18), 0.55, 4.2],
+	[Vector2(99, 46), Vector2(100.4, 46), 0.55, 4.2],
+	# Local post sidewalls cover the outside corners of both transverse returns.
+	[Vector2(99.2, 5), Vector2(99.2, 18), 0.55, 4.2],
+	[Vector2(99.2, 46), Vector2(99.2, 62), 0.55, 4.2],
+	[Vector2(96, 18), Vector2(96, 14.8), 0.55, 4.2],
+	[Vector2(89.8, 49), Vector2(89.8, 60.2), 0.55, 4.2],
+]
+const PERIMETER_WARNINGS := [
+	[Vector2(-52, 22), PI * 0.5, "ПЕРЕЕЗД ЗАКРЫТ", "СКВОЗНОГО ПРОЕЗДА НЕТ"],
+	[Vector2(49, 42), -PI * 0.5, "ПРОЕЗД ЗАКРЫТ", "РАЗВОРОТ ПЕРЕД ПОСТОМ"],
+]
+static var _perimeter_cache: Array = []
+static var _train_cache: Array = []
+
+## [centre x/z, yaw]. Equal distances along the track, not equal Z intervals.
+static func train_cars() -> Array:
+	if not _train_cache.is_empty():
+		return _train_cache
+	for i in TRAIN_COUNT:
+		var distance := (i - 4) * ER2K.CAR_LENGTH
+		var p := train_track(distance)
+		var tangent := train_track(distance + 0.01) - train_track(distance - 0.01)
+		_train_cache.append([p, atan2(tangent.x, tangent.y)])
+	return _train_cache
+
+static func train_track(distance: float) -> Vector2:
+	if distance >= 0.0:
+		return TRAIN_CENTRE + Vector2(0, distance)
+	var lo := 0.0
+	var hi := -distance
+	for iteration in 28:
+		var u := (lo + hi) * 0.5
+		var k := TRAIN_CURVE * 2.0
+		var slope := k * u
+		var root := sqrt(1.0 + slope * slope)
+		var arc := 0.5 * (u * root + log(slope + root) / k)
+		if arc < -distance:
+			lo = u
+		else:
+			hi = u
+	var u := (lo + hi) * 0.5
+	return TRAIN_CENTRE + Vector2(-TRAIN_CURVE * u * u, -u)
+
+static func _perimeter_cross_section(corners: Array[Vector2], z: float) -> Vector2:
+	var lo := INF
+	var hi := -INF
+	for j in 4:
+		var a := corners[j]
+		var b := corners[(j + 1) % 4]
+		if z < minf(a.y, b.y) - 0.00001 or z > maxf(a.y, b.y) + 0.00001:
+			continue
+		if absf(b.y - a.y) < 0.00001:
+			lo = minf(lo, minf(a.x, b.x))
+			hi = maxf(hi, maxf(a.x, b.x))
+		else:
+			var x := lerpf(a.x, b.x, (z - a.y) / (b.y - a.y))
+			lo = minf(lo, x)
+			hi = maxf(hi, x)
+	return Vector2(lo, hi)
+
+static func _perimeter_obb(out: Array, id: String, kind: String, centre: Vector2, width: float, length: float, height: float, yaw: float) -> void:
+	var u := Vector2(cos(yaw), -sin(yaw)) * width * 0.5
+	var v := Vector2(sin(yaw), cos(yaw)) * length * 0.5
+	var corners: Array[Vector2] = [centre - u - v, centre + u - v, centre + u + v, centre - u + v]
+	# Cross-section bounds change slope at every vertex. Keep those cuts even
+	# for a short, almost straight gangway, whose middle otherwise disappears.
+	var cuts: Array[float] = []
+	for p in corners:
+		cuts.append(p.y)
+	cuts.sort()
+	var index := 0
+	for interval in range(cuts.size() - 1):
+		var z0 := cuts[interval]
+		var z1 := cuts[interval + 1]
+		if z1 - z0 <= 0.000001:
+			continue
+		var count := maxi(1, ceili((z1 - z0) / PERIMETER_STRIP))
+		for j in count:
+			var a := lerpf(z0, z1, float(j) / count)
+			var b := lerpf(z0, z1, float(j + 1) / count)
+			var ca := _perimeter_cross_section(corners, a)
+			var cb := _perimeter_cross_section(corners, b)
+			var left := maxf(ca.x, cb.x)
+			var right := minf(ca.y, cb.y)
+			if right - left > 0.001:
+				out.append([id + "_%02d" % index, kind, Vector2((left + right) * 0.5, (a + b) * 0.5), Vector3(right - left, height, b - a)])
+			index += 1
+
+static func perimeter_solids() -> Array:
+	if not _perimeter_cache.is_empty():
+		return _perimeter_cache
+	var out := []
+	var cars := train_cars()
+	for i in cars.size():
+		var car: Array = cars[i]
+		# Full-width body ends at the eave; the roof/pantograph never enlarge collision.
+		_perimeter_obb(out, "RailCoach%d" % i, "perimeter_train", car[0], ER2K.BODY_WIDTH, ER2K.BODY_LENGTH, ER2K.EAVE, car[1])
+		if i > 0:
+			var prev: Array = cars[i - 1]
+			var a: Vector2 = prev[0] + Vector2(sin(prev[1]), cos(prev[1])) * ER2K.HALF_BODY
+			var b: Vector2 = car[0] - Vector2(sin(car[1]), cos(car[1])) * ER2K.HALF_BODY
+			var mid := (a + b) * 0.5
+			# Solid, visible gangway joins the actual ends, including their curve offset.
+			_perimeter_obb(out, "RailGangway%d" % i, "perimeter_gangway", mid, 2.6, a.distance_to(b) + 0.08, 3.5, atan2(b.x - a.x, b.y - a.y))
+	for i in PERIMETER_WALLS.size():
+		var wall: Array = PERIMETER_WALLS[i]
+		var a: Vector2 = wall[0]
+		var b: Vector2 = wall[1]
+		# Axial runs are one exact union box: no internal seams for shape sweeps.
+		if a.x == b.x or a.y == b.y:
+			out.append(["PerimeterWall%d_0" % i, "perimeter_wall", (a + b) * 0.5, Vector3(absf(a.x - b.x) + wall[2], wall[3], absf(a.y - b.y) + wall[2])])
+			continue
+		# Diagonal masonry keeps its visible stepped outline.
+		var count := ceili(a.distance_to(b) / 0.4)
+		for j in count:
+			var p := a.lerp(b, float(j) / count)
+			var q := a.lerp(b, float(j + 1) / count)
+			out.append(["PerimeterWall%d_%d" % [i, j], "perimeter_wall", (p + q) * 0.5, Vector3(absf(p.x - q.x) + wall[2], wall[3], absf(p.y - q.y) + wall[2])])
+	out.append(["LeninEastShutter", "perimeter_shutter", Vector2(99, 32), Vector3(0.55, 4.2, 28.2)])
+	out.append(["LeninPoliceCar", "perimeter_police", Vector2(91, 32), Vector3(1.62, 1.45, 4.13)])
+	for z in [25.5, 38.5]:
+		out.append(["PoliceBarrier%d" % int(z), "perimeter_barrier", Vector2(91, z), Vector3(0.8, 1.1, 6.0)])
+	for z in [24.0, 40.0]:
+		out.append(["CrossingPedestal%d" % int(z), "perimeter_pedestal", Vector2(-90, z), Vector3(0.6, 1.25, 0.6)])
+	for i in PERIMETER_WARNINGS.size():
+		var warning: Array = PERIMETER_WARNINGS[i]
+		out.append(["ExitWarning%d" % i, "perimeter_sign", warning[0], Vector3(0.12, 3.1, 0.12)])
+	_perimeter_cache = out
+	return out
 
 static func ground_point(id: StringName) -> Vector3:
 	match id:
