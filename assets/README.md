@@ -36,3 +36,5 @@
 | `audio/radio/` — музыка двух автомобильных станций и настройка приёмника | Cold Funk — Kevin MacLeod / Incompetech; Beethoven Moonlight I — Paul Pitman / Musopen; Chopin Op. 9 № 1 — Olga Gurevich / Musopen. Точные записи, ссылки и атрибуция — [README](audio/radio/README.md). Настройка — собственный детерминированный синтез, 31.10.2026 | Cold Funk — CC BY 4.0, атрибуция в настройках и README; классические произведения и конкретные записи — public domain / PD-author Musopen; настройка — собственная работа. Мастера перекодированы, громкость адаптирована, темп сохранён |
 
 - `art/achievements/drone_silence.svg`, `alarm_clock.svg`: собственные векторные иллюстрации (31.10.2026), дрон и автомобильная сигнализация; сторонние материалы не использованы.
+
+- `game/world/shaders/apartment_interior.gdshaderinc` и интерьерные ветки `facade.gdshader` / `balcony_glass.gdshader`: собственная аналитическая геометрия мебели, тюля и штор (01.11.2026), без сторонних моделей, текстур и новых источников света.

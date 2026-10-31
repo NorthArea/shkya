@@ -318,7 +318,7 @@ func _balcony(h: Dictionary, f: Dictionary, u: float, storey: int, top: bool, lo
 			_put("snow", _box_xf(Vector3(w - inner * 2.0, 0.04 + 0.04 * _rand(seed, 22), 0.09), u, y + rh + 0.03, wall + side * (d - 0.03), long_x))
 		_clutter_open(h, f, u, y, w, d, seed)
 	else:
-		_glass_frames(f, u, y + rh, w - inner * 2.0, floor_h - rh - 0.12, d, glazing, seed)
+		_glass_frames(f, u, y + rh, w - inner * 2.0, floor_h - rh - 0.12, d, glazing, seed, rh)
 		_clutter_glazed(f, u, y, w, d, seed)
 	if _rand(seed, 30) < 0.05:
 		_dish(f, u + w * 0.3, y + rh + 0.15, d + 0.18, seed)
@@ -330,7 +330,7 @@ func _balcony(h: Dictionary, f: Dictionary, u: float, storey: int, top: bool, lo
 		_icicles(f, u - w * 0.5 + 0.1, u + w * 0.5 - 0.1, y + floor_h - 0.12, d - 0.05, 0.45, seed)
 
 ## Остекление лоджии над ограждением: стекло (горит у ~30 %) и импосты своей эпохи.
-func _glass_frames(f: Dictionary, u: float, y0: float, w: float, gh: float, d: float, glazing: String, seed: int) -> void:
+func _glass_frames(f: Dictionary, u: float, y0: float, w: float, gh: float, d: float, glazing: String, seed: int, floor_offset: float) -> void:
 	var long_x: bool = f.long_x
 	var wall: float = f.wall
 	var side: float = f.side
@@ -340,7 +340,10 @@ func _glass_frames(f: Dictionary, u: float, y0: float, w: float, gh: float, d: f
 	if lit:
 		var c: Color = GLASS_LIT[int(_rand(seed * 13, 8) * GLASS_LIT.size()) % GLASS_LIT.size()]
 		glass = Color(c.r, c.g, c.b, 1.0)
-	_put("glass", _box_xf(Vector3(w - 0.06, gh, 0.03), u, y0 + gh * 0.5, wall + side * (d - 0.03), long_x), glass)
+	# Only balcony panes receive a room. Stairwell glass keeps zero custom data.
+	# Custom = pane width, pane height, height above floor, deterministic apartment seed.
+	var apartment := Color(w - 0.06, gh, floor_offset, _rand(seed, 53))
+	_put("glass", _box_xf(Vector3(w - 0.06, gh, 0.03), u, y0 + gh * 0.5, wall + side * (d - 0.03), long_x), glass, apartment)
 	var frame := FRAME_WHITE
 	var custom := Color(0, 0.5, 0)
 	var sections := 3 + int(_rand(seed * 13, 5) * 2.0)
@@ -860,7 +863,7 @@ func _emit(node_name: String, store: Dictionary, origin: Vector3, near: bool) ->
 	var mm := MultiMesh.new()
 	mm.transform_format = MultiMesh.TRANSFORM_3D
 	mm.use_colors = spec[1] == "detail" or spec[1] == "glass"
-	mm.use_custom_data = spec[1] == "detail"
+	mm.use_custom_data = spec[1] == "detail" or spec[1] == "glass"
 	mm.mesh = _mesh(spec[0])
 	mm.instance_count = transforms.size()
 	for i in transforms.size():

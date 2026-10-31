@@ -1,4 +1,5 @@
 shader_type spatial;
+#include "res://game/world/shaders/apartment_interior.gdshaderinc"
 // Панельный фасад (ART-02): сетка панелей и окон в мировых координатах, часть окон светится тёплым,
 // грязь у земли, снег на крыше. Без текстур — всё процедурно.
 // CITY-02 B: швы панелей и кирпичная кладка с рельефом (нормали считаются здесь же), окна утоплены в стену —
@@ -206,14 +207,14 @@ void fragment() {
 					}
 				}
 				if (interior > 0.5 && px < 0.06) {   // вдали (пиксель > 6 см) комнату не считаем — не видна
-					vec3 inside = room(g, dir, cell, shop ? 5.0 : 3.6);
+					vec2 room_cell = cell + vec2(n.x * 13.0 + n.z * 29.0, floor(dot(world_pos, n) * 0.07));
+					vec3 inside;
+					if (shop) {
+						inside = room(g, dir, cell, 5.0);
+					} else {
+						inside = apartment_room(g, dir, room_cell, seed, vec3(window_spacing, floor_height, 3.6), vec4(wx0, wy0, ww, wh), 1.0 - step(0.035, px));
+					}
 					if (lit) {
-						// Шторы по краям у части окон и тюль: светятся мягче комнаты.
-						float curtain = hash(cell + 6.6);
-						float cw = 0.18 + 0.25 * hash(cell + 6.9);
-						bool drape = !shop && curtain < 0.55 && (g.x - wx0 < cw || wx0 + ww - g.x < cw);
-						vec3 drape_color = mix(vec3(0.95, 0.55, 0.35), vec3(0.75, 0.80, 0.55), step(0.3, curtain));
-						inside = drape ? drape_color * 0.9 : mix(inside, vec3(1.0), (!shop && curtain > 0.8) ? 0.45 : 0.0);
 						glass *= inside;
 					} else {
 						// Тёмное окно: еле видная комната и холодный отблеск неба под острым углом.
