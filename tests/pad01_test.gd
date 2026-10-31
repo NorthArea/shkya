@@ -166,10 +166,10 @@ func _hints_and_sticks() -> void:
 	await _key(KEY_CTRL)
 	await _frames(2)
 	check(not PadInput.pad_active and hud.prompt_label.text == "E — ПОГОВОРИТЬ", "hint: a keyboard key switches back to «E — ПОГОВОРИТЬ» (%s)" % hud.prompt_label.text)
-	await _button(JOY_BUTTON_DPAD_UP)   # вне меню крестовина ничего не делает, но устройство — снова геймпад
+	await _button(JOY_BUTTON_RIGHT_SHOULDER) # свободная пешая кнопка: ↑ теперь открывает телефон
 	await _frames(2)
 	check(PadInput.pad_active and hud.prompt_label.text == "X — ПОГОВОРИТЬ", "hint: a gamepad button switches to «X — …» again")
-	check(not flow.is_dialog_open(), "hint: d-pad outside menus opens nothing")
+	check(not flow.is_dialog_open() and not world.get_node("Phone").is_open(), "hint: unused shoulder button leaves game UI closed")
 	# Левый стик — ходьба.
 	player.place(Layout.SPAWN, Layout.SPAWN_YAW)
 	await _frames(4)

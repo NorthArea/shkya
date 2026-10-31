@@ -81,9 +81,13 @@ func is_open() -> bool:
 func can_open() -> bool:
 	if not is_inside_tree() or _opened or get_tree().paused or not is_instance_valid(world) or not world.is_inside_tree():
 		return false
-	if world.control_mode != &"on_foot" or world.ui_blocking or not world.player.input_enabled:
+	if world.ui_blocking:
 		return false
-	if world.is_stealth_failing() or world.mission.state == MissionDirector.COMPLETE:
+	if world.control_mode == &"on_foot" and not world.player.input_enabled:
+		return false
+	if world.control_mode == &"in_car" and world.car.driver != world.player:
+		return false
+	if world.is_stealth_failing():
 		return false
 	var intro := world.get_node_or_null("Intro")
 	if intro and intro.is_running():
@@ -194,13 +198,21 @@ func _refresh_hint() -> void:
 	if hint_button == null:
 		return
 	hint_button.visible = not _opened and can_open()
-	var key := "View" if PadInput.pad_active else "P"
+	var key := "↑" if PadInput.pad_active else "P"
 	hint_button.text = "%s · ТЕЛЕФОН%s" % [key, " · %d" % unread if unread > 0 else ""]
 
 func _input(event: InputEvent) -> void:
 	if event is InputEventKey and event.echo:
 		if _opened:
 			get_viewport().set_input_as_handled()
+		return
+	if event.is_action_pressed(&"phone_open"):
+		if _opened or open_phone():
+			get_viewport().set_input_as_handled()
+		return
+	if event.is_action_pressed(&"phone_close") and _opened:
+		close_phone()
+		get_viewport().set_input_as_handled()
 		return
 	if event.is_action_pressed(&"phone"):
 		if _opened:
@@ -225,10 +237,10 @@ func _input(event: InputEvent) -> void:
 			turn_page(1 if key in [KEY_DOWN, KEY_RIGHT] else -1)
 	elif event is InputEventJoypadButton and event.pressed:
 		match event.button_index:
-			JOY_BUTTON_DPAD_LEFT, JOY_BUTTON_LEFT_SHOULDER: select_tab(&"news")
-			JOY_BUTTON_DPAD_RIGHT, JOY_BUTTON_RIGHT_SHOULDER: select_tab(&"sms")
-			JOY_BUTTON_DPAD_UP: turn_page(-1)
-			JOY_BUTTON_DPAD_DOWN: turn_page(1)
+			JOY_BUTTON_LEFT_SHOULDER: select_tab(&"news")
+			JOY_BUTTON_RIGHT_SHOULDER: select_tab(&"sms")
+			JOY_BUTTON_DPAD_LEFT: turn_page(-1)
+			JOY_BUTTON_DPAD_RIGHT: turn_page(1)
 			JOY_BUTTON_A:
 				var focus := get_viewport().gui_get_focus_owner()
 				if focus is Button and overlay.is_ancestor_of(focus):
@@ -369,7 +381,7 @@ func _build() -> void:
 	var close := _button("УБРАТЬ ТЕЛЕФОН")
 	close.pressed.connect(close_phone)
 	column.add_child(close)
-	column.add_child(_label("P / View — убрать    ↑↓ — листать", 19))
+	column.add_child(_label("P / ↓ — убрать   ←→ — листать   LB/RB — разделы", 19))
 	overlay.hide()
 
 func _fit_panel() -> void:

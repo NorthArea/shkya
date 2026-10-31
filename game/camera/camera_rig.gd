@@ -40,6 +40,7 @@ const PITCH_MIN := -1.1
 const PITCH_MAX := 0.35
 const FOLLOW_SHARPNESS := 14.0
 const CHASE_SHARPNESS := 3.0
+const CAR_LOOK_RETURN_DELAY := 1.5
 
 @export var mouse_sensitivity := 0.0025
 
@@ -207,8 +208,9 @@ func _physics_process(delta: float) -> void:
 		return
 	# Правый стик геймпада — как мышь (решение владельца 28.10.2026, вечер).
 	var stick := Input.get_vector(&"look_left", &"look_right", &"look_up", &"look_down")
-	if stick.length_squared() > 0.04 and profile != &"in_car":
+	if stick.length_squared() > 0.04:
 		apply_mouse(stick * STICK_LOOK_SPEED * delta / mouse_sensitivity)
+	_mouse_idle += delta
 	if profile == &"on_foot" and target is CharacterBody3D and (target as CharacterBody3D).is_on_floor():
 		_ground_y = target.global_position.y
 	var dodge := _dodge_target() if profile == &"on_foot" and not is_talk_framing() else 0.0
@@ -224,9 +226,9 @@ func _physics_process(delta: float) -> void:
 		_swing_sign = 0.0
 	elif profile == &"in_car":
 		# Камера преследования: плавно встаёт за машиной по её курсу.
-		yaw = lerp_angle(yaw, target.global_rotation.y, 1.0 - exp(-CHASE_SHARPNESS * delta))
+		if _mouse_idle >= CAR_LOOK_RETURN_DELAY:
+			yaw = lerp_angle(yaw, target.global_rotation.y, 1.0 - exp(-CHASE_SHARPNESS * delta))
 	else:
-		_mouse_idle += delta
 		_auto_follow(delta)
 	var fov: float = PROFILES[profile]["fov"]
 	if profile == &"in_car" and target is Lada:
