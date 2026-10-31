@@ -14,7 +14,7 @@ extends Lada
 const MASS := 1000.0                            # ВАЗ-2105 снаряжённая ≈ 995 кг
 const INERTIA := Vector3(1600.0, 1700.0, 420.0) # тангаж (x), рыскание (y), крен (z), кг·м²: брусок 1,62 × 1,4 × 4,13 м
 const COM := Vector3(0.0, 0.55, 0.0)            # центр масс над точкой опоры тела (начало координат — земля)
-const WHEEL_R := 0.30                           # = LadaVisual SEDANS vaz2105 wheel_r
+const WHEEL_R := 0.30                           # физический радиус прежней калибровки прототипа; облик — ВАЗ-2106
 const REST_LEN := 0.20                          # длина пружины, когда тело стоит ровно на земле (y = 0)
 const TRAVEL := 0.25                            # ход подвески
 const RIDE_HZ := 1.5                            # собственная частота подвески на угол
@@ -67,6 +67,7 @@ func _ready() -> void:
 	if ResourceLoader.exists(SNOW_FIELD_PATH):
 		_snow = load(SNOW_FIELD_PATH)
 		_ray_mask = 1 | 32   # валы — по профилю SnowField, коробки слоя 64 дали бы ступеньку
+	# Сохраняем прежние плечи сил и развесовку; смена модели касается только облика.
 	var spots := LadaVisual.wheel_spots(&"vaz2105")
 	var front_z := INF
 	var rear_z := -INF
@@ -286,10 +287,11 @@ func _wall_bounce(before: Vector3, com: Vector3) -> void:
 	var spin := b * ((b.transposed() * (best.get_position() - com).cross(impulse)) / INERTIA)
 	_ang_vel.y = clampf(_ang_vel.y + spin.y * WALL_SPIN, -2.5, 2.5)
 
-## Колёса облика — по длине пружины (центр колеса = крепление − длина).
+## Нижняя точка шины совпадает с прежним контактом луча; радиус облика не меняет физику прототипа.
 func _place_wheels() -> void:
+	var visual_radius: float = LadaVisual.SEDANS[LadaVisual.PLAYER_MODEL]["wheel_r"]
 	for i in mini(_pivots.size(), _len.size()):
-		_pivots[i].position.y = _mounts[i].y - _len[i]
+		_pivots[i].position.y = _mounts[i].y - _len[i] + visual_radius - WHEEL_R
 
 func reset_to(point: Vector3, facing_yaw: float) -> void:
 	super.reset_to(point, facing_yaw)

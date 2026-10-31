@@ -878,4 +878,10 @@ func _finish(code := -1) -> void:
 	print("TRAFFIC: %d checks, %d failures" % [checks, failures.size()])
 	for f in failures:
 		print("  FAIL: ", f)
+	if is_instance_valid(main):
+		main.queue_free()
+	await process_frame
+	# Остановленный звук освобождается аудиопотоком по часам, как в smoke_runner.
+	OS.delay_msec(100)
+	await process_frame
 	quit(code if code >= 0 else (0 if failures.is_empty() else 1))

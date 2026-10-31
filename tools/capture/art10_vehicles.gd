@@ -2,11 +2,12 @@ extends SceneTree
 ## ART-10: неподвижные реальные потребители Lada/TrafficCar, одинаковый свет и ракурсы до/после.
 ## tools/run.command --fixed-fps 60 --resolution 1920x1080 --script tools/capture/art10_vehicles.gd -- --out=ART-10/after
 ## Это стенд формы. Игровой город/движение и ручной проход проверяются отдельно.
+## -- --occupied: реальная посадка водителя для проверки волос, крыши и окон.
 const LadaScript = preload("res://game/vehicles/lada.gd")
 const TrafficScript = preload("res://game/vehicles/traffic_car.gd")
 const RigScript = preload("res://game/camera/camera_rig.gd")
 const Materials = preload("res://game/world/materials.gd")
-const MODELS := ["vaz2105", "vaz2106", "volga"]
+const MODELS := ["player_vaz2106", "traffic_vaz2106", "volga"]
 const SHOTS := {
 	"front": Vector3(0, 1.30, -7.6),
 	"front_quarter": Vector3(-5.2, 2.35, -6.4),
@@ -22,9 +23,12 @@ var caption: Label
 var saved := 0
 var failures := 0
 var measurements := {}
+var occupied := false
 
 func _initialize() -> void:
 	for argument in OS.get_cmdline_user_args():
+		if argument == "--occupied":
+			occupied = true
 		if argument.begins_with("--out="):
 			output_dir = "res://builds/screenshots".path_join(argument.trim_prefix("--out="))
 	call_deferred("_capture")
@@ -36,7 +40,7 @@ func _capture() -> void:
 	await process_frame
 	for model in MODELS:
 		var actor: Node3D
-		if model == "vaz2105":
+		if model == "player_vaz2106":
 			actor = LadaScript.new()
 		else:
 			var traffic := TrafficScript.new()
@@ -45,6 +49,11 @@ func _capture() -> void:
 		stage.add_child(actor)
 		# Ready построил штатный облик и коллизию. На стенде физика и эффекты движения остановлены.
 		actor.process_mode = Node.PROCESS_MODE_DISABLED
+		if actor is Lada and occupied:
+			var occupant := Node3D.new()
+			actor.add_child(occupant)
+			actor.enter(occupant)
+			actor.visual.get_node("Body/Driver").process_mode = Node.PROCESS_MODE_ALWAYS
 		for particles in actor.find_children("*", "CPUParticles3D", true, false):
 			particles.emitting = false
 		measurements[model] = _measure(actor)

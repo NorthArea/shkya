@@ -1,6 +1,6 @@
 class_name Lada
 extends CharacterBody3D
-## Белая «Лада» (DRIVE-01): аркадная езда на CharacterBody3D, вход и выход по E (C4).
+## Светло-бежевая ВАЗ-2106 (DRIVE-01): аркадная езда на CharacterBody3D, вход и выход по E (C4).
 ## Модель: продольная скорость от газа/тормоза, поворот зависит от скорости,
 ## боковая скорость гасится сцеплением — на мокрой дороге остаётся лёгкий занос, ручник его усиливает.
 
@@ -50,7 +50,7 @@ var _breakables: Node   # BREAK-01
 ## кренится облик Visual: высота над землёй snow_lift по SnowField, крен/тангаж — по высотам четырёх колёс.
 ## Перенос веса (DRIVE-03, вариант A): нос клюёт при торможении, корма приседает при разгоне, крен наружу в повороте —
 ## пружина с затуханием поверх наклона по снегу, тоже поворотом Visual. Константы PLAY-02 выше не меняются.
-const WHEEL_TRACK := 0.69       # м: половина колеи (lada_visual, vaz2105)
+const WHEEL_TRACK := 0.69       # м: половина колеи (LadaVisual.PLAYER_MODEL, ВАЗ-2106)
 const WHEEL_AXLE := 1.21        # м: от центра до оси
 const WHEELS: Array[Vector2] = [Vector2(-0.69, -1.21), Vector2(0.69, -1.21), Vector2(-0.69, 1.21), Vector2(0.69, 1.21)]   # (x, z) ЛП, ПП, ЛЗ, ПЗ; перед — −Z
 const SNOW_DRAG := 4.0          # 1/(м·с): замедление SNOW_DRAG · глубина · max(|v|, SNOW_DRAG_MIN_SPEED)
@@ -121,7 +121,7 @@ func _ready() -> void:
 	collider.shape = shape
 	collider.position.y = SIZE.y * 0.5
 	add_child(collider)
-	visual = LadaVisual.build()  # облик белой «Лады» — ART-03; водитель, фары и огни — POLISH-02
+	visual = LadaVisual.build()  # светло-бежевая ВАЗ-2106; водитель, фары и огни — POLISH-02
 	add_child(visual)
 	_update_lights()
 	var spray := SlushSpray.new()  # брызги каши из-под колёс — PLAY-03

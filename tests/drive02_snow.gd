@@ -470,4 +470,7 @@ func _finish() -> void:
 		main.queue_free()
 	for i in 3:
 		await process_frame
+	# Остановленный звук освобождается аудиопотоком по часам, как в smoke_runner.
+	OS.delay_msec(100)
+	await process_frame
 	quit(0 if failures.is_empty() else 1)

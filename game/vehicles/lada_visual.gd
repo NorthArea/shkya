@@ -1,10 +1,9 @@
 extends RefCounted
-## Облик «Лады» (ART-03, POLISH-02; CITY-02 V): ВАЗ-2105 по кадрам 01, 04, 05 — настоящий силуэт трёхобъёмника
-## лофтом сечений (капот, наклонные стойки, скаты крыши, арки колёс), алюминиевые бамперы с пластиковыми концами,
-## чёрная решётка, прямоугольные фары, задние фонари из трёх секций, зеркала, дворники, ручки, антенна, номер.
-## Здесь же — общие седаны: «шестёрка» (четыре круглые фары, хром) и «Волга» ГАЗ-24 для машин кольца (traffic_car.gd).
+## Машина героя — светло-бежевая ВАЗ-2106: четыре круглые фары, хромированные бамперы и обводы, классические колёса.
+## Общие седаны: припаркованные ВАЗ-2105, «шестёрки» и «Волга» ГАЗ-24 для машин кольца (traffic_car.gd).
+## Силуэт трёхобъёмника — лофт сечений: капот, наклонные стойки, скаты крыши, арки колёс.
 ## Только внешний вид: коллизия, физика и зона входа остаются в lada.gd. Перед — −Z, начало — на земле.
-## Меши общие (VehicleMesh.cached): белая «Лада» игрока, ≈ 16 припаркованных «Жигулей» и машины кольца делят кузов;
+## Меши общие (VehicleMesh.cached): «Лада» игрока, ≈ 16 припаркованных «Жигулей» и машины кольца делят меши своих моделей;
 ## на машину — свои материалы краски, стёкол и фар (перекрытия поверхностей).
 
 const VehicleMesh = preload("res://game/vehicles/vehicle_mesh.gd")
@@ -12,6 +11,8 @@ const LadaDriver = preload("res://game/vehicles/lada_driver.gd")
 
 const PLATE := "н382кх 154"
 const WHITE := Color(0.86, 0.85, 0.80)
+const BEIGE := Color(0.84, 0.79, 0.68)
+const PLAYER_MODEL := &"vaz2106"
 
 ## Огни (POLISH-02, п. 8): без водителя фары погашены, задние тусклые; с водителем горят; при торможении ярче.
 enum Lights { OFF, ON, BRAKE }
@@ -21,11 +22,13 @@ const BEAM_RANGE := 22.0
 const BEAM_ENERGY := 6.0
 const BEAM_COLOR := Color(1.0, 0.91, 0.76)   # тёплый белый лампы накаливания
 
-## Водитель на левом месте; y — линия «ног» холста. Камера in_car (высота ≈2,4 м, 5,1 м сзади) видит
-## в заднее стекло на этой глубине полосу 0,94–1,31 м: в неё вписаны шапка (холст y≈42 → 1,30 м)
-## и воротник (y 270–330 → 1,01–0,93 м). Чуть сдвинут назад от «настоящего» кресла — иначе крыша срезает шапку.
-const DRIVER_AT := Vector3(-0.36, 0.598, 0.3)
-const DRIVER_HEIGHT := 1.05
+## Водитель на переднем левом месте ВАЗ-2106: z=−0,20 перед стойкой B (z=0,19), за рулём (z≈−0,53).
+## y — линия «ног» холста, не макушка.
+## По формуле LadaDriver y = DRIVER_AT.y + (FEET_Y − canvas_y) * DRIVER_HEIGHT / CANVAS_HEIGHT:
+## волосы (canvas_y≈42) на 1,30 м, воротник (270–330) на 1,015–0,940 м, внутри полосы боковых и лобового стёкол.
+## Даже прозрачный верх всего billboard на 1,3525 м, ниже нижней поверхности крыши (1,385 м).
+const DRIVER_AT := Vector3(-0.36, 0.615, -0.2)
+const DRIVER_HEIGHT := 0.75
 
 ## Линии стёкол (y, z) «пятёрки»: лобовое и заднее — как в ART-03/POLISH-02 (по ним вписан водитель).
 const WINDSHIELD_BOTTOM := Vector2(0.99, -0.83)
@@ -65,10 +68,13 @@ const SEDANS := {
 	},
 }
 
-## paint — цвет кузова; plate — номер ("" — без номера); player — фары, огни, водитель, выхлоп и вращение колёс.
-static func build(paint := WHITE, plate := PLATE, player := true, rust := 0.8, snow_depth := 0.08) -> Node3D:
+## paint — цвет кузова; plate — номер ("" — без номера); player — ВАЗ-2106 с фарами, водителем и вращением колёс.
+## Парковки передают свой paint и player=false: сохраняют прежний ВАЗ-2105.
+static func build(paint := BEIGE, plate := PLATE, player := true, rust := 0.8, snow_depth := 0.08) -> Node3D:
 	var root := Node3D.new()
 	root.name = "Visual"
+	var model: StringName = PLAYER_MODEL if player else &"vaz2105"
+	var spec: Dictionary = SEDANS[model]
 	var head: Material = null
 	var tail: Material = null
 	if player:
@@ -79,20 +85,20 @@ static func build(paint := WHITE, plate := PLATE, player := true, rust := 0.8, s
 	# Стоящие машины — в снегу гуще и с инеем шире; у машины игрока стёкла почти чистые (видно водителя).
 	var snow := clampf(snow_depth * 4.0, 0.2, 0.8)
 	var paint_material := VehicleMesh.paint(paint, rust, 1.0, snow, 0.55)
-	var body := dress(root, &"vaz2105", paint_material, VehicleMesh.glass(0.03 if player else 0.07), head, tail, plate, snow_depth)
+	var body := dress(root, model, paint_material, VehicleMesh.glass(0.03 if player else 0.07), head, tail, plate, snow_depth)
 	var wheels: Array[Node3D] = []
 	var steer: Array[Node3D] = []
-	for spot in wheel_spots(&"vaz2105"):
+	for spot in wheel_spots(model):
 		var pivot := Node3D.new()
-		pivot.name = "WheelPivot"
+		pivot.name = "WheelPivot%d" % wheels.size()
 		pivot.position = spot
 		root.add_child(pivot)
-		var wheel := VehicleMesh.add_wheel(pivot, Vector3.ZERO, SEDANS[&"vaz2105"]["wheel_r"], SEDANS[&"vaz2105"]["wheel_w"], "steel")
+		var wheel := VehicleMesh.add_wheel(pivot, Vector3.ZERO, spec["wheel_r"], spec["wheel_w"], spec["wheel_style"])
 		wheels.append(wheel)
 		if spot.z < 0.0:
 			steer.append(pivot)
 	if player:
-		_beams(body)
+		_beams(body, model)
 		var driver: Node3D = LadaDriver.new()
 		driver.name = "Driver"
 		driver.character = "ilyusha"
@@ -100,19 +106,19 @@ static func build(paint := WHITE, plate := PLATE, player := true, rust := 0.8, s
 		driver.position = DRIVER_AT
 		driver.visible = false
 		body.add_child(driver)
-		var exhaust := VehicleMesh.exhaust(root, Vector3(-0.45, 0.29, 2.15))
+		var exhaust := VehicleMesh.exhaust(root, Vector3(-0.45, 0.29, float(spec["length"]) * 0.5 + 0.085))
 		exhaust.emitting = false
 		var motion := Motion.new()
 		motion.name = "Motion"
 		motion.wheels = wheels
 		motion.steer = steer
 		motion.body = body
-		motion.radius = SEDANS[&"vaz2105"]["wheel_r"]
+		motion.radius = spec["wheel_r"]
 		root.add_child(motion)
 		set_lights(root, Lights.OFF)
 	return root
 
-## Огни белой «Лады»: фары с лучами, задние фонари по режиму Lights; выхлоп — пока работает мотор (огни горят).
+## Огни «Лады»: фары с лучами, задние фонари по режиму Lights; выхлоп — пока работает мотор (огни горят).
 static func set_lights(visual: Node3D, mode: int) -> void:
 	var on := mode != Lights.OFF
 	for name in ["Body/BeamLeft", "Body/BeamRight"]:
@@ -513,11 +519,15 @@ static func snow_mesh(model: StringName, depth: float) -> ArrayMesh:
 	mesh = VehicleMesh.finish(b)
 	return VehicleMesh.store(key, mesh)
 
-static func _beams(body: Node3D) -> void:
-	for side in [["BeamLeft", -0.49], ["BeamRight", 0.49]]:
+static func _beams(body: Node3D, model: StringName) -> void:
+	var spec: Dictionary = SEDANS[model]
+	# Два луча от внешних фар; четыре стекла фар разделяют светящийся материал head.
+	var head_x := 0.635 if spec["front"] == "round4" else 0.535
+	var head_y := 0.77 if spec["front"] == "round4" else 0.765
+	for side in [["BeamLeft", -head_x], ["BeamRight", head_x]]:
 		var beam := SpotLight3D.new()
 		beam.name = side[0]
-		beam.position = Vector3(side[1], 0.70, -2.12)
+		beam.position = Vector3(side[1], head_y, -float(spec["length"]) * 0.5 - 0.06)
 		beam.rotation.x = deg_to_rad(-5.0)   # чуть вниз: пятно ложится на дорогу в 6–20 м впереди
 		beam.light_color = BEAM_COLOR
 		beam.light_energy = BEAM_ENERGY
