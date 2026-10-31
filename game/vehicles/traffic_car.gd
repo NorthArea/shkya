@@ -1,17 +1,18 @@
 class_name TrafficCar
 extends PathVehicle
-## Машина на кольце (ARENA-01, часть T; облик — CITY-02 V): «Жигули» (ВАЗ-2106), «Волга» (ГАЗ-24) или «Газель»
-## (ГАЗ-3302 с промтоварным фургоном). Седаны — общие меши LadaVisual (лофт сечений, свои силуэты и передки),
+## Машина на кольце (ARENA-01, часть T; облик — CITY-02 V): «Жигули» (ВАЗ-2106), «Волга» (ГАЗ-3110) или «Газель»
+## (ГАЗ-3302 с промтоварным фургоном). Седаны — общие меши соответствующих визуальных провайдеров,
 ## «Газель» — кабина с капотом-«мордой», рама и высокий фургон. Колёса с дисками и протектором крутятся, фары горят,
 ## габариты ярче при торможении, снег на крыше, выхлоп на морозе. kind задаётся до добавления в дерево.
 ## Скорость 9 м/с (C8). Перед — −Z.
 
 const VehicleMesh = preload("res://game/vehicles/vehicle_mesh.gd")
 const LadaVisual = preload("res://game/vehicles/lada_visual.gd")
+const Gaz3110 = preload("res://game/vehicles/gaz3110_visual.gd")
 
 const KINDS := {
 	&"zhiguli": {"size": Vector3(1.62, 1.44, 4.07), "wheelbase": 2.42, "radius": 0.32, "paint": Color(0.62, 0.12, 0.08), "plate": "в417ам 54"},
-	&"volga": {"size": Vector3(1.8, 1.48, 4.74), "wheelbase": 2.8, "radius": 0.34, "paint": Color(0.80, 0.72, 0.52), "plate": "к208ро 154"},
+	&"volga": {"size": Gaz3110.SIZE, "wheelbase": Gaz3110.WHEELBASE, "radius": Gaz3110.WHEEL_RADIUS, "paint": Color(0.80, 0.72, 0.52), "plate": "к208ро 154"},
 	&"gazelle": {"size": Vector3(2.05, 2.25, 5.5), "wheelbase": 2.9, "radius": 0.36, "paint": Color(0.16, 0.30, 0.55), "plate": "т655ес 54"},
 }
 
@@ -33,10 +34,26 @@ func _ready() -> void:
 func _build_visual() -> Node3D:
 	if kind == &"gazelle":
 		return _gazelle()
-	return _sedan(&"volga" if kind == &"volga" else &"vaz2106")
+	if kind == &"volga":
+		return _volga()
+	return _sedan(&"vaz2106")
 
 func _head() -> StandardMaterial3D:
 	return VehicleMesh.lamp(Color(1.0, 0.95, 0.80), Color(1.0, 0.90, 0.66), 2.2)
+
+func _volga() -> Node3D:
+	var spec: Dictionary = KINDS[&"volga"]
+	var root := Gaz3110.build(spec["paint"], spec["plate"], 0.1)
+	var body_mesh := root.get_node("Body/BodyMesh") as MeshInstance3D
+	var slots: Array = body_mesh.mesh.get_meta("slots", [])
+	body_mesh.set_surface_override_material(slots.find("head"), _head())
+	body_mesh.set_surface_override_material(slots.find("tail"), _tail)
+	# PathVehicle rotates the mesh's local Y axis; WheelPivot holds the fixed axle position.
+	for child in root.get_children():
+		if String(child.name).begins_with("WheelPivot"):
+			_wheels.append(child.get_node("Wheel") as Node3D)
+	VehicleMesh.exhaust(root, Vector3(0.58, 0.215, 2.36))
+	return root
 
 ## Седан: кузов LadaVisual в цвете машины, свои фары и габариты (_tail ярче при торможении).
 func _sedan(model: StringName) -> Node3D:
