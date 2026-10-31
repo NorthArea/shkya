@@ -30,6 +30,9 @@ extends Node3D
 ## ALARM_SPEED — сигнализация (сигнал car_alarm, мигают поворотники ALARM_SECONDS); дворовые контейнеры BINS и
 ## H10_BINS — хлопок крышек (сигнал bin_lid). Контейнеры у киоска (KioskBins, укрытие стелса) не реагируют.
 
+const VehicleImpact = preload("res://game/vehicles/vehicle_impact.gd")
+const VehicleDamage = preload("res://game/vehicles/vehicle_damage.gd")
+const LadaVisual = preload("res://game/vehicles/lada_visual.gd")
 const Layout = preload("res://game/world/layout.gd")
 const Materials = preload("res://game/world/materials.gd")
 const SNOW_PUFF_SHADER := preload("res://game/vehicles/slush_spray.gdshader")   # пыль — как у сбитого жителя
@@ -142,8 +145,10 @@ const FALL_ANGLE := PI * 0.48
 const LIE_SECONDS := 1.6
 const SINK_SECONDS := 0.7
 const DENT_SECONDS := 0.2
-const DENT_SHIFT := 0.18             # м: на сколько сдвигается смятая машина (облик и коллизия получают одну дельту)
-const DENT_SQUASH := 0.93
+const PARKED_MASS := 1045.0
+const PARKED_DRAG := 5.5
+const PARKED_YAW_DRAG := 3.0
+const PARKED_MASK := 1 | 2 | 4 | 32  # snow follows the same rule as the player car
 
 var objects: Array = []          # Breakable по порядку Layout.BREAKABLES
 var breaks := 0
@@ -230,6 +235,8 @@ func _add_env() -> void:
 		env_objects.append(b)
 		var entry: Dictionary = registry.get(b.id, {})
 		b.attach_env(entry)
+		if b.kind == &"parked":
+			b.register_vehicle()
 		for node: Node3D in entry.get("cut", []):
 			if not cut.has(node):
 				cut[node] = []
@@ -581,6 +588,8 @@ func car_contacts(car: CharacterBody3D, before: Vector3, throttle: float, delta:
 			continue
 		if b.kind in [&"parked", &"bins"]:
 			_react(hit.get_position(), speed)
+		if b.kind == &"parked":
+			other_hit = true   # solid even when the shared impulse has already marked it broken
 		var outcome := b.car_contact(speed, absf(throttle) > 0.05, delta, into)
 		if outcome == &"dent":
 			other_hit = true
@@ -656,6 +665,9 @@ func debris_breaks() -> int:
 
 ## Обломки после поломки: куски по виду, разлёт вверх и по dir; житель ближе DEBRIS_CLEAR — разлёт от него.
 func spawn_debris(b: Breakable, dir: Vector3) -> void:
+	# A dent keeps the native body intact; generic ENV beams would falsely depict fractured panels.
+	if b.mode == &"dent":
+		return
 	var live := {}
 	for d: Dictionary in _debris:
 		if not d.is_empty():
@@ -998,6 +1010,8 @@ func in_view(b: Breakable) -> bool:
 	if camera == null:
 		return false
 	var box := b.env_bounds if b.env_index >= 0 else b.base_xf() * AABB(Vector3(-b.size.x * 0.5, 0.0, -b.size.z * 0.5), b.size)
+	if b.mode == &"dent":
+		box = box.merge(b.env_delta() * box)
 	var corners: Array[Vector3] = []
 	for x in [box.position.x, box.end.x]:
 		for y in [box.position.y, box.end.y]:
@@ -1189,7 +1203,9 @@ func _react(at: Vector3, speed: float) -> void:
 	if speed >= ALARM_SPEED:
 		var cars := _parked_rects()
 		for i in cars.size():
-			if (cars[i] as Rect2).grow(0.15).has_point(p):
+			var owner := _parked_owner(i)
+			var rect: Rect2 = owner.rect() if owner else cars[i]
+			if rect.grow(0.15).has_point(p):
 				_start_alarm(i, cars[i])
 				return
 	if speed >= LID_SPEED:
@@ -1217,27 +1233,24 @@ static func _parked_rects() -> Array:
 			out.append(Rect2(c - Vector2(size.x, size.z) * 0.5, Vector2(size.x, size.z)))
 	return out
 
+func _parked_owner(i: int) -> Breakable:
+	var rects := _parked_rects()
+	if i < 0 or i >= rects.size(): return null
+	for b: Breakable in env_objects:
+		if b.kind == &"parked" and b.center.is_equal_approx((rects[i] as Rect2).get_center()):
+			return b
+	return null
+
 func _start_alarm(i: int, rect: Rect2) -> void:
 	if _alarms.has(i):
 		_alarms[i]["left"] = ALARM_SECONDS
 		return
-	var node := Node3D.new()
-	node.name = "Alarm%d" % i
-	var lamp := Materials.plain(Color(1.0, 0.55, 0.1), 0.4, Color(1.0, 0.5, 0.05), 4.0)
-	var bulb := BoxMesh.new()
-	bulb.size = Vector3(0.14, 0.08, 0.14)
-	for sx in [-1.0, 1.0]:
-		for sz in [-1.0, 1.0]:
-			var m := MeshInstance3D.new()
-			m.mesh = bulb
-			m.material_override = lamp
-			m.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-			m.position = Vector3(rect.get_center().x + sx * (rect.size.x * 0.5 + 0.02), 0.75, rect.get_center().y + sz * (rect.size.y * 0.5 + 0.02))
-			node.add_child(m)
-	add_child(node)
-	_alarms[i] = {"left": ALARM_SECONDS, "node": node}
+	var owner := _parked_owner(i)
+	if owner == null or owner.parked_visual == null: return
+	_alarms[i] = {"left": ALARM_SECONDS, "visual": owner.parked_visual}
+	LadaVisual.set_indicators(owner.parked_visual, true)
 	alarms += 1
-	car_alarm.emit(Vector3(rect.get_center().x, 1.0, rect.get_center().y))
+	car_alarm.emit(owner.body.global_position + Vector3.UP)
 
 func _update_alarms(delta: float) -> void:
 	for i in _alarms.keys():
@@ -1246,7 +1259,7 @@ func _update_alarms(delta: float) -> void:
 		if a["left"] <= 0.0:
 			_stop_alarm(i)
 			continue
-		(a["node"] as Node3D).visible = fmod(ALARM_SECONDS - float(a["left"]), ALARM_BLINK) < ALARM_BLINK * 0.5
+		LadaVisual.set_indicators(a["visual"], fmod(ALARM_SECONDS - float(a["left"]), ALARM_BLINK) < ALARM_BLINK * 0.5)
 
 ## Сигнализация машины i ещё звучит.
 func alarm_on(i: int) -> bool:
@@ -1254,8 +1267,8 @@ func alarm_on(i: int) -> bool:
 
 func _stop_alarm(i: int) -> void:
 	var a: Dictionary = _alarms[i]
-	if is_instance_valid(a["node"]):
-		(a["node"] as Node).queue_free()
+	if is_instance_valid(a["visual"]):
+		LadaVisual.set_indicators(a["visual"], false)
 	_alarms.erase(i)
 
 
@@ -1301,6 +1314,57 @@ class Breakable extends Node3D:
 	var env_mm: Array = []
 	var fall_dir := Vector3.RIGHT
 	var env_bounds := AABB()
+	var parked_visual: Node3D
+	var parked_velocity := Vector3.ZERO
+	var parked_yaw_velocity := 0.0
+	var parked_offset := Vector3.ZERO
+	var parked_angle := 0.0
+	var _parked_receiving := false
+
+	func register_vehicle() -> void:
+		for node: Node3D in env_nodes:
+			parked_visual = node.get_node_or_null("Visual")
+			if parked_visual: break
+		body.collision_mask = PARKED_MASK
+		VehicleImpact.register(body, PARKED_MASS, size, parked_visual, receive_vehicle_impact,
+			func(): return parked_velocity, func(): return parked_yaw_velocity)
+
+	func receive_vehicle_impact(delta_velocity: Vector3, delta_yaw: float, contact: Vector3, inward: Vector3, speed: float, damage_speed := -1.0) -> void:
+		# A swept pile-up can deliver this callback after advancing the physical body.
+		parked_offset = body.global_position - global_ground()
+		parked_angle = body.global_rotation.y - yaw
+		parked_velocity += Vector3(delta_velocity.x, 0, delta_velocity.z)
+		parked_yaw_velocity += delta_yaw
+		if parked_visual:
+			VehicleDamage.dent(parked_visual, contact, inward, damage_speed if damage_speed >= 0.0 else speed)
+		if speed >= ALARM_SPEED: root._react(body.global_position, speed)
+		if state == &"intact" and speed >= HEAVY_SPEED:
+			_parked_receiving = true
+			smash(&"car", inward)
+			_parked_receiving = false
+		root.animate(self)
+
+	func _step_vehicle(delta: float) -> void:
+		if parked_velocity.length_squared() < 0.000001 and absf(parked_yaw_velocity) < 0.001: return
+		var expected := parked_velocity * delta
+		var serial := int(body.get_meta("vehicle_impact_serial", 0))
+		var actual := VehicleImpact.safe_move(body, expected, parked_yaw_velocity * delta, size, PARKED_MASK)
+		parked_offset = body.global_position - global_ground()
+		parked_angle = body.global_rotation.y - yaw
+		# A real obstacle absorbs the component that cannot advance; no hidden drift through walls.
+		if serial == int(body.get_meta("vehicle_impact_serial", 0)) and expected.length_squared() > 0.000001 and actual.length() + 0.001 < expected.length():
+			parked_velocity = actual / maxf(delta, 0.0001)
+		parked_velocity = parked_velocity.move_toward(Vector3.ZERO, PARKED_DRAG * delta)
+		parked_yaw_velocity = move_toward(parked_yaw_velocity, 0.0, PARKED_YAW_DRAG * delta)
+		root.animate(self)
+
+	func _reset_vehicle() -> void:
+		if kind == &"parked": VehicleImpact.reset(body)
+		parked_velocity = Vector3.ZERO
+		parked_yaw_velocity = 0.0
+		parked_offset = Vector3.ZERO
+		parked_angle = 0.0
+		if parked_visual: VehicleDamage.reset(parked_visual)
 
 	func attach_env(entry: Dictionary) -> void:
 		env_bounds = base_xf() * AABB(Vector3(-size.x * 0.5, 0.0, -size.z * 0.5), size)
@@ -1340,10 +1404,9 @@ class Breakable extends Node3D:
 			var t := clampf(age / FALL_SECONDS, 0.0, 1.0)
 			basis = Basis(Vector3.UP.cross(fall_dir).normalized(), FALL_ANGLE * t * t)
 			shift.y = -maxf(size.y, ENV_HEIGHT.get(kind, 0.0)) * clampf((age - FALL_SECONDS - LIE_SECONDS) / SINK_SECONDS, 0.0, 1.0)
-		elif state == &"broken" and mode == &"dent":
-			var t := clampf((root.clock - broken_at) / DENT_SECONDS, 0.0, 1.0)
-			basis = Basis(Vector3.UP.cross(fall_dir).normalized(), 0.05 * t) * Basis.from_scale(Vector3.ONE.lerp(Vector3(0.97, DENT_SQUASH, 0.97), t))
-			shift = fall_dir * DENT_SHIFT * t
+		elif mode == &"dent":
+			basis = Basis(Vector3.UP, parked_angle)
+			shift = parked_offset
 		elif state == &"growing":
 			var g := maxf(1.0 - pow(1.0 - _grow, 3.0), 0.001)
 			basis = Basis.from_scale(Vector3(lerpf(0.6, 1.0, g), g, lerpf(0.6, 1.0, g)))
@@ -1397,7 +1460,7 @@ class Breakable extends Node3D:
 		return xf
 
 	func rect() -> Rect2:
-		if mode != &"dent" or state != &"broken":
+		if mode != &"dent":
 			return Breakables.spec_rect([id, kind, center, size, yaw])
 		var xf := env_delta() * base_xf()
 		var points: Array[Vector2] = []
@@ -1472,7 +1535,14 @@ class Breakable extends Node3D:
 		restore_left = root.next_restore_delay()
 		for node in extras:
 			node.visible = false
-		if kind == &"parked": root._react(global_ground(), ALARM_SPEED)
+		if kind == &"parked":
+			root._react(body.global_position, ALARM_SPEED)
+			# Punch/scripted destruction also creates a physical nudge; real vehicle contacts already own theirs.
+			if not _parked_receiving:
+				parked_velocity += fall_dir * 0.65
+				if parked_visual:
+					var contact := body.global_position + Vector3.UP * 0.75 - fall_dir * minf(size.x, size.z) * 0.5
+					VehicleDamage.dent(parked_visual, contact, fall_dir, HEAVY_SPEED)
 		if kind == &"bins": root._react(global_ground(), LID_SPEED)
 		root._env_lamp(self, false)
 		root._refresh_cut_wires()
@@ -1484,6 +1554,8 @@ class Breakable extends Node3D:
 		root.babka_react(self)
 
 	func tick(delta: float) -> void:
+		if kind == &"parked":
+			_step_vehicle(delta)
 		if state != &"broken":
 			return
 		restore_left -= delta
@@ -1493,6 +1565,7 @@ class Breakable extends Node3D:
 			restore_left = RESTORE_RETRY
 			return
 		state = &"growing"
+		_reset_vehicle()
 		_grow = 0.0
 		body.collision_layer = LAYER | (1 if env_index >= 0 else 0)
 		body.transform = Transform3D.IDENTITY
@@ -1524,10 +1597,11 @@ class Breakable extends Node3D:
 				restored.emit(self)
 			else:
 				busy = true
-		return busy
+		return busy or parked_velocity.length_squared() > 0.000001 or absf(parked_yaw_velocity) > 0.001
 
 	## Сразу целый (сброс мира).
 	func reset() -> void:
+		_reset_vehicle()
 		state = &"intact"
 		hp = HEAVY_HP if heavy else 1
 		body.collision_layer = LAYER | (1 if env_index >= 0 else 0)

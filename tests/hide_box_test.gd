@@ -22,6 +22,7 @@ var OUT := "res://builds/screenshots/EXT-02/c"
 
 var failures: Array[String] = []
 var checks := 0
+var _finishing := false
 var capture := false
 var main: Node
 var drv
@@ -646,7 +647,28 @@ func check(condition: bool, label: String) -> bool:
 	return condition
 
 func _finish(code := -1) -> void:
-	drv.release_all()
+	if _finishing:
+		return
+	_finishing = true
+	if drv:
+		drv.release_all()
+	if is_instance_valid(main):
+		for audio in main.find_children("*", "AudioStreamPlayer", true, false) + main.find_children("*", "AudioStreamPlayer3D", true, false):
+			audio.stop()
+		main.queue_free()
+	for i in 5:
+		await physics_frame
+	main = null
+	world = null
+	player = null
+	box = null
+	officer = null
+	drv = null
+	preload("res://game/world/materials.gd").clear_cache()
+	preload("res://game/world/environment_dress.gd").clear_cache()
+	preload("res://game/vehicles/vehicle_mesh.gd").cache().clear()
+	OS.delay_msec(100)
+	await process_frame
 	print("HIDE_BOX: %d checks, %d failures" % [checks, failures.size()])
 	for f in failures:
 		print("  FAIL: ", f)

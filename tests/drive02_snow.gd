@@ -398,16 +398,20 @@ func _check_skid() -> void:
 	check(not car.fx.smoke[0].emitting, "no smoke once stopped")
 
 func _check_bounce() -> void:
-	var wall := StaticBody3D.new()
-	wall.name = "ParkedCar_drive02"
-	wall.collision_layer = 1
-	var shape := CollisionShape3D.new()
-	var box := BoxShape3D.new()
-	box.size = Vector3(1.7, 1.4, 4.1)
-	shape.shape = box
-	wall.add_child(shape)
-	wall.position = Vector3(-40, 0.7, 32)
-	world.add_child(wall)
+	var breakables: Node = world.get_node("LevelGeometry/Breakables")
+	var parked: Node
+	for item in breakables.objects:
+		if item.kind == &"parked" and item.parked_visual != null:
+			parked = item
+			break
+	check(parked != null, "real finite-mass parked car exists")
+	if parked == null:
+		return
+	var shift: Vector3 = Vector3(-40, 0, 32) - parked.global_ground()
+	parked.center += Vector2(shift.x, shift.z)
+	for i in parked.env_node_xf.size(): parked.env_node_xf[i].origin += shift
+	breakables._write(parked)
+	var parked_at: Vector3 = parked.body.global_position
 	car.reset_to(Vector3(-52, 0, 32), -PI * 0.5)
 	await _frames(2)
 	car.velocity = -car.global_basis.z * 9.0
@@ -420,10 +424,11 @@ func _check_bounce() -> void:
 		back = minf(back, Vector3(car.velocity.x, 0, car.velocity.z).dot(-car.global_basis.z))
 		shake = maxf(shake, car.shake_left())
 	Input.action_release(&"car_gas")
-	print("INFO: bounce off a parked car at 9 m/s — impacts %d, rebound %.1f m/s, shake %.2f s" % [car.impacts - hits, back, shake])
-	check(car.impacts > hits and back < -1.0, "Lada bounces back off a parked car (%.1f m/s)" % back)
+	print("INFO: finite-mass contact with parked car at 9 m/s — impacts %d, rebound %.1f m/s, shake %.2f s" % [car.impacts - hits, back, shake])
+	check(car.impacts > hits and parked.body.global_position.distance_to(parked_at) > 0.05, "finite-mass parked car receives a real impact and displacement")
 	check(shake > 0.1, "camera shakes on the impact")
-	wall.queue_free()
+	parked.reset()
+	breakables._write(parked)
 	await _brake()
 	# Стена дома — без отскока (PLAY-02: упор, не мяч).
 	car.reset_to(Vector3(-51, 0, 63), 0.0)

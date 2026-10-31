@@ -39,6 +39,7 @@ var bk: Breakables
 var residents_node: Node
 var sound: Node
 var capture := false
+var _finishing := false
 
 func _initialize() -> void:
 	call_deferred("_run")
@@ -199,9 +200,11 @@ func _part_setup() -> void:
 	check(bk.objects.size() == expected and get_nodes_in_group(Breakables.GROUP).size() == expected, "one Breakable per base/environment record (%d)" % expected)
 	var bad := []
 	for b: Breakables.Breakable in bk.objects:
-		if b.body.collision_layer != (33 if b.env_index >= 0 else 32) or b.body.collision_mask != 0 or not b.is_intact() or b.hp != (3 if b.heavy else 1):
+		# Parked bodies share the player's traversable-snow rule (C10).
+		var expected_mask: int = (1 | 2 | 4 | 32) if b.kind == &"parked" else 0
+		if b.body.collision_layer != (33 if b.env_index >= 0 else 32) or b.body.collision_mask != expected_mask or not b.is_intact() or b.hp != (3 if b.heavy else 1):
 			bad.append(b.id)
-	check(bad.is_empty(), "every object: base layer 32 / environment World|32, mask 0, intact, hp 1 / 3 (bad %s)" % [bad])
+	check(bad.is_empty(), "every object: expected base/environment layer, vehicle safety mask only for parked cars, intact, hp 1 / 3 (bad %s)" % [bad])
 	var car: Lada = world.car
 	check(car.collision_mask & 32 != 0 and world.player.collision_mask & 32 != 0 and Ilyusha.PUNCH_MASK & 32 != 0, "Lada, Ilyusha and the punch see layer 32")
 	check(PathVehicle.SENSOR_MASK & 32 == 0 and CityVan.OBSTACLE_MASK & 32 == 0, "ring traffic sensors and the GSUM van do not see layer 32")
@@ -861,6 +864,28 @@ func check(condition: bool, label: String) -> bool:
 	return condition
 
 func _finish(code := -1) -> void:
+	if _finishing:
+		return
+	_finishing = true
+	if is_instance_valid(main):
+		if drv:
+			drv.release_all()
+		for audio in main.find_children("*", "AudioStreamPlayer", true, false) + main.find_children("*", "AudioStreamPlayer3D", true, false):
+			audio.stop()
+		main.queue_free()
+	for i in 5:
+		await physics_frame
+	main = null
+	world = null
+	bk = null
+	residents_node = null
+	sound = null
+	drv = null
+	preload("res://game/world/materials.gd").clear_cache()
+	preload("res://game/world/environment_dress.gd").clear_cache()
+	preload("res://game/vehicles/vehicle_mesh.gd").cache().clear()
+	OS.delay_msec(100)
+	await process_frame
 	print("BREAK: %d checks, %d failures" % [checks, failures.size()])
 	for f in failures:
 		print("  FAIL: ", f)

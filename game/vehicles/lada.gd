@@ -13,6 +13,10 @@ const LadaVisual = preload("res://game/vehicles/lada_visual.gd")
 const SlushSpray = preload("res://game/vehicles/slush_spray.gd")
 const LadaFx = preload("res://game/vehicles/lada_fx.gd")
 const SnowField = preload("res://game/world/snow_field.gd")   # DRIVE-02 (C10): форма валов для колёс
+const VehicleImpact = preload("res://game/vehicles/vehicle_impact.gd")
+const VehicleDamage = preload("res://game/vehicles/vehicle_damage.gd")
+const IMPACT_MASS := 1045.0
+const IMPACT_YAW_DAMP := 3.0
 
 const SIZE := Vector3(1.7, 1.4, 4.1)
 ## Темп по замеру эталона PLAY-01 (G02, G03): потолок 28 м/с ≈ 100 км/ч, разгон спадает к максимуму
@@ -44,6 +48,7 @@ var visual: Node3D
 var _steer_now := 0.0
 var _lights := -1
 var _breakables: Node   # BREAK-01
+var _impact_yaw := 0.0
 
 # --- DRIVE-02 (C10): сугробы, подвеска, отскок ---
 ## Тело CharacterBody3D остаётся на земле (коллизии, зоны, тесты застреваний — как были); на снег поднимается и
@@ -73,9 +78,6 @@ const SUSP_FREQ := 10.0         # рад/с: частота пружины по�
 const SUSP_DAMP := 0.3          # доля критического затухания — «покачивание» в одно-два колебания
 const SKID_SLIDE := 2.0         # м/с боковой скорости — занос (дым, след, скрип)
 const SKID_MIN_SPEED := 3.0     # м/с: медленнее нет дыма и следа заноса
-const BOUNCE_MIN := 3.0         # м/с скорости в препятствие: медленнее — без отскока
-const BOUNCE := 0.35            # доля скорости удара — обратно
-const BOUNCE_FRONTAL := 0.5     # доля скорости «в лоб» (удар круче 30°); вскользь — без отскока
 const SHAKE_SECONDS := 0.35
 const SHAKE := 0.12             # м: тряска камеры при сильном ударе
 const CAMERA_LIFT_SHARPNESS := 8.0
@@ -123,6 +125,7 @@ func _ready() -> void:
 	add_child(collider)
 	visual = LadaVisual.build()  # светло-бежевая ВАЗ-2106; водитель, фары и огни — POLISH-02
 	add_child(visual)
+	VehicleImpact.register(self, IMPACT_MASS, SIZE, visual, receive_vehicle_impact, vehicle_velocity, vehicle_yaw)
 	_update_lights()
 	var spray := SlushSpray.new()  # брызги каши из-под колёс — PLAY-03
 	spray.name = "SlushSpray"
@@ -159,7 +162,9 @@ func _physics_process(delta: float) -> void:
 	var turn_rate := lerpf(TURN_RATE_LOW, TURN_RATE_HIGH, clampf(absf(forward_speed) / MAX_SPEED, 0.0, 1.0))
 	if handbrake:
 		turn_rate *= HANDBRAKE_TURN
-	rotate_y(_steer_now * turn_rate * speed_factor * signf(forward_speed) * delta)
+	var turn := (_steer_now * turn_rate * speed_factor * signf(forward_speed) + _impact_yaw) * delta
+	VehicleImpact.safe_move(self, Vector3.ZERO, turn, SIZE, collision_mask)
+	_impact_yaw *= exp(-IMPACT_YAW_DAMP * delta)
 
 	forward = -global_basis.z
 	forward_speed = old_velocity.dot(forward)
@@ -202,6 +207,7 @@ func _physics_process(delta: float) -> void:
 		velocity.y -= get_gravity().length() * delta
 	var before_slide := Vector3(velocity.x, 0.0, velocity.z)
 	move_and_slide()
+	_vehicle_contacts(before_slide)
 	_bump_breakables(before_slide, throttle, delta)
 	_after_slide(before_slide, forward_speed, handbrake, delta)   # DRIVE-02: отскок, снег, подвеска, эффекты
 	if exit_requested and speed_kmh() < EXIT_SPEED_KMH:
@@ -265,6 +271,9 @@ func reset_to(point: Vector3, facing_yaw: float) -> void:
 	velocity = Vector3.ZERO
 	lateral_speed = 0.0
 	_steer_now = 0.0
+	_impact_yaw = 0.0
+	VehicleImpact.reset(self)
+	VehicleDamage.reset(visual)
 	exit_requested = false
 	reset_physics_interpolation()
 	_reset_drive_state()
@@ -342,9 +351,8 @@ func _snow_speed(forward_speed: float, speed_in: float, forward: Vector3, thrott
 	return move_toward(forward_speed, 0.0, SNOW_DRAG * snow_depth * maxf(absf(forward_speed), SNOW_DRAG_MIN_SPEED) * delta)
 
 ## После move_and_slide: отскок от машин и разрушаемых, высота и наклон облика по снегу, перенос веса, эффекты.
-func _after_slide(before: Vector3, _planned_speed: float, handbrake: bool, delta: float) -> void:
+func _after_slide(_before: Vector3, _planned_speed: float, handbrake: bool, delta: float) -> void:
 	_clock += delta
-	_impact_bounce(before)
 	_sample_snow()
 	var target := snow_ride_target()
 	if snow_lift <= target + 0.0005:
@@ -402,6 +410,26 @@ func _after_slide(before: Vector3, _planned_speed: float, handbrake: bool, delta
 		fx.step(delta)
 	_camera_fx(delta)
 
+func vehicle_velocity() -> Vector3:
+	return Vector3(velocity.x, 0.0, velocity.z)
+
+func vehicle_yaw() -> float:
+	return _impact_yaw
+
+func receive_vehicle_impact(delta_velocity: Vector3, delta_yaw: float, point: Vector3, inward: Vector3, closing: float, damage_speed := -1.0) -> void:
+	velocity += delta_velocity
+	_impact_yaw = clampf(_impact_yaw + delta_yaw, -2.5, 2.5)
+	VehicleDamage.dent(visual, point, inward, damage_speed if damage_speed >= 0.0 else closing)
+
+func _vehicle_contacts(before: Vector3) -> void:
+	var closing := VehicleImpact.contacts(self, before)
+	if closing > 0.0:
+		impacts += 1
+		_shake_left = SHAKE_SECONDS
+		_shake_power = clampf(closing / 12.0, 0.25, 1.0)
+		_susp_pitch_v -= closing * 0.04
+		_heave_v -= closing * 0.02
+
 func _apply_visual() -> void:
 	if visual == null:
 		return
@@ -410,50 +438,6 @@ func _apply_visual() -> void:
 	if _spray:
 		_spray.position.y = snow_lift
 		_spray.visible = snow_depth < 0.05   # на снегу вместо каши — снежная пыль DriveFx
-
-## Удар о машину или разрушаемый объект быстрее BOUNCE_MIN и круче 30° (BOUNCE_FRONTAL): короткий отскок назад и тряска
-## камеры, без урона. Вскользь — скольжение вдоль, как раньше.
-## Сломанный и пробитый насквозь разрушаемый (скорость в него сохранилась) — без отскока.
-func _impact_bounce(before: Vector3) -> void:
-	var best := 0.0
-	var normal := Vector3.ZERO
-	for i in get_slide_collision_count():
-		var hit := get_slide_collision(i)
-		var n := hit.get_normal()
-		n.y = 0.0
-		if n.length_squared() < 0.01:
-			continue
-		n = n.normalized()
-		var into := before.dot(-n)
-		if into > best and _bounces_off(hit.get_collider()):
-			best = into
-			normal = n
-	if best < BOUNCE_MIN or best < before.length() * BOUNCE_FRONTAL:
-		return   # медленно или вскользь — скользит вдоль, как раньше
-	var horizontal := Vector3(velocity.x, 0.0, velocity.z)
-	if horizontal.dot(-normal) > best * 0.5:
-		return
-	horizontal += normal * best * BOUNCE
-	velocity.x = horizontal.x
-	velocity.z = horizontal.z
-	impacts += 1
-	_shake_left = SHAKE_SECONDS
-	_shake_power = clampf(best / 12.0, 0.25, 1.0)
-	_susp_pitch_v -= best * 0.04   # нос клюёт от удара
-	_heave_v -= best * 0.02
-
-func _bounces_off(collider: Object) -> bool:
-	if not (collider is CollisionObject3D):
-		return false
-	var body := collider as CollisionObject3D
-	if body.collision_layer & 32:   # разрушаемый (BREAK-01, слой 6)
-		return true
-	if body is Trolleybus:
-		return false   # троллейбус — тяжёлый, упор как в стену (и тест STEALTH: проезд мимо киоска упирается в него)
-	if body.is_in_group(&"traffic_vehicles") or body is CityVan:
-		return true
-	var body_name := String(body.name)
-	return body_name.begins_with("ParkedCar") or body_name.begins_with("Zhiguli")
 
 ## Камера за «Ладой»: поднимается вслед за обликом на снегу и трясётся после удара (смещения камеры — добавкой,
 ## как тряска Breakables). Пружину камеры (CameraRig) не трогаем.

@@ -17,6 +17,7 @@ const BarrelScript = preload("res://game/stealth/barrel_hide_spot.gd")
 
 var failures: Array[String] = []
 var checks := 0
+var _finishing := false
 var main: Node
 var drv
 var world: DemoWorld
@@ -637,8 +638,29 @@ func check(condition: bool, label: String) -> bool:
 	return condition
 
 func _finish(code := -1) -> void:
-	drv.release_all()
+	if _finishing:
+		return
+	_finishing = true
+	if drv:
+		drv.release_all()
 	Engine.physics_ticks_per_second = 60
+	if is_instance_valid(main):
+		for audio in main.find_children("*", "AudioStreamPlayer", true, false) + main.find_children("*", "AudioStreamPlayer3D", true, false):
+			audio.stop()
+		main.queue_free()
+	for i in 5:
+		await physics_frame
+	main = null
+	world = null
+	player = null
+	barrel = null
+	sound = null
+	drv = null
+	preload("res://game/world/materials.gd").clear_cache()
+	preload("res://game/world/environment_dress.gd").clear_cache()
+	preload("res://game/vehicles/vehicle_mesh.gd").cache().clear()
+	OS.delay_msec(100)
+	await process_frame
 	print("HIDE_BARREL: %d checks, %d failures" % [checks, failures.size()])
 	for f in failures:
 		print("  FAIL: ", f)

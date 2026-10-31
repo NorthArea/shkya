@@ -18,6 +18,12 @@ extends AnimatableBody3D
 
 const Materials = preload("res://game/world/materials.gd")
 const Layout = preload("res://game/world/layout.gd")
+const VehicleImpact = preload("res://game/vehicles/vehicle_impact.gd")
+const VehicleDamage = preload("res://game/vehicles/vehicle_damage.gd")
+const IMPACT_DRAG := 2.1
+const IMPACT_TURN_DRAG := 3.2
+const RECOVERY_SPEED := 2.0
+const RECOVERY_TURN := 0.8
 
 const TURN_RADIUS := 6.0
 ## Машины (ARENA-01 fix P2-2) идут против троллейбуса, по внешней полосе, повороты левые. Радиус 4 м, а не 6: на
@@ -76,6 +82,11 @@ var _wheels: Array[Node3D] = []
 var _tail: StandardMaterial3D
 var _sensor_query := PhysicsShapeQueryParameters3D.new()
 var _body_query := PhysicsShapeQueryParameters3D.new()
+var impact_active := false
+var impact_velocity := Vector3.ZERO
+var impact_yaw := 0.0
+var _impact_recovering := false
+var _actual_velocity := Vector3.ZERO
 
 func _init() -> void:
 	collision_layer = 1
@@ -121,6 +132,13 @@ func setup(lane_path: LanePath, offset: float) -> void:
 	side = 0.0
 	yielding = false
 	_yield_lada = null
+	impact_active = false
+	impact_velocity = Vector3.ZERO
+	impact_yaw = 0.0
+	_actual_velocity = Vector3.ZERO
+	_impact_recovering = false
+	VehicleImpact.reset(self)
+	VehicleDamage.reset(visual)
 	if is_inside_tree():
 		_apply_transform()
 
@@ -131,6 +149,10 @@ func footprint() -> Array:
 func _physics_process(delta: float) -> void:
 	if path == null or delta <= 0.0:
 		return
+	if impact_active:
+		_impact_step(delta)
+		return
+	var old_position := global_position
 	_tick(delta)
 	if can_yield:
 		_yield_step(delta)
@@ -158,6 +180,54 @@ func _physics_process(delta: float) -> void:
 	if blocked_by != null and speed < 0.05:
 		blocked_time += delta
 	elif blocked_by == null:
+		blocked_time = 0.0
+	_actual_velocity = (global_position - old_position) / delta
+
+func vehicle_velocity() -> Vector3:
+	return impact_velocity if impact_active else _actual_velocity
+
+func vehicle_yaw() -> float:
+	return impact_yaw
+
+func receive_vehicle_impact(delta_velocity: Vector3, delta_yaw: float, point: Vector3, inward: Vector3, closing: float, damage_speed := -1.0) -> void:
+	if not impact_active:
+		impact_velocity = _actual_velocity
+	impact_active = true
+	_impact_recovering = false
+	impact_velocity += delta_velocity
+	impact_yaw = clampf(impact_yaw + delta_yaw, -2.5, 2.5)
+	VehicleDamage.dent(visual, point, inward, damage_speed if damage_speed >= 0.0 else closing)
+
+func _impact_step(delta: float) -> void:
+	limit_reason = &"impact"
+	if not _impact_recovering:
+		var motion := impact_velocity * delta
+		var serial := int(get_meta("vehicle_impact_serial", 0))
+		var moved := VehicleImpact.safe_move(self, motion, impact_yaw * delta, size)
+		if moved.length_squared() + 0.00001 < motion.length_squared() and serial == int(get_meta("vehicle_impact_serial", 0)):
+			impact_velocity = moved / delta
+		_actual_velocity = moved / delta
+		impact_velocity *= exp(-IMPACT_DRAG * delta)
+		impact_yaw *= exp(-IMPACT_TURN_DRAG * delta)
+		speed = 0.0
+		if impact_velocity.length() < 0.12 and absf(impact_yaw) < 0.04:
+			_impact_recovering = true
+			impact_velocity = Vector3.ZERO
+			impact_yaw = 0.0
+			s = path.offset_of(global_position)
+			side = 0.0
+			yielding = false
+			_yield_lada = null
+		return
+	# The displaced body returns continuously; a blocked corridor is waited for, never crossed.
+	var target := _transform_at(s)
+	var offset := target.origin - global_position
+	var turn := angle_difference(global_rotation.y, target.basis.get_euler().y)
+	var recovery_moved := VehicleImpact.safe_move(self, offset.limit_length(RECOVERY_SPEED * delta), clampf(turn, -RECOVERY_TURN * delta, RECOVERY_TURN * delta), size)
+	_actual_velocity = recovery_moved / delta
+	if global_position.distance_to(target.origin) < 0.005 and absf(angle_difference(global_rotation.y, target.basis.get_euler().y)) < 0.005 and _free_at(s):
+		impact_active = false
+		_actual_velocity = Vector3.ZERO
 		blocked_time = 0.0
 
 ## Ограничения скорости: минимум из всех; limit_reason — какое сработало.

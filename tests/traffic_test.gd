@@ -244,7 +244,8 @@ func _part_start() -> void:
 	check(kinds.size() == 3 and kinds.has(&"zhiguli") and kinds.has(&"volga") and kinds.has(&"gazelle"), "three silhouettes: Жигули, Волга, Газель (%s)" % [kinds.keys()])
 	check(traffic.trolleybus is Trolleybus, "trolleybus 13 on the ring")
 	for v in traffic.vehicles:
-		check(v is AnimatableBody3D and v.collision_layer == 1 and v.collision_mask == 0, "%s: AnimatableBody3D, layer 1, mask 0" % v.name)
+		var expected_mask: int = (1 | 2 | 4 | 32 | 64) if v is TrafficCar else 0
+		check(v is AnimatableBody3D and v.collision_layer == 1 and v.collision_mask == expected_mask, "%s: World body with the collision mask for its vehicle role" % v.name)
 		check(v.is_in_group(PathVehicle.GROUP), "%s in group traffic_vehicles" % v.name)
 	check(traffic.cars.all(func(c): return is_equal_approx(c.cruise_speed, 9.0)) and is_equal_approx(traffic.trolleybus.cruise_speed, 7.0), "speeds: cars 9 m/s, trolleybus 7 m/s")
 	var offsets: Array[float] = TrafficScript.start_offsets(lane.length, car_lane.length)

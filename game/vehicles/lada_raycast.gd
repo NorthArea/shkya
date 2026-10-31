@@ -28,9 +28,6 @@ const MAX_TILT := 0.6109   # 35°: крен/тангаж тела не боль�
 const AIR_LEVEL := 6.0     # 1/с²: в воздухе тело выравнивается
 const AIR_LEVEL_DAMP := 3.0
 const ANG_DAMP := 0.6      # 1/с: гашение крена/тангажа (трение в шарнирах)
-const WALL_BOUNCE := 0.3   # отскок от стены: доля нормальной скорости
-const WALL_SPIN := 0.5     # доля рыскания от удара (смещение точки удара от ЦМ)
-const WALL_MIN_SPEED := 1.5
 const CHASSIS_CLEARANCE := 0.25  # низ коробки кузова над землёй: по земле катят лучи, а не коробка
 const SKID_R := 0.08
 const SNOW_FIELD_PATH := "res://game/world/snow_field.gd"   # DRIVE-02 (C10), если уже есть
@@ -164,7 +161,8 @@ func _physics_process(delta: float) -> void:
 	var turn_rate := lerpf(TURN_RATE_LOW, TURN_RATE_HIGH, clampf(absf(forward_speed) / MAX_SPEED, 0.0, 1.0))
 	if handbrake:
 		turn_rate *= HANDBRAKE_TURN
-	var yaw_target := _steer_now * turn_rate * speed_factor * signf(forward_speed)
+	var yaw_target := _steer_now * turn_rate * speed_factor * signf(forward_speed) + _impact_yaw
+	_impact_yaw *= exp(-IMPACT_YAW_DAMP * delta)
 	_ang_vel.y += (yaw_target - _ang_vel.y) * (1.0 - exp(-YAW_RESPONSE * delta)) * grip_front
 
 	# --- продольная сила: привод на задние колёса, тормоз на все (цифры Lada) ---
@@ -226,18 +224,19 @@ func _physics_process(delta: float) -> void:
 		tilt_w = Vector3(_ang_vel.x, 0.0, _ang_vel.z)
 		_ang_vel += (up.cross(Vector3.UP) * AIR_LEVEL - tilt_w * AIR_LEVEL_DAMP) * delta
 	var q := b.get_rotation_quaternion()
-	var w_len := _ang_vel.length()
+	var tilt_velocity := Vector3(_ang_vel.x, 0.0, _ang_vel.z)
+	var w_len := tilt_velocity.length()
 	if w_len > 1e-6:
-		q = (Quaternion(_ang_vel / w_len, w_len * delta) * q).normalized()
+		q = (Quaternion(tilt_velocity / w_len, w_len * delta) * q).normalized()
 	q = _limit_tilt(q)
 	global_basis = Basis(q)
+	VehicleImpact.safe_move(self, Vector3.ZERO, _ang_vel.y * delta, SIZE, collision_mask)
 
 	# --- перемещение: стены и земля — move_and_slide ---
 	velocity = v
-	var before := velocity
 	var before_slide := Vector3(velocity.x, 0.0, velocity.z)
 	move_and_slide()
-	_wall_bounce(before, com)
+	_vehicle_contacts(before_slide)
 	_bump_breakables(before_slide, throttle, delta)
 	_place_wheels()
 	if exit_requested and speed_kmh() < EXIT_SPEED_KMH:
@@ -261,32 +260,6 @@ func _limit_tilt(q: Quaternion) -> Quaternion:
 		_ang_vel -= axis * toward
 	return (Quaternion(axis, tilt - MAX_TILT) * q).normalized()
 
-## Удар о стену (World, другие машины): нормальная скорость возвращается с WALL_BOUNCE, смещение точки удара от ЦМ
-## даёт рыскание. Земля и разрушаемые (их решает Breakables) — без отскока.
-func _wall_bounce(before: Vector3, com: Vector3) -> void:
-	var best: KinematicCollision3D
-	var best_vn := -WALL_MIN_SPEED
-	for i in get_slide_collision_count():
-		var hit := get_slide_collision(i)
-		var n := hit.get_normal()
-		if n.y > 0.6:
-			continue
-		var body := hit.get_collider() as CollisionObject3D
-		if body and (body.collision_layer & 32) != 0:
-			continue
-		var vn := before.dot(n)
-		if vn < best_vn:
-			best_vn = vn
-			best = hit
-	if best == null:
-		return
-	var n := best.get_normal()
-	velocity += n * (-best_vn) * WALL_BOUNCE
-	var impulse := n * (-best_vn) * (1.0 + WALL_BOUNCE) * MASS
-	var b := global_basis
-	var spin := b * ((b.transposed() * (best.get_position() - com).cross(impulse)) / INERTIA)
-	_ang_vel.y = clampf(_ang_vel.y + spin.y * WALL_SPIN, -2.5, 2.5)
-
 ## Нижняя точка шины совпадает с прежним контактом луча; радиус облика не меняет физику прототипа.
 func _place_wheels() -> void:
 	var visual_radius: float = LadaVisual.SEDANS[LadaVisual.PLAYER_MODEL]["wheel_r"]
@@ -307,3 +280,10 @@ func roll_deg() -> float:
 
 func pitch_deg() -> float:
 	return rad_to_deg(asin(clampf(-global_basis.z.y, -1.0, 1.0)))
+
+func vehicle_yaw() -> float:
+	return _ang_vel.y
+
+func receive_vehicle_impact(delta_velocity: Vector3, delta_yaw: float, point: Vector3, inward: Vector3, closing: float, damage_speed := -1.0) -> void:
+	super.receive_vehicle_impact(delta_velocity, delta_yaw, point, inward, closing, damage_speed)
+	_ang_vel.y = clampf(_ang_vel.y + delta_yaw, -2.5, 2.5)
