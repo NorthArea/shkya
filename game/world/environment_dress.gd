@@ -318,44 +318,55 @@ func poplar(base: Vector3, seed: int) -> void:
 	var mid := base + lean * (fork * 0.5) + Vector3((_rand(rs, 6) - 0.5) * 0.25, 0, (_rand(rs, 7) - 0.5) * 0.25)
 	seg("bark", base, mid, 1.0)
 	seg("bark", mid, top, 0.88)
-	var limbs := (5 if pollard else 5) + int(_rand(rs, 2) * 3.0)
+	var limbs := 4 + int(_rand(rs, 2) * 3.0)
+	var crown_yaw := TAU * _rand(rs, 8)
+	var frost_side := Vector3(cos(crown_yaw), 0, sin(crown_yaw))
 	for i in limbs:
-		var yaw := TAU * (float(i) + _rand(rs, 10 + i) * 0.6) / limbs
-		var tilt := deg_to_rad((24.0 if pollard else 18.0) + 22.0 * _rand(rs, 20 + i))
+		# Не кольцо одинаковых сучьев: один лидер, остальные короче и расходятся с разных высот.
+		var yaw := crown_yaw + float(i) * 2.399963 + (_rand(rs, 10 + i) - 0.5) * 1.1
+		var tilt := deg_to_rad((22.0 if pollard else 16.0) + 28.0 * _rand(rs, 20 + i))
 		var dir := _dir(yaw, tilt)
-		var start := base + lean * (fork - 0.3 * _rand(rs, 30 + i))
-		# Снег в развилке — на верхней стороне сука у ствола.
-		put("lump", Transform3D(Basis.from_scale(Vector3(0.55, 0.36, 0.55)), start + dir * 0.35 + Vector3(0, 0.12, 0)), Color.WHITE, Color(), true)
+		var start := base + lean * (fork + 0.25 - 1.5 * _rand(rs, 30 + i))
+		if _rand(rs, 60 + i) > 0.3:
+			var snow_scale := 0.7 + 0.3 * _rand(rs, 70 + i)
+			put("lump", Transform3D(Basis.from_scale(Vector3(0.55, 0.36, 0.55) * snow_scale), start + dir * 0.35 + Vector3(0, 0.12, 0)), Color.WHITE, Color(), true)
 		if pollard:
 			_pollard_limb(start, dir, yaw, rs + i * 41, height)
 			continue
-		var limb_len := (height - fork) * (0.75 + 0.3 * _rand(rs, 40 + i))
-		var bend := (dir + Vector3(0, 0.35 + 0.2 * _rand(rs, 50 + i), 0)).normalized()
-		var knee := start + dir * limb_len * 0.5
-		var end := knee + bend * limb_len * 0.5
+		var reach := 1.0 if i == 0 else 0.58 + 0.37 * _rand(rs, 40 + i)
+		var limb_len := (height - fork) * reach
+		var bend := (dir + Vector3(0, 0.2 + 0.35 * _rand(rs, 50 + i), 0) + frost_side * 0.12).normalized()
+		var knee_t := 0.38 + 0.22 * _rand(rs, 80 + i)
+		var knee := start + dir * limb_len * knee_t
+		var end := knee + bend * limb_len * (1.0 - knee_t)
 		seg("bark", start, knee, 0.46)
 		seg("bark", knee, end, 0.32)
-		for j in 6:
-			var t := 0.25 + 0.75 * float(j) / 6.0
-			var from := start.lerp(knee, t * 2.0) if t < 0.5 else knee.lerp(end, (t - 0.5) * 2.0)
-			var byaw := yaw + (_rand(rs, 100 + i * 10 + j) - 0.5) * 2.4
-			var btilt := deg_to_rad(25.0 + 35.0 * _rand(rs, 200 + i * 10 + j))
+		var branches := 3 + int(_rand(rs, 90 + i) * 3.0)
+		for j in branches:
+			var t := 0.18 + 0.72 * (float(j) + _rand(rs, 600 + i * 10 + j) * 0.8) / branches
+			var from := start.lerp(knee, t / knee_t) if t < knee_t else knee.lerp(end, (t - knee_t) / (1.0 - knee_t))
+			var byaw := yaw + (_rand(rs, 100 + i * 10 + j) - 0.5) * 3.0
+			var btilt := deg_to_rad(22.0 + 38.0 * _rand(rs, 200 + i * 10 + j))
 			var bdir := _dir(byaw, btilt)
-			var blen := 1.6 + 2.4 * _rand(rs, 300 + i * 10 + j) * (1.0 - t * 0.5)
+			var blen := (1.3 + 2.5 * _rand(rs, 300 + i * 10 + j)) * (1.0 - t * 0.45)
 			var bmid := from + bdir * blen * 0.5
 			var bend2 := bmid + (bdir + Vector3(0, 0.3, 0)).normalized() * blen * 0.5
 			seg("bark", from, bmid, 0.15)
 			seg("bark", bmid, bend2, 0.11)
-			seg("frost", from.lerp(bmid, 0.4), bmid, 0.30)   # куржак: «вдвое толще» и белёсый (ART-06, Н8)
-			seg("frost", bmid, bend2, 0.26)
-			# Третий порядок: 3 веточки с куржаком — ближние (LOD).
-			for q in 3:
-				var tw := bmid.lerp(bend2, 0.15 + 0.35 * q) if q > 0 else from.lerp(bmid, 0.6)
+			# Куржак собирается на одной стороне кроны, оставляя видимую тёмную древесину.
+			var frost_load := 0.5 + 0.25 * bdir.dot(frost_side) + 0.25 * _rand(rs, 700 + i * 10 + j)
+			if frost_load > 0.43:
+				seg("frost", from.lerp(bmid, 0.25 + 0.5 * _rand(rs, 800 + i * 10 + j)), bmid, 0.24 + 0.06 * frost_load)
+				seg("frost", bmid, bmid.lerp(bend2, 0.55 + 0.45 * frost_load), 0.21 + 0.05 * frost_load)
+			var twigs := 1 + int(_rand(rs, 900 + i * 10 + j) * 3.0)
+			for q in twigs:
+				var tw := bmid.lerp(bend2, 0.15 + 0.65 * _rand(rs, 1000 + i * 30 + j * 3 + q)) if q > 0 else from.lerp(bmid, 0.6)
 				var tyaw := byaw + (_rand(rs, 400 + i * 30 + j * 3 + q) - 0.5) * 3.0
 				var tdir := Vector3(cos(tyaw) * 0.6, 0.8, sin(tyaw) * 0.6).normalized()
 				var tend := tw + tdir * (0.7 + 0.8 * _rand(rs, 500 + q + j + i))
 				seg("twig", tw, tend, 0.07, Color.WHITE, true)
-				seg("frost", tw.lerp(tend, 0.3), tend, 0.2, Color.WHITE, true)
+				if frost_load > 0.5:
+					seg("frost", tw.lerp(tend, 0.2 + 0.4 * _rand(rs, 1100 + i * 30 + j * 3 + q)), tend, 0.16 + 0.04 * frost_load, Color.WHITE, true)
 
 ## Кронированный сук: короткий и толстый, на конце наплыв-«кулак» в снегу и пучок прямых побегов вверх.
 func _pollard_limb(start: Vector3, dir: Vector3, yaw: float, rs: int, height: float) -> void:
@@ -364,21 +375,26 @@ func _pollard_limb(start: Vector3, dir: Vector3, yaw: float, rs: int, height: fl
 	seg("bark", start, end, 0.5)
 	seg("bark", end - dir * 0.15, end + dir * 0.35, 0.75)   # кулак
 	put("lump", Transform3D(Basis.from_scale(Vector3(0.6, 0.4, 0.6)), end + Vector3(0, 0.3, 0)), Color.WHITE, Color(), true)
-	var shoots := 14 + int(_rand(rs, 2) * 8.0)
+	var shoots := 8 + int(_rand(rs, 2) * 6.0)
+	var fan := yaw + (_rand(rs, 3) - 0.5) * 1.6
+	var fan_dir := Vector3(cos(fan), 0, sin(fan))
 	for k in shoots:
-		var a := TAU * _rand(rs, 10 + k)
+		var a := fan + (_rand(rs, 10 + k) - 0.5) * 3.8
 		var r := 0.3 * _rand(rs, 20 + k)
 		var from := end + Vector3(cos(a) * r, 0.2, sin(a) * r)
-		var up := Vector3(cos(a) * 0.18 + dir.x * 0.15, 1.0, sin(a) * 0.18 + dir.z * 0.15).normalized()
-		var l := (2.4 + 3.2 * _rand(rs, 30 + k)) * clampf(height / 17.0, 0.8, 1.2)
+		var up := (Vector3(cos(a) * 0.28, 1.0, sin(a) * 0.28) + fan_dir * (0.08 + 0.2 * _rand(rs, 50 + k))).normalized()
+		var l := (1.7 + 3.9 * _rand(rs, 30 + k)) * clampf(height / 17.0, 0.8, 1.2)
 		var to := from + up * l
 		seg("bark", from, to, 0.07)
-		seg("frost", from.lerp(to, 0.3), to, 0.17)
-		if k % 2 == 0:
-			var side := to.lerp(from, 0.4)
+		var frost_load := 0.65 + 0.35 * _rand(rs, 60 + k)
+		if _rand(rs, 70 + k) > 0.2:
+			seg("frost", from.lerp(to, 0.2 + 0.45 * _rand(rs, 80 + k)), to, 0.14 + 0.03 * frost_load)
+		if _rand(rs, 90 + k) > 0.6:
+			var side := from.lerp(to, 0.45 + 0.3 * _rand(rs, 100 + k))
 			var sd := (up + Vector3(cos(a + 1.3), 0, sin(a + 1.3)) * 0.6).normalized()
 			seg("twig", side, side + sd * 0.7, 0.05, Color.WHITE, true)
-			seg("frost", side, side + sd * 0.7, 0.16, Color.WHITE, true)
+			if frost_load > 0.8:
+				seg("frost", side, side + sd * 0.7, 0.13 + 0.03 * frost_load, Color.WHITE, true)
 
 ## Берёза (ART-04, черта 8): белый ствол с тёмными чечевичками и чёрным потрескавшимся низом, лёгкий наклон,
 ## подъёмистые сучья и свисающие тонкие ветки в куржаке. Ствол — по коллизии Layout.TREES (0,3 × 7 м), крона выше.
@@ -405,25 +421,32 @@ func birch(base: Vector3, height: float, seed: float) -> void:
 		var long := 0.05 + 0.16 * _rand(rs, 300 + m)
 		var tall := 0.015 + 0.03 * _rand(rs, 400 + m) if m % 5 != 0 else 0.08 + 0.1 * _rand(rs, 400 + m)
 		box(Vector3(long, tall, 0.02), p + Vector3(cos(a) * r, 0, sin(a) * r), BIRCH_DARK, Color(0, 0.9, 0, 0), true, -a + PI * 0.5)
-	# Сучья: подъёмистые, от 40 % высоты; с них свисают тонкие ветки.
-	var limbs := 6 + int(_rand(rs, 5) * 3.0)
+	# Неравные подъёмистые сучья и редкие группы свисающих веток; общий перекос кроны — по seed.
+	var limbs := 5 + int(_rand(rs, 5) * 3.0)
+	var crown_yaw := TAU * _rand(rs, 6)
+	var crown_side := Vector3(cos(crown_yaw), 0, sin(crown_yaw))
 	for i in limbs:
-		var y := crown * (0.4 + 0.5 * float(i) / limbs)
+		var level := (float(i) + 0.8 * _rand(rs, 1100 + i)) / limbs
+		var y := crown * (0.36 + 0.54 * level)
 		var k := mini(3, int(y / (crown / 4.0)))
 		var from: Vector3 = pts[k].lerp(pts[k + 1], fposmod(y / (crown / 4.0), 1.0))
-		var yaw := seed * 1.7 + i * 2.4 + _rand(rs, 500 + i)
-		var dir := _dir(yaw, deg_to_rad(30.0 + 25.0 * _rand(rs, 600 + i)))
-		var l := (2.6 - 1.4 * float(i) / limbs) * (0.8 + 0.4 * _rand(rs, 700 + i))
+		var yaw := crown_yaw + i * 2.4 + (_rand(rs, 500 + i) - 0.5) * 1.6
+		var dir := (_dir(yaw, deg_to_rad(24.0 + 34.0 * _rand(rs, 600 + i))) + crown_side * 0.16).normalized()
+		var l := (2.8 - 1.5 * level) * (0.65 + 0.55 * _rand(rs, 700 + i))
 		var to := from + dir * l
 		seg("birch", from, to, 0.07, BIRCH_WHITE.darkened(0.25))
-		seg("frost", from.lerp(to, 0.3), to, 0.16)
-		for q in 4:
-			var at := from.lerp(to, 0.35 + 0.18 * q)
+		var frost_load := 0.6 + 0.2 * dir.dot(crown_side) + 0.2 * _rand(rs, 1200 + i)
+		if frost_load > 0.55:
+			seg("frost", from.lerp(to, 0.2 + 0.4 * _rand(rs, 1300 + i)), to, 0.14 + 0.02 * frost_load)
+		var twigs := 2 + int(_rand(rs, 1400 + i) * 3.0)
+		for q in twigs:
+			var at := from.lerp(to, 0.3 + 0.65 * (float(q) + 0.7 * _rand(rs, 1500 + i * 4 + q)) / twigs)
 			var droop := (Vector3(dir.x, 0, dir.z).normalized() * 0.45 + Vector3(0, -1.0, 0) + Vector3(_rand(rs, 800 + i * 4 + q) - 0.5, 0, _rand(rs, 900 + i * 4 + q) - 0.5) * 0.5).normalized()
-			var dl := 0.8 + 1.0 * _rand(rs, 1000 + i * 4 + q)
+			var dl := 0.6 + 1.2 * _rand(rs, 1000 + i * 4 + q)
 			var tip := at + Vector3(dir.x, 0.25, dir.z) * 0.35 + droop * dl
 			seg("twig", at, tip, 0.035, Color.WHITE, true)
-			seg("frost", at, tip, 0.12, Color.WHITE, true)
+			if frost_load > 0.55 and _rand(rs, 1600 + i * 4 + q) > 0.2:
+				seg("frost", at.lerp(tip, 0.35 * _rand(rs, 1700 + i * 4 + q)), tip, 0.10 + 0.02 * frost_load, Color.WHITE, true)
 
 # --- тротуары ---
 
