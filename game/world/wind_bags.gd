@@ -778,7 +778,10 @@ func _print(m: ShaderMaterial, lines: Array, small: String) -> void:
 	vp.disable_3d = true
 	add_child(vp)
 	var box := VBoxContainer.new()
-	box.size = Vector2(256, 256)
+	var print_margin := 16.0
+	var print_width := float(vp.size.x) - print_margin * 2.0
+	box.position.x = print_margin
+	box.size = Vector2(print_width, vp.size.y)
 	box.alignment = BoxContainer.ALIGNMENT_CENTER
 	box.add_theme_constant_override("separation", -10)
 	vp.add_child(box)
@@ -787,7 +790,10 @@ func _print(m: ShaderMaterial, lines: Array, small: String) -> void:
 		label.text = lines[k]
 		label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		label.add_theme_font_override("font", FONT)
-		label.add_theme_font_size_override("font_size", 64 if lines[k].length() <= 8 else 44)
+		var font_size := 64 if lines[k].length() <= 8 else 44
+		while font_size > 1 and FONT.get_string_size(label.text, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size).x > print_width:
+			font_size -= 1
+		label.add_theme_font_size_override("font_size", font_size)
 		label.rotation = -0.04 + 0.05 * k   # от руки, чуть вкось
 		box.add_child(label)
 	var tag := Label.new()
