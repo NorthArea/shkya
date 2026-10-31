@@ -8,14 +8,14 @@ map:
 # Каждый набор: лог в builds/checks/make-test/, зелёным считается только итоговая строка
 # «ИМЯ: N checks, 0 failures» — Godot выходит с кодом 0 и при ошибке разбора скрипта (QA-01, З1).
 # $(1) — скрипт, $(2) — частота, $(3) — итоговая метка, $(4) — аргументы,
-# $(5) — render для проверок настоящих MultiMesh: RendererDummy не хранит их трансформы.
+# $(5) — render для настоящих MultiMesh и камеры после native physics.
 define godot_test
 	@mkdir -p builds/checks/make-test
 	@./tools/run.command $(if $(5),,--headless) --fixed-fps $(2) --script tests/$(1).gd $(4) > builds/checks/make-test/$(1)-$(2).log 2>&1; \
 	status=$$?; grep -E '^$(3): [0-9]+ checks, [0-9]+ failures' builds/checks/make-test/$(1)-$(2).log; \
 	grep -qE '^$(3): [0-9]+ checks, 0 failures' builds/checks/make-test/$(1)-$(2).log && \
-	! grep -qE '^SCRIPT ERROR:|^ERROR: Condition "p_elem->_root" is true' builds/checks/make-test/$(1)-$(2).log && [ $$status -eq 0 ] || \
-	{ echo "FAIL: $(1) ($(2) fps), лог builds/checks/make-test/$(1)-$(2).log"; grep -E 'FAIL|SCRIPT ERROR|Parse Error|p_elem->_root' builds/checks/make-test/$(1)-$(2).log | head -20; exit 1; }
+	! grep -qE '^SCRIPT ERROR:|^ERROR: CameraRig:|^ERROR: Condition "p_elem->_root" is true' builds/checks/make-test/$(1)-$(2).log && [ $$status -eq 0 ] || \
+	{ echo "FAIL: $(1) ($(2) fps), лог builds/checks/make-test/$(1)-$(2).log"; grep -E 'FAIL|SCRIPT ERROR|Parse Error|CameraRig:|p_elem->_root' builds/checks/make-test/$(1)-$(2).log | head -20; exit 1; }
 endef
 
 test: map
@@ -57,7 +57,7 @@ test: map
 	$(call godot_test,pad01_test,60,PAD01)
 	$(call godot_test,text01_test,60,TEXT01)
 	$(call godot_test,life01_test,60,LIFE01)
-	$(call godot_test,polish03a_test,60,POLISH03A)
+	$(call godot_test,polish03_camera_safety,60,CAMERA_SAFETY,--max-fps 60 --resolution 1920x1080,render)
 	$(call godot_test,city03_test,60,CITY03)
 	$(call godot_test,city03_bags_test,60,CITY03_BAGS)
 	$(call godot_test,dog01_test,60,DOG01)

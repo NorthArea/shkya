@@ -32,6 +32,7 @@ func _run() -> void:
 	_check_ring()
 	await _check_spawn_and_hud(world)
 	await _check_camera_relative(world)
+	await _check_camera_follow(world)
 	await _check_walls(world)
 	await _check_interaction(world)
 	await _check_kiosk_zone(world)
@@ -178,6 +179,99 @@ func _check_camera_relative(world: DemoWorld) -> void:
 		moved.y = 0.0
 		var along := moved.dot(case[1])
 		check(along > 2.0 and moved.length() - along < 0.3, "W with camera yaw %s walks %s (moved %s)" % [case[0], case[2], moved])
+
+# --- POLISH-03 C: доводка камеры пешком (за спину через ~0,5 с, при ходьбе на камеру — облёт), тонкие столбы ---
+
+func _check_camera_follow(world: DemoWorld) -> void:
+	var player := world.player
+	var rig := world.camera_rig
+	var dt := 1.0 / Engine.physics_ticks_per_second
+	# 1. Ходьба на камеру: улица A, камера смотрит на восток, S — Илюша идёт на запад, лицом к камере.
+	player.place(Vector3(20, 0, 32), -PI * 0.5)
+	rig.yaw = -PI * 0.5
+	rig.snap()
+	await _frames(70)   # пауза ручной камеры
+	var yaw0 := rig.yaw
+	var start := player.global_position
+	var still_until := -1.0
+	var max_step := 0.0
+	var prev := rig.yaw
+	Input.action_press(&"move_back")
+	for i in 210:
+		await _frames(1)
+		var step := absf(angle_difference(prev, rig.yaw))
+		max_step = maxf(max_step, step)
+		prev = rig.yaw
+		if still_until < 0.0 and absf(angle_difference(yaw0, rig.yaw)) > 0.01:
+			still_until = (i + 1) * dt
+	Input.action_release(&"move_back")
+	await _frames(10)
+	var moved := player.global_position - start
+	var behind := absf(angle_difference(rig.yaw, rig.follow_heading))
+	check(still_until >= CameraRig.TURN_AROUND_DELAY - 0.05, "walking toward the camera: it holds for %.2f s before swinging (≥ %.1f)" % [still_until, CameraRig.TURN_AROUND_DELAY])
+	check(behind < 0.35, "walking toward the camera: after 3.5 s the camera is behind Ilyusha (%.2f rad off)" % behind)
+	check(max_step <= CameraRig.AUTO_FOLLOW_SPEED * dt + 0.002, "camera swing is smooth: max %.3f rad per frame (≤ %.3f)" % [max_step, CameraRig.AUTO_FOLLOW_SPEED * dt])
+	check(moved.x < -8.0 and absf(moved.z) < 1.0, "Ilyusha keeps walking west while the camera swings (moved %s)" % moved)
+	# 2. Ходьба вбок: доводка начинается не раньше AUTO_FOLLOW_DELAY и приводит камеру за спину.
+	player.place(Vector3(20, 0, 32), 0.0)
+	rig.yaw = 0.0
+	rig.snap()
+	await _frames(70)
+	Input.action_press(&"move_left")
+	await _frames(int(CameraRig.AUTO_FOLLOW_DELAY * 60.0) - 6)
+	var early := absf(angle_difference(0.0, rig.yaw))
+	await _frames(150)
+	Input.action_release(&"move_left")
+	var side_off := absf(angle_difference(rig.yaw, rig.follow_heading))
+	check(early < 0.01, "no auto-follow before %.1f s of walking (%.3f rad)" % [CameraRig.AUTO_FOLLOW_DELAY, early])
+	check(side_off < 0.3, "walking sideways: the camera settles behind Ilyusha (%.2f rad off)" % side_off)
+	# 3. Ручная камера в приоритете: пока двигают мышью/стиком, доводки нет.
+	player.place(Vector3(20, 0, 32), 0.0)
+	rig.yaw = 0.0
+	rig.snap()
+	await _frames(70)
+	Input.action_press(&"move_back")
+	var drift := 0.0
+	for i in 120:
+		rig.apply_mouse(Vector2.ZERO)
+		await _frames(1)
+		drift = maxf(drift, absf(angle_difference(0.0, rig.yaw)))
+	Input.action_release(&"move_back")
+	check(drift < 0.001, "manual camera has priority: no auto-follow while the mouse moves (%.4f rad)" % drift)
+	await _frames(20)
+	# 4. Фонарь в валу не притягивает камеру к затылку (критик, v05); стена дома — притягивает.
+	var h3: Array = Layout.SOLIDS.filter(func(spec): return spec[0] == "H3_North")[0]
+	var h3_face_z: float = h3[2].y + h3[3].z * 0.5
+	# Прежние 0,6 м от фасада: дом сдвинулся, старт должен оставаться снаружи.
+	var h3_start := Vector3(h3[2].x, 0.0, h3_face_z + 0.6)
+	var cases := [
+		[Vector3(55, 0, 40), atan2(55.0 - 75.0, 40.0 - 20.0), true, "lamp in the snow bank at A∩B"],
+		[h3_start, PI, false, "H3 wall behind"],
+	]
+	for c in cases:
+		player.place(c[0], 0.0)
+		rig.yaw = c[1]
+		rig.pitch = -0.25
+		rig.snap()
+		await _frames(90)
+		var hit: float = rig.arm.get_hit_length()
+		if c[2]:
+			check(hit > float(CameraRig.PROFILES[&"on_foot"]["distance"]) - 0.3, "%s: spring arm stays long (%.2f m)" % [c[3], hit])
+			var head: Vector3 = player.global_position + Vector3.UP * 1.5
+			var ray := PhysicsRayQueryParameters3D.create(rig.camera.global_position, head, 1, [player.get_rid()])
+			var seen: Dictionary = world.get_world_3d().direct_space_state.intersect_ray(ray)
+			check(seen.is_empty(), "%s: the camera steps aside, the pole does not cover Ilyusha (%s)" % [c[3], seen["collider"].name if not seen.is_empty() else "clear"])
+			var faded: Array = rig.faded_poles()
+			var near_opaque := 0
+			for body in rig._thin.values():
+				if Vector2(body.global_position.x - rig.camera.global_position.x, body.global_position.z - rig.camera.global_position.z).length() < CameraRig.POLE_FADE_NEAR and not faded.has(body):
+					near_opaque += 1
+			check(absf(rig._dodge) > 0.2 and near_opaque == 0, "%s: camera steps %.2f m aside, no opaque pole right at the lens (%d faded)" % [c[3], rig._dodge, faded.size()])
+		else:
+			check(hit < 2.5, "%s: spring arm still shortens at a wall (%.2f m)" % [c[3], hit])
+			var lift: float = rig.camera.global_position.y - player.global_position.y
+			check(lift >= float(CameraRig.PROFILES[&"on_foot"]["height"]) + 0.3, "%s: squeezed camera rises over the head, not into it (%.2f m)" % [c[3], lift])
+	rig.pitch = CameraRig.PROFILES[&"on_foot"]["pitch"]
 
 # --- критерий 4: стены и сугробы ---
 
