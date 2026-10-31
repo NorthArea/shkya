@@ -19,6 +19,7 @@ const WALK_SPEED := 4.0         # 2,2 роста/с при фигуре 1,8 м, 
 const ACCELERATION := 30.0
 const DECELERATION := 11.0      # остановка за ~0,4 с, как у эталона (PLAY-01)
 const TURN_RATE := 12.0
+const AIR_ACCELERATION := 8.0   # м/с²: ввод добавляет управление к скорости отрыва, без тормоза при отпускании
 const PROBE_RADIUS := 0.5
 const JUMP_VELOCITY := 6.0        # подскок ≈1,8 м: на крышу «Лады» (1,4 м) с запасом — решение владельца 28.10.2026
 # PUNCH-01: удар.
@@ -53,6 +54,7 @@ var hide_visual: Node3D
 var hide_travel := 0.0
 var _look: Node3D
 var _last_input := Vector2.ZERO
+var _ground_speed := 0.0
 ## PUNCH-01: сколько ударов начато и сколько задели цель; цели последнего попадания.
 var punches := 0
 var punch_hits := 0
@@ -109,8 +111,28 @@ func _physics_process(delta: float) -> void:
 	var direction := Vector3(input.x, 0.0, input.y).rotated(Vector3.UP, yaw)
 	if limit <= 0.0:
 		direction = Vector3.ZERO   # сугроб: движения и поворота нет
-	var rate := ACCELERATION if direction.length_squared() > 0.01 else DECELERATION
-	var horizontal := Vector3(velocity.x, 0.0, velocity.z).move_toward(direction * limit, rate * delta)
+	var horizontal := Vector3(velocity.x, 0.0, velocity.z)
+	if hide_mode != HideTuning.NONE or not input_enabled:
+		# Укрытия и блокировка ввода сохраняют прежние пределы и остановку.
+		var rate := ACCELERATION if direction.length_squared() > 0.01 else DECELERATION
+		horizontal = horizontal.move_toward(direction * limit, rate * delta)
+		_ground_speed = horizontal.length()
+	elif is_on_floor():
+		# PLAY-04: скорость отдельно от направления и плавного взгляда; разворот не гасит ход.
+		# Нелинейная кривая применяется после штатной мёртвой зоны Input.get_vector().
+		var strength := direction.length()
+		var wanted_speed := strength * strength * limit
+		# После столкновения velocity содержит только остаток скольжения. Повторное использование
+		# его длины как скорости разгона каждый кадр гасило касательное движение вдоль стены.
+		if strength <= 0.0:
+			_ground_speed = horizontal.length()
+		var rate := ACCELERATION if wanted_speed > _ground_speed else DECELERATION
+		_ground_speed = move_toward(_ground_speed, wanted_speed, rate * delta)
+		horizontal = (direction.normalized() if strength > 0.0 else horizontal.normalized()) * _ground_speed
+	else:
+		# В воздухе нет наземного тормоза: отпускание оставляет дрейф, ввод меняет импульс постепенно.
+		horizontal = (horizontal + direction * direction.length() * AIR_ACCELERATION * delta).limit_length(limit)
+		_ground_speed = horizontal.length()
 	velocity.x = horizontal.x
 	velocity.z = horizontal.z
 	if is_on_floor():
@@ -119,7 +141,13 @@ func _physics_process(delta: float) -> void:
 	else:
 		velocity.y -= get_gravity().length() * delta
 	var before := global_position
+	# При прямом задании курса малый касательный ввод должен давать скольжение, а не
+	# остановку под штатным углом 15°. Укрытия сохраняют прежнюю контактную динамику.
+	var wall_angle := wall_min_slide_angle
+	if input_enabled and hide_mode == HideTuning.NONE and is_on_floor():
+		wall_min_slide_angle = 0.0
 	move_and_slide()
+	wall_min_slide_angle = wall_angle
 	hide_travel += Vector2(global_position.x - before.x, global_position.z - before.z).length()
 	if direction.length_squared() > 0.01:
 		var facing := atan2(-direction.x, -direction.z)
@@ -174,6 +202,7 @@ func current_interactable() -> Interactable:
 func place(point: Vector3, facing_yaw: float) -> void:
 	global_position = point
 	velocity = Vector3.ZERO
+	_ground_speed = 0.0
 	visual.rotation.y = facing_yaw
 	reset_physics_interpolation()
 

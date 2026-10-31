@@ -23,6 +23,8 @@ test: map
 	$(call godot_test,mission_director_test,60,MISSION)
 	$(call godot_test,story02_test,60,STORY02)
 	$(call godot_test,grey01_acceptance,60,GREY01)
+	$(call godot_test,play04_motion_test,60,PLAY04_MOTION)
+	$(call godot_test,play04_wall_slide_test,60,PLAY04_WALL_SLIDE)
 	$(call godot_test,drive01_acceptance,60,DRIVE01)
 	$(call godot_test,quest01_acceptance,60,QUEST01)
 	$(call godot_test,polish01_audio,60,AUDIO)

@@ -36,6 +36,7 @@ var input_yaw := 0.0
 var follow_heading := 0.0
 var follow_speed := 0.0
 var _mouse_idle := 0.0
+var _ground_y := 0.0   # опора пешей камеры: обновляется на полу, удерживается в прыжке
 var pitch := -0.30
 var arm: SpringArm3D
 var camera: Camera3D
@@ -113,6 +114,7 @@ func exclude_permanently(rid: RID) -> void:
 ## Мгновенно поставить камеру за целью, без сглаживания.
 func snap(with_distance := true) -> void:
 	if target:
+		_ground_y = target.global_position.y
 		global_position = _goal()
 		if with_distance:
 			arm.spring_length = PROFILES[profile]["distance"]
@@ -130,6 +132,8 @@ func _physics_process(delta: float) -> void:
 	var stick := Input.get_vector(&"look_left", &"look_right", &"look_up", &"look_down")
 	if stick.length_squared() > 0.04 and profile != &"in_car":
 		apply_mouse(stick * STICK_LOOK_SPEED * delta / mouse_sensitivity)
+	if profile == &"on_foot" and target is CharacterBody3D and (target as CharacterBody3D).is_on_floor():
+		_ground_y = target.global_position.y
 	global_position = global_position.lerp(_goal(), 1.0 - exp(-FOLLOW_SHARPNESS * delta))
 	if _update_talk(delta):
 		pass   # POLISH-03 A: поворот к собеседнику или возврат ведёт yaw сам
@@ -340,4 +344,7 @@ func sync_input_yaw() -> void:
 
 func _goal() -> Vector3:
 	var right := Vector3(cos(yaw), 0.0, -sin(yaw))
-	return target.global_position + Vector3.UP * PROFILES[profile]["height"] + right * _shoulder_now
+	var point := target.global_position
+	if profile == &"on_foot" and target is CharacterBody3D:
+		point.y = _ground_y
+	return point + Vector3.UP * PROFILES[profile]["height"] + right * _shoulder_now
