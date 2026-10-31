@@ -67,10 +67,13 @@ func _run() -> void:
 	_part_path()
 	_part_start()
 	_part_sweep()
+	_part_side_room_profiles()
 	_part_people()
 	await _part_laps()
 	await _part_oncoming()
 	await _part_lada_block()
+	await _part_lada_head_on()
+	await _part_lada_head_on_drive()
 	await _part_player_block()
 	await _part_hard_brake()
 	await _part_pause_and_dialog()
@@ -466,6 +469,153 @@ func _part_lada_block() -> void:
 	check(resumed >= 0, "%s drives on after the Lada leaves (%d frames)" % [car.name, resumed])
 
 # =====================================================================================
+# 5б. POLISH-03 C: «Лада» встала носом навстречу в полосе машин (критик 30.10, k_09_back_pt04: 27 с лоб в лоб у A∩B).
+# Shared path queries must not inherit another car's clearance result.
+# The witness is selected by real Layout geometry, without reading provider cache/state.
+func _part_side_room_profiles() -> void:
+	var sizes: Array = traffic.cars.map(func(car): return car.size)
+	sizes.sort_custom(func(a, b): return a.x < b.x)
+	if not check(sizes.size() >= 3, "side-room oracle uses all three actual traffic bodies"):
+		return
+	var narrow: Vector3 = sizes[0]
+	var wide: Vector3 = sizes[-1]
+	var clear := PathVehicle.YIELD_CLEAR
+	var maximum := PathVehicle.SIDE_MAX
+	var witness := -1.0
+	var narrow_room := 0.0
+	var wide_room := 0.0
+	for metre in ceili(car_lane.length):
+		var at := metre + 0.5
+		var a := _side_room_geometry(at, narrow, clear, maximum)
+		var b := _side_room_geometry(at, wide, clear, maximum)
+		if a >= b + 0.19 and a > 0.0 and _overlaps(_side_room_pose(at, 0.0), wide + Vector3(clear * 2.0, 0.0, clear * 2.0)).is_empty():
+			witness = at
+			narrow_room = a
+			wide_room = b
+			break
+	if not check(witness >= 0.0, "real static corridor permits a larger side offset for the narrow body"):
+		return
+	print("INFO: side-room geometric witness s=%.1f narrow=%.2f wide=%.2f" % [witness, narrow_room, wide_room])
+	var narrow_padded := narrow + Vector3(clear * 2.0, 0.0, clear * 2.0)
+	var wide_padded := wide + Vector3(clear * 2.0, 0.0, clear * 2.0)
+	check(_overlaps(_side_room_pose(witness, narrow_room), narrow_padded).is_empty(), "narrow body's geometric witness is outside the actual static corridor walls")
+	check(not _overlaps(_side_room_pose(witness, narrow_room), wide_padded).is_empty(), "the same offset is unsafe for the real wide body")
+	var profiles: Array = []
+	for size: Vector3 in sizes:
+		profiles.append([size, clear, maximum])
+	profiles.append([narrow, clear + 0.2, maximum])
+	profiles.append([narrow, clear, minf(1.0, maximum)])
+	var expected: Array = []
+	for profile in profiles:
+		var fresh := PathVehicle.LanePath.build(Layout.CAR_RING, Layout.RING_LANE, PathVehicle.CAR_TURN_RADIUS)
+		expected.append(fresh.side_room(witness, profile[0], profile[1], profile[2]))
+	check(absf(expected[0] - narrow_room) <= 0.01 and absf(expected[sizes.size() - 1] - wide_room) <= 0.01, "fresh provider queries agree with independently selected corridor geometry")
+	for backwards in [false, true]:
+		var shared := PathVehicle.LanePath.build(Layout.CAR_RING, Layout.RING_LANE, PathVehicle.CAR_TURN_RADIUS)
+		var order: Array = range(profiles.size())
+		if backwards:
+			order.reverse()
+		for i in order:
+			var profile: Array = profiles[i]
+			var actual := shared.side_room(witness, profile[0], profile[1], profile[2])
+			check(absf(actual - expected[i]) <= 0.00001, "shared side-room query matches a fresh path for profile %d in %s order" % [i, "wide-to-narrow" if backwards else "narrow-to-wide"])
+			var padded: Vector3 = profile[0] + Vector3(profile[1] * 2.0, 0.0, profile[1] * 2.0)
+			check(actual <= profile[2] + 0.00001 and _overlaps(_side_room_pose(witness, actual), padded).is_empty(), "profile %d returned offset respects its own static clearance and side limit" % i)
+
+func _side_room_geometry(at: float, size: Vector3, clear: float, maximum: float) -> float:
+	var padded := size + Vector3(clear * 2.0, 0.0, clear * 2.0)
+	var room := 0.0
+	for step in range(1, floori(maximum * 10.0) + 1):
+		var offset := step / 10.0
+		if not _overlaps(_side_room_pose(at, offset), padded).is_empty():
+			break
+		room = offset
+	return room
+
+func _side_room_pose(at: float, offset: float) -> Transform3D:
+	var p := car_lane.position_at(at)
+	var d := car_lane.direction_at(at)
+	var right := Vector3(-d.z, 0.0, d.x).normalized()
+	return Transform3D(Basis(Vector3.UP, atan2(-d.x, -d.z)), p + right * offset)
+
+# Машина тормозит, ждёт не дольше YIELD_DELAY, прижимается вправо к обочине и медленно разъезжается, не касаясь
+# «Лады» и коробок Layout; за «Ладой» возвращается в полосу.
+# =====================================================================================
+
+func _part_lada_head_on() -> void:
+	print("--- Lada head-on in the car lane ---")
+	traffic.reset_positions()
+	var lada_point := Vector3(58.9, 0, 34.3)   # улица A, полоса машин на восток; точка застревания бота критика
+	var at := car_lane.offset_of(lada_point)
+	var car: PathVehicle = _vehicle_behind(at, car_lane)
+	world.car.reset_to(lada_point, PI * 0.5)   # носом на запад, навстречу
+	await drv.frames(2)
+	var lada_at: Vector3 = world.car.global_position
+	var lada_box := [_flat(lada_at), Vector2(-1, 0), Vector2(Lada.SIZE.x, Lada.SIZE.z)]
+	var first_block := -1.0
+	var passed_at := -1.0
+	var max_blocked := 0.0
+	var min_gap := INF
+	var max_side := 0.0
+	var yield_at := -1.0
+	var solid_hits := {}
+	var t0 := _sim_time
+	for frame in 60 * 60:
+		await physics_frame
+		if car.blocked_by == world.car and car.speed < 0.05 and first_block < 0.0:
+			first_block = _sim_time - t0   # встала перед «Ладой»
+		if car.yielding and yield_at < 0.0:
+			yield_at = _sim_time - t0
+		max_blocked = maxf(max_blocked, car.blocked_time)
+		max_side = maxf(max_side, absf(car.side))
+		min_gap = minf(min_gap, _poly_distance(_footprint_corners(car), _obb_corners(lada_box[0], lada_box[1], lada_box[2])))
+		if frame % 10 == 0:
+			for solid in _overlaps(car.global_transform, car.size):
+				solid_hits[solid[0]] = "%s@(%.0f,%.0f)" % [solid[0], solid[1].x, solid[1].y]
+		var ahead := fposmod(at - car.s, car_lane.length)
+		if passed_at < 0.0 and first_block >= 0.0 and ahead > car_lane.length * 0.5:
+			passed_at = _sim_time - t0
+		if passed_at >= 0.0 and _sim_time - t0 > passed_at + 6.0:
+			break
+	check(car is TrafficCar and first_block >= 0.0, "%s comes up and stops for the oncoming Lada (after %.1f s)" % [car.name, first_block])
+	check(yield_at >= 0.0 and yield_at - first_block <= PathVehicle.YIELD_DELAY + 0.5, "%s starts pulling over %.1f s after stopping (≤ %.1f)" % [car.name, yield_at - first_block, PathVehicle.YIELD_DELAY + 0.5])
+	var stand_max := PathVehicle.YIELD_DELAY + PathVehicle.SIDE_MAX / PathVehicle.SIDE_RATE + 0.5
+	check(max_blocked <= stand_max, "%s stands nose to nose no longer than %.1f s (%.1f s)" % [car.name, stand_max, max_blocked])
+	check(passed_at >= 0.0 and passed_at - first_block <= 10.0, "%s squeezes past the Lada %.1f s after stopping (≤ 10 s)" % [car.name, passed_at - first_block if passed_at >= 0.0 else -1.0])
+	check(max_side > 0.5 and max_side <= PathVehicle.SIDE_MAX + 0.01, "%s pulls over to the kerb by %.2f m (≤ %.1f)" % [car.name, max_side, PathVehicle.SIDE_MAX])
+	check(min_gap > 0.2, "%s never touches the Lada (min body gap %.2f m)" % [car.name, min_gap])
+	check(solid_hits.is_empty(), "%s stays out of Layout solids while yielding%s" % [car.name, "" if solid_hits.is_empty() else " — " + ", ".join(solid_hits.values())])
+	check(absf(car.side) < 0.05, "%s is back in its lane after the Lada (side %.2f m)" % [car.name, car.side])
+	check(_flat(world.car.global_position).distance_to(_flat(lada_at)) < 0.05, "Lada not pushed (moved %.3f m)" % _flat(world.car.global_position).distance_to(_flat(lada_at)))
+	world.car.reset_to(Layout.CAR_SPAWN, Layout.CAR_SPAWN_YAW)
+	await drv.frames(2)
+
+## Как бот критика: «Лада» после поворота с B на A едет на запад по полосе машин (z ≈ 34,3) к (0; 32), навстречу —
+## машина кольца. Проезд не блокируется дольше нескольких секунд.
+func _part_lada_head_on_drive() -> void:
+	print("--- Lada drives west in the car lane ---")
+	traffic.reset_positions()
+	var start := Vector3(66, 0, 34.3)
+	var at := car_lane.offset_of(Vector3(50, 0, 35))
+	var car: PathVehicle = _vehicle_behind(at, car_lane)
+	# Машину — за 30 м до встречи, чтобы встреча была сразу; Илюша за рулём.
+	car.setup(car_lane, at - 30.0)
+	world.car.reset_to(start, PI * 0.5)
+	world.enter_car()
+	await drv.frames(5)
+	var t0 := _sim_time
+	var ok: bool = await drv.drive_path([Vector3(30, 0, 32)], 9.0)
+	var took := _sim_time - t0
+	drv.release_all()
+	check(ok, "Lada gets past the oncoming %s along A (%s)" % [car.name, "ok" if ok else drv.last_error])
+	check(took < 12.0, "36 m along A take %.1f s (< 12, nobody stands nose to nose)" % took)
+	await drv.brake()
+	world.exit_car()
+	await drv.frames(30)
+	world.car.reset_to(Layout.CAR_SPAWN, Layout.CAR_SPAWN_YAW)
+	await drv.frames(2)
+
+# =====================================================================================
 # 6. Илюша стоит на полосе перед троллейбусом
 # =====================================================================================
 
@@ -473,7 +623,7 @@ func _part_player_block() -> void:
 	print("--- Ilyusha on the lane ---")
 	traffic.reset_positions()
 	var bus: Trolleybus = traffic.trolleybus
-	var point := Vector3(-14, 0, 29)   # улица A, перед стартом троллейбуса (x ≈ 6), до остановки x = −30
+	var point := Vector3(-29, 0, 29)   # до остановки A; весь остановившийся кузов западнее пешеходного перехода
 	world.player.place(point, 0.0)
 	await drv.frames(2)
 	var at := lane.offset_of(point)

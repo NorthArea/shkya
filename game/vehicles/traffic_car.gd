@@ -21,6 +21,7 @@ func _init() -> void:
 	super._init()
 	cruise_speed = 9.0
 	corner_speed = 5.0
+	can_yield = true   # POLISH-03 C: встречной «Ладе» уступает, прижимаясь к обочине
 
 func _ready() -> void:
 	var spec: Dictionary = KINDS[kind]
