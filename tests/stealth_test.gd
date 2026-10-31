@@ -1168,7 +1168,7 @@ func _part_fix3() -> void:
 				slow_at = _track_frames
 			if absf(v) < 0.3:
 				break
-			drv._axis(&"move_forward", &"move_back", -signf(v))
+			drv._axis(&"car_gas", &"car_brake", -signf(v))
 			await drv.frames(1)
 		drv.release_all()
 		var stop_pos: Vector3 = world.car.global_position
@@ -1445,7 +1445,7 @@ func _part_fix4_trolley() -> void:
 		var v: float = drv.forward_speed()
 		drv._steer_and_throttle(Vector3(67.0, 0, cp.z + 12.0), clampf((gap - 3.0) * 1.2, 0.0, 9.0))
 		if gap < 4.0 and v > 0.3:
-			drv._axis(&"move_forward", &"move_back", -1.0)
+			drv._axis(&"car_gas", &"car_brake", -1.0)
 		await drv.frames(1)
 		if Layout.KIOSK_SQUARE.has_point(Vector2(cp.x, cp.z)) and absf(v) < DetectionSensor.CAR_STILL_SPEED:
 			still += 1

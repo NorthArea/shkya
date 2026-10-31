@@ -10,7 +10,7 @@ func _init(scene_tree: SceneTree, demo_world: DemoWorld) -> void:
 	world = demo_world
 
 func release_all() -> void:
-	for action in [&"move_forward", &"move_back", &"move_left", &"move_right"]:
+	for action in [&"car_gas", &"car_brake", &"move_left", &"move_right"]:
 		Input.action_release(action)
 
 func speed() -> float:
@@ -112,11 +112,11 @@ func _apply_steer(steer: float) -> void:
 
 func _throttle(value: float) -> void:
 	if value > 0.0:
-		Input.action_release(&"move_back")
-		Input.action_press(&"move_forward")
+		Input.action_release(&"car_brake")
+		Input.action_press(&"car_gas")
 	elif value < 0.0:
-		Input.action_release(&"move_forward")
-		Input.action_press(&"move_back")
+		Input.action_release(&"car_gas")
+		Input.action_press(&"car_brake")
 	else:
-		Input.action_release(&"move_forward")
-		Input.action_release(&"move_back")
+		Input.action_release(&"car_gas")
+		Input.action_release(&"car_brake")

@@ -12,7 +12,7 @@ extends SceneTree
 const Layout = preload("res://game/world/layout.gd")
 const Materials = preload("res://game/world/materials.gd")
 const VehicleMesh = preload("res://game/vehicles/vehicle_mesh.gd")
-const ACTIONS := [&"move_left", &"move_right", &"move_forward", &"move_back", &"handbrake"]
+const ACTIONS := [&"move_left", &"move_right", &"car_gas", &"car_brake", &"handbrake"]
 const SETTLE_SECONDS := 0.2
 const RUNUP_SECONDS := 2.0
 const PEDAL_SECONDS := 1.0
@@ -233,8 +233,8 @@ func _sample() -> Dictionary:
 		"lateral_speed": car.lateral_speed, "yaw": car.global_rotation.y,
 		"steer": car.get("_steer_now"), "braking": car.braking,
 		"floor": car.is_on_floor(), "snow_depth": car.snow_depth, "airborne": car.airborne,
-		"gas_input": Input.get_action_strength(&"move_forward"),
-		"brake_input": Input.get_action_strength(&"move_back"),
+		"gas_input": Input.get_action_strength(&"car_gas"),
+		"brake_input": Input.get_action_strength(&"car_brake"),
 		"steer_input": Input.get_axis(&"move_right", &"move_left")}
 
 func _validate(label: String) -> void:
@@ -256,12 +256,12 @@ func _validate(label: String) -> void:
 			label + ": non-floor physical contact contaminates measurement")
 
 func _pedals(gas: float, brake: float) -> void:
-	Input.action_release(&"move_forward")
-	Input.action_release(&"move_back")
+	Input.action_release(&"car_gas")
+	Input.action_release(&"car_brake")
 	if gas > 0.0:
-		Input.action_press(&"move_forward", gas)
+		Input.action_press(&"car_gas", gas)
 	if brake > 0.0:
-		Input.action_press(&"move_back", brake)
+		Input.action_press(&"car_brake", brake)
 
 func _steering(value: float) -> void:
 	Input.action_release(&"move_left")

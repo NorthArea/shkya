@@ -114,12 +114,12 @@ func _frames() -> void:
 	for c in world.camera_rig.find_children("*", "Camera3D", true, false):
 		(c as Camera3D).make_current()
 	car.velocity = -car.global_basis.z * 6.0
-	Input.action_press(&"move_forward")
+	Input.action_press(&"car_gas")
 	for i in 150: await physics_frame
 	await _save("g04_lada_drive_a")
 	for i in 70: await physics_frame
 	await _save("g05_lada_drive_a2")
-	Input.action_release(&"move_forward")
+	Input.action_release(&"car_gas")
 	main.queue_free()
 	for i in 5: await process_frame
 

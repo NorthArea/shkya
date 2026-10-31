@@ -144,8 +144,8 @@ func _physics_process(delta: float) -> void:
 	var handbrake := false
 	var stopping := not driver or exit_requested  # пустая машина и машина перед выходом тормозят до остановки
 	if driver and not exit_requested:
-		gas = Input.get_action_strength(&"move_forward")
-		brake = Input.get_action_strength(&"move_back")
+		gas = Input.get_action_strength(&"car_gas")
+		brake = Input.get_action_strength(&"car_brake")
 		steer = Input.get_axis(&"move_right", &"move_left")
 		handbrake = Input.is_action_pressed(&"handbrake")
 	var both_pedals := gas > 0.0 and brake > 0.0

@@ -100,7 +100,7 @@ func _physics_process(delta: float) -> void:
 	var handbrake := false
 	var stopping := not driver or exit_requested
 	if driver and not exit_requested:
-		throttle = Input.get_axis(&"move_back", &"move_forward")
+		throttle = Input.get_axis(&"car_brake", &"car_gas")
 		steer = Input.get_axis(&"move_right", &"move_left")
 		handbrake = Input.is_action_pressed(&"handbrake")
 	var b := global_basis.orthonormalized()

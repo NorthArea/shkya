@@ -9,7 +9,7 @@ extends "res://tools/play04_car_measure.gd"
 ## Mandatory outside this slice: DRIVE01, DRIVE02, STUCK, PAD01, COINS/BREAK, STEALTH, DEMO_ACCEPTANCE, C9 FPS/manual route.
 
 const SOURCE_PIN := "3UR/Simpsons-Hit-Run@c84f9ff9ae9b27a5d34dca7985ac819e70f62bc6"
-const PROVIDER_SHA256 := "0f262974102ec80b02be41e73fcf0ea9bfa58718bb79cbecbcf267c9d2b5a2c3"
+const PROVIDER_SHA256 := "d82563b7bd092759a707a404169936af0b9fe0c760947fc2c1b3486037cea6a7"
 const BASELINE_LOG_SHA256 := "31ac3d3b50d20b7148e0152fd87c70a70635c60458171d1da83aef89ad4cb84e"
 const BASELINE_CAR_SHA256 := "752910fac34a95bdccf4945a4bc9f54b46f58a857424d1cb53633a564d6ffb6b"
 const PRESERVED_LIMITS := {"forward_mps": 28.0, "reverse_mps": 10.0, "full_accel_mps2": 9.0, "full_brake_mps2": 24.0}
@@ -55,7 +55,8 @@ func _fixture_compatibility(profile: Dictionary) -> void:
 	check(profile.engine.major == 4 and profile.engine.minor == 7 and profile.engine.patch == 2,
 		"comparison uses the measured Godot 4.7.2 engine version")
 	for action: StringName in ACTIONS:
-		check(is_equal_approx(float(profile.action_deadzones[action]), 0.25), "measured input deadzone preserved: " + String(action))
+		var expected := 0.05 if action in [&"car_gas", &"car_brake"] else 0.25
+		check(is_equal_approx(float(profile.action_deadzones[action]), expected), "measured input deadzone matches its pedal/stick context: " + String(action))
 	check(car.collision_layer == 4 and car.collision_mask == (1 | 32), "C2: actual Lada retains Car layer and World/Breakable contact masks")
 	check(road.has_area() and road.has_point(Vector2(origin.x, origin.z)), "derived fixture origin lies on the current canonical Street B")
 	check(world.camera_rig.target == car and world.camera_rig.profile == &"in_car", "C4: measured input is driving the actual car camera profile")

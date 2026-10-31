@@ -145,12 +145,12 @@ func _drive_to(target: Vector3, final: bool, next: Vector3 = Vector3.INF) -> Dic
 			wanted = minf(wanted, 7.0)  # тормозить перед поворотом, как игрок (PLAY-02: радиус по эталону шире)
 		if final:
 			wanted = minf(wanted, distance * 0.8 + 2.0)
-		Input.action_release(&"move_forward")
-		Input.action_release(&"move_back")
+		Input.action_release(&"car_gas")
+		Input.action_release(&"car_brake")
 		if speed < wanted:
-			Input.action_press(&"move_forward")
+			Input.action_press(&"car_gas")
 		elif speed > wanted + 2.0:
-			Input.action_press(&"move_back")
+			Input.action_press(&"car_brake")
 		await physics_frame
 		if distance < best - 0.05:
 			best = distance
@@ -176,21 +176,21 @@ func _check_walls() -> void:
 	var car := world.car
 	car.reset_to(Vector3(-51, 0, 64), 0.0)  # нос на север, впереди стена H3 (z = 58)
 	await _frames(3)
-	Input.action_press(&"move_forward")
+	Input.action_press(&"car_gas")
 	await _frames(150)
-	Input.action_release(&"move_forward")
+	Input.action_release(&"car_gas")
 	var nose := car.global_position.z - Lada.SIZE.z * 0.5
 	check(nose >= 58.0 - 0.05, "Lada does not pass through a building (nose z=%.2f)" % nose)
 	var stuck := car.global_position
-	Input.action_press(&"move_back")
+	Input.action_press(&"car_brake")
 	await _frames(90)
-	Input.action_release(&"move_back")
+	Input.action_release(&"car_brake")
 	check(car.global_position.z - stuck.z > 2.0, "Lada reverses away from the wall")
 	car.reset_to(Vector3(-95, 0, 32), PI * 0.5)  # на запад, к краю карты
 	await _frames(3)
-	Input.action_press(&"move_forward")
+	Input.action_press(&"car_gas")
 	await _frames(150)
-	Input.action_release(&"move_forward")
+	Input.action_release(&"car_gas")
 	check(car.global_position.x - Lada.SIZE.z * 0.5 >= -100.0 - 0.05, "Lada stays inside the map edge (x=%.2f)" % car.global_position.x)
 	await _frames(30)
 
@@ -220,9 +220,9 @@ func _accelerate_east() -> void:
 	var car := world.car
 	car.reset_to(Vector3(-90, 0, 32), -PI * 0.5)  # на восток по улице A
 	await _frames(3)
-	Input.action_press(&"move_forward")
+	Input.action_press(&"car_gas")
 	await _frames(150)
-	Input.action_release(&"move_forward")
+	Input.action_release(&"car_gas")
 
 func _stop_distance(action: StringName) -> float:
 	await _accelerate_east()
@@ -272,9 +272,9 @@ func _check_reset() -> void:
 		check(not paused and not main.pause_menu.visible, "reset closes the pause (%s)" % mode)
 		if mode == &"on_foot":
 			check(car.global_position.distance_to(world.player.global_position) > 2.5, "reset does not drop the car onto Ilyusha")
-		Input.action_press(&"move_forward")
+		Input.action_press(&"car_gas")
 		await _frames(60)
-		Input.action_release(&"move_forward")
+		Input.action_release(&"car_gas")
 		await _frames(30)
 
 func _distance_to_route(point: Vector3) -> float:
@@ -297,9 +297,9 @@ func _check_repeat() -> void:
 		await _frames(4)
 		await _press(&"interact")
 		consistent = consistent and world.control_mode == &"in_car" and world.camera_rig.target == car and not world.player.visible
-		Input.action_press(&"move_forward")
+		Input.action_press(&"car_gas")
 		await _frames(20)
-		Input.action_release(&"move_forward")
+		Input.action_release(&"car_gas")
 		await _frames(40)
 		await _press(&"interact")
 		consistent = consistent and world.control_mode == &"on_foot" and world.camera_rig.target == world.player and world.player.visible and world.player.input_enabled
@@ -370,7 +370,7 @@ func _check_review_gaps() -> void:
 	# Знак руления на заднем ходу: руль влево — нос уходит вправо.
 	car.reset_to(Vector3(0, 0, 32), -PI * 0.5)
 	await _ensure_in_car()
-	Input.action_press(&"move_back")
+	Input.action_press(&"car_brake")
 	await _frames(70)
 	var yaw := car.global_rotation.y
 	Input.action_press(&"move_left")
@@ -422,7 +422,7 @@ func _press(action: StringName) -> void:
 	await _frames(2)
 
 func _release_all() -> void:
-	for action in [&"move_forward", &"move_back", &"move_left", &"move_right", &"handbrake"]:
+	for action in [&"move_forward", &"move_back", &"car_gas", &"car_brake", &"move_left", &"move_right", &"handbrake"]:
 		Input.action_release(action)
 
 func _frames(count: int) -> void:

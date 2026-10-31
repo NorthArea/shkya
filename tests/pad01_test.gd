@@ -85,7 +85,7 @@ func _bind() -> void:
 # --- раскладка ---
 
 func _mapping() -> void:
-	for action in [&"move_forward", &"move_back", &"move_left", &"move_right", &"look_left", &"look_right", &"look_up",
+	for action in [&"car_gas", &"car_brake", &"move_forward", &"move_back", &"move_left", &"move_right", &"look_left", &"look_right", &"look_up",
 			&"look_down", &"interact", &"jump", &"punch", &"handbrake", &"pause", &"ui_accept", &"ui_cancel",
 			&"ui_up", &"ui_down", &"ui_left", &"ui_right"]:
 		var pad := InputMap.action_get_events(action).any(func(e): return e is InputEventJoypadButton or e is InputEventJoypadMotion)

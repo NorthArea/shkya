@@ -33,7 +33,7 @@ func frames(count: int) -> void:
 # --- клавиши ---
 
 func release_all() -> void:
-	for action in MOVE:
+	for action in MOVE + [&"car_gas", &"car_brake"]:
 		Input.action_release(action)
 	Input.action_release(&"handbrake")
 
@@ -219,11 +219,11 @@ func _steer_and_throttle(target: Vector3, wanted_speed: float) -> float:
 		limit = minf(limit, 5.0)
 	var v := forward_speed()
 	if v < limit - 0.5:
-		_axis(&"move_forward", &"move_back", 1.0)
+		_axis(&"car_gas", &"car_brake", 1.0)
 	elif v > limit + 2.0:
-		_axis(&"move_forward", &"move_back", -1.0)
+		_axis(&"car_gas", &"car_brake", -1.0)
 	else:
-		_axis(&"move_forward", &"move_back", 0.0)
+		_axis(&"car_gas", &"car_brake", 0.0)
 	return to.length()
 
 ## Проехать по точкам. Перед крутым поворотом и на последней точке — сбросить скорость.
@@ -264,7 +264,7 @@ func drive_path(points: Array, top_speed := 13.0, tolerance := 5.0, stop_at := C
 				var error := wrapf(atan2(-to.x, -to.z) - car.global_rotation.y, -PI, PI)
 				for k in 70:
 					_axis(&"move_left", &"move_right", -signf(error))
-					_axis(&"move_forward", &"move_back", -1.0 if forward_speed() > -3.0 else 0.0)
+					_axis(&"car_gas", &"car_brake", -1.0 if forward_speed() > -3.0 else 0.0)
 					await frames(1)
 				stuck = 0
 			if stuck > 180 or frames_left <= 0:
@@ -282,7 +282,7 @@ func brake(max_frames := 600) -> bool:
 			release_all()
 			await frames(3)
 			return true
-		_axis(&"move_forward", &"move_back", -signf(v))
+		_axis(&"car_gas", &"car_brake", -signf(v))
 		await frames(1)
 	release_all()
 	last_error = "car did not stop"
@@ -294,7 +294,7 @@ func ram(point: Vector3, max_frames := 900) -> int:
 	var moving := false
 	for i in max_frames:
 		_steer_and_throttle(point, 9.0)
-		_axis(&"move_forward", &"move_back", 1.0)
+		_axis(&"car_gas", &"car_brake", 1.0)
 		await frames(1)
 		var v := absf(forward_speed())
 		if v > 3.0:

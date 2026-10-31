@@ -62,7 +62,7 @@ func _run() -> void:
 	check(sound.engine.playing, "engine runs with a driver")
 	check(sound.played["radio"] == 0 and sound.radio_text() == "", "radio waits a moment after the door (EXT-01)")
 	var idle_pitch: float = sound.engine.pitch_scale
-	Input.action_press(&"move_forward")
+	Input.action_press(&"car_gas")
 	await _frames(150)
 	var fast_pitch: float = sound.engine.pitch_scale
 	check(fast_pitch > idle_pitch + 0.5, "engine pitch rises with speed (%.2f → %.2f)" % [idle_pitch, fast_pitch])
@@ -237,7 +237,7 @@ func _check_car_radio(world: DemoWorld, sound) -> void:
 	_release_all()
 	var frames := 0
 	while world.car.speed_kmh() > 1.0 and frames < 600:
-		Input.action_press(&"move_back")
+		Input.action_press(&"car_brake")
 		await physics_frame
 		frames += 1
 	_release_all()
@@ -248,9 +248,9 @@ func _check_car_radio(world: DemoWorld, sound) -> void:
 ## Держать «Ладу» около kmh: газ, пока медленнее.
 func _cruise(world: DemoWorld, kmh: float) -> void:
 	if world.car.speed_kmh() < kmh:
-		Input.action_press(&"move_forward")
+		Input.action_press(&"car_gas")
 	else:
-		Input.action_release(&"move_forward")
+		Input.action_release(&"car_gas")
 
 ## RMS фактически декодированной дорожки: оба канала каждого 16-го кадра.
 func _stream_rms_db(stream: AudioStream) -> float:
@@ -284,7 +284,7 @@ func _press(action: StringName) -> void:
 	await _frames(2)
 
 func _release_all() -> void:
-	for action in [&"move_forward", &"move_back", &"move_left", &"move_right", &"handbrake"]:
+	for action in [&"move_forward", &"move_back", &"car_gas", &"car_brake", &"move_left", &"move_right", &"handbrake"]:
 		Input.action_release(action)
 
 func _frames(count: int) -> void:

@@ -245,7 +245,7 @@ func _check_slow_spin() -> void:
 	car.reset_to(Vector3(cross_x, 0, 25.0 + SnowField.MARGIN + Lada.WHEEL_AXLE + 0.05), 0.0)
 	await _frames(2)
 	car.velocity = -car.global_basis.z * 1.0
-	Input.action_press(&"move_forward")
+	Input.action_press(&"car_gas")
 	var spun := 0
 	var lift_top := 0.0
 	var dust := false
@@ -260,24 +260,24 @@ func _check_slow_spin() -> void:
 			dust = dust or (car.spinning and e.emitting)
 	var z := car.global_position.z
 	var speed := Vector2(car.velocity.x, car.velocity.z).length()
-	Input.action_release(&"move_forward")
+	Input.action_release(&"car_gas")
 	print("INFO: 1 m/s into the bank, 3 s of throttle — spinning %d frames, slowest %.2f m/s while spinning, lift %.2f m, z %.2f, speed %.2f m/s" % [spun, stall, lift_top, z, speed])
 	check(spun >= 10, "from 1 m/s on the steep bank face the Lada spins (%d frames)" % spun)
 	check(stall < 0.6, "speed drops while spinning before the wheels dig in (%.2f of 1 m/s)" % stall)
 	check(dust, "wheels throw snow while spinning")
 	var start := car.global_position
-	Input.action_press(&"move_back")
+	Input.action_press(&"car_brake")
 	await _frames(120)
-	Input.action_release(&"move_back")
+	Input.action_release(&"car_brake")
 	check(car.global_position.distance_to(start) > 1.5, "Lada backs off the bank face without getting stuck (%.1f m)" % car.global_position.distance_to(start))
 	await _brake()
 	# Карман между валом и стеной (STUCK, H2_West у южного вала A): носом в стену, задом к валу — выезд назад через вал.
 	start = Vector3(-92.8, 0, 42.1)
 	car.reset_to(start, PI)
 	await _frames(2)
-	Input.action_press(&"move_back")
+	Input.action_press(&"car_brake")
 	await _frames(120)
-	Input.action_release(&"move_back")
+	Input.action_release(&"car_brake")
 	var out := Vector2(car.global_position.x - start.x, car.global_position.z - start.z).length()
 	check(out >= 1.5, "from the pocket between bank A and the H2 wall the Lada digs out backwards (%.1f m in 2 s)" % out)
 	await _brake()
@@ -290,7 +290,7 @@ func _check_along_bank() -> void:
 	car.reset_to(start, -PI * 0.5)
 	await _frames(2)
 	car.velocity = -car.global_basis.z * 6.0
-	Input.action_press(&"move_forward")
+	Input.action_press(&"car_gas")
 	var roll := 0.0
 	var depth := 0.0
 	var lift := 0.0
@@ -306,7 +306,7 @@ func _check_along_bank() -> void:
 			if not car.airborne:
 				worst = maxf(worst, absf(car.visual.position.y - car.heave - car.snow_ride_target()))
 	var speed := Vector2(car.velocity.x, car.velocity.z).length()
-	Input.action_release(&"move_forward")
+	Input.action_release(&"car_gas")
 	print("INFO: along bank A with the left wheels on the ridge — roll %.3f rad, depth %.2f m, lift %.2f m, camera +%.2f m, speed %.1f vs %.1f m/s on the road" % [
 		roll, depth, lift, cam, speed, clean])
 	check(roll > 0.1, "body rolls with one side on the bank (%.3f rad)" % roll)
@@ -319,9 +319,9 @@ func _run_east(from: Vector3) -> float:
 	car.reset_to(from, -PI * 0.5)
 	await _frames(2)
 	car.velocity = -car.global_basis.z * 6.0
-	Input.action_press(&"move_forward")
+	Input.action_press(&"car_gas")
 	await _frames(60)
-	Input.action_release(&"move_forward")
+	Input.action_release(&"car_gas")
 	return Vector2(car.velocity.x, car.velocity.z).length()
 
 ## Стоим поперёк вала: выход — не внутрь коробки вала, лучи датчиков целят в поднятый кузов.
@@ -345,23 +345,23 @@ func _check_exit_on_bank() -> void:
 func _check_weight_transfer() -> void:
 	car.reset_to(Vector3(-60, 0, 32), -PI * 0.5)   # на восток по улице A
 	await _frames(3)
-	Input.action_press(&"move_forward")
+	Input.action_press(&"car_gas")
 	var squat := 0.0
 	for f in 90:
 		await physics_frame
 		squat = maxf(squat, car.susp_pitch)
-	Input.action_release(&"move_forward")
-	Input.action_press(&"move_back")
+	Input.action_release(&"car_gas")
+	Input.action_press(&"car_brake")
 	var dive := 0.0
 	for f in 40:
 		await physics_frame
 		dive = minf(dive, car.susp_pitch)
-	Input.action_release(&"move_back")
+	Input.action_release(&"car_brake")
 	await _brake()
 	car.reset_to(Vector3(-60, 0, 32), -PI * 0.5)
 	await _frames(2)
 	car.velocity = -car.global_basis.z * 14.0
-	Input.action_press(&"move_forward")
+	Input.action_press(&"car_gas")
 	Input.action_press(&"move_left")
 	var roll := 0.0
 	for f in 40:
@@ -414,12 +414,12 @@ func _check_bounce() -> void:
 	var hits := car.impacts
 	var back := 0.0
 	var shake := 0.0
-	Input.action_press(&"move_forward")
+	Input.action_press(&"car_gas")
 	for f in 90:
 		await physics_frame
 		back = minf(back, Vector3(car.velocity.x, 0, car.velocity.z).dot(-car.global_basis.z))
 		shake = maxf(shake, car.shake_left())
-	Input.action_release(&"move_forward")
+	Input.action_release(&"car_gas")
 	print("INFO: bounce off a parked car at 9 m/s — impacts %d, rebound %.1f m/s, shake %.2f s" % [car.impacts - hits, back, shake])
 	check(car.impacts > hits and back < -1.0, "Lada bounces back off a parked car (%.1f m/s)" % back)
 	check(shake > 0.1, "camera shakes on the impact")
@@ -430,9 +430,9 @@ func _check_bounce() -> void:
 	await _frames(2)
 	car.velocity = -car.global_basis.z * 6.0
 	hits = car.impacts
-	Input.action_press(&"move_forward")
+	Input.action_press(&"car_gas")
 	await _frames(60)
-	Input.action_release(&"move_forward")
+	Input.action_release(&"car_gas")
 	check(car.impacts == hits, "a house wall stops the Lada without a bounce")
 	await _brake()
 
@@ -449,7 +449,7 @@ func _brake() -> void:
 	await _frames(3)
 
 func _release_all() -> void:
-	for action in [&"move_forward", &"move_back", &"move_left", &"move_right", &"handbrake", &"interact"]:
+	for action in [&"move_forward", &"move_back", &"car_gas", &"car_brake", &"move_left", &"move_right", &"handbrake", &"interact"]:
 		Input.action_release(action)
 
 func _frames(count: int) -> void:

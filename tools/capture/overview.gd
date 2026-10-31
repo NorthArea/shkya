@@ -60,10 +60,10 @@ func _driving() -> void:
 	world.car.reset_to(Layout.ROUTE_DRIVE[3], -PI * 0.5)
 	world.camera_rig.yaw = -PI * 0.5
 	world.camera_rig.snap()
-	Input.action_press(&"move_forward")
+	Input.action_press(&"car_gas")
 	await _frames(85)
 	await _photo("04-driving")
-	Input.action_release(&"move_forward")
+	Input.action_release(&"car_gas")
 	world.car.velocity = Vector3.ZERO
 	_require(world.exit_car(), "Ilyusha exits the Lada after the driving scene")
 	await _frames(8)
@@ -262,7 +262,7 @@ func _require(ok: bool, label: String) -> bool:
 	return ok
 
 func _finish() -> void:
-	Input.action_release(&"move_forward")
+	Input.action_release(&"car_gas")
 	paused = false
 	var phone: Node = world.get_node_or_null("Phone")
 	if phone: phone.close_phone()

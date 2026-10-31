@@ -38,11 +38,11 @@ func _run() -> void:
 	world.camera_rig.snap()
 	await _frames(2)
 	car.velocity = -car.global_basis.z * 5.0
-	Input.action_press(&"move_forward")
+	Input.action_press(&"car_gas")
 	await _frames(28)
 	await _shot("01_bank_roll_chase", null)
 	await _shot("02_bank_roll_front", [car.global_position + Vector3(7.5, 1.2, 1.5), car.global_position + Vector3(0, 0.6, 0)])
-	Input.action_release(&"move_forward")
+	Input.action_release(&"car_gas")
 	await _brake()
 	# 2. Въезд на вал наискось и съезд с пылью.
 	car.reset_to(Vector3(x0 + 1.0, 0, 28.6), 0.3)
@@ -73,10 +73,10 @@ func _run() -> void:
 	world.camera_rig.snap()
 	await _frames(2)
 	car.velocity = -car.global_basis.z * 1.0
-	Input.action_press(&"move_forward")
+	Input.action_press(&"car_gas")
 	await _frames(70)
 	await _shot("08_spinning_chase", null)
-	Input.action_release(&"move_forward")
+	Input.action_release(&"car_gas")
 	await _brake()
 	# 4. Перенос веса: торможение, поворот; занос с дымом и следами.
 	car.reset_to(Vector3(-60, 0, 32), -PI * 0.5)
@@ -84,17 +84,17 @@ func _run() -> void:
 	world.camera_rig.snap()
 	await _frames(2)
 	car.velocity = -car.global_basis.z * 16.0
-	Input.action_press(&"move_back")
+	Input.action_press(&"car_brake")
 	await _frames(9)
 	await _shot("09_brake_dive_side", [car.global_position + Vector3(1.0, 1.0, -7.0), car.global_position + Vector3(0, 0.6, 0)])
-	Input.action_release(&"move_back")
+	Input.action_release(&"car_brake")
 	await _brake()
 	car.reset_to(Vector3(-60, 0, 32), -PI * 0.5)
 	world.camera_rig.yaw = -PI * 0.5
 	world.camera_rig.snap()
 	await _frames(2)
 	car.velocity = -car.global_basis.z * 15.0
-	Input.action_press(&"move_forward")
+	Input.action_press(&"car_gas")
 	Input.action_press(&"move_left")
 	await _frames(25)
 	await _shot("10_turn_roll_chase", null)
@@ -163,7 +163,7 @@ func _brake() -> void:
 	await _frames(3)
 
 func _release() -> void:
-	for a in [&"move_forward", &"move_back", &"move_left", &"move_right", &"handbrake"]:
+	for a in [&"car_gas", &"car_brake", &"move_left", &"move_right", &"handbrake"]:
 		Input.action_release(a)
 
 func _frames(n: int) -> void:

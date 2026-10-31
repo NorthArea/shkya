@@ -298,13 +298,13 @@ func _part_car() -> void:
 	var start := carousel.global_ground() + Vector3(0, 0, carousel.size.z * 0.5 + Lada.SIZE.z * 0.5 + 0.6)
 	car.reset_to(start, 0.0)
 	await drv.frames(2)
-	Input.action_press(&"move_forward")
+	Input.action_press(&"car_gas")
 	var closest := INF
 	for i in 120:
 		car.velocity = Vector3(0, 0, -0.5) + Vector3(0, car.velocity.y, 0)
 		await physics_frame
 		closest = minf(closest, car.global_position.z - carousel.global_ground().z)
-	Input.action_release(&"move_forward")
+	Input.action_release(&"car_gas")
 	check(carousel.is_intact(), "heavy at 0.5 m/s with throttle for 2 s stays (state %s)" % carousel.state)
 	check(closest > carousel.size.z * 0.5 + Lada.SIZE.z * 0.5 - 0.1, "heavy holds the Lada like a wall (closest %.2f m)" % closest)
 	# light на 0,5 м/с без газа держит, с газом — ломается после 0,3 с упора
@@ -318,7 +318,7 @@ func _part_car() -> void:
 	check(cone2.is_intact(), "light at 0.5 m/s without throttle does not break")
 	var touch := -1
 	var broke := -1
-	Input.action_press(&"move_forward")
+	Input.action_press(&"car_gas")
 	for i in 90:
 		car.velocity = Vector3(0, 0, 0.5)
 		await physics_frame
@@ -327,7 +327,7 @@ func _part_car() -> void:
 		if broke < 0 and not cone2.is_intact():
 			broke = i
 			break
-	Input.action_release(&"move_forward")
+	Input.action_release(&"car_gas")
 	var pushed := (broke - touch) / 60.0
 	check(broke >= 0 and pushed >= Breakables.PUSH_SECONDS - 0.02 and pushed <= Breakables.PUSH_SECONDS + 0.15, "light breaks after pushing with throttle %.2f s (touch %d, broke %d)" % [pushed, touch, broke])
 	# Реакции без разрушения: толчок припаркованной машины ≥ 2 м/с — сигнализация, дворового контейнера — крышки.

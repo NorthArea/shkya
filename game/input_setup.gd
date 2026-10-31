@@ -4,10 +4,13 @@ extends RefCounted
 ## правый стик — через действия look_*.
 
 static var installed := false
+const PEDAL_DEADZONE := 0.05
 
 const KEYS := {
 	"move_forward": [KEY_W],
 	"move_back": [KEY_S],
+	"car_gas": [KEY_W],
+	"car_brake": [KEY_S],
 	"move_left": [KEY_A],
 	"move_right": [KEY_D],
 	"interact": [KEY_E],      # взаимодействие, вход и выход из машины
@@ -30,8 +33,10 @@ const MOUSE := {
 ## В меню и диалогах (PAD-01): A — выбрать, B — назад (пауза: продолжить; диалог: выход, если он есть), крестовина и левый
 ## стик — по пунктам; в диалоге X, как E, листает реплики.
 const JOY := {
-	"move_forward": [[JOY_AXIS_LEFT_Y, -1.0], [JOY_AXIS_TRIGGER_RIGHT, 1.0]],
-	"move_back": [[JOY_AXIS_LEFT_Y, 1.0], [JOY_AXIS_TRIGGER_LEFT, 1.0]],
+	"move_forward": [[JOY_AXIS_LEFT_Y, -1.0]],
+	"move_back": [[JOY_AXIS_LEFT_Y, 1.0]],
+	"car_gas": [[JOY_AXIS_TRIGGER_RIGHT, 1.0]],
+	"car_brake": [[JOY_AXIS_TRIGGER_LEFT, 1.0]],
 	"move_left": [[JOY_AXIS_LEFT_X, -1.0]],
 	"move_right": [[JOY_AXIS_LEFT_X, 1.0]],
 	"look_left": [[JOY_AXIS_RIGHT_X, -1.0]],
@@ -53,7 +58,7 @@ static func install() -> void:
 	installed = true
 	for action in KEYS:
 		if not InputMap.has_action(action):
-			InputMap.add_action(action, 0.25)
+			InputMap.add_action(action, PEDAL_DEADZONE if action in ["car_gas", "car_brake"] else 0.25)
 		for code in KEYS[action]:
 			var event := InputEventKey.new()
 			event.physical_keycode = code

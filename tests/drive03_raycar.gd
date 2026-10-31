@@ -110,7 +110,7 @@ func _check_accel() -> void:
 	await _place(Vector3(-90, 0, 32), -PI * 0.5)
 	var marks := {36.0: -1.0, 72.0: -1.0, 100.0: -1.0}
 	var squat := 0.0
-	Input.action_press(&"move_forward")
+	Input.action_press(&"car_gas")
 	for frame in 600:
 		await physics_frame
 		var kmh := car.speed_kmh()
@@ -120,7 +120,7 @@ func _check_accel() -> void:
 				marks[mark] = (frame + 1) / 60.0
 		if marks[100.0] > 0.0:
 			break
-	Input.action_release(&"move_forward")
+	Input.action_release(&"car_gas")
 	print("INFO: [%s] accel 0→36 km/h %.2f s, 0→72 %.2f s, 0→100 %.2f s (−1 — not reached in 10 s); squat (nose up) %.1f°"
 		% [tag, marks[36.0], marks[72.0], marks[100.0], squat])
 	check(marks[100.0] > 0.0 and marks[100.0] <= 5.0, "0→100 km/h within 5 s (%.2f s)" % marks[100.0])
@@ -131,15 +131,15 @@ func _check_accel() -> void:
 func _check_brake() -> void:
 	var car := world.car
 	await _place(Vector3(-90, 0, 32), -PI * 0.5)
-	Input.action_press(&"move_forward")
+	Input.action_press(&"car_gas")
 	for i in 600:
 		if _speed() >= 18.0:
 			break
 		await physics_frame
-	Input.action_release(&"move_forward")
+	Input.action_release(&"car_gas")
 	var start := car.global_position
 	var dive := 0.0
-	Input.action_press(&"move_back")
+	Input.action_press(&"car_brake")
 	var frames := 0
 	while _speed() > 0.3 and frames < 300:
 		await physics_frame
@@ -147,7 +147,7 @@ func _check_brake() -> void:
 		dive = minf(dive, _pitch())
 		if frames == 12:
 			await _shot("pitch_braking", 1.1)
-	Input.action_release(&"move_back")
+	Input.action_release(&"car_brake")
 	var seconds := frames / 60.0
 	print("INFO: [%s] brake 18→0 m/s %.2f s, %.1f m; nose dive %.1f°" % [tag, seconds, car.global_position.distance_to(start), dive])
 	check(seconds <= 1.0, "18→0 m/s within 1 s (%.2f s)" % seconds)
@@ -160,7 +160,7 @@ func _check_turn_roll() -> void:
 	await _place(Vector3(-90, 0, 32), -PI * 0.5)
 	await _hold_speed(14.0, 200)
 	var peak := 0.0
-	Input.action_press(&"move_forward")
+	Input.action_press(&"car_gas")
 	Input.action_press(&"move_left")
 	for i in 60:
 		await physics_frame
@@ -251,9 +251,9 @@ func _check_jump() -> void:
 	for frame in 420:
 		var x := car.global_position.x
 		var wanted := 15.0 if x < 6.0 else 0.0
-		Input.action_release(&"move_forward")
+		Input.action_release(&"car_gas")
 		if wanted > 0.0 and _speed() < wanted:
-			Input.action_press(&"move_forward")
+			Input.action_press(&"car_gas")
 		await physics_frame
 		var air := _airborne()
 		if air and car.global_position.x > 8.0:
@@ -289,9 +289,9 @@ func _check_bank() -> void:
 	var max_tilt := 0.0
 	var shot := false
 	for frame in 420:
-		Input.action_release(&"move_forward")
+		Input.action_release(&"car_gas")
 		if _speed() < 8.0:
-			Input.action_press(&"move_forward")
+			Input.action_press(&"car_gas")
 		await physics_frame
 		max_y = maxf(max_y, car.global_position.y)
 		max_tilt = maxf(max_tilt, _tilt())
@@ -378,12 +378,12 @@ func _drive_to(target: Vector3, final: bool, next: Vector3 = Vector3.INF) -> Dic
 			wanted = minf(wanted, 7.0)
 		if final:
 			wanted = minf(wanted, distance * 0.8 + 2.0)
-		Input.action_release(&"move_forward")
-		Input.action_release(&"move_back")
+		Input.action_release(&"car_gas")
+		Input.action_release(&"car_brake")
 		if speed < wanted:
-			Input.action_press(&"move_forward")
+			Input.action_press(&"car_gas")
 		elif speed > wanted + 2.0:
-			Input.action_press(&"move_back")
+			Input.action_press(&"car_brake")
 		await physics_frame
 		roll = maxf(roll, absf(_roll()))
 		if distance < best - 0.05:
@@ -453,12 +453,12 @@ func _capture_run() -> void:
 				wanted = minf(wanted, 7.0)
 			if last:
 				wanted = minf(wanted, distance * 0.8 + 2.0)
-			Input.action_release(&"move_forward")
-			Input.action_release(&"move_back")
+			Input.action_release(&"car_gas")
+			Input.action_release(&"car_brake")
 			if _speed() < wanted:
-				Input.action_press(&"move_forward")
+				Input.action_press(&"car_gas")
 			elif _speed() > wanted + 2.0:
-				Input.action_press(&"move_back")
+				Input.action_press(&"car_brake")
 			await physics_frame
 			var f := Engine.get_physics_frames() - t0
 			if f % 30 == 0:
@@ -501,13 +501,13 @@ func _fps_run() -> void:
 		forward.y = 0.0
 		var error := forward.normalized().signed_angle_to(delta.normalized(), Vector3.UP)
 		_steer(clampf(error * 2.5, -1.0, 1.0))
-		Input.action_release(&"move_forward")
-		Input.action_release(&"move_back")
+		Input.action_release(&"car_gas")
+		Input.action_release(&"car_brake")
 		var wanted := 16.0 if absf(error) < 0.25 else 7.0
 		if _speed() < wanted:
-			Input.action_press(&"move_forward")
+			Input.action_press(&"car_gas")
 		elif _speed() > wanted + 2.0:
-			Input.action_press(&"move_back")
+			Input.action_press(&"car_brake")
 	_release_all()
 	times = times.slice(90)
 	times.sort()
@@ -530,12 +530,12 @@ func _place(point: Vector3, yaw: float) -> void:
 	await _frames(30)
 
 func _hold_speed(speed: float, limit: int) -> void:
-	Input.action_press(&"move_forward")
+	Input.action_press(&"car_gas")
 	for i in limit:
 		if _speed() >= speed:
 			break
 		await physics_frame
-	Input.action_release(&"move_forward")
+	Input.action_release(&"car_gas")
 
 func _speed() -> float:
 	return Vector2(world.car.velocity.x, world.car.velocity.z).length()
@@ -593,7 +593,7 @@ func _press(action: StringName) -> void:
 	await _frames(2)
 
 func _release_all() -> void:
-	for action in [&"move_forward", &"move_back", &"move_left", &"move_right", &"handbrake"]:
+	for action in [&"car_gas", &"car_brake", &"move_left", &"move_right", &"handbrake"]:
 		Input.action_release(action)
 
 func _frames(count: int) -> void:

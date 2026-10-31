@@ -194,7 +194,7 @@ func _car_start_regression() -> void:
 	world.enter_car()
 	car.reset_to(start, yaw)
 	await _frames(2)
-	await _drive(&"move_forward", &"", CAR_PUSH)
+	await _drive(&"car_gas", &"", CAR_PUSH)
 	await _brake_to_stop()
 	check(not carpet.is_intact() and _car_issue() == "", "legal carpet approach breaks the object and stays on the ground")
 	check(await _car_leaves(car.position, car.rotation.y, CAR_ESCAPE, CAR_ESCAPE_MIN), "legal carpet approach still permits driving away")
@@ -217,7 +217,7 @@ func _sweep_car() -> void:
 			continue
 		tested += 1
 		var moved := false
-		for action in [&"move_forward", &"move_back"]:
+		for action in [&"car_gas", &"car_brake"]:
 			car.reset_to(point, yaw)
 			await _frames(2)
 			Input.action_press(action)
@@ -229,7 +229,7 @@ func _sweep_car() -> void:
 			trapped.append(point)
 		# 2 с с рулём в случайную сторону, торможение — и машина должна выехать с того места, где встала.
 		car.reset_to(point, yaw)
-		Input.action_press(&"move_forward")
+		Input.action_press(&"car_gas")
 		Input.action_press(&"move_left" if rng.randf() < 0.5 else &"move_right")
 		await _frames(120)
 		_release_all()
@@ -483,14 +483,14 @@ func _geometry_car(by_cat: Dictionary) -> void:
 			# Нос в препятствие, затем прямо назад.
 			car.reset_to(start, yaw)
 			await _frames(2)
-			var hit := await _drive(&"move_forward", &"", CAR_PUSH)
+			var hit := await _drive(&"car_gas", &"", CAR_PUSH)
 			var contact := car.global_position
 			var contact_yaw := car.rotation.y
 			if _car_issue() != "":
 				broken.append(_where(s, contact) + _car_issue())
 			if hit:
 				touched += 1
-			if not await _car_leaves(contact, contact_yaw, CAR_ESCAPE, CAR_ESCAPE_MIN, [&"move_back"]):
+			if not await _car_leaves(contact, contact_yaw, CAR_ESCAPE, CAR_ESCAPE_MIN, [&"car_brake"]):
 				stuck.append(_where(s, contact) + " nose/back")
 			# С того же упора: назад с рулём, затем вперёд с обратным рулём.
 			car.reset_to(contact, contact_yaw)
@@ -498,14 +498,14 @@ func _geometry_car(by_cat: Dictionary) -> void:
 			var side := &"move_left" if rng.randf() < 0.5 else &"move_right"
 			var other := &"move_right" if side == &"move_left" else &"move_left"
 			var farthest := 0.0
-			Input.action_press(&"move_back")
+			Input.action_press(&"car_brake")
 			Input.action_press(side)
 			for f in CAR_ESCAPE:
 				await physics_frame
 				farthest = maxf(farthest, _flat(car.global_position - contact))
 				car_low = minf(car_low, car.global_position.y)
 			_release_all()
-			Input.action_press(&"move_forward")
+			Input.action_press(&"car_gas")
 			Input.action_press(other)
 			for f in CAR_ESCAPE:
 				await physics_frame
@@ -520,11 +520,11 @@ func _geometry_car(by_cat: Dictionary) -> void:
 			# Задом в препятствие, затем вперёд.
 			car.reset_to(start, yaw + PI)
 			await _frames(2)
-			await _drive(&"move_back", &"", CAR_TAIL_PUSH)
+			await _drive(&"car_brake", &"", CAR_TAIL_PUSH)
 			var tail := car.global_position
 			if _car_issue() != "":
 				broken.append(_where(s, tail) + " tail" + _car_issue())
-			if not await _car_leaves(tail, car.rotation.y, CAR_ESCAPE, CAR_ESCAPE_MIN, [&"move_forward"]):
+			if not await _car_leaves(tail, car.rotation.y, CAR_ESCAPE, CAR_ESCAPE_MIN, [&"car_gas"]):
 				stuck.append(_where(s, tail) + " tail/forward")
 			if car_low < -SINK_TOLERANCE:
 				broken.append(_where(s, start) + " sunk %.3f" % car_low)
@@ -621,8 +621,8 @@ func _car_rams_out(b, contact: Vector3, yaw: float) -> bool:
 	var car := world.car
 	car.reset_to(contact, yaw)
 	await _frames(2)
-	await _drive(&"move_back", &"", 60)
-	await _drive(&"move_forward", &"", CAR_ESCAPE)
+	await _drive(&"car_brake", &"", 60)
+	await _drive(&"car_gas", &"", CAR_ESCAPE)
 	return not b.is_intact() and _flat(car.global_position - contact) >= CAR_ESCAPE_MIN
 
 func _breakable_car() -> void:
@@ -648,7 +648,7 @@ func _breakable_car() -> void:
 			car_low = 0.0
 			car.reset_to(start, yaw)
 			await _frames(2)
-			await _drive(&"move_forward", &"", CAR_PUSH)
+			await _drive(&"car_gas", &"", CAR_PUSH)
 			var contact := car.global_position
 			var contact_yaw := car.rotation.y
 			if not b.is_intact():
@@ -657,7 +657,7 @@ func _breakable_car() -> void:
 			if _car_issue() != "":
 				broken.append("%s@(%.1f,%.1f)%s" % [b.id, contact.x, contact.z, _car_issue()])
 			var rammed := false
-			if not await _car_leaves(contact, contact_yaw, CAR_ESCAPE, CAR_ESCAPE_MIN, [&"move_back"]):
+			if not await _car_leaves(contact, contact_yaw, CAR_ESCAPE, CAR_ESCAPE_MIN, [&"car_brake"]):
 				# Сзади нет места (полоса между тяжёлым и коробкой уже машины с запасом выезда, например качели/карусель —
 				# оградка Playground, 5,25 / 4,8 м): выход — сдать до упора и разогнаться в объект (≥ 3 м/с — ломается).
 				rammed = await _car_rams_out(b, contact, contact_yaw)
@@ -671,13 +671,13 @@ func _breakable_car() -> void:
 			var side_key := &"move_left" if rng.randf() < 0.5 else &"move_right"
 			var other := &"move_right" if side_key == &"move_left" else &"move_left"
 			var farthest := 0.0
-			Input.action_press(&"move_back")
+			Input.action_press(&"car_brake")
 			Input.action_press(side_key)
 			for f in CAR_ESCAPE:
 				await physics_frame
 				farthest = maxf(farthest, _flat(car.global_position - contact))
 			_release_all()
-			Input.action_press(&"move_forward")
+			Input.action_press(&"car_gas")
 			Input.action_press(other)
 			for f in CAR_ESCAPE:
 				await physics_frame
@@ -774,7 +774,7 @@ func _drive(action: StringName, steer: StringName, frames: int) -> bool:
 	return hit
 
 ## Может ли машина уехать с точки: хотя бы одно из действий сдвигает её на min_distance за frames кадров.
-func _car_leaves(point: Vector3, yaw: float, frames: int, min_distance: float, actions := [&"move_forward", &"move_back"]) -> bool:
+func _car_leaves(point: Vector3, yaw: float, frames: int, min_distance: float, actions := [&"car_gas", &"car_brake"]) -> bool:
 	var car := world.car
 	for action in actions:
 		car.reset_to(point, yaw)
@@ -848,7 +848,7 @@ func _overlaps(point: Vector3, shape: Shape3D, lift: float, yaw: float, collisio
 	return world.get_world_3d().direct_space_state.intersect_shape(query, 1)
 
 func _release_all() -> void:
-	for action in [&"move_forward", &"move_back", &"move_left", &"move_right", &"handbrake"]:
+	for action in [&"move_forward", &"move_back", &"car_gas", &"car_brake", &"move_left", &"move_right", &"handbrake"]:
 		Input.action_release(action)
 
 func _frames(count: int) -> void:
@@ -967,13 +967,13 @@ func _props_car() -> void:
 			car_low = 0.0
 			car.reset_to(start, yaw)
 			await _frames(2)
-			await _drive(&"move_forward", &"", CAR_PUSH)
+			await _drive(&"car_gas", &"", CAR_PUSH)
 			var contact := car.global_position
 			var contact_yaw := car.rotation.y
 			var where := "%s@(%.1f,%.1f)" % [spec[0], contact.x, contact.z]
 			if _car_issue() != "":
 				broken.append(where + _car_issue())
-			if not await _car_leaves(contact, contact_yaw, CAR_ESCAPE, CAR_ESCAPE_MIN, [&"move_back"]):
+			if not await _car_leaves(contact, contact_yaw, CAR_ESCAPE, CAR_ESCAPE_MIN, [&"car_brake"]):
 				stuck.append(where + " nose/back")
 			car.reset_to(contact, contact_yaw)
 			await _frames(2)
@@ -989,13 +989,13 @@ func _props_car() -> void:
 					await _frames(2)
 					farthest = 0.0
 				var other := &"move_right" if side_key == &"move_left" else &"move_left"
-				Input.action_press(&"move_back")
+				Input.action_press(&"car_brake")
 				Input.action_press(side_key)
 				for f in CAR_ESCAPE:
 					await physics_frame
 					farthest = maxf(farthest, _flat(car.global_position - contact))
 				_release_all()
-				Input.action_press(&"move_forward")
+				Input.action_press(&"car_gas")
 				Input.action_press(other)
 				for f in CAR_ESCAPE:
 					await physics_frame
@@ -1008,9 +1008,9 @@ func _props_car() -> void:
 				broken.append(where + " after steer" + _car_issue())
 			car.reset_to(start, yaw + PI)
 			await _frames(2)
-			await _drive(&"move_back", &"", CAR_TAIL_PUSH)
+			await _drive(&"car_brake", &"", CAR_TAIL_PUSH)
 			var tail := car.global_position
-			if not await _car_leaves(tail, car.rotation.y, CAR_ESCAPE, CAR_ESCAPE_MIN, [&"move_forward"]):
+			if not await _car_leaves(tail, car.rotation.y, CAR_ESCAPE, CAR_ESCAPE_MIN, [&"car_gas"]):
 				stuck.append(where + " tail/forward")
 			if car_low < -SINK_TOLERANCE:
 				broken.append(where + " sunk %.3f" % car_low)
@@ -1032,11 +1032,11 @@ func _rink_gates() -> void:
 		var yaw := 0.0 if side > 0.0 else PI   # носом к центру коробки
 		car.reset_to(outside, yaw)
 		await _frames(3)
-		await _drive(&"move_forward", &"", 75)
+		await _drive(&"car_gas", &"", 75)
 		await _brake_to_stop()
 		var inside := car.global_position
 		var entered: bool = (inside.z - c.y) * side < half - 2.5
-		await _drive(&"move_back", &"", 110)
+		await _drive(&"car_brake", &"", 110)
 		await _brake_to_stop()
 		var back := car.global_position
 		var left: bool = (back.z - c.y) * side > half + 1.0
