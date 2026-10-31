@@ -23,6 +23,7 @@ func _ready() -> void:
 	_crossing()
 	_police_post()
 	_warnings()
+	_courtyard_walls()
 	_flush()
 
 func _box(size: Vector3, at: Vector3, color: Color, yaw := 0.0) -> void:
@@ -151,14 +152,58 @@ func _police_post() -> void:
 		_box(Vector3(barrier.x + 0.1, 0.08, barrier.z + 0.1), Vector3(at.x, barrier.y + 0.04, at.y), SNOW)
 
 func _warnings() -> void:
-	for warning in Layout.PERIMETER_WARNINGS:
+	# A reflective sign face stays legible in the unlit street shadow. It adds
+	# no light to the world and keeps ordinary depth occlusion and scene fog.
+	var face_material := StandardMaterial3D.new()
+	face_material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	face_material.albedo_color = Color(0.86, 0.72, 0.32)
+	face_material.roughness = 1.0
+	for i in Layout.PERIMETER_WARNINGS.size():
+		var warning: Array = Layout.PERIMETER_WARNINGS[i]
 		var p: Vector2 = warning[0]
 		var yaw: float = warning[1]
+		var post := Vector3(p.x, 2.9, p.y)
+		var face := Vector3(sin(yaw), 0, cos(yaw))
+		var centre := post + face * 0.10
 		_box(Vector3(0.12, 3.1, 0.12), Vector3(p.x, 1.55, p.y), STEEL)
-		_box(Vector3(4.5, 1.35, 0.12), Vector3(p.x, 2.9, p.y), Color(0.72, 0.59, 0.10), yaw)
-		var face := Vector3(sin(yaw), 0, cos(yaw)) * 0.071
-		_label(warning[2], Vector3(p.x, 3.12, p.y) + face, yaw, 63, Color(0.06, 0.07, 0.07))
-		_label(warning[3], Vector3(p.x, 2.68, p.y) + face, yaw, 35, Color(0.06, 0.07, 0.07))
+		var mesh := BoxMesh.new()
+		mesh.size = Vector3(4.5, 1.35, 0.12)
+		mesh.material = face_material
+		var board := MeshInstance3D.new()
+		board.name = "WarningBoard%d" % i
+		board.mesh = mesh
+		board.position = centre
+		board.rotation.y = yaw
+		add_child(board)
+		_warning_label(warning[2], centre + Vector3.UP * 0.22 + face * 0.071, yaw, 63)
+		_warning_label(warning[3], centre - Vector3.UP * 0.22 + face * 0.071, yaw, 35)
+
+func _warning_label(text: String, at: Vector3, yaw: float, size: int) -> void:
+	var label := Label3D.new()
+	label.text = text
+	label.position = at
+	label.rotation.y = yaw
+	label.font_size = size
+	label.pixel_size = 0.006
+	label.modulate = Color(0.025, 0.03, 0.025)
+	label.outline_size = 0
+	label.shaded = false
+	label.no_depth_test = false
+	add_child(label)
+
+func _courtyard_walls() -> void:
+	# Vertical joints and coping make the colliding concrete boundary legible from ground level.
+	for wall: Array in Layout.PERIMETER_WALLS:
+		var a: Vector2 = wall[0]
+		var b: Vector2 = wall[1]
+		if a.x != b.x and a.y != b.y: continue
+		var delta := b - a
+		var count := maxi(1, ceili(delta.length() / 4.0))
+		var along_z := a.x == b.x
+		for k in count + 1:
+			var p := a.lerp(b, float(k) / count)
+			var size := Vector3(wall[2] + 0.04, wall[3] - 0.06, 0.14) if along_z else Vector3(0.14, wall[3] - 0.06, wall[2] + 0.04)
+			_box(size, Vector3(p.x, size.y * 0.5, p.y), Color(0.32, 0.35, 0.34))
 
 func _flush() -> void:
 	for color: Color in _batches:

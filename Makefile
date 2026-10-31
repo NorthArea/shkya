@@ -91,6 +91,7 @@ test: map
 	$(call godot_test,arena03_audio_test,60,ARENA03_AUDIO)
 	$(call godot_test,arena03_activity_test,60,ARENA03_ACTIVITY)
 	$(call godot_test,road01_test,60,ROAD01)
+	$(call godot_test,world02_edges_test,60,WORLD02)
 	$(call godot_test,cross01_test,60,CROSS01)
 	$(call godot_test,arena03_city_life_test,60,ARENA03_CITY_LIFE,-- break)
 	$(call godot_test,arena03_exit_test,60,ARENA03_EXIT)

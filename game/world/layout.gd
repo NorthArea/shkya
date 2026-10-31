@@ -559,9 +559,17 @@ const PERIMETER_WALLS := [
 	[Vector2(99.2, 46), Vector2(99.2, 62), 0.55, 4.2],
 	[Vector2(96, 18), Vector2(96, 14.8), 0.55, 4.2],
 	[Vector2(89.8, 49), Vector2(89.8, 60.2), 0.55, 4.2],
+	# WORLD-02: closed courtyards stop vehicles before the decorative skyline.
+	[Vector2(-99.2, -124.2), Vector2(99.2, -124.2), 0.8, 3.6],
+	[Vector2(-99.2, -124.2), Vector2(-99.2, -95), 0.8, 3.6],
+	[Vector2(99.2, -124.2), Vector2(99.2, 5), 0.8, 3.6],
+	[Vector2(99.2, 62), Vector2(99.2, 124.2), 0.8, 3.6],
+	[Vector2(10, 124.2), Vector2(99.2, 124.2), 0.8, 3.6],
+	# Return into H1 closes its otherwise walkable rear strip.
+	[Vector2(10, 124.2), Vector2(10, 121.6), 0.8, 3.6],
 ]
 const PERIMETER_WARNINGS := [
-	[Vector2(-52, 22), PI * 0.5, "ПЕРЕЕЗД ЗАКРЫТ", "СКВОЗНОГО ПРОЕЗДА НЕТ"],
+	[Vector2(-80, 40.6), PI * 0.5, "ПЕРЕЕЗД ЗАКРЫТ", "СКВОЗНОГО ПРОЕЗДА НЕТ"],
 	[Vector2(49, 42), -PI * 0.5, "ПРОЕЗД ЗАКРЫТ", "РАЗВОРОТ ПЕРЕД ПОСТОМ"],
 ]
 static var _perimeter_cache: Array = []
