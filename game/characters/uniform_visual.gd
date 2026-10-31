@@ -4,6 +4,9 @@ const PoliceModel = preload("res://game/characters/models/police_model.gd")
 const GuardModel = preload("res://game/characters/models/guard_model.gd")
 const ENABLED_BY_DEFAULT := true
 const EMISSION_FLOOR := 0.12
+const CLOTH_EMISSION_FLOOR := 0.18
+const SKIN_EMISSION_FLOOR := 0.15
+const INK_EMISSION_FLOOR := 0.06
 const XRAY_SOURCE := """shader_type spatial;
 render_mode unshaded, cull_back, depth_test_disabled, depth_draw_never, blend_mix, shadows_disabled, fog_disabled;
 stencil_mode read, compare_not_equal, 1;
@@ -37,7 +40,7 @@ func configure(drawing: String, height: float, color: Color) -> void:
 	add_child(model)
 	skeleton = model.get_node("Skeleton3D") as Skeleton3D
 	uniform_mesh = skeleton.get_node("UniformMesh") as MeshInstance3D
-	uniform_mesh.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	uniform_mesh.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON
 	var key := drawing + ":" + color.to_html()
 	if not _tinted_meshes.has(key):
 		var tinted := uniform_mesh.mesh.duplicate() as ArrayMesh
@@ -51,7 +54,7 @@ func configure(drawing: String, height: float, color: Color) -> void:
 			mean_color /= float(colors.size())
 			# Police navy is carried by vertex colours on a white base material.
 			material.emission_enabled = true
-			material.emission = material.albedo_color * mean_color * EMISSION_FLOOR
+			material.emission = material.albedo_color * mean_color * _emission_floor(tinted.surface_get_name(surface))
 			# Write only where the ordinary opaque model passes depth. Its visible
 			# pixels then mask every xray fragment, including hidden inner parts.
 			material.stencil_mode = BaseMaterial3D.STENCIL_MODE_CUSTOM
@@ -61,6 +64,17 @@ func configure(drawing: String, height: float, color: Color) -> void:
 			tinted.surface_set_material(surface, material)
 		_tinted_meshes[key] = tinted
 	uniform_mesh.mesh = _tinted_meshes[key]
+
+static func _emission_floor(surface_name: String) -> float:
+	# Keep black trim dark while the winter cloth and faces retain their local colour.
+	match surface_name:
+		"navy", "suit", "armour", "beret":
+			return CLOTH_EMISSION_FLOOR
+		"ochre_skin", "skin":
+			return SKIN_EMISSION_FLOOR
+		"fur_leather_ink", "ink":
+			return INK_EMISSION_FLOOR
+	return EMISSION_FLOOR
 
 func update_walk(distance: float, walking: bool, delta: float, stride: float) -> void:
 	if _walk_speed >= 0.0:
