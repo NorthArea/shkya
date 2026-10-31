@@ -31,7 +31,8 @@ const HANDBRAKE_GRIP := 1.2
 const TURN_RATE_LOW := 1.3      # рад/с на малой скорости: радиус ниже TURN_FULL_AT = 5/1,3 ≈ 3,9 м
 const TURN_RATE_HIGH := 0.85    # рад/с на максимальной
 const TURN_FULL_AT := 5.0       # ниже этой скорости поворот слабеет до нуля; 7 (PLAY-01) не взято: в щели тротуар–вал «Лада» не выкручивалась (тест застреваний)
-const STEER_SHARPNESS := 10.0   # руль доходит до упора за ~0,2 с, а не мгновенно
+const STEER_SHARPNESS := 10.0   # прежний отклик отдельного прототипа LadaRaycast
+const STEER_RATE := 5.0         # нормализованных единиц/с: 0→упор за 0,2 с, между упорами за 0,4 с
 const EXIT_SPEED_KMH := 3.0     # быстрее этого водитель не выходит, машина сначала тормозит
 
 var driver: Node3D
@@ -137,19 +138,23 @@ func _ready() -> void:
 	add_child(enter_zone)
 
 func _physics_process(delta: float) -> void:
-	var throttle := 0.0
+	var gas := 0.0
+	var brake := 0.0
 	var steer := 0.0
 	var handbrake := false
 	var stopping := not driver or exit_requested  # пустая машина и машина перед выходом тормозят до остановки
 	if driver and not exit_requested:
-		throttle = Input.get_axis(&"move_back", &"move_forward")
+		gas = Input.get_action_strength(&"move_forward")
+		brake = Input.get_action_strength(&"move_back")
 		steer = Input.get_axis(&"move_right", &"move_left")
 		handbrake = Input.is_action_pressed(&"handbrake")
+	var both_pedals := gas > 0.0 and brake > 0.0
+	var throttle := 0.0 if both_pedals else gas - brake
 	var old_velocity := Vector3(velocity.x, 0.0, velocity.z)
 	var forward := -global_basis.z
 	var forward_speed := old_velocity.dot(forward)
 
-	_steer_now = lerpf(_steer_now, steer, 1.0 - exp(-STEER_SHARPNESS * delta))
+	_steer_now = move_toward(_steer_now, steer, STEER_RATE * delta)
 	var speed_factor := clampf(absf(forward_speed) / TURN_FULL_AT, 0.0, 1.0)
 	var turn_rate := lerpf(TURN_RATE_LOW, TURN_RATE_HIGH, clampf(absf(forward_speed) / MAX_SPEED, 0.0, 1.0))
 	if handbrake:
@@ -160,26 +165,30 @@ func _physics_process(delta: float) -> void:
 	forward_speed = old_velocity.dot(forward)
 	var lateral := old_velocity - forward * forward_speed
 	var speed_in := forward_speed   # DRIVE-02: до газа и тормоза — для буксования и переноса веса
+	var coast_drag := ROLL_DRAG + AIR_DRAG * forward_speed * forward_speed
 	if stopping:
 		forward_speed = move_toward(forward_speed, 0.0, BRAKE * delta)
 	elif handbrake:
 		forward_speed = move_toward(forward_speed, 0.0, HANDBRAKE * delta)
-	elif throttle > 0.0:
+	elif both_pedals:
+		# Собственный упрощённый аркадный ответ: тормоз удерживает машину, газ не включает реверс.
+		forward_speed = move_toward(forward_speed, 0.0, lerpf(coast_drag, BRAKE, brake) * delta)
+	elif gas > 0.0:
 		if forward_speed < -0.5:
-			forward_speed = move_toward(forward_speed, 0.0, BRAKE * delta)
+			forward_speed = move_toward(forward_speed, 0.0, lerpf(coast_drag, BRAKE, gas) * delta)
 		else:
 			var ratio := clampf(forward_speed / MAX_SPEED, 0.0, 1.0)
-			forward_speed = minf(forward_speed + ACCELERATION * throttle * (1.0 - ratio * ratio) * delta, MAX_SPEED)
-	elif throttle < 0.0:
+			forward_speed = minf(forward_speed + ACCELERATION * gas * (1.0 - ratio * ratio) * delta, MAX_SPEED)
+	elif brake > 0.0:
 		if forward_speed > 0.5:
-			forward_speed = move_toward(forward_speed, 0.0, BRAKE * delta)
+			forward_speed = move_toward(forward_speed, 0.0, lerpf(coast_drag, BRAKE, brake) * delta)
 		else:
-			forward_speed = maxf(forward_speed + ACCELERATION * REVERSE_ACCEL * throttle * delta, -MAX_REVERSE)
+			forward_speed = maxf(forward_speed - ACCELERATION * REVERSE_ACCEL * brake * delta, -MAX_REVERSE)
 	else:
-		forward_speed = move_toward(forward_speed, 0.0, (ROLL_DRAG + AIR_DRAG * forward_speed * forward_speed) * delta)
-	forward_speed = _snow_speed(forward_speed, speed_in, forward, throttle, stopping or handbrake, delta)   # DRIVE-02
-	braking =driver != null and (handbrake or (stopping and absf(forward_speed) > 0.5)
-		or (throttle < 0.0 and forward_speed > 0.5) or (throttle > 0.0 and forward_speed < -0.5))
+		forward_speed = move_toward(forward_speed, 0.0, coast_drag * delta)
+	forward_speed = _snow_speed(forward_speed, speed_in, forward, throttle, stopping or handbrake or both_pedals, delta)   # DRIVE-02
+	braking = driver != null and (handbrake or both_pedals or (stopping and absf(forward_speed) > 0.5)
+		or (brake > 0.0 and forward_speed > 0.5) or (gas > 0.0 and forward_speed < -0.5))
 	_update_lights()
 	lateral *= exp(-(HANDBRAKE_GRIP if handbrake else GRIP) * delta)
 	lateral_speed = lateral.length()
