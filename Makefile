@@ -43,6 +43,8 @@ test: map
 	$(call godot_test,quest01_acceptance,60,QUEST01)
 	$(call godot_test,polish01_audio,60,AUDIO)
 	$(call godot_test,radio_music_test,60,RADIO01,--max-fps 60 --resolution 1920x1080,,realtime)
+	$(call godot_test,radio02_news_test,60,RADIO02,--max-fps 60,,realtime)
+	$(call godot_test,radio02_interleaving_test,60,RADIO02_INTERLEAVE,--max-fps 60,,realtime)
 	$(call godot_test,polish01_stuck,60,STUCK)
 	$(call godot_test,art01_sprite,60,ART01)
 	$(call godot_test,art01_sprite,120,ART01)

@@ -1,6 +1,6 @@
 extends SceneTree
 ## STORY-02: независимые сценарии по demo_update.md/DECISIONS, без новых состояний миссии.
-## Ожидания: радио уступает предупреждению/гэгу и продолжает две передачи за мир;
+## Ожидания: радио уступает предупреждению/гэгу и сохраняет единственную первую погоду за мир;
 ## реальные события отражаются в восьми фактических строках, классификация вынесена отдельно;
 ## новый мир очищает передачи/уведомления/счётчики. C7 и полный маршрут — существующие наборы.
 
@@ -63,6 +63,7 @@ func _radio_priority() -> void:
 	check(sound.radio_shown == 0 and sound.gag_playing(), "first radio does not replace Babka warning on early car entry")
 	check(not paused and not world.ui_blocking and world.control_mode == &"in_car", "warning and pending radio leave driving active")
 	await _wait_radio_tuning(sound)
+	await _wait_first_weather(sound)
 	var limit := 1200
 	while sound.radio_text() != QuestLines.RADIO and limit > 0:
 		await _frames(1)
@@ -82,21 +83,14 @@ func _radio_priority() -> void:
 	sound.show_gag(["Проверка очереди города"], 1.5)
 	await _frames(2)
 	check(sound.gag_playing() and sound.radio_text() == "", "a situational gag takes priority over active radio")
-	limit = 1500
-	while sound.radio_text() != QuestLines.RADIO_PROGRESS and limit > 0:
-		await _frames(1)
-		limit -= 1
-	check(limit > 0 and sound.radio_shown == 2, "progress transmission survives an interrupted welcome during continuous driving")
-	check(sound.played["radio"] >= 2 and sound.radio.playing and not sound.car_radio.player.playing and not paused and not world.ui_blocking, "second transmission has one announcer and remains nonblocking")
-	check(sound.car_radio.music.player.playing and sound.car_radio.music.target_db() == sound.car_radio.music.DUCK_DB and sound.car_radio.music.player.volume_db > -40.0, "second transmission keeps the ducked music audible")
-	await _frames(600)
-	check(sound.radio_shown == 2 and sound.radio_text() == "", "two transmissions finish without a third")
-	check(world.exit_car(), "exit after both transmissions")
+	await _frames(720)
+	check(sound.radio_shown == 1 and sound.radio_text() == "" and not sound.radio.playing, "one weather transmission finishes without the cancelled progress bulletin")
+	check(world.exit_car(), "exit after first weather")
 	await _frames(3)
 	world.enter_car()
 	await _wait_radio_tuning(sound)
-	await _frames(90)
-	check(sound.radio_shown == 2 and sound.radio_text() == "", "re-entry does not replay either completed transmission")
+	await _frames(360)
+	check(sound.radio_shown == 1 and sound.radio_text() == "", "re-entry does not replay completed weather")
 
 func _protocol_events() -> void:
 	var mission := world.mission
@@ -176,7 +170,7 @@ func _reset_world() -> void:
 	world.car.reset_to(Vector3(-80, 0, 32), -PI * 0.5)
 	world.enter_car()
 	await _wait_radio_tuning(sound)
-	await _frames(60)
+	await _wait_first_weather(sound)
 	check(sound.radio_shown == 1 and sound.radio_text() == QuestLines.RADIO, "fresh world can show the welcome again")
 	check(sound.radio.playing and not sound.car_radio.player.playing, "fresh world's welcome has one announcer")
 
@@ -218,3 +212,10 @@ func _finish() -> void:
 	await process_frame
 	print("STORY02: %d checks, %d failures" % [checks, failures.size()])
 	quit(0 if failures.is_empty() else 1)
+
+func _wait_first_weather(sound: Node) -> void:
+	var deadline := Time.get_ticks_msec() + 12000
+	while sound.radio_text() != QuestLines.RADIO and Time.get_ticks_msec() < deadline:
+		OS.delay_msec(8)
+		await physics_frame
+	await _frames(30)

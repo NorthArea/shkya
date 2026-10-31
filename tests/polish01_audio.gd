@@ -62,18 +62,25 @@ func _run() -> void:
 	check(sound.engine.playing, "engine runs with a driver")
 	check(sound.played["radio"] == 0 and sound.radio_text() == "", "radio waits a moment after the door (EXT-01)")
 	await _wait_radio_tuning(sound)
+	await _frames(180)
 	var idle_pitch: float = sound.engine.pitch_scale
 	Input.action_press(&"car_gas")
 	await _frames(150)
 	var fast_pitch: float = sound.engine.pitch_scale
 	check(fast_pitch > idle_pitch + 0.5, "engine pitch rises with speed (%.2f → %.2f)" % [idle_pitch, fast_pitch])
 	check(not sound.skid.playing, "no skid sound driving straight")
+	# Waiting for real audio must not keep driving into the end of the fixture road.
+	_release_all()
+	world.car.reset_to(Vector3(-80, 0, 32), -PI * 0.5)
+	await _wait_first_weather(sound)
 	check(sound.played["radio"] >= 1 and sound.radio.playing and not sound.car_radio.player.playing and sound.radio.stream.data == sound.RADIO.data, "STORY-02: welcome caption has one original mumbling announcer")
 	check(sound.car_radio.music.player.playing and absf(sound.car_radio.music.player.volume_db - sound.car_radio.music.DUCK_DB) < 0.5 and sound.car_radio.music.player.volume_db > -40.0, "welcome announcer leaves a smoothly ducked audible music bed")
 	check(sound.radio_shown == 1, "first transmission shown once")
 	check(sound.car_radio.plays == 0, "periodic jingles do not interrupt the first STORY-02 transmission")
 	check(sound.radio_text() == QuestLines.RADIO and sound.subtitle_card.visible, "radio subtitle line on screen: '%s'" % sound.radio_text())
 	check(not paused and not world.ui_blocking, "radio leaves the world and driving UI unpaused")
+	Input.action_press(&"car_gas")
+	await _frames(150)
 	check(world.player.input_enabled == false and world.control_mode == &"in_car" and world.car.speed_kmh() > 5.0, "radio does not block driving")
 	Input.action_press(&"handbrake")
 	Input.action_press(&"move_left")
@@ -96,13 +103,11 @@ func _run() -> void:
 	await _frames(4)
 	await _press(&"interact")
 	await _wait_radio_tuning(sound)
-	await _frames(60)
-	check(world.control_mode == &"in_car" and sound.radio_shown == 2 and sound.radio_text() == QuestLines.RADIO_PROGRESS, "re-entry resumes the remaining progress transmission without repeating the welcome")
-	check(sound.played["radio"] >= 2 and sound.radio.playing and not sound.car_radio.player.playing and sound.radio.stream.data == sound.RADIO.data, "progress caption also has one original mumbling announcer")
-	check(sound.car_radio.music.player.playing and absf(sound.car_radio.music.player.volume_db - sound.car_radio.music.DUCK_DB) < 0.5 and sound.car_radio.music.player.volume_db > -40.0, "progress announcer leaves the ducked music audible")
-	await _frames(int(ceil(maxf(QuestLines.RADIO_SECONDS, QuestLines.read_seconds(QuestLines.RADIO_PROGRESS)) * 60.0)) + 90)
-	check(sound.radio_text() == "" and sound.radio_shown == 2, "both short transmissions finish once per world")
-	check(not sound.story_radio_pending(), "periodic radio becomes eligible only after both STORY-02 transmissions finish")
+	await _frames(360)
+	check(world.control_mode == &"in_car" and sound.radio_shown == 1 and sound.radio_text() == "", "re-entry plays music without another introductory bulletin")
+	check(not sound.radio.playing and not sound.car_radio.player.playing, "no leftover announcer after re-entry")
+	check(sound.car_radio.music.player.playing and absf(sound.car_radio.music.player.volume_db - sound.car_radio.music.BASE_DB) < 0.5, "music restores without the cancelled progress bulletin")
+	check(not sound.story_radio_pending(), "one first weather bulletin completed")
 	await _press(&"interact")
 	frames = 0
 	while world.control_mode == &"in_car" and frames < 400:
@@ -173,91 +178,28 @@ func _run() -> void:
 	check(main.world == null and music.player.playing and not music.muffled() and absf(music.player.volume_db - music.MENU_DB) < 0.5, "menu theme plays again in the main menu after the game")
 	_finish()
 
-## POLISH-03 C: радио «Лады» — позывные «ничего необычного» с объявлением; только в машине на ходу, не чаще INTERVAL,
-## уступают гэгам и диалогам; пешком молчат.
+## RADIO-02: обычные объявления занимают реальный перерыв между треками.
 func _check_car_radio(world: DemoWorld, sound) -> void:
-	var radio = sound.car_radio
-	check(sound.radio_shown == 2 and sound.played["radio"] >= 2 and not sound.radio.playing, "periodic announcements preserve both completed voiced story transmissions")
-	check(radio != null and radio.player != null, "car radio (CarRadio) is set up")
-	if radio == null or radio.player == null:
-		return
-	var CarRadio = radio.get_script()
-	check(radio.player.get_parent() == world.car and radio.player is AudioStreamPlayer3D, "radio jingle plays from under the dash (3D on the Lada)")
-	check(radio.player.volume_db < sound.engine.volume_db, "radio jingle is quieter than the engine (%.0f < %.0f dB)" % [radio.player.volume_db, sound.engine.volume_db])
-	check(CarRadio.JINGLES.size() >= 2 and CarRadio.JINGLES.size() <= 3, "2–3 synthesized jingles (%d)" % CarRadio.JINGLES.size())
-	var forbidden := ["мобилизац", "бусификац", "военкомат", "повестк"]
-	for line in CarRadio.LINES:
-		var bad := forbidden.filter(func(w): return line.to_lower().contains(w))
-		check(QuestLines.word_count(line) <= 8 and bad.is_empty(), "radio line ≤ 8 words, no forbidden words: '%s'" % line)
-	# Пешком — тишина, даже когда ожидание вышло.
-	radio.wait = 0.0
-	var before: int = sound.played.get("radio_jingle", 0)
-	world.player.place(Layout.SPAWN, 0.0)
-	await _frames(180)
-	check(sound.played.get("radio_jingle", 0) == before and not radio.player.playing, "no radio jingle on foot")
-	# В машине на ходу: первый позывной через FIRST_DELAY езды.
-	radio.wait = CarRadio.FIRST_DELAY
+	var receiver = sound.car_radio
+	check(sound.radio_shown == 1 and not sound.radio.playing, "first weather remains the only introductory bulletin")
 	world.car.reset_to(Vector3(-85, 0, 32), -PI * 0.5)
 	world.enter_car()
-	await _frames(3)
 	await _wait_radio_tuning(sound)
-	var driven := 0.0
-	var started_at := -1.0
-	for i in int((CarRadio.FIRST_DELAY + 3.0) * 60.0):
-		_cruise(world, 22.0)
-		await _frames(1)
-		if world.car.speed_kmh() >= CarRadio.MIN_SPEED_KMH:
-			driven += 1.0 / 60.0
-		if started_at < 0.0 and radio.player.playing:
-			started_at = driven
-			break
-	check(started_at >= CarRadio.FIRST_DELAY - 0.1 and started_at <= CarRadio.FIRST_DELAY + 0.2, "first jingle after %.1f s of driving (%.0f)" % [started_at, CarRadio.FIRST_DELAY])
-	check(sound.played.get("radio_jingle", 0) == before + 1, "radio jingle counted once")
-	check(sound.radio_text() == CarRadio.LINES[0] and sound.subtitle_card.visible, "announcement subtitle on screen: '%s'" % sound.radio_text())
-	# Гэг (квестовая реплика) важнее: позывной гаснет, строку занимает гэг.
-	sound.show_gag(["Тестовый гэг"], 1.5)
-	await _frames(int((CarRadio.FADE + 0.2) * 60.0))
-	check(not radio.player.playing and sound.subtitle_label.text == "Тестовый гэг", "a gag silences the jingle and takes the subtitle")
-	# Не чаще INTERVAL: дальше 6 с езды — тишина.
-	var plays: int = sound.played["radio_jingle"]
-	for i in 360:
-		_cruise(world, 22.0)
-		await _frames(1)
-	check(sound.played["radio_jingle"] == plays, "no second jingle within %.0f s of driving" % CarRadio.INTERVAL)
-	# Пока идёт гэг, позывной не начинается; после — начинается.
-	radio.wait = 0.0
-	sound.show_gag(["Ещё гэг"], 2.0)
-	var during_gag := false
-	var after_gag := false
-	for i in 600:
-		_cruise(world, 22.0)
-		await _frames(1)
-		if sound.gag_playing() and radio.player.playing:
-			during_gag = true
-		if not sound.gag_playing() and radio.player.playing:
-			after_gag = true
-			break
-	check(not during_gag and after_gag, "jingle waits for the gag to end, then plays")
-	# Выход из машины — стоп.
-	_release_all()
-	var frames := 0
-	while world.car.speed_kmh() > 1.0 and frames < 600:
-		Input.action_press(&"car_brake")
-		await physics_frame
-		frames += 1
-	_release_all()
-	world.exit_car()
+	await _frames(120)
+	check(sound.radio_text() == "" and receiver.music.player.playing, "ordinary music is never interrupted by an elapsed periodic timer")
+	receiver.music.player.stop()
+	receiver.music.player.finished.emit()
 	await _frames(3)
-	check(world.control_mode == &"on_foot" and not radio.player.playing, "radio jingle stops when Ilyusha gets out")
+	check(sound.radio_text() != "" and sound.radio.playing and not receiver.music.player.playing, "natural finished boundary has one announcer and no music restart")
+	sound.show_gag(["Тестовый гэг"], 1.5)
+	await _frames(3)
+	check(not sound.radio.playing and sound.subtitle_label.text == "Тестовый гэг", "gag receives priority over between-track news")
+	await _frames(720)
+	check(receiver.music.player.playing and sound.radio_text() == "", "music resumes after the complete bulletin and gag")
+	check(world.exit_car(), "exit from radio test")
+	await _frames(3)
+	check(not receiver.music.player.playing and not sound.radio.playing, "walking silences both music and announcer")
 
-## Держать «Ладу» около kmh: газ, пока медленнее.
-func _cruise(world: DemoWorld, kmh: float) -> void:
-	if world.car.speed_kmh() < kmh:
-		Input.action_press(&"car_gas")
-	else:
-		Input.action_release(&"car_gas")
-
-## AudioServer завершает настройку по реальным аудиочасам, даже при --fixed-fps.
 func _wait_radio_tuning(sound: Node) -> void:
 	var cue: AudioStreamPlayer = sound.car_radio.music.tuning
 	var deadline_ms: int = Time.get_ticks_msec() + ceili(cue.stream.get_length() * 1000.0) + 1500
@@ -324,3 +266,10 @@ func _finish() -> void:
 	OS.delay_msec(100)
 	await process_frame
 	quit(0 if failures.is_empty() else 1)
+
+func _wait_first_weather(sound: Node) -> void:
+	var deadline := Time.get_ticks_msec() + 12000
+	while sound.radio_text() != QuestLines.RADIO and Time.get_ticks_msec() < deadline:
+		OS.delay_msec(8)
+		await physics_frame
+	await _frames(30)

@@ -12,7 +12,7 @@ const CLASSICAL_PATHS: Array[String] = [
 const BASE_DB := -5.0
 const DUCK_DB := -15.0
 const PRIORITY_DB := -23.0
-const TUNE_DB := -9.0
+const TUNE_DB := -1.0
 const DUCK_SECONDS := 0.35
 const RESTORE_SECONDS := 0.8
 const STATION_SECONDS := 4.0
@@ -34,6 +34,9 @@ var _positions := [0.0, 0.0]
 var _tune_pending := false
 var _tuned := false
 var _station_left := 0.0
+# Естественный конец живого трека открывает ровно одно окно для передачи.
+var _between_tracks := false
+var _gap_claimed := false
 
 func setup(director: Node) -> void:
 	sound = director
@@ -41,7 +44,7 @@ func setup(director: Node) -> void:
 	# Узел следит за паузой, но сами плееры замирают вместе с миром.
 	process_mode = Node.PROCESS_MODE_ALWAYS
 	_live = load(LIVE_PATH).duplicate() as AudioStreamOggVorbis
-	_live.loop = true
+	_live.loop = false
 	for path in CLASSICAL_PATHS:
 		if ResourceLoader.exists(path):
 			var track: AudioStream = load(path).duplicate() as AudioStream
@@ -106,15 +109,30 @@ func _tune_finished() -> void:
 	_start_track()
 
 func _start_track() -> void:
-	if not _tuned or not driver_active() or get_tree().paused or _theme_playing():
+	if not _tuned or not driver_active() or get_tree().paused or _theme_playing() or (station == Station.LIVE and _between_tracks):
 		return
 	player.stream = _live if station == Station.LIVE else _classical[_classical_index]
 	player.volume_db = target_db()
 	player.stream_paused = false
 	player.play(_positions[station])
 
+func between_tracks() -> bool:
+	return station == Station.LIVE and _between_tracks
+
+func claim_gap() -> void:
+	_gap_claimed = true
+
+func finish_gap() -> void:
+	_between_tracks = false
+	_gap_claimed = false
+	_start_track()
+
 func _track_finished() -> void:
-	if station == Station.CLASSICAL and driver_active() and _tuned:
+	if station == Station.LIVE and driver_active() and _tuned:
+		_positions[station] = 0.0
+		_between_tracks = true
+		_gap_claimed = false
+	elif station == Station.CLASSICAL and driver_active() and _tuned:
 		_classical_index = (_classical_index + 1) % _classical.size()
 		_positions[station] = 0.0
 		_start_track()

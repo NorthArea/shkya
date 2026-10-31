@@ -297,7 +297,7 @@ func _physics_process(delta: float) -> void:
 			_radio_left = maxf(0.0, _radio_left - delta)
 			if _radio_left == 0.0:
 				var text: String = "\n".join(PackedStringArray(QuestLines.RADIO_DETOUR))
-				if sound.show_radio_line(text, maxf(RADIO_SECONDS, QuestLines.read_seconds(text.replace("\n", " ")))):
+				if sound.urgent_radio_line(text, maxf(RADIO_SECONDS, QuestLines.read_seconds(text.replace("\n", " ")))):
 					_radio_left = -1.0
 					radio_shown += 1
 	if not _mission.road_closed:

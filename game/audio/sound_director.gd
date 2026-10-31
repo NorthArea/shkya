@@ -3,7 +3,7 @@ extends Node
 ## финал и фон двора. Только слушает мир, машину, миссию и диалоги — ничем не управляет.
 ## Звуки синтезированы tools/generate_audio.py (собственная генерация, см. assets/README.md).
 ## Мотор, каша и фон двора зациклены при импорте (`edit/loop_mode=2` в .import).
-## STORY-02 / RADIO-01: две сюжетные передачи с бормотанием диктора; уступают диалогам и гэгам,
+## RADIO-02: единый диктор новостей; уступает диалогам и гэгам,
 ## управление не блокируют. Полицейская рация и звуковой фон города независимы.
 
 const DialogPanelScript = preload("res://game/ui/dialog_panel.gd")
@@ -22,7 +22,6 @@ const BREAD := preload("res://assets/audio/bread_get.wav")
 const COMPLETE := preload("res://assets/audio/quest_complete.wav")
 const AMBIENCE := preload("res://assets/audio/yard_ambience_loop.wav")
 const RADIO := preload("res://assets/audio/radio_mumble.wav")
-const RADIO_DELAY := 0.6  # с после хлопка двери, прежде чем «поймается» волна
 
 ## Счётчики для проверок: сколько раз сыграл каждый звук.
 var played := {"step": 0, "door_open": 0, "door_close": 0, "ui": 0, "bread": 0, "complete": 0, "radio": 0}
@@ -42,12 +41,13 @@ var subtitle_label: Label
 var _walked := 0.0
 var _last_position := Vector3.INF
 var _rng := RandomNumberGenerator.new()
-var _radio_delay := -1.0
 var _subtitle_left := 0.0
 var _radio_caption := ""
-## Сюжетные передачи сохраняют текст и порядок; played считает настоящие запуски голоса.
+var _radio_urgent := false
+var _interrupted_radio_caption := ""
+var _interrupted_radio_left := 0.0
+## Первая погода звучит один раз за мир; played считает настоящие запуски голоса.
 var radio_shown := 0
-const RADIO_PROGRESS_DELAY := 4.0
 
 func _ready() -> void:
 	world = get_parent()
@@ -73,17 +73,11 @@ func _setup() -> void:
 	ambience.play()
 	_build_subtitle()
 	world.car.driver_entered.connect(func(_d):
-		_one_shot(door, DOOR_CLOSE, "door_close")
-		if radio_shown < 2 and _radio_delay < 0.0:
-			_radio_delay = RADIO_DELAY)
+		_one_shot(door, DOOR_CLOSE, "door_close"))
 	world.car.driver_exited.connect(func(_d):
 		_one_shot(door, DOOR_OPEN, "door_open")
-		# С выходом водителя сюжетное радио гаснет; уже показанная передача не повторяется.
-		radio.stop()
-		_radio_delay = -1.0
-		_subtitle_left = 0.0
-		if not gag_playing():
-			subtitle_card.visible = false)
+		# При возвращении в машину дочитать остаток передачи.
+		suspend_radio_voice())
 	world.mission.bread_received.connect(func(): _one_shot(chime, BREAD, "bread"))
 	world.mission.quest_completed.connect(func(_xp): _one_shot(chime, COMPLETE, "complete"))
 	var flow := world.get_node_or_null("QuestFlow")
@@ -119,48 +113,43 @@ func _physics_process(delta: float) -> void:
 	_life_sounds()   # PEOPLE-03
 
 ## Сначала предупреждение/диалог, затем радио. Управление остаётся у водителя.
+func radio_available() -> bool:
+	if world.ui_blocking or gag_playing() or get_tree().paused:
+		return false
+	var flow: Node = world.get_node_or_null("QuestFlow")
+	return not (flow and flow.is_dialog_open())
+
 func _radio(delta: float) -> void:
 	if world.is_stealth_failing() or world.mission.state == MissionDirector.COMPLETE:
 		suspend_radio_voice()
 		_subtitle_left = 0.0
-		_radio_delay = -1.0
 		return
-	if car_radio and not car_radio.music.news_enabled():
+	if not car_radio or not car_radio.music.news_enabled() or not radio_available():
 		suspend_radio_voice()
-		return  # другая станция/настройка замораживает обе сюжетные передачи
-	if gag_playing():
-		radio.stop()
 		return
-	if world.ui_blocking:
-		radio.stop()
-		subtitle_card.visible = false
-		return
-	if _radio_delay >= 0.0:
-		_radio_delay = maxf(0.0, _radio_delay - delta)
-		if _radio_delay == 0.0 and world.car.driver and not world.ui_blocking and not gag_playing():
-			_radio_delay = -1.0
-			_radio_caption = QuestLines.RADIO if radio_shown == 0 else QuestLines.RADIO_PROGRESS
-			subtitle_label.text = _radio_caption
-			radio_shown += 1
-			_subtitle_left = maxf(QuestLines.RADIO_SECONDS, QuestLines.read_seconds(subtitle_label.text))
-			_subtitle_slot(false)
-			subtitle_card.visible = true
-			DialogPanelScript.pop(subtitle_card, 0.6)
 	if _subtitle_left > 0.0:
 		if not subtitle_card.visible:
 			subtitle_label.text = _radio_caption
 			_subtitle_slot(false)
 			subtitle_card.visible = true
-		_subtitle_left -= delta
+		_subtitle_left = maxf(0.0, _subtitle_left - delta)
 		if _subtitle_left <= 0.0:
 			subtitle_card.visible = false
-			if radio_shown == 1 and world.car.driver:
-				_radio_delay = RADIO_PROGRESS_DELAY
-	var director_announcement: bool = radio_text() != "" and not (car_radio and car_radio._announcing)
-	if director_announcement and not radio.playing:
-		radio.play()
-		played["radio"] += 1
-	elif not director_announcement:
+			if _radio_urgent and _interrupted_radio_left > 0.0:
+				var caption := _interrupted_radio_caption
+				var remaining := _interrupted_radio_left
+				_interrupted_radio_caption = ""
+				_interrupted_radio_left = 0.0
+				_radio_urgent = false
+				if _begin_radio_line(caption, remaining):
+					_subtitle_left = remaining
+			else:
+				_radio_urgent = false
+	if radio_text() != "":
+		if not radio.playing:
+			radio.play()
+			played["radio"] += 1
+	else:
 		radio.stop()
 
 ## Собственная копия позволяет держать диктора на всём времени чтения субтитра,
@@ -814,7 +803,9 @@ func _break_sounds() -> void:
 	if _breakables_node == null or not _breakables_node.has_signal(&"broken"):
 		_breakables_node = null
 		return
-	_breakables_node.broken.connect(func(b: Node3D, _by: StringName):
+	_breakables_node.broken.connect(func(b: Node3D, by: StringName):
+		if car_radio:
+			car_radio.report_break(b.kind, by)
 		var material: StringName = _breakables_node.SOUND.get(b.kind, &"wood")
 		if _break_play(material, b.global_position + Vector3.UP * 0.5, 1.0, BREAK_DB):
 			played["break"] += 1
@@ -824,9 +815,13 @@ func _break_sounds() -> void:
 		if _break_play(material, b.global_position + Vector3.UP * 0.5, 0.8, BREAK_WOBBLE_DB):
 			played["break_wobble"] += 1)
 	_breakables_node.car_alarm.connect(func(at: Vector3):
+		if car_radio:
+			car_radio.report_event(&"car_alarm", "Во дворе сработала сигнализация. Автомобиль требует внимания и немного личного пространства")
 		if _break_play(&"car_alarm", at, 1.0, CAR_ALARM_DB):
 			played["car_alarm"] += 1)
 	_breakables_node.bin_lid.connect(func(at: Vector3):
+		if car_radio:
+			car_radio.report_event(&"bin_lid", "Мусорный бак хлопнул крышкой. Коммунальщики назвали это открытым диалогом с населением")
 		if _break_play(&"bin_lid", at, 1.0, BIN_LID_DB):
 			played["bin_lid"] += 1)
 
@@ -978,25 +973,51 @@ func _setup_car_radio() -> void:
 	add_child(car_radio)
 	car_radio.setup(self)
 
-## STORY-02 владеет первыми двумя передачами и сохраняет порядок при смене станции.
+## Первая погода ещё ожидает музыки или дочитывается.
 func story_radio_pending() -> bool:
-	return radio_shown < 2 or _radio_delay >= 0.0 or (_subtitle_left > 0.0 and _radio_caption in [QuestLines.RADIO, QuestLines.RADIO_PROGRESS])
+	return radio_shown == 0 or (_subtitle_left > 0.0 and _radio_caption == QuestLines.RADIO)
 
-## Строка радио внизу экрана, как разовое радио EXT-01; поверх гэга не встаёт (false).
+## Обычная строка допускается только на естественной границе треков.
 func show_radio_line(text: String, seconds: float) -> bool:
-	if subtitle_card == null or gag_playing() or world.ui_blocking or story_radio_pending() or _subtitle_left > 0.0 or (car_radio and not car_radio.music.news_enabled()):
+	if not car_radio or not car_radio.music.between_tracks():
+		return false
+	return _begin_radio_line(text, seconds)
+
+## Реальный объезд может перебить трек и несрочную передачу; повторный вызов остаётся у источника.
+func urgent_radio_line(text: String, seconds: float) -> bool:
+	if not car_radio or not car_radio.music.news_enabled() or not radio_available():
+		return false
+	# Уже принятая срочная передача не перезапускается при повторной доставке.
+	if _subtitle_left > 0.0 and _radio_caption == text:
+		return false
+	if _subtitle_left > 0.0 and not _radio_urgent:
+		_interrupted_radio_caption = _radio_caption
+		_interrupted_radio_left = _subtitle_left
+	_subtitle_left = 0.0
+	var started := _begin_radio_line(text, seconds)
+	_radio_urgent = started
+	return started
+
+func _begin_radio_line(text: String, seconds: float) -> bool:
+	if subtitle_card == null or not radio_available() or _subtitle_left > 0.0 or not car_radio.music.news_enabled():
 		return false
 	_subtitle_slot(false)
+	_radio_urgent = false
 	_radio_caption = text
 	subtitle_label.text = text
-	_subtitle_left = seconds
+	_subtitle_left = maxf(seconds, QuestLines.read_seconds(text.replace("\n", " ")))
 	subtitle_card.visible = true
+	if not radio.playing:
+		radio.play()
+		played["radio"] += 1
 	DialogPanelScript.pop(subtitle_card, 0.6)
 	return true
 
-## Убрать строку радио (диалог начался); строку гэга не трогает.
 func hide_radio_line() -> void:
-	if subtitle_card == null or gag_playing() or story_radio_pending():
+	if subtitle_card == null or gag_playing():
 		return
 	_subtitle_left = 0.0
+	_interrupted_radio_caption = ""
+	_interrupted_radio_left = 0.0
+	_radio_urgent = false
 	subtitle_card.visible = false

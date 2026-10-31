@@ -37,7 +37,7 @@ func _run() -> void:
 		await _finish()
 		return
 	check(not music.player.playing, "bed is silent on foot")
-	check(music.player.stream is AudioStreamOggVorbis and music.player.stream.loop, "Cold Funk is a looping Ogg")
+	check(music.player.stream is AudioStreamOggVorbis and not music.player.stream.loop, "Cold Funk has a natural end for between-track news")
 	check(music.player.stream.packet_sequence == load(music.LIVE_PATH).packet_sequence, "the sole bed is the selected Cold Funk recording")
 	check(music.player.bus == &"Master", "radio does not share Chopin's pause filter")
 	world.car.enter(world.player)
@@ -54,8 +54,8 @@ func _run() -> void:
 		tune_limit -= 1
 	check(world.car.driver == world.player and world.car.speed_kmh() < 1.0 and music.player.playing, "real driver starts the bed while parked")
 	check(not main.music.player.playing, "game bed never overlaps menu Chopin")
-	check(sound.radio_shown == 0, "original door-to-announcement delay is retained")
-	await _frames(45)
+	check(sound.radio_shown == 0, "tuning finishes before the five seconds of music")
+	await _frames(330)
 	check(sound.radio_text() == QuestLines.RADIO and sound.radio_shown == 1, "first story caption retains its text and order")
 	check(sound.radio.playing and sound.radio.stream is AudioStreamWAV, "first story caption has our mumbling announcer")
 	check(sound.radio.stream.data == sound.RADIO.data, "story announcer uses the project's radio_mumble recording")
@@ -103,15 +103,11 @@ func _run() -> void:
 	await _frames(3)
 	check(sound.radio_text() == QuestLines.RADIO and sound.radio_shown == 1 and sound.radio.playing, "interrupted story resumes with the same caption and announcer")
 	var limit := 1500
-	while sound.radio_text() != QuestLines.RADIO_PROGRESS and limit > 0:
-		await _frames(1)
-		limit -= 1
-	check(limit > 0 and sound.radio_shown == 2 and sound.radio.playing, "second original story caption is also voiced")
 	while sound.story_radio_pending() and limit > 0:
 		await _frames(1)
 		limit -= 1
-	await _frames(60)
-	check(limit > 0 and sound.radio_text() == "" and _voices() == 0, "two story captions finish without a third or leftover voice")
+	await _frames(360)
+	check(limit > 0 and sound.radio_shown == 1 and sound.radio_text() == "" and _voices() == 0, "one first weather finishes with no cancelled second introduction")
 	check(music.player.playing and absf(music.player.volume_db - music.BASE_DB) < 0.5, "music smoothly restores after the announcement")
 	# Покупка запускает настоящий таймер объезда; на классике новости не расходуются.
 	check(music.switch_station(), "select classical before the detour announcement")
@@ -136,18 +132,19 @@ func _run() -> void:
 		await _frames(1)
 		detour_limit -= 1
 	await _frames(60)
-	# Existing periodic trigger still requires motion; its explicit invocation exercises the production caption/voice path.
-	sound.car_radio.wait = 0.0
+	# Обычная передача допускается только после реального finished, без таймера езды.
+	var before_plays: int = sound.car_radio.plays
 	await _frames(120)
-	check(sound.car_radio.plays == 0, "parked bed does not bypass periodic announcement speed gate")
-	world.car.velocity = Vector3(0, 0, -6)
-	sound.car_radio._physics_process(1.0 / 60.0)
-	world.car.velocity = Vector3.ZERO
+	check(sound.car_radio.plays == before_plays and music.player.playing, "parked track is not interrupted by a periodic timer")
+	music.player.stop()
+	music.player.finished.emit()
 	await _frames(3)
-	check(sound.car_radio.plays == 1 and sound.radio_text() == sound.car_radio.LINES[0], "periodic announcement retains its original text")
-	check(sound.car_radio.player.playing and sound.car_radio.player.stream.data == sound.RADIO.data and _voices() == 1, "periodic caption uses one mumble voice without the old voiced jingle")
+	check(sound.car_radio.plays == before_plays + 1 and sound.radio_text() != "", "track finished admits one routine announcement")
+	check(sound.radio.playing and not sound.car_radio.player.playing and _voices() == 1, "routine caption uses the single mumble voice")
 	await _frames(40)
-	check(music.player.playing and music.player.volume_db < music.BASE_DB - 1.0 and music.player.volume_db > -40.0, "periodic announcer leaves a quiet audible bed")
+	check(not music.player.playing and music.between_tracks(), "next song waits for the entire between-track announcement")
+	await _frames(900)
+	check(music.player.playing and sound.radio_text() == "", "next song starts after the announced text finishes")
 	main.set_paused(true)
 	await _frames(50)
 	check(not music.switch_station(), "pause ignores station switching")
