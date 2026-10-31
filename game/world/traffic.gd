@@ -21,6 +21,7 @@ const CAR_START_OFFSET := 30.0
 const CAR_KINDS: Array[StringName] = [&"zhiguli", &"volga", &"gazelle"]
 const MIN_START_CLEARANCE := 20.0
 
+var occupants_enabled := true
 var path: PathVehicle.LanePath       # полоса троллейбуса (RING)
 var car_path: PathVehicle.LanePath   # полоса машин (CAR_RING, встречная)
 var vehicles: Array = []   # [Trolleybus, TrafficCar × 3]
@@ -36,6 +37,7 @@ func _ready() -> void:
 	var count := 1 + Layout.TRAFFIC_CARS
 	var offsets := start_offsets(path.length, car_path.length)
 	trolleybus = TrolleybusScript.new()
+	trolleybus.occupants_enabled = occupants_enabled
 	trolleybus.name = "Trolleybus13"
 	vehicles.append(trolleybus)
 	for i in Layout.TRAFFIC_CARS:

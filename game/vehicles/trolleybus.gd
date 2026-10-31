@@ -20,6 +20,7 @@ const STOP_DECEL := 1.2
 const CONTACT_Y := 7.0                   # высота контактного провода (как в level_geometry.gd)
 const WIRE_LEFT: Array[float] = [1.5, 4.5]   # провода над осью улицы: левее правой полосы на 1,5 и 4,5 м
 
+var occupants_enabled := true
 var stop_offsets: Array[float] = []
 var next_stop := 0
 var dwell_left := 0.0
@@ -131,8 +132,9 @@ func _build_visual() -> Node3D:
 		opening.visible = false
 		_door_openings.append(opening)
 	_labels(body)
-	people = CabinScript.new()
-	body.add_child(people)
+	if occupants_enabled:
+		people = CabinScript.new()
+		body.add_child(people)
 	# Тёплый свет в салоне — виден в окна и в открытые двери; без теней.
 	var light := OmniLight3D.new()
 	light.name = "CabinLight"

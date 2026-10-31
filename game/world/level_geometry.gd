@@ -29,6 +29,9 @@ const CONCRETE := Color(0.50, 0.51, 0.52)
 const ENTRANCE_WALL_Z := Buildings.ENTRANCE_WALL_Z   # северный фасад H1 (центр 115, глубина 14) — z = 108
 const ENTRANCE_DOOR_X := Buildings.ENTRANCE_DOOR_X   # дверь по центру козырька
 
+## Заставка меню сохраняет город и транспорт, но не создаёт персонажей и игровые награды.
+var presentation_only := false
+
 # Экземпляры MultiMesh, которые собираются со всего квартала и строятся одним вызовом в конце: провода.
 # Тысячи деталей без тысяч узлов и draw call. Дома — свои пакеты в _buildings (CITY-02 B); деревья, бордюры,
 # снег на проводах, столбы — пакеты _environment (CITY-02 E); панорама — _skyline.
@@ -88,15 +91,20 @@ func _ready() -> void:
 	_build_chimneys()
 	_houses().build_store_entrances()
 	_build_instances()
-	add_child(Patrols.new())   # EXT-01 N: наблюдатели и автобус (точки — Layout, C1)
-	add_child(preload("res://game/world/traffic.gd").new())   # ARENA-01: транспорт кольца (C8)
-	add_child(preload("res://game/world/residents.gd").new())   # PEOPLE-01: жители города Н.
+	if not presentation_only:
+		add_child(Patrols.new())   # EXT-01 N: наблюдатели и автобус (точки — Layout, C1)
+	var traffic := preload("res://game/world/traffic.gd").new()
+	traffic.occupants_enabled = not presentation_only
+	add_child(traffic)   # ARENA-01: транспорт кольца (C8)
+	if not presentation_only:
+		add_child(preload("res://game/world/residents.gd").new())   # PEOPLE-01: жители города Н.
 	add_child(preload("res://game/world/ambient.gd").new())   # CITY-01 (A): вороны, собака, кошка, мусор
 	add_child(preload("res://game/world/wind_bags.gd").new())
 	add_child(preload("res://game/world/winter_grime.gd").new())
 	add_child(preload("res://game/stealth/hide_spots.gd").new())   # EXT-02: укрытия у киоска (C7а)
-	add_child(preload("res://game/world/coins.gd").new())   # COINS-01: монеты, 35 ₽ до батона
-	add_child(preload("res://game/world/drones.gd").new())   # PUNCH-01: мини-дроны ГСУМ (петли — Layout.DRONE_LOOPS)
+	if not presentation_only:
+		add_child(preload("res://game/world/coins.gd").new())   # COINS-01: монеты, 35 ₽ до батона
+		add_child(preload("res://game/world/drones.gd").new())   # PUNCH-01: мини-дроны ГСУМ (петли — Layout.DRONE_LOOPS)
 	add_child(preload("res://game/world/props.gd").new())   # PROPS-01: новые объекты арены (ARENA-02)
 	add_child(preload("res://game/world/breakables.gd").new())   # BREAK-01: разрушаемые объекты (Layout.BREAKABLES)
 

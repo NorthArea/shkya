@@ -258,4 +258,7 @@ func _finish() -> void:
 	if is_instance_valid(main):
 		main.queue_free()
 	await process_frame
+	# Как в smoke_runner: дать аудиопотоку освободить остановленную музыку.
+	OS.delay_msec(100)
+	await process_frame
 	quit(0 if failures.is_empty() else 1)
