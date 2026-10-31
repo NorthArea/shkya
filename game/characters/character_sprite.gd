@@ -1,11 +1,13 @@
 class_name CharacterSprite
 extends Node3D
-## Облик персонажа ШКЯ (ART-01): плоский рисунок, всегда повёрнутый к камере (billboard по Y).
+## Character appearance: original SVGs, with IP-01 skinned police/guard behind --uniform3d.
 ## Ракурс — по углу между взглядом персонажа (-Z родителя) и камерой: front, back или side
 ## (side нарисован лицом вправо, второй бок — зеркало). Кадры ходьбы — по пройденному пути.
 ## Рисунки: assets/art/characters/<character>_<view>_<idle|walkN>.svg (tools/generate_characters.py).
 
 const DIR := "res://assets/art/characters/"
+const UniformVisual = preload("res://game/characters/uniform_visual.gd")
+static var _uniform_height_ratios: Dictionary = {}
 const CANVAS_HEIGHT := 600.0  # условные единицы холста; ноги стоят на 590
 const FEET_Y := 590.0
 const FRONT_DOT := 0.55       # cos ≈ 57°: ближе к оси — лицом или спиной, иначе бок
@@ -26,6 +28,7 @@ const APPEARANCES: Array[String] = ["police_long", "police_round", "guard_alt"]
 @export var tint := Color.WHITE
 
 var sprite: Sprite3D
+var uniform_visual: Node3D
 var look_material: StandardMaterial3D
 var view := &"front"
 var frame := -1  # -1 — стойка, 0..3 — ходьба
@@ -48,6 +51,13 @@ func _ready() -> void:
 				frames.append(load(path))
 		_walk[v] = frames
 	var texture: Texture2D = _idle[&"front"]
+	if UniformVisual.enabled() and UniformVisual.supports(drawing):
+		uniform_visual = UniformVisual.new()
+		uniform_visual.name = "UniformVisual"
+		uniform_visual.configure(drawing, height_m * _uniform_height_ratio(drawing, texture), tint)
+		add_child(uniform_visual)
+		add_child(_shadow())
+		return
 	sprite = Sprite3D.new()
 	sprite.name = "Sprite"
 	sprite.texture = texture
@@ -77,6 +87,8 @@ func _ready() -> void:
 	add_child(_shadow())
 
 func _process(_delta: float) -> void:
+	if uniform_visual != null:
+		return
 	var camera := get_viewport().get_camera_3d()
 	if not camera or not sprite:
 		return
@@ -117,6 +129,26 @@ func _physics_process(delta: float) -> void:
 	else:
 		_distance = 0.0
 		frame = -1
+	if uniform_visual != null:
+		uniform_visual.update_walk(_distance, frame >= 0, delta, walk_stride)
+
+func _uniform_height_ratio(drawing: String, texture: Texture2D) -> float:
+	if not _uniform_height_ratios.has(drawing):
+		var image := texture.get_image()
+		if image.is_compressed():
+			image.decompress()
+		_uniform_height_ratios[drawing] = float(image.get_used_rect().size.y) / float(image.get_height())
+	return _uniform_height_ratios[drawing]
+
+func uses_uniform_3d() -> bool:
+	return uniform_visual != null
+
+func set_walk_speed(speed: float) -> void:
+	if uniform_visual != null:
+		uniform_visual.set_walk_speed(speed)
+
+func build_uniform_xray() -> MeshInstance3D:
+	return uniform_visual.build_xray() if uniform_visual != null else null
 
 func _shadow() -> MeshInstance3D:
 	var gradient := Gradient.new()

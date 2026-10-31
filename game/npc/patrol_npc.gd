@@ -266,6 +266,10 @@ func _world() -> Node:
 ## Силуэт сквозь стены: тот же рисунок, что у спрайта облика, на квадрате его размера; ребёнок спрайта (дыхание и
 ## положение — его).
 func _build_xray() -> void:
+	if _look != null and _look.uses_uniform_3d():
+		xray = _look.build_uniform_xray()
+		_xray_material = xray.material_override as ShaderMaterial
+		return
 	if _look == null or _look.get("sprite") == null:
 		return
 	var sprite: Sprite3D = _look.sprite
@@ -293,9 +297,10 @@ func _update_xray() -> void:
 	xray.visible = near and sensor.enabled
 	if not xray.visible:
 		return
-	var sprite: Sprite3D = _look.sprite
-	_xray_material.set_shader_parameter(&"albedo_tex", sprite.texture)
-	_xray_material.set_shader_parameter(&"flip", 1.0 if sprite.flip_h else 0.0)
+	if not _look.uses_uniform_3d():
+		var sprite: Sprite3D = _look.sprite
+		_xray_material.set_shader_parameter(&"albedo_tex", sprite.texture)
+		_xray_material.set_shader_parameter(&"flip", 1.0 if sprite.flip_h else 0.0)
 	var color := XRAY_CALM
 	if sensor.visibility() > 0.0:
 		color = XRAY_SEEN

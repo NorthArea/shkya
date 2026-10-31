@@ -125,7 +125,14 @@ func _live_world(world: DemoWorld, label: String) -> Array[String]:
 		check(is_equal_approx(npc.sensor.range_m, spec[4]) and npc.sensor.car_area == Layout.KIOSK_SQUARE, label + ": sensor keeps range and car area " + str(spec[2]))
 		check(npc.get_node("Body").collision_layer == 1 and is_equal_approx(npc.body_radius, 0.6), label + ": post keeps physical body " + str(spec[2]))
 		check(npc.appearance == "" and look.resolved_character() == npc.character and look.character == npc.character, label + ": real post retains its original drawing " + str(spec[2]))
-		check(look.sprite.texture.resource_path.contains("/" + npc.character + "_"), label + ": real post renders its original texture " + str(spec[2]))
+		if look.uses_uniform_3d():
+			check(look.sprite == null and look.uniform_visual != null, label + ": post uses an actual volume without billboard " + str(spec[2]))
+			var model: Node3D = look.uniform_visual.model
+			var skeleton: Skeleton3D = model.get_node("Skeleton3D")
+			var mesh: MeshInstance3D = skeleton.get_node("UniformMesh")
+			check(skeleton.get_bone_count() == 14 and mesh.mesh is ArrayMesh and mesh.skin != null and mesh.skin.get_bind_count() == 14, label + ": approved uniform has real skinned geometry " + str(spec[2]))
+		else:
+			check(look.sprite.texture.resource_path.contains("/" + npc.character + "_"), label + ": real post renders its original texture " + str(spec[2]))
 		drawing_ids.append(look.resolved_character())
 		sensor_ids.append(npc.sensor.get_instance_id())
 	check(drawing_ids == ["police", "guard"], label + ": rejected candidate drawings are not used at the posts")
