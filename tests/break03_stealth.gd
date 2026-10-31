@@ -71,8 +71,10 @@ func _verify_fixture(objects: Array, boundary: String) -> void:
 func _finish(code := -1) -> void:
 	if not _fixture_finishing:
 		_fixture_finishing = true
-		_verify_fixture(_fixture_objects, "before final result")
-		check(_fixture_worlds > 0 and _fixture_exited + 1 == _fixture_worlds,
-			"destroyed C7 fixture: every previous world was checked before replacement (%d prepared, %d exited)" % [_fixture_worlds, _fixture_exited])
+		var active_world := is_instance_valid(world) and world.is_inside_tree()
+		if active_world:
+			_verify_fixture(_fixture_objects, "before final result")
+		check(_fixture_worlds > 0 and _fixture_exited + (1 if active_world else 0) == _fixture_worlds,
+			"destroyed C7 fixture: every world has its terminal check (%d prepared, %d exited, %d active)" % [_fixture_worlds, _fixture_exited, int(active_world)])
 		print("INFO: BREAK03 destroyed C7 fixture applied to %d worlds; all oracle scenarios and phase rules inherited" % _fixture_worlds)
 	super._finish(code)
