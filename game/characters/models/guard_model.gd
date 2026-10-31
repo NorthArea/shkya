@@ -19,6 +19,7 @@ func build_model() -> Node3D:
 		"beret": _material("Maroon wool", Color("6a1c26")),
 		"eye": _material("Warm eye white", Color("f6f0da")),
 	}
+	mesh.palette["skin"].diffuse_mode = BaseMaterial3D.DIFFUSE_BURLEY
 	mesh.vertex_tints["armour"] = Color("999999")
 	_add_skeleton(mesh)
 	_add_body(mesh)
@@ -119,20 +120,26 @@ func _add_body(mesh) -> void:
 		Vector3(0.250, 0.435, 0.171),
 	]
 	mesh.body_profile(hip_levels, "suit", 1, 24)
-	# A padded U-shaped collar frames the whole lower jaw without clipping its cheeks.
+	# A broad folded cloth band sits below the jaw, rather than a round hose.
 	var collar_line := PackedVector3Array([
-		Vector3(-0.154, 0.868, 0.005), Vector3(-0.166, 0.846, -0.046),
-		Vector3(-0.170, 0.807, -0.082), Vector3(-0.145, 0.765, -0.133),
-		Vector3(-0.088, 0.737, -0.160), Vector3(0, 0.730, -0.170),
-		Vector3(0.088, 0.737, -0.160), Vector3(0.145, 0.765, -0.133),
-		Vector3(0.170, 0.807, -0.082), Vector3(0.166, 0.846, -0.046),
-		Vector3(0.154, 0.868, 0.005),
+		Vector3(-0.137, 0.836, 0.005), Vector3(-0.154, 0.818, -0.050),
+		Vector3(-0.169, 0.795, -0.115), Vector3(-0.150, 0.763, -0.166),
+		Vector3(-0.092, 0.738, -0.185), Vector3(0, 0.731, -0.190),
+		Vector3(0.092, 0.738, -0.185), Vector3(0.150, 0.763, -0.166),
+		Vector3(0.169, 0.795, -0.115), Vector3(0.154, 0.818, -0.050),
+		Vector3(0.137, 0.836, 0.005),
 	])
-	mesh.tube(collar_line, 0.028, "armour", 2, 8)
-	for index in range(collar_line.size()):
-		collar_line[index].z -= 0.006
-	mesh.tube(collar_line, 0.024, "suit", 2, 8)
-	mesh.ellipsoid(Vector3(0.003, 0.733, -0.204), Vector3(0.008, 0.007, 0.003), "ink", 2, 10, 6)
+	_padded_ribbon(mesh, collar_line, 0.058, 0.018, "suit", true)
+	var rear_collar := PackedVector3Array([
+		Vector3(-0.137, 0.836, 0.005), Vector3(-0.154, 0.810, 0.080),
+		Vector3(-0.143, 0.782, 0.147), Vector3(-0.088, 0.764, 0.176),
+		Vector3(0, 0.755, 0.184), Vector3(0.088, 0.764, 0.176),
+		Vector3(0.143, 0.782, 0.147), Vector3(0.154, 0.810, 0.080),
+		Vector3(0.137, 0.836, 0.005),
+	])
+	_padded_ribbon(mesh, rear_collar, 0.043, 0.018, "suit", true)
+	mesh.ellipsoid(Vector3(0.003, 0.732, -0.202), Vector3(0.009, 0.008, 0.003), "ink", 2, 10, 6)
+	mesh.ellipsoid(Vector3(0.003, 0.732, -0.205), Vector3(0.005, 0.0045, 0.0015), "suit", 2, 8, 5)
 
 
 
@@ -212,64 +219,140 @@ func _add_armour(mesh) -> void:
 		mesh.ellipsoid(Vector3(sign_value * 0.202, 0.492, -0.148), Vector3(0.037, 0.070, 0.036), "armour", 2, 12, 8)
 		mesh.box(Vector3(sign_value * 0.202, 0.526, -0.179), Vector3(0.060, 0.024, 0.012), "armour", 2)
 		mesh.ellipsoid(Vector3(sign_value * 0.202, 0.512, -0.186), Vector3(0.004, 0.004, 0.002), "ink", 2, 8, 6)
-		# One soft volume follows each shoulder into the vest.
-		mesh.ellipsoid(Vector3(sign_value * 0.154, 0.759, -0.060), Vector3(0.043, 0.106, 0.127), "armour", 2, 16, 10)
-		mesh.box(Vector3(sign_value * 0.154, 0.742, 0.114), Vector3(0.065, 0.156, 0.032), "armour", 2,
-			Basis(Vector3.RIGHT, 0.36))
+		# Flat padded webbing wraps over the shoulder and meets both carrier faces.
+		var strap := PackedVector3Array([
+			Vector3(sign_value * 0.166, 0.697, 0.174), Vector3(sign_value * 0.170, 0.786, 0.129),
+			Vector3(sign_value * 0.172, 0.850, 0.044), Vector3(sign_value * 0.173, 0.851, -0.029),
+			Vector3(sign_value * 0.173, 0.817, -0.105), Vector3(sign_value * 0.167, 0.756, -0.161),
+			Vector3(sign_value * 0.159, 0.690, -0.190),
+		])
+		_padded_ribbon(mesh, strap, 0.063, 0.018, "armour")
 
 
 func _add_head(mesh) -> void:
 	var head_levels: Array[Vector3] = [
-		Vector3(0.052, 0.752, 0.080), Vector3(0.104, 0.766, 0.109),
-		Vector3(0.144, 0.790, 0.132), Vector3(0.158, 0.821, 0.140),
-		Vector3(0.149, 0.852, 0.135), Vector3(0.122, 0.885, 0.125),
-		Vector3(0.098, 0.913, 0.103), Vector3(0.073, 0.932, 0.070),
-		Vector3(0.020, 0.944, 0.025),
+		Vector3(0.060, 0.759, 0.108), Vector3(0.112, 0.770, 0.132),
+		Vector3(0.145, 0.790, 0.140), Vector3(0.153, 0.821, 0.140),
+		Vector3(0.143, 0.852, 0.133), Vector3(0.115, 0.885, 0.119),
+		Vector3(0.100, 0.913, 0.098), Vector3(0.088, 0.932, 0.073),
+		Vector3(0.054, 0.944, 0.042),
 	]
-	mesh.body_profile(head_levels, "skin", 3, 28)
+	_head_volume(mesh, head_levels)
 	for sign_value in [-1.0, 1.0]:
-		mesh.ellipsoid(Vector3(sign_value * 0.093, 0.884, -0.032), Vector3(0.014, 0.022, 0.019), "skin", 3, 12, 8)
+		mesh.ellipsoid(Vector3(sign_value * 0.111, 0.895, -0.005), Vector3(0.014, 0.020, 0.020), "skin", 3, 12, 8)
 		mesh.tube(PackedVector3Array([
-			Vector3(sign_value * 0.097, 0.894, -0.047), Vector3(sign_value * 0.102, 0.886, -0.051),
-			Vector3(sign_value * 0.098, 0.876, -0.047),
+			Vector3(sign_value * 0.122, 0.904, -0.018), Vector3(sign_value * 0.128, 0.895, -0.018),
+			Vector3(sign_value * 0.122, 0.886, -0.018),
 		]), 0.0017, "armour", 3, 5)
 	for sign_value in [-1.0, 1.0]:
 		var x: float = sign_value * 0.023
-		mesh.ellipsoid(Vector3(x, 0.888, -0.125), Vector3(0.011, 0.0042, 0.0045), "eye", 3, 12, 6)
-		mesh.ellipsoid(Vector3(x - sign_value * 0.002, 0.888, -0.129), Vector3(0.0023, 0.0024, 0.0017), "ink", 3, 8, 4)
+		mesh.ellipsoid(Vector3(x, 0.888, -0.150), Vector3(0.011, 0.0042, 0.0045), "eye", 3, 12, 6)
+		mesh.ellipsoid(Vector3(x - sign_value * 0.002, 0.888, -0.154), Vector3(0.0023, 0.0024, 0.0017), "ink", 3, 8, 4)
 		mesh.tube(PackedVector3Array([
-			Vector3(x - 0.012, 0.891, -0.127), Vector3(x, 0.890, -0.130), Vector3(x + 0.012, 0.891, -0.127),
+			Vector3(x - 0.012, 0.891, -0.152), Vector3(x, 0.890, -0.155), Vector3(x + 0.012, 0.891, -0.152),
 		]), 0.0018, "ink", 3, 6)
 		mesh.tube(PackedVector3Array([
-			Vector3(sign_value * 0.011, 0.895, -0.129),
-			Vector3(sign_value * 0.024, 0.901, -0.125),
-			Vector3(sign_value * 0.036, 0.902, -0.121),
+			Vector3(sign_value * 0.011, 0.895, -0.154),
+			Vector3(sign_value * 0.024, 0.901, -0.150),
+			Vector3(sign_value * 0.036, 0.902, -0.146),
 		]), 0.003, "ink", 3, 7)
 		mesh.tube(PackedVector3Array([
-			Vector3(sign_value * 0.016, 0.879, -0.128), Vector3(sign_value * 0.025, 0.877, -0.127),
-			Vector3(sign_value * 0.032, 0.879, -0.125),
+			Vector3(sign_value * 0.016, 0.879, -0.153), Vector3(sign_value * 0.025, 0.877, -0.152),
+			Vector3(sign_value * 0.032, 0.879, -0.150),
 		]), 0.0011, "armour", 3, 5)
-	mesh.ellipsoid(Vector3(0, 0.870, -0.128), Vector3(0.014, 0.014, 0.020), "skin", 3, 16, 10)
+	mesh.ellipsoid(Vector3(0, 0.870, -0.153), Vector3(0.014, 0.014, 0.020), "skin", 3, 16, 10)
 	for x in [-0.008, 0.008]:
-		mesh.ellipsoid(Vector3(x, 0.861, -0.140), Vector3(0.0024, 0.0016, 0.002), "armour", 3, 8, 6)
+		mesh.ellipsoid(Vector3(x, 0.861, -0.165), Vector3(0.0024, 0.0016, 0.002), "armour", 3, 8, 6)
 	# A short, dense brush moustache, with a scalloped bottom edge.
 	for x in [-0.020, -0.012, -0.004, 0.004, 0.012, 0.020]:
-		mesh.ellipsoid(Vector3(x, 0.854 - absf(x) * 0.04, -0.135), Vector3(0.0052, 0.0055, 0.005), "ink", 3, 6, 4)
-	mesh.ellipsoid(Vector3(0, 0.841, -0.142), Vector3(0.024, 0.010, 0.007), "ink", 3, 14, 8)
+		mesh.ellipsoid(Vector3(x, 0.854 - absf(x) * 0.04, -0.160), Vector3(0.0052, 0.0055, 0.005), "ink", 3, 6, 4)
+	mesh.ellipsoid(Vector3(0, 0.841, -0.167), Vector3(0.024, 0.010, 0.007), "ink", 3, 14, 8)
 	mesh.vertex_tints["skin"] = Color("a46555")
-	mesh.ellipsoid(Vector3(0, 0.836, -0.148), Vector3(0.015, 0.0024, 0.002), "skin", 3, 10, 4)
+	mesh.ellipsoid(Vector3(0, 0.836, -0.173), Vector3(0.015, 0.0024, 0.002), "skin", 3, 10, 4)
 	mesh.vertex_tints["skin"] = Color.WHITE
 	for sign_value in [-1.0, 1.0]:
-		mesh.tube(PackedVector3Array([
-			Vector3(sign_value * 0.027, 0.859, -0.133), Vector3(sign_value * 0.034, 0.840, -0.136),
-			Vector3(sign_value * 0.036, 0.824, -0.138),
-		]), 0.0015, "armour", 3, 5)
-		mesh.tube(PackedVector3Array([
-			Vector3(sign_value * 0.077, 0.802, -0.118), Vector3(sign_value * 0.097, 0.798, -0.104),
-			Vector3(sign_value * 0.116, 0.805, -0.090),
-		]), 0.0014, "armour", 3, 5)
-	mesh.tube(PackedVector3Array([
-		Vector3(-0.018, 0.801, -0.135), Vector3(0, 0.797, -0.136), Vector3(0.018, 0.801, -0.135),
-	]), 0.0014, "armour", 3, 5)
+		_head_stroke(mesh, head_levels, PackedVector3Array([
+			Vector3(sign_value * 0.027, 0.859, 0), Vector3(sign_value * 0.034, 0.840, 0),
+			Vector3(sign_value * 0.036, 0.824, 0),
+		]), 0.0015)
+		_head_stroke(mesh, head_levels, PackedVector3Array([
+			Vector3(sign_value * 0.065, 0.801, 0), Vector3(sign_value * 0.080, 0.796, 0),
+			Vector3(sign_value * 0.097, 0.795, 0), Vector3(sign_value * 0.113, 0.798, 0),
+			Vector3(sign_value * 0.126, 0.804, 0),
+		]), 0.0015)
+	_head_stroke(mesh, head_levels, PackedVector3Array([
+		Vector3(-0.020, 0.794, 0), Vector3(-0.010, 0.790, 0), Vector3(0, 0.789, 0),
+		Vector3(0.010, 0.790, 0), Vector3(0.020, 0.794, 0),
+	]), 0.0015)
 	# A single soft wool volume is tilted after mesh construction.
 	mesh.ellipsoid(Vector3(-0.010, 0.961, -0.025), Vector3(0.112, 0.033, 0.080), "beret", 3, 24, 12)
+
+
+func _padded_ribbon(mesh, line: PackedVector3Array, width: float, thickness: float, material: String, collar: bool = false) -> void:
+	var section := [Vector2(-0.5, -0.3), Vector2(-0.3, -0.5), Vector2(0.3, -0.5), Vector2(0.5, -0.3), Vector2(0.5, 0.3), Vector2(0.3, 0.5), Vector2(-0.3, 0.5), Vector2(-0.5, 0.3)]
+	var positions: Array[Vector3] = []
+	var normals: Array[Vector3] = []
+	for j in range(line.size()):
+		var tangent: Vector3 = (line[mini(j + 1, line.size() - 1)] - line[maxi(j - 1, 0)]).normalized()
+		var across := Vector3(tangent.y, -tangent.x, 0).normalized() if collar else Vector3.RIGHT
+		var normal := tangent.cross(across).normalized()
+		for pair: Vector2 in section:
+			positions.append(line[j] + across * pair.x * width + normal * pair.y * thickness)
+			normals.append((across * pair.x + normal * pair.y).normalized())
+	for j in range(line.size() - 1):
+		for i in range(section.size()):
+			var a := j * section.size() + i
+			var d := j * section.size() + (i + 1) % section.size()
+			var c := d + section.size()
+			var next := a + section.size()
+			mesh._triangle(positions[a], positions[next], positions[c], normals[a], normals[next], normals[c], material, 2)
+			mesh._triangle(positions[a], positions[c], positions[d], normals[a], normals[c], normals[d], material, 2)
+	for j: int in [0, line.size() - 1]:
+		var normal := (line[0] - line[1]).normalized() if j == 0 else (line[-1] - line[-2]).normalized()
+		for i in range(section.size()):
+			mesh._triangle(line[j], positions[j * section.size() + i], positions[j * section.size() + (i + 1) % section.size()], normal, normal, normal, material, 2)
+
+
+func _head_point(level: Vector3, angle: float) -> Vector3:
+	const POWER := 3.0
+	var c := cos(angle)
+	var s := sin(angle)
+	return Vector3(signf(c) * pow(absf(c), 2.0 / POWER) * level.x, level.y, signf(s) * pow(absf(s), 2.0 / POWER) * level.z - 0.025)
+
+
+func _head_volume(mesh, levels: Array[Vector3]) -> void:
+	const SIDES := 32
+	var positions: Array[Vector3] = []
+	var normals: Array[Vector3] = []
+	for j in range(levels.size()):
+		for i in range(SIDES):
+			var angle := TAU * float(i) / SIDES
+			positions.append(_head_point(levels[j], angle))
+			var tangent := _head_point(levels[j], angle + 0.001) - _head_point(levels[j], angle - 0.001)
+			var vertical := _head_point(levels[mini(j + 1, levels.size() - 1)], angle) - _head_point(levels[maxi(j - 1, 0)], angle)
+			normals.append(vertical.cross(tangent).normalized())
+	for j in range(levels.size() - 1):
+		for i in range(SIDES):
+			var a := j * SIDES + i
+			var d := j * SIDES + (i + 1) % SIDES
+			var c := d + SIDES
+			var next := a + SIDES
+			mesh._triangle(positions[a], positions[next], positions[c], normals[a], normals[next], normals[c], "skin", 3)
+			mesh._triangle(positions[a], positions[c], positions[d], normals[a], normals[c], normals[d], "skin", 3)
+	for j: int in [0, levels.size() - 1]:
+		var center := Vector3(0, levels[j].y, -0.025)
+		var normal := Vector3.DOWN if j == 0 else Vector3.UP
+		for i in range(SIDES):
+			mesh._triangle(center, positions[j * SIDES + i], positions[j * SIDES + (i + 1) % SIDES], normal, normal, normal, "skin", 3)
+
+
+func _head_stroke(mesh, levels: Array[Vector3], points: PackedVector3Array, radius: float) -> void:
+	for index in range(points.size()):
+		var p := points[index]
+		for j in range(levels.size() - 1):
+			if p.y >= levels[j].y and p.y <= levels[j + 1].y:
+				var level := levels[j].lerp(levels[j + 1], (p.y - levels[j].y) / (levels[j + 1].y - levels[j].y))
+				p.z = -0.025 - level.z * pow(maxf(0.0, 1.0 - pow(absf(p.x) / level.x, 3.0)), 1.0 / 3.0) - 0.001
+				break
+		points[index] = p
+	mesh.tube(points, radius, "armour", 3, 5)

@@ -203,7 +203,7 @@ func _ushanka(b: Builder) -> void:
 		Vector3(0.151, 0.98, 0.116), Vector3(0.112, 0.995, 0.085),
 		Vector3(0.055, 1.0, 0.042),
 	]
-	_soft_volume(b, crown, "fur_leather_ink", 3, Vector3(0, 0, -0.04), 2.8, 0.045)
+	_soft_volume(b, crown, "fur_leather_ink", 3, Vector3(0, 0, -0.04), 2.8, 0.035)
 	b.ellipsoid(Vector3(0, 0.83, 0.022), Vector3(0.155, 0.097, 0.079), "fur_leather_ink", 3, 20, 10)
 	var flap: Array[Vector3] = [
 		Vector3(0.02, 0.742, 0.035), Vector3(0.039, 0.753, 0.061),
@@ -212,26 +212,40 @@ func _ushanka(b: Builder) -> void:
 		Vector3(0.02, 0.9, 0.045),
 	]
 	for side: float in [-1.0, 1.0]:
-		_soft_volume(b, flap, "fur_leather_ink", 3, Vector3(side * 0.148, 0, -0.022), 2.6, 0.12)
-		for j in range(3):
-			var y := 0.78 + float(j) * 0.029
-			b.tube(PackedVector3Array([Vector3(side * 0.164, y, -0.096), Vector3(side * 0.175, y + 0.008, -0.087)]), 0.0013, "navy", 3, 5)
+		_soft_volume(b, flap, "fur_leather_ink", 3, Vector3(side * 0.148, 0, -0.022), 2.6, 0.035)
+		for j in range(4):
+			_fur_mark(b, flap[j + 2], Vector3(side * 0.148, 0, -0.022), 2.6, 0.035, -PI * 0.5 + side * (0.18 + float(j % 2) * 0.45))
 	var panel: Array[Vector3] = [
 		Vector3(0.079, 0.875, 0.016), Vector3(0.117, 0.883, 0.029),
 		Vector3(0.126, 0.906, 0.035), Vector3(0.123, 0.939, 0.033),
 		Vector3(0.107, 0.954, 0.025), Vector3(0.069, 0.96, 0.013),
 	]
-	_soft_volume(b, panel, "fur_leather_ink", 3, Vector3(0, 0, -0.152), 2.7, 0.065)
+	_soft_volume(b, panel, "fur_leather_ink", 3, Vector3(0, 0, -0.152), 2.7, 0.035)
+	for j in range(6):
+		_fur_mark(b, panel[2 + j % 2], Vector3(0, 0, -0.152), 2.7, 0.035, -PI * 0.5 + (float(j) - 2.5) * 0.27)
+		_fur_mark(b, crown[3], Vector3(0, 0, -0.04), 2.8, 0.035, float(j) * TAU / 6.0)
 	b.ellipsoid(Vector3(-0.008, 0.919, -0.188), Vector3(0.01, 0.01, 0.003), "brass_pencil", 3, 10, 6)
 	b.ellipsoid(Vector3(-0.008, 0.919, -0.191), Vector3(0.003, 0.003, 0.0015), "fur_leather_ink", 3, 8, 5)
 
 func _soft_point(level: Vector3, angle: float, power: float, ripple: float, center: Vector3) -> Vector3:
 	var c := cos(angle)
 	var s := sin(angle)
-	var wave := 0.72 * sin(8.0 * angle + level.y * 9.0) + 0.28 * sin(13.0 * angle - level.y * 13.0)
+	var wave := 0.65 * sin(11.0 * angle + level.y * 150.0) + 0.35 * sin(13.0 * angle - level.y * 110.0)
 	var irregular := 1.0 + ripple * wave
 	var fur_y := minf(1.0, level.y + ripple * 0.065 * sin(9.0 * angle + level.y * 17.0))
 	return center + Vector3(signf(c) * pow(absf(c), 2.0 / power) * level.x * irregular, fur_y, signf(s) * pow(absf(s), 2.0 / power) * level.z * irregular)
+
+func _fur_mark(b: Builder, level: Vector3, center: Vector3, power: float, ripple: float, angle: float) -> void:
+	var points := PackedVector3Array()
+	for i in range(3):
+		var sample := level
+		sample.y += 0.0025 * sin(float(i) * PI * 0.5)
+		var point := _soft_point(sample, angle + (float(i) - 1.0) * 0.035, power, ripple, center)
+		var outward := Vector3(point.x - center.x, 0, point.z - center.z).normalized()
+		points.append(point + outward * 0.001)
+	b.vertex_tints["navy"] = Color("#4C4A58")
+	b.tube(points, 0.0011, "navy", 3, 3)
+	b.vertex_tints["navy"] = Color("#283044")
 
 func _soft_volume(b: Builder, levels: Array[Vector3], material: String, bone: int, center: Vector3, power: float, ripple: float = 0.0) -> void:
 	# A continuous soft rectangular cross-section gives the face and fur their
