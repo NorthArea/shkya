@@ -18,7 +18,9 @@ const WARM := Color(1.0, 0.74, 0.42)       # подъезд, окно киоск
 # светлее и желтее, сильнее, а общий свет слабее — снег под фонарём уходит в оранжевый.
 # Итоговая сверка ART-05 (И1): цвет света Godot переводит из sRGB в линейный — G 0,56 становился ≈0,28,
 # и с голубым общим светом выходила маджента. Зелёного больше, синего меньше.
-const SODIUM := Color(1.0, 0.74, 0.10)     # уличные фонари (итоговая сверка ART-06, С9: без сиреневого снега у киоска)
+# POLISH-03 C (критик 30.10, концепты 05/06/e05): натрий теплее и оранжевее — G 0,74 → 0,64 (линейный 0,52 → 0,37),
+# синий почти ноль, чтобы с голубым общим светом не уйти в сиреневое (И1).
+const SODIUM := Color(1.0, 0.64, 0.06)     # уличные фонари (итоговая сверка ART-06, С9: без сиреневого снега у киоска)
 const YARD_POOL := Color(1.0, 0.90, 0.78)  # пятно света на стоянке: белая «Лада» остаётся белой (Н3)
 const SnowShader = preload("res://game/world/shaders/wet_snow.gdshader")
 const HaloShader = preload("res://game/world/shaders/lamp_halo.gdshader")
@@ -165,6 +167,13 @@ const WET_SPOTS: Array[Vector4] = [
 const WET_GLOSS := 0.9                 # насколько каша в пятне становится глянцевой
 const WET_DARKEN := 0.55               # во сколько раз темнеет мокрая каша
 const WET_ROUGHNESS := 0.16            # шероховатость мокрого: блик фонаря — мягкая полоса, не точка
+# POLISH-03 C: блеск мокрых колей под уличными фонарями (shaders/road: glint_*): отражение светильника полосой к камере.
+const GLINT_GAIN := 1.6                # яркость отражения (≥ 1 — светится через glow)
+const GLINT_WIDTH := 0.0025            # ширина полосы по азимуту (1 − cos угла)
+const GLINT_STRETCH := 0.06            # длина полосы по высоте (квадрат разности синусов)
+const GLINT_REACH := 26.0              # м от светильника до точки дороги
+const GLINT_NEAR := 45.0               # м: в шейдер идут только фонари ближе к камере (дальние блики мельче пикселя)
+const GLINT_MAX := 12                  # и не больше стольких — цикл в каждом фрагменте дороги короткий (бюджет C9)
 
 # --- окна: температура света и телевизоры; читает Materials.facade ---
 const WINDOW_WARM := Color(1.0, 0.68, 0.32)     # лампа накаливания (принято ART-05)
@@ -227,6 +236,7 @@ func set_lamp(p: Vector2, on: bool) -> bool:
 	for material: ShaderMaterial in _spark_materials:
 		material.set_shader_parameter("sparkle_lamps", _spark_lamps)
 		material.set_shader_parameter("sparkle_lamp_colors", _spark_colors)
+	_update_glints()
 	return true
 
 ## Горит ли фонарь со столбом в p (нет такого — true).
@@ -332,6 +342,8 @@ func _ready() -> void:
 		var tip: Vector2 = p + Layout.lamp_arm(p)
 		_street_lamp(Vector3(tip.x, Layout.POLE_HEIGHT - 0.8, tip.y), index)
 		lamp_lights[_lamp_key(p)] = {"lights": [get_child(get_child_count() - 1)], "halo": _halos.size()}
+		_glint_lamps.append(Vector4(tip.x, Layout.POLE_HEIGHT - 0.8, tip.y, GLINT_REACH))
+		_glint_sources.append(p)
 		_halos.append([Vector3(tip.x, Layout.POLE_HEIGHT - 0.5, tip.y), HALO_SIZE, SODIUM])
 		index += 1
 	# Контрастные пятна тёплого света на земле (раздел 2 канона): стоянка «Лады» под дворовым фонарём и площадка у окна киоска.
@@ -351,6 +363,37 @@ func _ready() -> void:
 
 func _process(delta: float) -> void:
 	_update_weather(delta)
+	_update_glints()
+
+## Блеск колей: в материалы дороги — до GLINT_MAX фонарей ближе GLINT_NEAR к камере.
+func _update_glints() -> void:
+	if _road_materials.is_empty() or GLINT_GAIN <= 0.0:
+		return
+	var cam := get_viewport().get_camera_3d()
+	if cam == null:
+		return
+	var at := cam.global_position
+	var near: Array = []
+	for i in _glint_lamps.size():
+		if not lamp_on(_glint_sources[i]):
+			continue
+		var lamp: Vector4 = _glint_lamps[i]
+		var d := Vector2(lamp.x - at.x, lamp.z - at.z).length_squared()
+		if d < GLINT_NEAR * GLINT_NEAR:
+			near.append([d, lamp])
+	near.sort_custom(func(a, b): return a[0] < b[0])
+	_glint_near.resize(mini(near.size(), GLINT_MAX))
+	for i in _glint_near.size():
+		_glint_near[i] = near[i][1]
+	var count := _glint_near.size()
+	if _glint_near == _glint_sent:
+		return   # тот же набор фонарей — материалы не трогать
+	_glint_sent = _glint_near.duplicate()
+	var padded := _glint_near.duplicate()
+	padded.resize(16)
+	for m in _road_materials:
+		m.set_shader_parameter("glint_lamps", padded)
+		m.set_shader_parameter("glint_count", count)
 
 ## Порывы: ветер сильнее и поворачивает, хлопьев больше, позёмка быстрее и гуще, ореолы ярче.
 func _update_weather(delta: float) -> void:
@@ -630,6 +673,11 @@ func _apply_surface_fx() -> void:
 				_surface_fx(m)
 
 var _spark_lamps := PackedVector4Array()
+var _glint_lamps := PackedVector4Array()
+var _glint_sources: Array[Vector2] = []
+var _road_materials: Array[ShaderMaterial] = []
+var _glint_near := PackedVector4Array()
+var _glint_sent := PackedVector4Array([Vector4.INF])
 var _spark_colors := PackedVector4Array()
 var _spark_sky := Vector3.UP
 
@@ -668,6 +716,13 @@ func _surface_fx(m: ShaderMaterial) -> void:
 		m.set_shader_parameter("slush_bump", SLUSH_BUMP)
 		m.set_shader_parameter("puddle_roughness", PUDDLE_ROUGHNESS)
 		m.set_shader_parameter("puddle_level", PUDDLE_LEVEL)
+		var sodium := SODIUM.srgb_to_linear()
+		_road_materials.append(m)
+		m.set_shader_parameter("glint_count", 0)   # фонари у камеры задаёт _update_glints каждый кадр
+		m.set_shader_parameter("glint_color", Vector3(sodium.r, sodium.g, sodium.b))
+		m.set_shader_parameter("glint_gain", GLINT_GAIN)
+		m.set_shader_parameter("glint_width", GLINT_WIDTH)
+		m.set_shader_parameter("glint_stretch", GLINT_STRETCH)
 	elif m.shader == TrailShader:
 		m.set_shader_parameter("print_depth", PRINT_DEPTH)
 		m.set_shader_parameter("print_step", PRINT_STEP)
