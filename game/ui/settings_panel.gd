@@ -6,10 +6,14 @@ extends PanelContainer
 signal back_requested
 
 const DialogPanelScript = preload("res://game/ui/dialog_panel.gd")
+const AchievementsPanel = preload("res://game/ui/achievements_panel.gd")
 const INK := Color(0.12, 0.10, 0.08)
 const INK_SOFT := Color(0.12, 0.10, 0.08, 0.6)
 
 var back_button: Button
+var achievements_button: Button
+var achievements: CanvasLayer
+var _box: VBoxContainer
 
 func _ready() -> void:
 	name = "SettingsCard"
@@ -21,6 +25,7 @@ func _ready() -> void:
 	style.content_margin_bottom = 30
 	add_theme_stylebox_override("panel", style)
 	var box := VBoxContainer.new()
+	_box = box
 	box.custom_minimum_size = Vector2(640, 0)   # ширина как у карточки главного меню
 	box.add_theme_constant_override("separation", 16)
 	add_child(box)
@@ -44,6 +49,13 @@ func _ready() -> void:
 	var gap := Control.new()
 	gap.custom_minimum_size = Vector2(0, 4)
 	box.add_child(gap)
+	achievements_button = Button.new()
+	achievements_button.text = "ДОСТИЖЕНИЯ"
+	achievements_button.custom_minimum_size = Vector2(0, 64)
+	DialogPanelScript.style_button(achievements_button, false)
+	achievements_button.add_theme_font_size_override("font_size", 32)
+	achievements_button.pressed.connect(_open_achievements)
+	box.add_child(achievements_button)
 	back_button = Button.new()
 	back_button.text = "НАЗАД"
 	back_button.custom_minimum_size = Vector2(0, 64)
@@ -51,17 +63,39 @@ func _ready() -> void:
 	back_button.add_theme_font_size_override("font_size", 32)
 	back_button.pressed.connect(back_requested.emit)
 	box.add_child(back_button)
+	achievements = AchievementsPanel.new()
+	add_child(achievements)
+	achievements.back_requested.connect(_close_achievements)
+	visibility_changed.connect(_on_visibility_changed)
 	hide()
 
 func open() -> void:
+	achievements.hide()
+	_box.show()
 	show()
 	back_button.grab_focus.call_deferred()
 	DialogPanelScript.pop(self, 0.92)
 
 func _unhandled_input(event: InputEvent) -> void:
+	if achievements.visible:
+		return
 	if visible and (event.is_action_pressed(&"ui_cancel") or event.is_action_pressed(&"pause")):
 		get_viewport().set_input_as_handled()
 		back_requested.emit()
+
+func _open_achievements() -> void:
+	_box.hide()
+	achievements.open()
+
+func _close_achievements() -> void:
+	achievements.hide()
+	_box.show()
+	achievements_button.grab_focus.call_deferred()
+
+func _on_visibility_changed() -> void:
+	if not visible and achievements != null:
+		achievements.hide()
+		_box.show()
 
 ## Клавиши ячейки: «F / ЛКМ» → два колпачка через «/».
 func _caps(text: String) -> HBoxContainer:

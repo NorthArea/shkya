@@ -11,8 +11,15 @@ const CaughtPanelScript = preload("res://game/ui/caught_panel.gd")
 const PhoneScript = preload("res://game/ui/phone.gd")
 const PadInput = preload("res://game/ui/pad_input.gd")
 const MusicDirectorScript = preload("res://game/audio/music_director.gd")
+const AchievementsStore = preload("res://game/progression/achievements_store.gd")
+const AchievementsTracker = preload("res://game/progression/achievements_tracker.gd")
+const AchievementToast = preload("res://game/ui/achievement_toast.gd")
 const UI_CLICK := preload("res://assets/audio/ui_click.wav")
 
+# Set before _ready in tests/captures; script runs isolate the owner's persistent profile.
+var achievement_path := ""
+var achievements: Node
+var achievement_toast: CanvasLayer
 var world: DemoWorld
 var menu: CanvasLayer
 var pause_menu: CanvasLayer
@@ -26,6 +33,18 @@ func _ready() -> void:
 	get_tree().auto_accept_quit = false
 	InputSetup.install()
 	PadInput.ensure(self)  # PAD-01: последнее устройство (геймпад или клавиатура) для подсказок HUD
+	if achievement_path.is_empty():
+		var args := OS.get_cmdline_args()
+		var scripted := args.has("--script") or args.has("-s")
+		achievement_path = "res://builds/checks/ACHIEVE-01/script-session-%d.json" % OS.get_process_id() if scripted else AchievementsStore.DEFAULT_PATH
+	achievements = AchievementsStore.new()
+	var load_error: Error = achievements.setup(achievement_path)
+	if load_error != OK:
+		push_warning("Не удалось загрузить достижения: %s" % error_string(load_error))
+	add_child(achievements)
+	achievement_toast = AchievementToast.new()
+	add_child(achievement_toast)
+	achievement_toast.setup(achievements)
 	menu = MainMenu.new()
 	menu.name = "MainMenu"
 	menu.start_requested.connect(start_game)
@@ -60,6 +79,7 @@ func return_to_menu() -> void:
 	_swap_world.call_deferred(false)
 
 func _swap_world(new_game: bool) -> void:
+	achievement_toast.bind_world(null)
 	if world:
 		remove_child(world)
 		world.queue_free()
@@ -75,6 +95,10 @@ func _swap_world(new_game: bool) -> void:
 		IntroScript.attach(world)
 		_connect_caught_panel(world)
 		PhoneScript.attach(world)
+		var tracker := AchievementsTracker.new()
+		tracker.setup(world, achievements)
+		world.add_child(tracker)
+		achievement_toast.bind_world(world)
 		set_paused(false)
 	else:
 		set_paused(false)

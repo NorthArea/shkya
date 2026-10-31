@@ -56,6 +56,7 @@ test: map
 	$(call godot_test,drive02_snow,60,DRIVE02)
 	$(call godot_test,pad01_test,60,PAD01)
 	$(call godot_test,pad02_symmetry_test,60,PAD02)
+	$(call godot_test,achievements_test,60,ACHIEVE-01)
 	$(call godot_test,text01_test,60,TEXT01)
 	$(call godot_test,life01_test,60,LIFE01)
 	$(call godot_test,polish03_camera_safety,60,CAMERA_SAFETY,--max-fps 60 --resolution 1920x1080,render)

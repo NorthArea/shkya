@@ -18,6 +18,7 @@ const Materials = preload("res://game/world/materials.gd")
 
 signal crow_cawed(crow: Node3D)
 signal dog_barked(dog: Node3D)
+signal dog_petted(actor: Node)
 signal pigeon_cooed(bird: Node3D)
 signal birds_flushed(bird: Node3D)
 
@@ -563,6 +564,7 @@ func _pet_dog(actor: Node) -> void:
 	_dog_pet_left = DOG_PET_SECONDS
 	dog_interactable.enabled = false
 	_face(_player.global_position - dog.global_position)
+	dog_petted.emit(actor)
 
 func _part(parent: Node3D, mesh: Mesh, at: Vector3, material: Material, shadow := true) -> MeshInstance3D:
 	var mi := MeshInstance3D.new()
