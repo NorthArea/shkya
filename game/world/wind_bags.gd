@@ -1,7 +1,5 @@
 extends Node3D
-## CITY-03: летающие пакеты города Н. — по превью ролика Евы Морозовой «весна в России» (зелёный пакет над серым
-## двором) и поручению владельца 30.10. Пакеты-«майки» без брендов: красно-зелёный с надписью собственного сочинения
-## «ВСЁ ПО ПЛАНУ», белый «СПАСИБО ЗА ПОКУПКУ!» и чёрный мусорный.
+## CITY-03: один обычный белый пакет «ВСЕ ПО ПЛАНУ / ПРОДУКТЫ У ДОМА» у появления Илюши.
 ##
 ## Своя простая физика, без тел и коллизий (C2 не трогается, на игру не влияет — только облик):
 ## - ветер: направление Lighting.WIND, качается с периодом HEADING_PERIOD; сила и поворот — от порывов
@@ -13,7 +11,7 @@ extends Node3D
 ##   и заборы (snag) на SNAG_TIME, а также за одежду Илюши и жителей; трепещет и срывается порывом;
 ## - «Лада», транспорт кольца и Илюша пешком отбрасывают пакет (подброс по скорости, кувырок), за быстрой машиной
 ##   пакет затягивает следом;
-## - улетевший за BOUNDS дольше OUT_RESPAWN или залежавшийся вне кадра — возвращается к одному из SOURCES вне кадра;
+## - местный завиток удерживает пакет низко во дворе; унесённый контактом возвращается к SOURCES вне кадра;
 ## Облик — сетка двух стенок со своим шейдером (shaders/bag.gdshader): раздув, трепет, вырез ручек; надпись —
 ## один раз отрисованная в SubViewport маска. Теней нет (C9: мелочь). Звук — шуршание у камеры (bag_rustle_loop.wav,
 ## tools/generate_audio.py). Всё детерминировано: SEED.
@@ -28,15 +26,19 @@ const FONT := preload("res://assets/fonts/Pangolin-Regular.ttf")
 const GROUP := &"wind_bags"
 const SEED := 3003
 
-## Пакеты: [вид, точка старта x/z]. Вид: &"shop" — красно-зелёная «майка» «ВСЁ ПО ПЛАНУ», &"white" — белый
-## «СПАСИБО ЗА ПОКУПКУ!», &"black" — чёрный мусорный (тяжелее, летает ниже),
-## &"plan_white" — белая «майка» «ВСЕ ПО ПЛАНУ / ПРОДУКТЫ У ДОМА», та же, что в меню.
+## Единственный активный вид — plan_white; меню использует ту же сетку, материал и печать.
 const BAGS: Array = Layout.WIND_BAGS
 const SOURCES: Array[Vector2] = Layout.WIND_BAG_SOURCES
 
 const BAG_SIZE := Vector2(0.44, 0.64)   # м, ширина и высота «майки» с ручками
 const BAG_SCALE := 1.25                 # крупнее настоящего: читается с игровой камеры
 const PLAN_WHITE_START_HEIGHT := 0.85   # м над снегом: низкий пролёт во дворе с начала игры
+const PLAN_WHITE_CEILING := 1.7         # м над снегом: мягкое снижение, контакт может подбросить выше
+const PLAN_WHITE_WIND_SHARE := 0.55     # доля общего ветра внутри защищённого двора
+const PLAN_WHITE_RETURN := 0.75         # 1/с: обратная струя местного завитка
+const PLAN_WHITE_SWIRL := 0.55          # 1/с: движение поперёк струи
+const PLAN_WHITE_WIND_MAX := 5.0        # м/с: возврат издалека не создаёт ураган
+const PLAN_WHITE_UPDRAFT_MAX := 0.6     # м/с: поток у стены не уносит пакет на крышу
 const GRID := Vector2i(8, 12)
 
 # --- ветер ---
@@ -316,6 +318,16 @@ func wind_at(p: Vector3, mean: Vector3) -> Vector3:
 			w += along * into * 0.6 * fall * cos(t * 0.9 + float(k))
 	return w
 
+## Завиток у подъезда: тот же порыв и турбулентность, но обратная струя замыкает путь во дворе.
+func _bag_wind(bag: Bag, p: Vector3, mean: Vector3) -> Vector3:
+	var w := wind_at(p, mean)
+	if bag.kind != &"plan_white":
+		return w
+	var offset := Vector2(p.x, p.z) - Layout.WIND_BAG_ORIGIN
+	var cross_flow := Vector2(-offset.y, offset.x) * PLAN_WHITE_SWIRL
+	var horizontal := (Vector2(w.x, w.z) * PLAN_WHITE_WIND_SHARE + cross_flow - offset * PLAN_WHITE_RETURN).limit_length(PLAN_WHITE_WIND_MAX)
+	return Vector3(horizontal.x, minf(w.y, PLAN_WHITE_UPDRAFT_MAX), horizontal.y)
+
 # --- шаг ---
 
 func _physics_process(delta: float) -> void:
@@ -344,15 +356,16 @@ func _physics_process(delta: float) -> void:
 
 func _fly(bag: Bag, mean: Vector3, delta: float) -> void:
 	var p := bag.position
-	var w := wind_at(p, mean)
+	var w := _bag_wind(bag, p, mean)
 	var wh := Vector2(w.x, w.z).length()
 	var v := bag.velocity
 	v.x += (w.x - v.x) * DRAG * delta
 	v.z += (w.z - v.z) * DRAG * delta
 	v.y += (w.y - v.y) * DRAG_UP * delta
 	v.y += (LIFT * maxf(wh - LIFT_MIN, 0.0) / bag.weight - SINK * bag.weight) * delta
-	if p.y > CEILING:
-		v.y -= (p.y - CEILING) * 2.0 * delta
+	var ceiling := ground_at(p) + PLAN_WHITE_CEILING if bag.kind == &"plan_white" else CEILING
+	if p.y > ceiling:
+		v.y -= (p.y - ceiling) * 4.0 * delta
 	p += v * delta
 	# Стены домов: не сквозь, отскок мягкий.
 	for k in _wall_cells.get(_cell(p), []):
@@ -372,7 +385,8 @@ func _fly(bag: Bag, mean: Vector3, delta: float) -> void:
 		else:
 			p.z = rect.position.y if p.z - rect.position.y < rect.end.y - p.z else rect.end.y
 			v.z *= -0.3
-		v.y += 0.6
+		# При скольжении вдоль стены импульс не накапливается каждый кадр.
+		v.y = maxf(v.y, 0.6)
 	var ground := ground_at(p)
 	if p.y <= ground:
 		p.y = ground
@@ -455,7 +469,7 @@ func _snagged(bag: Bag, mean: Vector3, g: float, delta: float) -> void:
 			return
 	bag.snag_left -= delta
 	bag.snag_time += delta
-	var w := wind_at(bag.snag_point, mean)
+	var w := _bag_wind(bag, bag.snag_point, mean)
 	# Висит на ручках: тело вытянуто по ветру, в затишье опускается; качается.
 	var flow := Vector3(w.x, 0.0, w.z) * 0.35
 	var hang := (flow + Vector3.DOWN).normalized()
@@ -485,7 +499,7 @@ func _rest(bag: Bag, mean: Vector3, g: float, delta: float) -> void:
 	bag.rest_left -= delta
 	bag.rest_time += delta
 	var p := bag.position
-	var w := wind_at(p, mean)
+	var w := _bag_wind(bag, p, mean)
 	# В порыв лежащий пакет ползёт по снегу.
 	if g > 0.4:
 		var crawl := Vector3(w.x, 0.0, w.z) * 0.12 * (g - 0.4) / bag.weight
@@ -519,13 +533,15 @@ func _put_down(bag: Bag, p: Vector3, yaw: float) -> void:
 func _bounds(bag: Bag, mean: Vector3, delta: float) -> void:
 	var p := bag.position
 	var out := not Layout.BOUNDS.grow(1.0).has_point(Vector2(p.x, p.z)) or p.y > OUT_HEIGHT
+	if bag.kind == &"plan_white":
+		out = out or Vector2(p.x, p.z).distance_to(Layout.WIND_BAG_ORIGIN) > Layout.WIND_BAG_RADIUS
 	bag.out_time = bag.out_time + delta if out else 0.0
 	bag.max_out_time = maxf(bag.max_out_time, bag.out_time)
-	if bag.out_time > OUT_RESPAWN:
+	if bag.out_time > OUT_RESPAWN and not _seen(p):
 		bag.visible = false
 		_respawn(bag, mean)
 
-## Вернуть пакет на землю у источника вне кадра — с наветренной стороны арены; если все видны — ждать.
+## Вернуть пакет на землю у местного источника вне кадра; если все видны — ждать.
 func _respawn(bag: Bag, mean: Vector3) -> void:
 	var dir := mean.normalized()
 	var best := -INF

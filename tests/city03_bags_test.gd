@@ -28,12 +28,12 @@ func _run() -> void:
 	world.car.set_physics_process(false)
 	for sensor in get_nodes_in_group(&"detection_sensors"):
 		sensor.enabled = false
-	check(wind.bags.size() >= 4 and wind.bags.size() <= 8, "only a handful of bags across the city")
+	check(wind.bags.size() == 1, "exactly one bag lives in the playable city")
 	var kinds := {}
 	for bag in wind.bags:
 		kinds[bag.kind] = true
 		check(bag.look.mesh != null and bag.look.material_override != null, "%s has a mesh and material" % bag.name)
-	check(kinds.has(&"shop") and kinds.has(&"white") and kinds.has(&"black"), "shop, white and black bags are present")
+	check(kinds.size() == 1 and kinds.has(&"plan_white"), "the only bag uses the approved white menu design")
 	var arrays: Array = wind.bags[0].look.mesh.surface_get_arrays(0)
 	var faces := {}
 	for normal: Vector3 in arrays[Mesh.ARRAY_NORMAL]:
@@ -45,6 +45,7 @@ func _run() -> void:
 	check(all_colors_valid, "bag vertex colors fit the mesh color format")
 	check(wind.find_children("*", "CollisionObject3D", true, false).is_empty(), "bags add no physical obstacles or stealth occluders")
 	check(wind.rustle.stream != null and wind.rustle.volume_db <= -9.0, "local rustle stays below the quest sound level")
+	_starting_courtyard()
 	_no_camera_warp()
 	_stationary_player()
 	_walking_player()
@@ -54,6 +55,33 @@ func _run() -> void:
 	_snag_and_release()
 	await _people_attachment()
 	await _finish()
+
+func _starting_courtyard() -> void:
+	var spawn := Vector2(Layout.SPAWN.x, Layout.SPAWN.z)
+	for point: Vector2 in Layout.WIND_BAG_SOURCES:
+		check(point.distance_to(spawn) <= 12.0, "bag recovery stays in the starting courtyard")
+	var bag = wind.bags[0]
+	var lighting: Node = wind._lighting
+	# Advance the real controller through its fallback gust cycle without frame waits.
+	wind._lighting = null
+	var max_radius := 0.0
+	var max_height := 0.0
+	var jumped := false
+	for frame in 7200:
+		var before: Vector3 = bag.position
+		var was_seen: bool = wind._seen(before)
+		wind._physics_process(1.0 / 60.0)
+		var radius := Vector2(bag.position.x, bag.position.z).distance_to(spawn)
+		max_radius = maxf(max_radius, radius)
+		max_height = maxf(max_height, bag.position.y - wind.ground_at(bag.position))
+		if was_seen and bag.visible and wind._seen(bag.position) and before.distance_to(bag.position) > 0.8:
+			jumped = true
+		if frame in [1799, 7199]:
+			check(bag.visible and radius <= 12.0, "bag remains near Ilyusha after %d seconds" % [(frame + 1) / 60])
+	wind._lighting = lighting
+	check(max_radius <= 12.0, "ordinary wind keeps bag in starting courtyard (%.2f m)" % max_radius)
+	check(max_height <= 3.2, "ordinary flight remains low (%.2f m)" % max_height)
+	check(not jumped, "local wind causes no visible reset jump")
 
 func _people_attachment() -> void:
 	var player := world.player
@@ -93,13 +121,13 @@ func _people_attachment() -> void:
 			wind._snagged(bag, Vector3(1, 0, 0), 0.0, 1.0 / 60.0)
 		check(bag.state == &"fly" and bag.get("snag_target") == null, "coat attachment has a time limit even without a gust")
 	bag = _contact_person(resident)
-	if check(bag != null, "resident can encounter another bag later"):
+	if check(bag != null, "resident can encounter the same bag later"):
 		resident.hide()
 		wind._snagged(bag, Vector3(2, 0, 0), 0.0, 1.0 / 60.0)
 		check(bag.state == &"fly" and bag.visible, "bag stays in the street when its wearer disappears indoors")
 		resident.show()
 	bag = _contact_person(player)
-	if check(bag != null, "Ilyusha can encounter another bag later"):
+	if check(bag != null, "Ilyusha can encounter the same bag later"):
 		world.enter_car()
 		wind._snagged(bag, Vector3(2, 0, 0), 0.0, 1.0 / 60.0)
 		check(bag.state == &"fly" and bag.get("snag_target") == null, "entering the Lada releases the bag")
@@ -119,6 +147,12 @@ func _contact_person(person: Node3D):
 		wind.clock += 1.0
 		for candidate in wind.bags:
 			candidate.state = &"fly"
+			candidate.show()
+			candidate.hidden_wait = 0.0
+			candidate.snag_on_person = false
+			candidate.snag_target = null
+			candidate.last_person = null
+			candidate.last_snag = -1
 			candidate.position = person.visual.to_global(Vector3(0.3, 1.05, -0.05))
 			candidate.velocity = Vector3(2, 0, 0)
 			wind._try_snag(candidate)
@@ -180,7 +214,7 @@ func _teleported_car() -> void:
 	wind._track_movers(1.0 / 60.0)
 	car.reset_to(Layout.CAR_SPAWN + Vector3(20, 0, 0), Layout.CAR_SPAWN_YAW)
 	wind._track_movers(1.0 / 60.0)
-	var bag = wind.bags[1]
+	var bag = wind.bags[0]
 	wind._put_down(bag, car.global_position, 0.0)
 	bag.hit_cooldown = 0.0
 	var before: int = wind.hits[&"car"]
@@ -194,7 +228,7 @@ func _moving_car() -> void:
 	car.velocity = -car.global_basis.z * 5.0
 	car.position += car.velocity / 60.0
 	wind._track_movers(1.0 / 60.0)
-	var bag = wind.bags[1]
+	var bag = wind.bags[0]
 	wind._put_down(bag, car.global_position - car.global_basis.z, 0.0)
 	bag.hit_cooldown = 0.0
 	var before: int = wind.hits[&"car"]
@@ -204,13 +238,16 @@ func _moving_car() -> void:
 	car.reset_to(Layout.CAR_SPAWN, Layout.CAR_SPAWN_YAW)
 
 func _wind_and_bounds() -> void:
-	var black = wind.bags.filter(func(candidate): return candidate.kind == &"black")[0]
+	var black = wind.bags[0]
+	var original_weight: float = black.weight
+	black.weight = 1.6
 	wind._put_down(black, Vector3(15, 0, 32), 0.0)
 	black.rest_left = 0.0
 	black.liftoff_gust = 0.8
 	wind._rest(black, Vector3(4, 0, 1), 1.0, 1.0 / 60.0)
-	check(black.state == &"fly", "even the heaviest empty bag can lift in a strong gust")
-	var bag = wind.bags[2]
+	check(black.state == &"fly", "even a temporarily weighted bag can lift in a strong gust")
+	black.weight = original_weight
+	var bag = wind.bags[0]
 	wind._put_down(bag, Vector3(15, 0, 32), 0.0)
 	bag.rest_left = 0.0
 	var start: Vector3 = bag.position

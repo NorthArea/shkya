@@ -1418,22 +1418,16 @@ const LIFE_SLED_LOOP: Array[Vector2] = [
 const LIFE_STALL := &"Z19_1"
 
 
-# CITY-03: точки старта и возврата пакетов; поведение — WindBags.
+# CITY-03: единственный пакет в завихрении перед подъездом, у исходного появления Илюши.
+const WIND_BAG_ORIGIN := Vector2(-42.5, 100.5)
+const WIND_BAG_RADIUS := 6.0
 const WIND_BAGS: Array = [
-	[&"shop", Vector2(-36.0, 63.5)],    # двор, у контейнеров BINS
-	[&"white", Vector2(-24.0, 23.8)],   # остановка A
-	[&"shop", Vector2(57.0, -58.5)],    # у KIOSK_BINS, площадка киоска
-	[&"black", Vector2(-28.0, -72.0)],  # у контейнеров H10
-	[&"shop", Vector2(64.0, -66.0)],    # павильон остановки у киоска
-	[&"white", Vector2(-47.0, -44.0)],  # «ПРОДУКТЫ 24» у улицы D
-	[&"shop", Vector2(-12.0, 95.0)],    # двор у подъездов
-	[&"plan_white", Vector2(-42.5, 100.5)], # открытый снег между «Ладой» и подъездом, перед стартом Илюши
+	[&"plan_white", WIND_BAG_ORIGIN],
 ]
 
+# Возврат после контакта с машиной/жителем — только в этот двор и вне кадра.
 const WIND_BAG_SOURCES: Array[Vector2] = [
-	Vector2(-36.0, 63.5), Vector2(-24.0, 23.8), Vector2(57.0, -58.5), Vector2(-28.0, -72.0), Vector2(64.0, -66.0),
-	Vector2(-47.0, -44.0), Vector2(-12.0, 95.0), Vector2(-60.0, 44.5), Vector2(20.0, 44.0), Vector2(40.0, 20.0),
-	Vector2(80.0, -20.0), Vector2(-68.0, -80.0), Vector2(0.0, -94.0), Vector2(45.0, -110.0), Vector2(-4.0, 70.0),
+	WIND_BAG_ORIGIN, WIND_BAG_ORIGIN + Vector2(2.0, -2.0), WIND_BAG_ORIGIN + Vector2(0.0, -3.5),
 ]
 
 # --- BREAK-03: окружение, которое ломается (решение владельца 30.10: «надо, чтобы всё, включая деревья») -----------
