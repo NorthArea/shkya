@@ -1,15 +1,16 @@
-# ШКЯ: Ничего необычного
+# Город Н
 
-Демо-квест «За хлебом» на Godot: двумерные персонажи ШКЯ в трёхмерном зимнем городе Н. (прототип — Новосибирск), управление в духе *The Simpsons: Hit & Run*.
+Демо-квест «За хлебом» на Godot в трёхмерном зимнем городе Н. (прототип — Новосибирск). Идёт переход к самостоятельной IP и настоящим 3D-персонажам по `docs/new_concept.md`; сначала сохранить прежних police/guard в 3D, затем на их основе переработать остальных. *The Simpsons: Hit & Run* — основной референс игрового мира и механик; художественный переход сохраняет существующий геймплей.
 
 ## Источники и порядок приоритета
 
 1. [docs/DECISIONS.md](docs/DECISIONS.md) — действующие решения владельца. Других мест для решений нет: новое решение владельца записывать туда, в строку своей темы, с датой.
-2. [docs/extension/](docs/extension/README.md) — канон расширения «Ничего необычного» (6 файлов, без правок).
-3. [docs/extension/HIDE_SPOTS.md](docs/extension/HIDE_SPOTS.md) — ТЗ укрытий у киоска (правится только по решению владельца).
-4. [docs/DEMO.md](docs/DEMO.md) — ТЗ демо 1.0 от 27.10.2026, без правок.
-5. Концепты [docs/art/](docs/art/README.md): 01–10 и e01–e05 (PNG не изменять); облик — [CHARACTERS.md](docs/art/CHARACTERS.md), [CITY.md](docs/art/CITY.md).
-6. [docs/SHKYA_NOVOSIBIRSK_AGENT_REFERENCES.md](docs/SHKYA_NOVOSIBIRSK_AGENT_REFERENCES.md) — единственный набор внешних референсов, без правок.
+2. [docs/new_concept.md](docs/new_concept.md) — художественный переход к самостоятельной IP; уточнения владельца о сохранении police/guard и приоритете Hit & Run — в DECISIONS.
+3. [docs/extension/](docs/extension/README.md) — канон расширения «Ничего необычного» (6 файлов, без правок).
+4. [docs/extension/HIDE_SPOTS.md](docs/extension/HIDE_SPOTS.md) — ТЗ укрытий у киоска (правится только по решению владельца).
+5. [docs/DEMO.md](docs/DEMO.md) — ТЗ демо 1.0 от 27.10.2026, без правок.
+6. Концепты [docs/art/](docs/art/README.md): 01–10 и e01–e05 (PNG не изменять); облик — [CHARACTERS.md](docs/art/CHARACTERS.md), [CITY.md](docs/art/CITY.md).
+7. [docs/SHKYA_NOVOSIBIRSK_AGENT_REFERENCES.md](docs/SHKYA_NOVOSIBIRSK_AGENT_REFERENCES.md) — единственный набор внешних референсов, без правок.
 
 Значения констант — только в коде. Контракты кода C1–C11 — [docs/workflow/README.md](docs/workflow/README.md). Карта документов — [docs/README.md](docs/README.md).
 
