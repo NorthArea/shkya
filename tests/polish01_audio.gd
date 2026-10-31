@@ -22,11 +22,11 @@ func _run() -> void:
 	await _frames(2)
 	var music = main.music
 	check(music.player.playing and music.player.stream == music.THEME and music.player.bus == music.BUS, "menu theme plays on the Music bus (MUSIC-01)")
-	check(music.THEME.loop_mode == AudioStreamWAV.LOOP_FORWARD and music.THEME.get_length() >= 40.0 and music.THEME.get_length() <= 90.0, "menu theme loops, %.1f s" % music.THEME.get_length())
+	check(music.THEME is AudioStreamOggVorbis and music.THEME.loop and music.THEME.get_length() >= 270.0 and music.THEME.get_length() <= 273.0, "complete nocturne loops after its natural ending, %.1f s" % music.THEME.get_length())
 	var rms_db := _stream_rms_db(music.THEME)
 	check(absf(rms_db - music.THEME_RMS_DB) < 0.5, "menu theme track RMS %.1f dB matches THEME_RMS_DB" % rms_db)
 	var level: float = rms_db + music.MENU_DB + AudioServer.get_bus_volume_db(AudioServer.get_bus_index(music.BUS))
-	check(level >= -22.0 and level <= -20.0 and not music.muffled(), "menu theme level %.1f dB in −22…−20, unfiltered" % level)
+	check(level >= -26.0 and level <= -24.0 and not music.muffled(), "menu piano level %.1f dB in −26…−24, unfiltered with full dynamics" % level)
 	await _frames(80)
 	check(music.player.volume_db > music.MENU_DB - 0.5, "menu theme faded in to %.1f dB" % music.player.volume_db)
 	main.menu.settings_button.pressed.emit()
@@ -252,17 +252,23 @@ func _cruise(world: DemoWorld, kmh: float) -> void:
 	else:
 		Input.action_release(&"move_forward")
 
-## RMS дорожки (16-бит PCM — импорт без сжатия), дБ полной шкалы; каждый 16-й отсчёт.
-func _stream_rms_db(stream: AudioStreamWAV) -> float:
-	var data := stream.data
-	if stream.format != AudioStreamWAV.FORMAT_16_BITS or data.size() < 4:
-		return -INF
+## RMS фактически декодированной дорожки: оба канала каждого 16-го кадра.
+func _stream_rms_db(stream: AudioStream) -> float:
+	var playback := stream.instantiate_playback()
+	playback.start()
+	var remaining := roundi(stream.get_length() * AudioServer.get_mix_rate())
 	var total := 0.0
 	var count := 0
-	for i in range(0, data.size() - 1, 32):
-		var x := data.decode_s16(i) / 32768.0
-		total += x * x
-		count += 1
+	while remaining > 0:
+		var frames := playback.mix_audio(1.0, mini(16384, remaining))
+		if frames.is_empty():
+			playback.stop()
+			return -INF
+		for i in range(0, frames.size(), 16):
+			total += frames[i].length_squared()
+			count += 2
+		remaining -= frames.size()
+	playback.stop()
 	return 10.0 * log(total / count) / log(10.0)
 
 func _press(action: StringName) -> void:
@@ -299,4 +305,8 @@ func _finish() -> void:
 		main.queue_free()
 	for i in 3:
 		await process_frame
+	# Как в smoke_runner: аудиопоток освобождает остановленный playback по часам,
+	# а headless fixed-fps может исполнить три кадра быстрее одного mix-буфера.
+	OS.delay_msec(100)
+	await process_frame
 	quit(0 if failures.is_empty() else 1)

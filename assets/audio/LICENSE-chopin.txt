@@ -1,0 +1,31 @@
+Frédéric Chopin — Nocturne in E-flat major, Op. 9 No. 2
+Piano: Frank Lévy. Recording: Musopen, Set Chopin Free (circa 2014).
+
+Composition: public domain (composer died in 1849).
+Recording: Musopen public-domain dedication, with unrestricted-use fallback.
+The campaign FAQ identifies CC0 1.0 as the dedication for its recordings:
+https://www.kickstarter.com/projects/Musopen/set-chopin-free/faqs
+https://creativecommons.org/publicdomain/zero/1.0/
+
+Exact source file and its recording-specific rights statement:
+https://commons.wikimedia.org/w/index.php?title=File:Chopin_-_Nocturne_No._2_in_E-flat_major,_Op._9_No._2_(Frank_Levy).flac&oldid=963507092
+That statement attributes the dedication to Musopen, worldwide, and permits
+any purpose without conditions except those required by law where a public-
+domain dedication cannot apply. Public Domain Mark is a status label, not
+a separate licence. Commercial inclusion does not require a purchase or
+individual permission under these published terms.
+
+Original download:
+https://upload.wikimedia.org/wikipedia/commons/8/89/Chopin_-_Nocturne_No._2_in_E-flat_major%2C_Op._9_No._2_%28Frank_Levy%29.flac
+SHA-1: c10c1175bb0955df8083bc1d67c8897114e9baf0 (matches Commons metadata)
+SHA-256: d286d06381db63d05cb3b971e3b39132866efade1dd94f514c1d83ff9d42de70
+Source: 96 kHz, stereo, 24-bit FLAC, 271.46949 seconds.
+
+Game preparation: tools/prepare_menu_nocturne.py, 2026-10-31.
+Resampled with antialias filtering to 48 kHz stereo; uniform gain for headroom,
+very short endpoint fades; Ogg Vorbis quality 0.9. No time/pitch alteration,
+dynamic compression, musical cuts or new arrangement. Full final decay kept.
+The original source is downloaded separately; no implied endorsement by the
+performer, composer, or Musopen. Verification is of the published source
+statements; the campaign's linked release post does not expose its files
+without authentication, so its original release bytes were not compared.
