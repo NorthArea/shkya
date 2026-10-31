@@ -143,6 +143,7 @@ func _build_backdrop() -> void:
 	backdrop.add_child(car)
 	backdrop_camera = Camera3D.new()
 	backdrop_camera.name = "OrbitCamera"
+	backdrop_camera.physics_interpolation_mode = Node.PHYSICS_INTERPOLATION_MODE_OFF
 	backdrop_camera.fov = 55.0
 	backdrop.add_child(backdrop_camera)
 	add_child(backdrop)
