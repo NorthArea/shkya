@@ -33,7 +33,19 @@ func _run() -> void:
 		return
 	for sensor in get_nodes_in_group(&"detection_sensors"):
 		sensor.enabled = false
-	await _test_real_events()
+	for phase: StringName in [MissionDirector.NOT_STARTED, MissionDirector.GO_TO_CAR, MissionDirector.COMPLETE]:
+		if phase != MissionDirector.NOT_STARTED:
+			main.start_game()
+			await _frames(8)
+			world = main.world
+			for sensor in get_nodes_in_group(&"detection_sensors"): sensor.enabled = false
+		var path := OUT.path_join("phase-%s.json" % phase)
+		_clean(path)
+		store.setup(path)
+		world.mission.state = phase
+		world.mission.has_bread = false
+		await _test_real_events()
+		check(store.entries().all(func(e): return e["unlocked"]), "all ten earned without mission steps in phase " + String(phase))
 	await _test_menu_and_toast()
 	await _test_restart()
 	await _finish()
@@ -43,7 +55,7 @@ func _test_storage() -> void:
 	_clean(path)
 	var first: Node = StoreScript.new()
 	check(first.setup(path) == OK, "missing file is a clean collection")
-	check(first.entries().size() == 8, "eight distinct achievements")
+	check(first.entries().size() == 10, "ten distinct achievements")
 	var unlocked_signals: Array = []
 	first.achievement_unlocked.connect(func(id): unlocked_signals.append(id))
 	check(not first.unlock(&"unknown_achievement"), "unknown id is rejected")
@@ -103,21 +115,15 @@ func _test_real_events() -> void:
 		check(store.unlocked(&"timber_delivery"), "tree broken by car reaches store")
 		bench.smash(&"punch", Vector3.RIGHT)
 		check(store.unlocked(&"standing_room"), "bench broken by punch reaches store")
-	var mission := world.mission
-	mission.interact(&"babka")
-	mission.decline()
-	mission.interact(&"babka")
-	mission.accept()
-	mission.notify_entered_car()
-	mission.notify_arrived_kiosk()
-	mission.money = MissionDirector.BREAD_PRICE
-	check(mission.buy_bread(), "bread purchase uses real director")
-	check(store.unlocked(&"bread_zero"), "purchase with no change unlocks")
-	check(world.player.set_hide_mode(&"box"), "real player enters box")
-	check(store.unlocked(&"bread_box"), "bread in box reaches store")
+	check(store.unlocked(&"professional_ditcher"), "destruction by car and punch unlocks the combined profession")
+	var coins: Node = world.get_node("LevelGeometry/Coins")
+	for i in 10: coins._collect(i, {"in_car": false})
+	check(store.unlocked(&"bread_zero"), "ten real coin pickups unlock financial cushion without a purchase")
+	check(world.player.set_hide_mode(&"box"), "real player enters box without bread")
+	check(store.unlocked(&"bread_box"), "box achievement needs no quest item")
 	world.player.set_hide_mode(&"none")
 	world.player.set_hide_mode(&"snowdrift")
-	check(store.unlocked(&"cold_storage"), "bread in snow reaches store")
+	check(store.unlocked(&"cold_storage"), "snow achievement needs no quest item")
 	world.player.set_hide_mode(&"none")
 	var ambient: Node = world.get_node("LevelGeometry/Ambient")
 	world.car.position = Vector3(-60, 0, 80)
@@ -127,8 +133,14 @@ func _test_real_events() -> void:
 	ambient._pet_dog(world.player)
 	check(ambient.dog_pets == pets_before + 1, "dog accepts real pet action")
 	check(store.unlocked(&"good_boy_certificate"), "successful dog pet after destruction reaches store")
-	mission.interact(&"babka")
-	check(store.unlocked(&"professional_ditcher"), "decline then complete in one world reaches store")
+	var drones: Node = world.get_node("LevelGeometry/Drones")
+	drones.break_drone(drones.drones[0])
+	check(store.unlocked(&"drone_silence"), "real drone break unlocks airplane mode")
+	var parked: Array = breakables._parked_rects()
+	for i in 3:
+		breakables._start_alarm(0, parked[0])
+		breakables._stop_alarm(0)
+	check(store.unlocked(&"alarm_clock"), "three actual alarm activations unlock district alarm clock")
 
 func _test_menu_and_toast() -> void:
 	var toast: Node = main.get_node_or_null("AchievementToast")
@@ -141,7 +153,7 @@ func _test_menu_and_toast() -> void:
 		await process_frame
 		var panel: Node = main.pause_menu.settings.achievements
 		check(panel.visible, "achievements screen opens from pause settings")
-		check(panel.cards.size() == 8, "screen renders all eight entries")
+		check(panel.cards.size() == 10, "screen renders all ten entries")
 		check(panel.back_button.has_focus(), "screen has gamepad focus")
 		var cancel := InputEventAction.new()
 		cancel.action = &"ui_cancel"

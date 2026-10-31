@@ -10,7 +10,10 @@ var clock := 0.0
 var _last_granny := -1
 var _last_granny_at := -INF
 var _broke_something := false
-var _declined := false
+var _broke_by_car := false
+var _broke_by_punch := false
+var _coins := 0
+var _alarm_count := 0
 
 func setup(new_world: Node, collection: Node) -> void:
 	name = "AchievementsTracker"
@@ -22,9 +25,9 @@ func setup(new_world: Node, collection: Node) -> void:
 	var breakables := world.get_node("LevelGeometry/Breakables")
 	breakables.broken.connect(_on_broken)
 	world.player.hide_mode_changed.connect(_on_hide_mode_changed)
-	world.mission.bread_received.connect(_on_bread_received)
-	world.mission.quest_completed.connect(_on_quest_completed)
-	world.mission.state_changed.connect(_on_state_changed)
+	world.get_node("LevelGeometry/Coins").collected.connect(_on_coin_collected)
+	world.get_node("LevelGeometry/Drones").drone_broken.connect(_on_drone_broken)
+	breakables.car_alarm.connect(_on_car_alarm)
 	world.get_node("LevelGeometry/Ambient").dog_petted.connect(_on_dog_petted)
 
 func _physics_process(delta: float) -> void:
@@ -42,18 +45,16 @@ func _on_broken(item: Node, by: StringName) -> void:
 	if by not in [&"car", &"punch"]:
 		return
 	_broke_something = true
+	_broke_by_car = _broke_by_car or by == &"car"
+	_broke_by_punch = _broke_by_punch or by == &"punch"
+	if _broke_by_car and _broke_by_punch:
+		store.unlock(&"professional_ditcher")
 	if by == &"car" and item.kind in TREE_KINDS:
 		store.unlock(&"timber_delivery")
 	if by == &"punch" and item.kind in BENCH_KINDS:
 		store.unlock(&"standing_room")
 
-func _on_bread_received() -> void:
-	if world.mission.money == 0:
-		store.unlock(&"bread_zero")
-
 func _on_hide_mode_changed(_old: StringName, mode: StringName) -> void:
-	if not world.mission.has_bread:
-		return
 	if mode == &"box":
 		store.unlock(&"bread_box")
 	elif mode == &"snowdrift":
@@ -63,14 +64,15 @@ func _on_dog_petted(_actor: Node) -> void:
 	if _broke_something:
 		store.unlock(&"good_boy_certificate")
 
-func _on_state_changed(old: StringName, state: StringName) -> void:
-	if old == &"OFFERED" and state == &"NOT_STARTED":
-		_declined = true
-	elif state == &"NOT_STARTED":
-		_declined = false
-		_broke_something = false
-		_last_granny = -1
+func _on_coin_collected(_at: Vector3, _total: int) -> void:
+	_coins += 1
+	if _coins >= 10:
+		store.unlock(&"bread_zero")
 
-func _on_quest_completed(_xp: int) -> void:
-	if _declined:
-		store.unlock(&"professional_ditcher")
+func _on_drone_broken(_drone: Node3D) -> void:
+	store.unlock(&"drone_silence")
+
+func _on_car_alarm(_at: Vector3) -> void:
+	_alarm_count += 1
+	if _alarm_count >= 3:
+		store.unlock(&"alarm_clock")

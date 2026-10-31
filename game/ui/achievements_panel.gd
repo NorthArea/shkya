@@ -11,6 +11,7 @@ var cards: Array[PanelContainer] = []
 var back_button: Button
 var count_label: Label
 var grid: GridContainer
+var scroll: ScrollContainer
 var store: Node
 
 func _ready() -> void:
@@ -45,12 +46,16 @@ func _ready() -> void:
 	count_label = _label("", 26, SOFT)
 	count_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	heading.add_child(count_label)
+	scroll = ScrollContainer.new()
+	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	box.add_child(scroll)
 	grid = GridContainer.new()
 	grid.columns = 2
-	grid.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	grid.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	grid.add_theme_constant_override("h_separation", 16)
 	grid.add_theme_constant_override("v_separation", 12)
-	box.add_child(grid)
+	scroll.add_child(grid)
 	back_button = Button.new()
 	back_button.name = "Back"
 	back_button.text = "НАЗАД"
@@ -123,6 +128,13 @@ func _unhandled_input(event: InputEvent) -> void:
 	if visible and (event.is_action_pressed(&"ui_cancel") or event.is_action_pressed(&"pause")):
 		get_viewport().set_input_as_handled()
 		back_requested.emit()
+
+func _input(event: InputEvent) -> void:
+	if not visible:
+		return
+	if event.is_action_pressed(&"ui_down") or event.is_action_pressed(&"ui_up"):
+		scroll.scroll_vertical += 170 if event.is_action_pressed(&"ui_down") else -170
+		get_viewport().set_input_as_handled()
 
 func _label(text: String, font_size: int, color: Color) -> Label:
 	var label := Label.new()
