@@ -8,10 +8,11 @@ map:
 # Каждый набор: лог в builds/checks/make-test/, зелёным считается только итоговая строка
 # «ИМЯ: N checks, 0 failures» — Godot выходит с кодом 0 и при ошибке разбора скрипта (QA-01, З1).
 # $(1) — скрипт, $(2) — частота, $(3) — итоговая метка, $(4) — аргументы,
-# $(5) — render для настоящих MultiMesh и камеры после native physics.
+# $(5) — render для настоящих MultiMesh и камеры после native physics;
+# $(6) — realtime: без fixed-fps для естественных AudioServer finished callbacks.
 define godot_test
 	@mkdir -p builds/checks/make-test
-	@./tools/run.command $(if $(5),,--headless) --fixed-fps $(2) --script tests/$(1).gd $(4) > builds/checks/make-test/$(1)-$(2).log 2>&1; \
+	@./tools/run.command $(if $(5),,--headless) $(if $(6),,--fixed-fps $(2)) --script tests/$(1).gd $(4) > builds/checks/make-test/$(1)-$(2).log 2>&1; \
 	status=$$?; grep -E '^$(3): [0-9]+ checks, [0-9]+ failures' builds/checks/make-test/$(1)-$(2).log; \
 	grep -qE '^$(3): [0-9]+ checks, 0 failures' builds/checks/make-test/$(1)-$(2).log && \
 	! grep -qE '^SCRIPT ERROR:|^ERROR: CameraRig:|^ERROR: Condition "p_elem->_root" is true' builds/checks/make-test/$(1)-$(2).log && [ $$status -eq 0 ] || \
@@ -33,6 +34,7 @@ test: map
 	$(call godot_test,drive01_acceptance,60,DRIVE01)
 	$(call godot_test,quest01_acceptance,60,QUEST01)
 	$(call godot_test,polish01_audio,60,AUDIO)
+	$(call godot_test,radio_music_test,60,RADIO01,--max-fps 60 --resolution 1920x1080,,realtime)
 	$(call godot_test,polish01_stuck,60,STUCK)
 	$(call godot_test,art01_sprite,60,ART01)
 	$(call godot_test,art01_sprite,120,ART01)

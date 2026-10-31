@@ -3,7 +3,7 @@ extends Node
 ## финал и фон двора. Только слушает мир, машину, миссию и диалоги — ничем не управляет.
 ## Звуки синтезированы tools/generate_audio.py (собственная генерация, см. assets/README.md).
 ## Мотор, каша и фон двора зациклены при импорте (`edit/loop_mode=2` в .import).
-## STORY-02: две сюжетные передачи радио субтитрами, без озвучки; уступают диалогам и гэгам,
+## STORY-02 / RADIO-01: две сюжетные передачи с бормотанием диктора; уступают диалогам и гэгам,
 ## управление не блокируют. Полицейская рация и звуковой фон города независимы.
 
 const DialogPanelScript = preload("res://game/ui/dialog_panel.gd")
@@ -45,7 +45,7 @@ var _rng := RandomNumberGenerator.new()
 var _radio_delay := -1.0
 var _subtitle_left := 0.0
 var _radio_caption := ""
-## STORY-02: сюжетное радио только субтитрами; played считает исключительно настоящие звуки.
+## Сюжетные передачи сохраняют текст и порядок; played считает настоящие запуски голоса.
 var radio_shown := 0
 const RADIO_PROGRESS_DELAY := 4.0
 
@@ -59,7 +59,7 @@ func _setup() -> void:
 	engine = _player_3d(world.car, -4.0, ENGINE)
 	skid = _player_3d(world.car, -80.0, SKID)
 	door = _player_3d(world.car, -2.0)
-	radio = _player_3d(world.car, -9.0, RADIO)  # тише мотора: радио «из-под панели»
+	radio = _player_3d(world.car, -9.0, narrator_stream())  # тише мотора: радио «из-под панели»
 	ui = AudioStreamPlayer.new()
 	ui.volume_db = -6.0
 	add_child(ui)
@@ -120,9 +120,19 @@ func _physics_process(delta: float) -> void:
 
 ## Сначала предупреждение/диалог, затем радио. Управление остаётся у водителя.
 func _radio(delta: float) -> void:
+	if world.is_stealth_failing() or world.mission.state == MissionDirector.COMPLETE:
+		suspend_radio_voice()
+		_subtitle_left = 0.0
+		_radio_delay = -1.0
+		return
+	if car_radio and not car_radio.music.news_enabled():
+		suspend_radio_voice()
+		return  # другая станция/настройка замораживает обе сюжетные передачи
 	if gag_playing():
+		radio.stop()
 		return
 	if world.ui_blocking:
+		radio.stop()
 		subtitle_card.visible = false
 		return
 	if _radio_delay >= 0.0:
@@ -146,6 +156,30 @@ func _radio(delta: float) -> void:
 			subtitle_card.visible = false
 			if radio_shown == 1 and world.car.driver:
 				_radio_delay = RADIO_PROGRESS_DELAY
+	var director_announcement: bool = radio_text() != "" and not (car_radio and car_radio._announcing)
+	if director_announcement and not radio.playing:
+		radio.play()
+		played["radio"] += 1
+	elif not director_announcement:
+		radio.stop()
+
+## Собственная копия позволяет держать диктора на всём времени чтения субтитра,
+## не меняя импортированный ресурс, который используют остальные звуки.
+func narrator_stream() -> AudioStreamWAV:
+	var stream := RADIO.duplicate() as AudioStreamWAV
+	stream.loop_mode = AudioStreamWAV.LOOP_FORWARD
+	stream.loop_begin = 0
+	stream.loop_end = roundi(stream.get_length() * stream.mix_rate)
+	return stream
+
+## Смена станции прячет эфир, сохраняя оставшееся время/порядок новостей.
+func suspend_radio_voice() -> void:
+	if radio:
+		radio.stop()
+	if car_radio:
+		car_radio.suspend_voice()
+	if subtitle_card and not gag_playing():
+		subtitle_card.visible = false
 
 ## EXT-02 (HIDE_SPOTS.md раздел 11): гэг укрытия строкой субтитра — по две строки на экран, каждая пара seconds,
 ## затем плашка гаснет. Управление не блокирует; радио, если звучит, уступает строку. Приёмка P2-1: идущий гэг
@@ -944,13 +978,13 @@ func _setup_car_radio() -> void:
 	add_child(car_radio)
 	car_radio.setup(self)
 
-## STORY-02 владеет первыми двумя передачами; счётчик звуков radio остаётся нулевым.
+## STORY-02 владеет первыми двумя передачами и сохраняет порядок при смене станции.
 func story_radio_pending() -> bool:
 	return radio_shown < 2 or _radio_delay >= 0.0 or (_subtitle_left > 0.0 and _radio_caption in [QuestLines.RADIO, QuestLines.RADIO_PROGRESS])
 
 ## Строка радио внизу экрана, как разовое радио EXT-01; поверх гэга не встаёт (false).
 func show_radio_line(text: String, seconds: float) -> bool:
-	if subtitle_card == null or gag_playing() or world.ui_blocking or story_radio_pending():
+	if subtitle_card == null or gag_playing() or world.ui_blocking or story_radio_pending() or _subtitle_left > 0.0 or (car_radio and not car_radio.music.news_enabled()):
 		return false
 	_subtitle_slot(false)
 	_radio_caption = text

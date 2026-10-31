@@ -62,12 +62,14 @@ func _radio_priority() -> void:
 	await _frames(60)
 	check(sound.radio_shown == 0 and sound.gag_playing(), "first radio does not replace Babka warning on early car entry")
 	check(not paused and not world.ui_blocking and world.control_mode == &"in_car", "warning and pending radio leave driving active")
+	await _wait_radio_tuning(sound)
 	var limit := 1200
 	while sound.radio_text() != QuestLines.RADIO and limit > 0:
 		await _frames(1)
 		limit -= 1
 	check(limit > 0 and sound.radio_shown == 1, "welcome transmission follows warning once")
-	check(sound.played["radio"] == 0 and not sound.radio.playing, "welcome is text only")
+	check(sound.played["radio"] == 1 and sound.radio.playing and not sound.car_radio.player.playing and sound.radio.stream.data == sound.RADIO.data, "welcome uses one original mumbling announcer with its caption")
+	check(sound.car_radio.music.player.playing and sound.car_radio.music.target_db() == sound.car_radio.music.DUCK_DB and sound.car_radio.music.player.volume_db > -40.0, "welcome ducks the music toward an audible bed")
 	# Общий production-opener создаёт настоящий DialogPanel и включает UI-blocking.
 	# Проверяется приоритет общей плашки, а не доступность разговора из машины.
 	world.quest_flow._open_chain(QuestLines.VENDOR_CHAIN, [{"id": &"close", "text": "ЗАКРЫТЬ"}], &"vendor")
@@ -75,7 +77,7 @@ func _radio_priority() -> void:
 	check(world.quest_flow.dialog.is_open() and world.ui_blocking and not sound.subtitle_card.visible and sound.radio_text() == "", "an open dialog hides an already active radio transmission")
 	world.quest_flow._close()
 	await _frames(2)
-	check(sound.radio_text() == QuestLines.RADIO and sound.radio_shown == 1, "welcome resumes after dialog without consuming another transmission")
+	check(sound.radio_text() == QuestLines.RADIO and sound.radio_shown == 1 and sound.radio.playing and not sound.car_radio.player.playing, "welcome resumes caption and its single announcer after dialog without consuming another transmission")
 	# Настоящий потребитель общей плашки: гэг появляется во время первой передачи.
 	sound.show_gag(["Проверка очереди города"], 1.5)
 	await _frames(2)
@@ -85,12 +87,14 @@ func _radio_priority() -> void:
 		await _frames(1)
 		limit -= 1
 	check(limit > 0 and sound.radio_shown == 2, "progress transmission survives an interrupted welcome during continuous driving")
-	check(sound.played["radio"] == 0 and not sound.radio.playing and not paused and not world.ui_blocking, "second transmission remains text only and nonblocking")
+	check(sound.played["radio"] >= 2 and sound.radio.playing and not sound.car_radio.player.playing and not paused and not world.ui_blocking, "second transmission has one announcer and remains nonblocking")
+	check(sound.car_radio.music.player.playing and sound.car_radio.music.target_db() == sound.car_radio.music.DUCK_DB and sound.car_radio.music.player.volume_db > -40.0, "second transmission keeps the ducked music audible")
 	await _frames(600)
 	check(sound.radio_shown == 2 and sound.radio_text() == "", "two transmissions finish without a third")
 	check(world.exit_car(), "exit after both transmissions")
 	await _frames(3)
 	world.enter_car()
+	await _wait_radio_tuning(sound)
 	await _frames(90)
 	check(sound.radio_shown == 2 and sound.radio_text() == "", "re-entry does not replay either completed transmission")
 
@@ -171,8 +175,19 @@ func _reset_world() -> void:
 	check(world.get_hud_state()["money_goal"] == 0 and world.get_hud_state()["coins_task"] == "", "new world hides the future bread target again")
 	world.car.reset_to(Vector3(-80, 0, 32), -PI * 0.5)
 	world.enter_car()
+	await _wait_radio_tuning(sound)
 	await _frames(60)
 	check(sound.radio_shown == 1 and sound.radio_text() == QuestLines.RADIO, "fresh world can show the welcome again")
+	check(sound.radio.playing and not sound.car_radio.player.playing, "fresh world's welcome has one announcer")
+
+## AudioServer завершает настройку по реальным аудиочасам, даже при --fixed-fps.
+func _wait_radio_tuning(sound: Node) -> void:
+	var cue: AudioStreamPlayer = sound.car_radio.music.tuning
+	var deadline_ms: int = Time.get_ticks_msec() + ceili(cue.stream.get_length() * 1000.0) + 1500
+	while cue.playing and Time.get_ticks_msec() < deadline_ms:
+		OS.delay_msec(10)
+		await process_frame
+	check(not cue.playing and sound.car_radio.music.news_enabled(), "receiver finishes its actual tuning sound before news timing starts")
 
 func _frames(count: int) -> void:
 	for index in count:

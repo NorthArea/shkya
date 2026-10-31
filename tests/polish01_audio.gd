@@ -61,13 +61,15 @@ func _run() -> void:
 	check(sound.played["door_close"] == 1, "door sound when getting in")
 	check(sound.engine.playing, "engine runs with a driver")
 	check(sound.played["radio"] == 0 and sound.radio_text() == "", "radio waits a moment after the door (EXT-01)")
+	await _wait_radio_tuning(sound)
 	var idle_pitch: float = sound.engine.pitch_scale
 	Input.action_press(&"car_gas")
 	await _frames(150)
 	var fast_pitch: float = sound.engine.pitch_scale
 	check(fast_pitch > idle_pitch + 0.5, "engine pitch rises with speed (%.2f → %.2f)" % [idle_pitch, fast_pitch])
 	check(not sound.skid.playing, "no skid sound driving straight")
-	check(sound.played["radio"] == 0 and not sound.radio.playing, "STORY-02: narrative radio uses subtitles without voice playback")
+	check(sound.played["radio"] >= 1 and sound.radio.playing and not sound.car_radio.player.playing and sound.radio.stream.data == sound.RADIO.data, "STORY-02: welcome caption has one original mumbling announcer")
+	check(sound.car_radio.music.player.playing and absf(sound.car_radio.music.player.volume_db - sound.car_radio.music.DUCK_DB) < 0.5 and sound.car_radio.music.player.volume_db > -40.0, "welcome announcer leaves a smoothly ducked audible music bed")
 	check(sound.radio_shown == 1, "first transmission shown once")
 	check(sound.car_radio.plays == 0, "periodic jingles do not interrupt the first STORY-02 transmission")
 	check(sound.radio_text() == QuestLines.RADIO and sound.subtitle_card.visible, "radio subtitle line on screen: '%s'" % sound.radio_text())
@@ -93,9 +95,11 @@ func _run() -> void:
 	world.player.place(world.car.global_position + world.car.global_basis.x * 2.2, 0.0)
 	await _frames(4)
 	await _press(&"interact")
+	await _wait_radio_tuning(sound)
 	await _frames(60)
 	check(world.control_mode == &"in_car" and sound.radio_shown == 2 and sound.radio_text() == QuestLines.RADIO_PROGRESS, "re-entry resumes the remaining progress transmission without repeating the welcome")
-	check(sound.played["radio"] == 0 and not sound.radio.playing, "progress transmission also has no voice playback")
+	check(sound.played["radio"] >= 2 and sound.radio.playing and not sound.car_radio.player.playing and sound.radio.stream.data == sound.RADIO.data, "progress caption also has one original mumbling announcer")
+	check(sound.car_radio.music.player.playing and absf(sound.car_radio.music.player.volume_db - sound.car_radio.music.DUCK_DB) < 0.5 and sound.car_radio.music.player.volume_db > -40.0, "progress announcer leaves the ducked music audible")
 	await _frames(int(ceil(maxf(QuestLines.RADIO_SECONDS, QuestLines.read_seconds(QuestLines.RADIO_PROGRESS)) * 60.0)) + 90)
 	check(sound.radio_text() == "" and sound.radio_shown == 2, "both short transmissions finish once per world")
 	check(not sound.story_radio_pending(), "periodic radio becomes eligible only after both STORY-02 transmissions finish")
@@ -173,7 +177,7 @@ func _run() -> void:
 ## уступают гэгам и диалогам; пешком молчат.
 func _check_car_radio(world: DemoWorld, sound) -> void:
 	var radio = sound.car_radio
-	check(sound.radio_shown == 2 and sound.played["radio"] == 0, "car jingles preserve both subtitle-only story transmissions")
+	check(sound.radio_shown == 2 and sound.played["radio"] >= 2 and not sound.radio.playing, "periodic announcements preserve both completed voiced story transmissions")
 	check(radio != null and radio.player != null, "car radio (CarRadio) is set up")
 	if radio == null or radio.player == null:
 		return
@@ -196,6 +200,7 @@ func _check_car_radio(world: DemoWorld, sound) -> void:
 	world.car.reset_to(Vector3(-85, 0, 32), -PI * 0.5)
 	world.enter_car()
 	await _frames(3)
+	await _wait_radio_tuning(sound)
 	var driven := 0.0
 	var started_at := -1.0
 	for i in int((CarRadio.FIRST_DELAY + 3.0) * 60.0):
@@ -251,6 +256,15 @@ func _cruise(world: DemoWorld, kmh: float) -> void:
 		Input.action_press(&"car_gas")
 	else:
 		Input.action_release(&"car_gas")
+
+## AudioServer завершает настройку по реальным аудиочасам, даже при --fixed-fps.
+func _wait_radio_tuning(sound: Node) -> void:
+	var cue: AudioStreamPlayer = sound.car_radio.music.tuning
+	var deadline_ms: int = Time.get_ticks_msec() + ceili(cue.stream.get_length() * 1000.0) + 1500
+	while cue.playing and Time.get_ticks_msec() < deadline_ms:
+		OS.delay_msec(10)
+		await process_frame
+	check(not cue.playing and sound.car_radio.music.news_enabled(), "receiver finishes its actual tuning sound before news timing starts")
 
 ## RMS фактически декодированной дорожки: оба канала каждого 16-го кадра.
 func _stream_rms_db(stream: AudioStream) -> float:

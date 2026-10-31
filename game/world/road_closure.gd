@@ -291,11 +291,15 @@ func park_finale() -> void:
 func _physics_process(delta: float) -> void:
 	if _mission == null:
 		return
-	if _radio_left > 0.0:
-		_radio_left -= delta
-		if _radio_left <= 0.0:
-			_say(QuestLines.RADIO_DETOUR, RADIO_SECONDS)
-			radio_shown += 1
+	if _radio_left >= 0.0:
+		var sound: Node = _world.get_node_or_null("SoundDirector")
+		if sound and sound.car_radio and sound.car_radio.music.news_enabled():
+			_radio_left = maxf(0.0, _radio_left - delta)
+			if _radio_left == 0.0:
+				var text: String = "\n".join(PackedStringArray(QuestLines.RADIO_DETOUR))
+				if sound.show_radio_line(text, maxf(RADIO_SECONDS, QuestLines.read_seconds(text.replace("\n", " ")))):
+					_radio_left = -1.0
+					radio_shown += 1
 	if not _mission.road_closed:
 		return
 	if _pending and _line_clear(Vector2(Layout.CLOSURE_X.x, Layout.CLOSURE_X.y)):
