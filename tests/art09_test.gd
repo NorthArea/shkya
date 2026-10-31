@@ -8,6 +8,7 @@ const PatrolsScript = preload("res://game/world/patrols.gd")
 const LifeScript = preload("res://game/world/life.gd")
 const CIVILIANS := {56: ["resident_kolpak", &"babka"], 57: ["resident_ushanka_walk", &"man"], 58: ["resident_shuba", &"babka"], 59: ["resident_turban", &"babka"], 62: ["resident_bow", &"babka"], 63: ["resident_tourist", &"man"]}
 const NpcScript = preload("res://game/npc/npc.gd")
+const Uniform = preload("res://game/characters/uniform_visual.gd")
 const SENSOR_PATHS: Array[String] = ["LevelGeometry/Patrols/Officer/DetectionSensor", "LevelGeometry/Patrols/Officer2/DetectionSensor", "LevelGeometry/Patrols/CityVan/DetectionSensor", "LevelGeometry/Patrols/RoadClosure/ClosureVan/DetectionSensor"]
 const TYPES: Array[String] = ["police_long", "police_round", "guard_alt"]
 var checks := 0
@@ -42,7 +43,10 @@ func _run() -> void:
 	check(look.resolved_character() == "police_long", "NPC passes explicit drawing to CharacterSprite")
 	check(npc.character == "police" and npc.interaction_id == &"art09_presentation", "drawing keeps NPC character and interaction identity")
 	check(get_nodes_in_group(&"detection_sensors").size() == sensors_before, "appearance creates no observers")
-	check(look.sprite.texture.resource_path.ends_with("police_long_front_idle.svg"), "NPC displays the selected drawing")
+	if Uniform.civilians_enabled():
+		check(look.uses_uniform_3d() and look.sprite == null and look.uniform_visual.model.get_meta("drawing", "") == "police_long", "NPC displays the selected 3D drawing on the real consumer")
+	else:
+		check(look.sprite.texture.resource_path.ends_with("police_long_front_idle.svg"), "NPC displays the selected drawing")
 	npc.queue_free()
 	await process_frame
 	for drawing in TYPES:
@@ -54,22 +58,62 @@ func _run() -> void:
 		sprite.appearance = drawing
 		actor.add_child(sprite)
 		check(sprite.resolved_character() == drawing, drawing + " resolves independently from base character")
-		for view in [&"front", &"back", &"side"]:
-			check(sprite._idle[view] != null and sprite._walk[view].size() == 4, "%s has %s idle and all four walk frames" % [drawing, view])
-			for texture in sprite._walk[view]:
-				check(texture.get_height() == sprite._idle[view].get_height() and texture.get_width() == sprite._idle[view].get_width(), "%s %s walk keeps canvas dimensions" % [drawing, view])
-		for sample in [[Vector3(0, 1.5, -6), &"front"], [Vector3(0, 1.5, 6), &"back"], [Vector3(6, 1.5, 0), &"side"]]:
+		var reference: CharacterSprite = null
+		var initial_mesh: MeshInstance3D = null
+		var initial_basis := Basis.IDENTITY
+		var initial_view: StringName = sprite.view
+		if Uniform.civilians_enabled():
+			check(sprite.uses_uniform_3d() and sprite.sprite == null and sprite._idle.is_empty() and sprite._walk.is_empty(), drawing + " selects 3D before loading SVG banks")
+			var visual: Node = sprite.uniform_visual
+			var skeleton: Skeleton3D = visual.skeleton
+			initial_mesh = visual.uniform_mesh
+			initial_basis = initial_mesh.global_basis
+			check(visual.model.get_meta("drawing", "") == drawing and visual.model.get_meta("forward_axis", "") == "-Z", drawing + " model preserves its selected drawing and authored facing")
+			check(skeleton.get_bone_count() == 14 and initial_mesh.mesh is ArrayMesh and initial_mesh.skin != null and initial_mesh.skin.get_bind_count() == 14, drawing + " provides a real skinned 14-bone rig")
+			check(initial_mesh.mesh.get_aabb().size.z > 0.1 and initial_mesh.mesh.get_aabb().size.x > 0.2, drawing + " has volume in depth and width")
+			check(_rest_pose(skeleton), drawing + " begins at authored rest")
+			check(sprite.find_children("*", "CollisionObject3D", true, false).is_empty() and get_nodes_in_group(&"detection_sensors").size() == sensors_before, drawing + " presentation adds no physics body or observer")
+			reference = SpriteScript.new()
+			reference.character = "police"
+			reference.appearance = drawing
+			reference.position = actor.position + Vector3(3, 0, 0)
+			world.add_child(reference)
+			check(reference.uniform_visual.skeleton != skeleton and reference.uniform_visual.uniform_mesh.mesh == initial_mesh.mesh, drawing + " shares mesh while keeping its own live bones")
+		else:
+			for view in [&"front", &"back", &"side"]:
+				check(sprite._idle[view] != null and sprite._walk[view].size() == 4, "%s has %s idle and all four walk frames" % [drawing, view])
+				for texture in sprite._walk[view]:
+					check(texture.get_height() == sprite._idle[view].get_height() and texture.get_width() == sprite._idle[view].get_width(), "%s %s walk keeps canvas dimensions" % [drawing, view])
+		for sample in [[Vector3(0, 1.5, -6), &"front", 1.0], [Vector3(0, 1.5, 6), &"back", -1.0], [Vector3(6, 1.5, 0), &"side", 0.0]]:
 			camera.position = actor.position + sample[0]
 			camera.look_at(actor.position + Vector3(0, 1, 0))
 			await process_frame
 			await process_frame
-			check(sprite.view == sample[1], "%s camera selects %s" % [drawing, sample[1]])
+			if Uniform.civilians_enabled():
+				var forward: Vector3 = -sprite.uniform_visual.model.global_basis.z
+				forward.y = 0.0
+				var to_camera := camera.global_position - sprite.global_position
+				to_camera.y = 0.0
+				check(absf(forward.normalized().dot(to_camera.normalized()) - float(sample[2])) < 0.001, "%s camera physically observes authored %s facing" % [drawing, sample[1]])
+				check(sprite.view == initial_view and sprite.uniform_visual.uniform_mesh == initial_mesh and initial_mesh.global_basis.is_equal_approx(initial_basis) and sprite.find_children("*", "Sprite3D", true, false).is_empty(), "%s %s observation keeps the same fixed 3D rig without billboard/view switching" % [drawing, sample[1]])
+			else:
+				check(sprite.view == sample[1], "%s camera selects %s" % [drawing, sample[1]])
 		var seen := {}
+		var bent_leg := false
 		for step in 24:
 			actor.position.x += 0.08
 			await physics_frame
 			if sprite.frame >= 0: seen[sprite.frame] = true
+			if Uniform.civilians_enabled():
+				var skeleton: Skeleton3D = sprite.uniform_visual.skeleton
+				bent_leg = bent_leg or skeleton.get_bone_pose_rotation(skeleton.find_bone("leg_l")).angle_to(Quaternion.IDENTITY) > 0.02
 		check(seen.size() == 4, drawing + " walks through all four frames")
+		if Uniform.civilians_enabled():
+			check(bent_leg, drawing + " real parent movement animates a skinned leg")
+			check(_rest_pose(reference.uniform_visual.skeleton), drawing + " walking does not mutate a stationary same-kind rig")
+			for frame in 3: await physics_frame
+			check(sprite.frame == -1 and _rest_pose(sprite.uniform_visual.skeleton), drawing + " arrival restores the authored rest pose")
+			reference.queue_free()
 		actor.queue_free()
 		await process_frame
 	var plain: CharacterSprite = SpriteScript.new()
@@ -103,11 +147,26 @@ func _run() -> void:
 	for audio in main.find_children("*", "AudioStreamPlayer", true, false) + main.find_children("*", "AudioStreamPlayer3D", true, false):
 		audio.stop()
 	main.queue_free()
-	for i in 5: await physics_frame
+	main = null
+	world = null
+	look = null
+	camera = null
+	npc = null
+	for i in 5:
+		await physics_frame
+		await process_frame
 	OS.delay_msec(100)
 	await process_frame
 	print("ART09: %d checks, %d failures" % [checks, failures])
 	quit(0 if failures == 0 else 1)
+
+func _rest_pose(skeleton: Skeleton3D) -> bool:
+	for bone in skeleton.get_bone_count():
+		if skeleton.get_bone_pose_position(bone).distance_to(skeleton.get_bone_rest(bone).origin) > 0.00001:
+			return false
+		if skeleton.get_bone_pose_rotation(bone).angle_to(Quaternion.IDENTITY) > 0.00001:
+			return false
+	return true
 
 func _live_world(world: DemoWorld, label: String) -> Array[String]:
 	var patrols: Node = world.get_node("LevelGeometry/Patrols")

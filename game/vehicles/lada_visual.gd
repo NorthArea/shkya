@@ -14,11 +14,6 @@ const WHITE := Color(0.86, 0.85, 0.80)
 const BEIGE := Color(0.84, 0.79, 0.68)
 const PLAYER_MODEL := &"vaz2106"
 
-static func set_indicators(visual: Node3D, on: bool) -> void:
-	var material := visual.get_meta("indicator_material", null) as StandardMaterial3D
-	if material:
-		material.emission_energy_multiplier = 4.0 if on else 0.0
-
 ## Огни (POLISH-02, п. 8): без водителя фары погашены, задние тусклые; с водителем горят; при торможении ярче.
 enum Lights { OFF, ON, BRAKE }
 const TAIL_ENERGY := [0.25, 1.2, 4.0]
@@ -131,6 +126,11 @@ static func build(paint := BEIGE, plate := PLATE, player := true, rust := 0.8, s
 		set_lights(root, Lights.OFF)
 	return root
 
+static func set_indicators(visual: Node3D, on: bool) -> void:
+	var material := visual.get_meta("indicator_material", null) as StandardMaterial3D
+	if material:
+		material.emission_energy_multiplier = 4.0 if on else 0.0
+
 ## Огни «Лады»: фары с лучами, задние фонари по режиму Lights; выхлоп — пока работает мотор (огни горят).
 static func set_lights(visual: Node3D, mode: int) -> void:
 	var on := mode != Lights.OFF
@@ -194,6 +194,8 @@ static func wheel_spots(model: StringName) -> Array[Vector3]:
 ## Общие меши седана: body (кузов и детали по слотам), glass, interior.
 static func sedan_meshes(model: StringName) -> Dictionary:
 	var key := "sedan_" + String(model)
+	if LadaDriver.uses_3d():
+		key += "_3d_occupants"
 	var found: Variant = VehicleMesh.cached(key)
 	if found != null:
 		return found
@@ -315,8 +317,12 @@ static func _cabin(b: VehicleMesh.Builder, spec: Dictionary) -> void:
 	var rb: Vector2 = rear[0]
 	var belt: float = spec["belt"]
 	var gw: float = spec["glass_w"]
-	var y := belt + 0.007
+	var occupants_3d := LadaDriver.uses_3d()
+	var y := LadaDriver.LADA_FLOOR - 0.002 if occupants_3d else belt + 0.007
 	b.box("dark", Vector3(gw * 2.0 - 0.04, 0.004, rb.y - wsb.y - 0.02), Vector3(0, y, (wsb.y + rb.y) * 0.5))
+	if occupants_3d:
+		b.rbox("cloth", Vector3(0.50, 0.12, 0.50), Vector3(-0.345, 0.34, -0.10), 0.04)
+		b.rbox("cloth", Vector3(0.48, 0.42, 0.08), Vector3(-0.345, 0.60, 0.12), 0.03, Basis(Vector3.RIGHT, -0.10))
 	b.rbox("dark", Vector3(gw * 2.0 - 0.1, 0.12, 0.3), Vector3(0, belt + 0.06, wsb.y + 0.13), 0.04)
 	# Руль: обод трубками, наклон к водителю, колонка к торпедо.
 	var center := Vector3(-0.36, belt + 0.13, wsb.y + 0.3)

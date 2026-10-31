@@ -1,7 +1,7 @@
 extends Node3D
 ## Люди в троллейбусе № 13 (TROLLEY-01, решение владельца 30.10: «действующий — с водителем и пассажирами, обычными
 ## горожанами»). Узел — ребёнок Body троллейбуса, оси транспорта: перед −Z, двери справа (+X), начало на земле.
-## Все — плоские облики жителей (CharacterSprite через LadaDriver: без тени и шагов), без тел и коллизий (C2), вне
+## Все — облики жителей (CharacterSprite через LadaDriver: без тени и шагов), без тел и коллизий (C2), вне
 ## стелса (C7) и сбивания (KNOCK-01): сбить можно только вышедшего наружу жителя. Облики — только Layout.RESIDENT_LOOKS.
 ## Водитель — слева за рулём, на стоянке поворачивает голову к дверям. Пассажиры сидят на местах SLOTS: фоновые
 ## (BACKGROUND) едут всё время, жители LIFE-01 в поездке (Resident: hidden и state &"ride") занимают места тем же
@@ -11,6 +11,9 @@ extends Node3D
 
 const Layout = preload("res://game/world/layout.gd")
 const OccupantScript = preload("res://game/vehicles/lada_driver.gd")
+const Uniform = preload("res://game/characters/uniform_visual.gd")
+const Catalog = preload("res://game/characters/character_catalog.gd")
+const INTERIOR_FLOOR_3D := 0.80
 const ART_DIR := "res://assets/art/characters/"
 
 const CANVAS_M := 2.0              # высота холста облика жителя (Residents.SILHOUETTES)
@@ -39,7 +42,12 @@ var _owner := {}                   # индекс места → Resident или
 var _rider_slot := {}              # Resident → индекс места
 var _turn := 0.0
 
+static func uses_3d() -> bool:
+	return Uniform.civilians_enabled()
+
 static func character_for(look: StringName) -> String:
+	if Uniform.civilians_enabled():
+		return Catalog.resident_character(look)
 	var art := "resident_%s" % look
 	return art if ResourceLoader.exists("%s%s_front_idle.svg" % [ART_DIR, art]) else "vendor"
 
@@ -47,7 +55,7 @@ func _init() -> void:
 	name = "Passengers"
 
 func _ready() -> void:
-	driver = _occupant(character_for(DRIVER_LOOK), CANVAS_M)
+	driver = _occupant(character_for(DRIVER_LOOK), CANVAS_M, &"trolley_driver")
 	driver.name = "Driver"
 	driver.position = DRIVER_AT
 	add_child(driver)
@@ -133,7 +141,7 @@ func _bg_slot_to_take() -> int:
 
 func _take(slot: int, who: Variant, character: String, height: float) -> void:
 	var spec: Array = SLOTS[slot]
-	var node := _occupant(character, height)
+	var node := _occupant(character, height, &"trolley_standing" if spec[2] else &"trolley_seated")
 	node.name = "Seat%d" % slot
 	node.position = Vector3(spec[0], STAND_FEET if spec[2] else SEAT_FEET, spec[1])
 	# Сидят лицом вперёд; стоящий — вполоборота к проходу.
@@ -151,13 +159,14 @@ func _free_slot(slot: int) -> void:
 	remove_child(node)
 	node.queue_free()
 
-func _occupant(character: String, height: float) -> Node3D:
+func _occupant(character: String, height: float, profile: StringName) -> Node3D:
 	var node: Node3D = OccupantScript.new()
+	node.occupant_profile = profile
+	node.occupant_floor_y = INTERIOR_FLOOR_3D
 	node.character = character
 	node.height_m = height
 	node.ready.connect(_lod.bind(node), CONNECT_ONE_SHOT)
 	return node
 
 func _lod(node: Node3D) -> void:
-	node.sprite.visibility_range_end = LOD_RANGE
-	node.sprite.visibility_range_end_margin = 4.0
+	node.set_lod(LOD_RANGE)

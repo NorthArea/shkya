@@ -344,6 +344,8 @@ static func style_button(button: Button, primary: bool) -> void:
 ## Область — в единицах холста 400×600 (текстура в 2 раза крупнее).
 ## Илюша — голова с хохолком (HEAD_FRONT 86…302 по высоте, хохолок на 44 в tools/generate_characters.py).
 ## Полицейский и «военком» — рисунки исполнителя N (EXT-01); пока их нет, рисуется подложка без портрета.
+const UniformPortrait = preload("res://game/characters/uniform_visual.gd")
+const PortraitCatalog = preload("res://game/characters/character_catalog.gd")
 const PORTRAIT_REGION := {
 	&"babka": Rect2(85, 50, 230, 230),
 	&"vendor": Rect2(90, 56, 220, 220),
@@ -355,13 +357,31 @@ const PORTRAIT_REGION := {
 ## (&"account_officer") — как officer_* (имена генератора EXT-01 N). Приёмка EXT-01, P2 4–5.
 const PORTRAIT_FILE := {&"officer": "police", &"account_officer": "officer"}
 
+static var _portrait_textures_3d: Dictionary = {}
+
+static func portrait_source_path(kind: StringName) -> String:
+	if UniformPortrait.civilians_enabled():
+		return PortraitCatalog.portrait_path(kind)
+	return "res://assets/art/characters/%s_front_idle.svg" % PORTRAIT_FILE.get(kind, kind)
+
 func _draw_portrait() -> void:
 	var rect := Rect2(Vector2.ZERO, portrait.size)
 	portrait.draw_rect(rect, PAPER_DARK)
-	var path := "res://assets/art/characters/%s_front_idle.svg" % PORTRAIT_FILE.get(_portrait_kind, _portrait_kind)
-	var region: Rect2 = PORTRAIT_REGION.get(_portrait_kind, PORTRAIT_REGION[&"babka"])
-	if ResourceLoader.exists(path):
-		var texture: Texture2D = load(path)
-		var scale := texture.get_width() / 400.0
-		portrait.draw_texture_rect_region(texture, rect, Rect2(region.position * scale, region.size * scale))
+	var path := portrait_source_path(_portrait_kind)
+	if UniformPortrait.civilians_enabled():
+		if not _portrait_textures_3d.has(path) and not path.is_empty() and ResourceLoader.exists(path):
+			_portrait_textures_3d[path] = load(path)
+		var texture_3d: Texture2D = _portrait_textures_3d.get(path)
+		if texture_3d != null:
+			portrait.draw_texture_rect(texture_3d, rect, false)
+		else:
+			# Explicit neutral placeholder until the native same-model PNG pack is imported.
+			portrait.draw_circle(rect.size * Vector2(0.5, 0.36), rect.size.x * 0.17, Color(0.48, 0.46, 0.41))
+			portrait.draw_circle(rect.size * Vector2(0.5, 1.0), rect.size.x * 0.34, Color(0.48, 0.46, 0.41))
+	else:
+		var region: Rect2 = PORTRAIT_REGION.get(_portrait_kind, PORTRAIT_REGION[&"babka"])
+		if ResourceLoader.exists(path):
+			var texture: Texture2D = load(path)
+			var scale := texture.get_width() / 400.0
+			portrait.draw_texture_rect_region(texture, rect, Rect2(region.position * scale, region.size * scale))
 	portrait.draw_rect(rect, INK, false, 3.0)

@@ -172,6 +172,8 @@ static func voice_for(look: StringName) -> StringName:
 
 ## Облик силуэта: рисунок части A, если включён и есть на диске, иначе заглушка.
 static func character_for(look: StringName) -> String:
+	if preload("res://game/characters/uniform_visual.gd").civilians_enabled():
+		return preload("res://game/characters/character_catalog.gd").resident_character(look)
 	var art := "resident_%s" % look
 	if USE_RESIDENT_ART and ResourceLoader.exists("%s%s_front_idle.svg" % [ART_DIR, art]):
 		return art

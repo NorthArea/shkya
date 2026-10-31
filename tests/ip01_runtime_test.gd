@@ -168,7 +168,10 @@ func run() -> void:
 		fallback.appearance = spec[1]
 		spare_actor.add_child(fallback)
 		await frames(1)
-		check(fallback.sprite != null and not fallback.uses_uniform_3d() and fallback.resolved_character() == spec[1], "unconverted approved variant retains its own SVG: " + spec[1])
+		if Uniform.civilians_enabled():
+			check(fallback.sprite == null and fallback.uses_uniform_3d() and fallback.resolved_character() == spec[1] and fallback.uniform_visual.model.get_meta("drawing", "") == spec[1], "converted approved variant retains its own model identity: " + spec[1])
+		else:
+			check(fallback.sprite != null and not fallback.uses_uniform_3d() and fallback.resolved_character() == spec[1], "unconverted approved variant retains its own SVG: " + spec[1])
 	for actor: Node3D in [officer, guard]:
 		check(actor.sensor.get_instance_id() == identities[actor.name].sensor and actor.get_node("Body").get_instance_id() == identities[actor.name].body, actor.name + " keeps same original sensor/body across visual lifecycle")
 		check(actor.sensor.visibility() == 0.0 and actor.sensor.range_m == 14.0, actor.name + " visual tests do not change detection gameplay")

@@ -1,13 +1,13 @@
 class_name CharacterSprite
 extends Node3D
-## Character appearance: original SVGs, with IP-01 skinned police/guard behind --uniform3d.
+## Appearance adapter: skinned uniforms plus opt-in original City N civilians.
 ## Ракурс — по углу между взглядом персонажа (-Z родителя) и камерой: front, back или side
 ## (side нарисован лицом вправо, второй бок — зеркало). Кадры ходьбы — по пройденному пути.
 ## Рисунки: assets/art/characters/<character>_<view>_<idle|walkN>.svg (tools/generate_characters.py).
 
 const DIR := "res://assets/art/characters/"
 const UniformVisual = preload("res://game/characters/uniform_visual.gd")
-static var _uniform_height_ratios: Dictionary = {}
+const Catalog = preload("res://game/characters/character_catalog.gd")
 const CANVAS_HEIGHT := 600.0  # условные единицы холста; ноги стоят на 590
 const FEET_Y := 590.0
 const FRONT_DOT := 0.55       # cos ≈ 57°: ближе к оси — лицом или спиной, иначе бок
@@ -42,6 +42,13 @@ func resolved_character() -> String:
 
 func _ready() -> void:
 	var drawing := resolved_character()
+	if UniformVisual.use_for(drawing):
+		uniform_visual = UniformVisual.new()
+		uniform_visual.name = "UniformVisual"
+		uniform_visual.configure(drawing, _model_visible_height(drawing), tint)
+		add_child(uniform_visual)
+		add_child(_shadow())
+		return
 	for v in [&"front", &"back", &"side"]:
 		_idle[v] = load("%s%s_%s_idle.svg" % [DIR, drawing, v])
 		var frames: Array[Texture2D] = []
@@ -51,13 +58,6 @@ func _ready() -> void:
 				frames.append(load(path))
 		_walk[v] = frames
 	var texture: Texture2D = _idle[&"front"]
-	if UniformVisual.enabled() and UniformVisual.supports(drawing):
-		uniform_visual = UniformVisual.new()
-		uniform_visual.name = "UniformVisual"
-		uniform_visual.configure(drawing, height_m * _uniform_height_ratio(drawing, texture), tint)
-		add_child(uniform_visual)
-		add_child(_shadow())
-		return
 	sprite = Sprite3D.new()
 	sprite.name = "Sprite"
 	sprite.texture = texture
@@ -132,13 +132,8 @@ func _physics_process(delta: float) -> void:
 	if uniform_visual != null:
 		uniform_visual.update_walk(_distance, frame >= 0, delta, walk_stride)
 
-func _uniform_height_ratio(drawing: String, texture: Texture2D) -> float:
-	if not _uniform_height_ratios.has(drawing):
-		var image := texture.get_image()
-		if image.is_compressed():
-			image.decompress()
-		_uniform_height_ratios[drawing] = float(image.get_used_rect().size.y) / float(image.get_height())
-	return _uniform_height_ratios[drawing]
+func _model_visible_height(drawing: String) -> float:
+	return height_m * Catalog.visible_height_ratio(drawing)
 
 func uses_uniform_3d() -> bool:
 	return uniform_visual != null

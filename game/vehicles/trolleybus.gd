@@ -202,8 +202,34 @@ static func _free_spans(right: bool) -> Array:
 		spans = next
 	return spans
 
+## The old closed lower-body loft had a full-width lid at the window sill.
+## Keep the exact outer section vertices/arches and both end caps, but leave the
+## passenger volume open above the floor instead of spanning it with green paint.
+func _lower_hull_shell(builder: VehicleMesh.Builder, interior: VehicleMesh.Builder, stations: Array) -> void:
+	var rows: Array = []
+	var closed_rings: Array[PackedVector3Array] = []
+	var refs := PackedVector3Array()
+	for station: Array in stations:
+		var ring := builder.section(station[0], station[1], station[2], station[3], station[4], station[5], station[6])
+		closed_rings.append(ring)
+		# section starts at the bottom centre; its opposite centre is the sole
+		# top-centre point. Start after it and stop before it, leaving no top span.
+		var top_centre := int(ring.size() / 2.0)
+		var path := PackedVector3Array()
+		for offset in ring.size() - 1:
+			path.append(ring[(top_centre + 1 + offset) % ring.size()])
+		rows.append(path)
+		refs.append(Vector3(0.0, (float(station[1]) + float(station[2])) * 0.5, station[0]))
+	builder.grid("paint", rows, false, refs)
+	builder.cap("paint", closed_rings[0], Vector3.FORWARD)
+	builder.cap("paint", closed_rings[-1], Vector3.BACK)
+	interior.cap("dark", closed_rings[0], Vector3.BACK)
+	interior.cap("dark", closed_rings[-1], Vector3.FORWARD)
+
 func _meshes() -> Dictionary:
-	var found: Variant = VehicleMesh.cached("trolleybus")
+	var occupants_3d := CabinScript.uses_3d()
+	var cache_key := "trolleybus_3d_occupants" if occupants_3d else "trolleybus"
+	var found: Variant = VehicleMesh.cached(cache_key)
 	if found != null:
 		return found
 	var b := VehicleMesh.Builder.new()
@@ -215,8 +241,12 @@ func _meshes() -> Dictionary:
 	var r := 0.5
 	var arch := r + 0.1
 	# Низ кузова до окон: углы в плане скруглены, арки колёс; крыша — скруглённые рёбра, светлая.
-	b.loft("paint", VehicleMesh.hull_stations(hl * 2.0, hw, [[-hl, SILL], [hl, SILL]], [[-hl, 0.42], [-hl + 0.25, 0.36], [hl - 0.25, 0.36], [hl, 0.42]],
-		AXLES, r, arch, 0.3, 0.3, 0.0, 0.08, 0.02, 0.2))
+	var lower_stations := VehicleMesh.hull_stations(hl * 2.0, hw, [[-hl, SILL], [hl, SILL]], [[-hl, 0.42], [-hl + 0.25, 0.36], [hl - 0.25, 0.36], [hl, 0.42]],
+		AXLES, r, arch, 0.3, 0.3, 0.0, 0.08, 0.02, 0.2)
+	if occupants_3d:
+		_lower_hull_shell(b, cabin, lower_stations)
+	else:
+		b.loft("paint", lower_stations)
 	b.loft("paint", VehicleMesh.hull_stations(hl * 2.0, hw, [[-hl, 3.18], [-hl + 0.12, 3.33], [hl - 0.12, 3.33], [hl, 3.2]], [[-hl, EAVE], [hl, EAVE]],
 		[], 0.0, 0.0, 0.3, 0.3, 0.03, 0.01, 0.24, 0.3))
 	# Оконный пояс: угловые стойки, простенки между окнами, стёкла в резинках.
@@ -292,8 +322,12 @@ func _meshes() -> Dictionary:
 		b.rbox("trim", Vector3(0.08, 0.06, 0.3), to, 0.02)
 		b.tube("dark", to + Vector3(0, -0.03, 0), Vector3(from.x * 2.0, 3.2, hl + 0.02), 0.006, 3)   # канат ловителя
 	# Салон: пол, потолок с плафонами, сиденья вдоль бортов, поручни, кабина водителя.
-	cabin.box("dark", Vector3(hw * 2.0 - 0.1, 0.01, hl * 2.0 - 0.4), Vector3(0, SILL + 0.006, 0))
+	var cabin_floor := CabinScript.INTERIOR_FLOOR_3D if occupants_3d else SILL + 0.006
+	cabin.box("dark", Vector3(hw * 2.0 - 0.1, 0.01, hl * 2.0 - 0.4), Vector3(0, cabin_floor - (0.005 if occupants_3d else 0.0), 0))
 	cabin.box("ceiling", Vector3(hw * 2.0 - 0.1, 0.01, hl * 2.0 - 0.4), Vector3(0, EAVE - 0.006, 0))
+	if occupants_3d:
+		for side: float in [-1.0, 1.0]:
+			cabin.box("dark", Vector3(0.035, SILL - cabin_floor, hl * 2.0 - 0.5), Vector3(side * (hw - 0.05), (cabin_floor + SILL) * 0.5, 0))
 	for s in [-1.0, 1.0]:
 		cabin.box("glow", Vector3(0.12, 0.02, hl * 2.0 - 1.4), Vector3(s * 0.55, EAVE - 0.02, 0.2))
 		cabin.tube("pole", Vector3(s * 0.55, 2.72, -4.5), Vector3(s * 0.55, 2.72, hl - 0.4), 0.02, 6)
@@ -306,7 +340,10 @@ func _meshes() -> Dictionary:
 					if absf(z - float(door[0])) < float(door[1]) * 0.5 + 0.45:
 						blocked = true
 			if not blocked:
-				cabin.rbox("seat_red", Vector3(0.86, 0.42, 0.07), Vector3(s * 0.72, SILL + 0.16, z + 0.2), 0.03, Basis(Vector3.RIGHT, -0.12))
+				var back_y := 1.45 if occupants_3d else SILL + 0.16
+				cabin.rbox("seat_red", Vector3(0.86, 0.42, 0.07), Vector3(s * 0.72, back_y, z + 0.2), 0.03, Basis(Vector3.RIGHT, -0.12))
+				if occupants_3d:
+					cabin.rbox("seat_red", Vector3(0.78, 0.10, 0.42), Vector3(s * 0.72, 1.18, z - 0.01), 0.03)
 		z += 0.85
 	for door in DOORS:
 		for dz in [-0.5, 0.5]:
@@ -330,7 +367,7 @@ func _meshes() -> Dictionary:
 		"interior": VehicleMesh.finish(cabin, {"glow": VehicleMesh.cabin_glow(1.6)}),
 		"snow": VehicleMesh.finish(snow),
 	}
-	return VehicleMesh.store("trolleybus", meshes)
+	return VehicleMesh.store(cache_key, meshes)
 
 ## Закрытая дверь: две остеклённые створки в чёрных рамах на тёмной подложке; начало — середина проёма у борта.
 func _door_mesh(width: float) -> ArrayMesh:

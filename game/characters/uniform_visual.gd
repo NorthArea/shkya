@@ -1,7 +1,9 @@
 extends Node3D
-## Visual-only adapter for the two approved uniforms. Feet=0, local forward=-Z.
+## Visual-only skinned adapter. Feet=0, local forward=-Z; no gameplay bodies.
 const PoliceModel = preload("res://game/characters/models/police_model.gd")
 const GuardModel = preload("res://game/characters/models/guard_model.gd")
+const CivilianModel = preload("res://game/characters/models/civilian_model.gd")
+const CIVILIANS_ENABLED_BY_DEFAULT := true
 const ENABLED_BY_DEFAULT := true
 const EMISSION_FLOOR := 0.12
 const CLOTH_EMISSION_FLOOR := 0.18
@@ -30,15 +32,30 @@ static func enabled() -> bool:
 	return ENABLED_BY_DEFAULT or "--uniform3d" in OS.get_cmdline_user_args() or "--uniform3d" in OS.get_cmdline_args()
 
 static func supports(drawing: String) -> bool:
-	return drawing == "police" or drawing == "guard"
+	return drawing == "police" or drawing == "guard" or CivilianModel.supports(drawing)
+
+static func civilians_enabled() -> bool:
+	return CIVILIANS_ENABLED_BY_DEFAULT or "--civilian3d" in OS.get_cmdline_user_args() or "--civilian3d" in OS.get_cmdline_args()
+
+static func use_for(drawing: String) -> bool:
+	if drawing == "police" or drawing == "guard":
+		return enabled()
+	return civilians_enabled() and CivilianModel.supports(drawing)
 
 func configure(drawing: String, height: float, color: Color) -> void:
 	_kind = drawing
 	visible_height = height
-	model = PoliceModel.new().build_model() if drawing == "police" else GuardModel.new().build_model()
+	if drawing == "police":
+		model = PoliceModel.new().build_model()
+	elif drawing == "guard":
+		model = GuardModel.new().build_model()
+	else:
+		model = CivilianModel.new().build_model(drawing)
 	model.scale = Vector3.ONE * height
 	add_child(model)
 	skeleton = model.get_node("Skeleton3D") as Skeleton3D
+	# Non-animated consumers need the authored bind pose before their first frame.
+	skeleton.reset_bone_poses()
 	uniform_mesh = skeleton.get_node("UniformMesh") as MeshInstance3D
 	uniform_mesh.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON
 	var key := drawing + ":" + color.to_html()
@@ -91,7 +108,7 @@ func update_walk(distance: float, walking: bool, delta: float, stride: float) ->
 	_rotate("foot_l", Vector3.RIGHT, -step * 0.09)
 	_rotate("foot_r", Vector3.RIGHT, step * 0.09)
 	_rotate("spine", Vector3.UP, step * 0.022)
-	if _kind == "guard":
+	if _kind == "guard" or (_kind not in ["police", "police_long", "police_round", "guard_alt"]):
 		_rotate("upper_arm_l", Vector3.RIGHT, -step * 0.13)
 		_rotate("upper_arm_r", Vector3.RIGHT, step * 0.13)
 	var hips := skeleton.find_bone("hips")
@@ -126,3 +143,71 @@ func build_xray() -> MeshInstance3D:
 	result.visible = false
 	skeleton.add_child(result)
 	return result
+
+## Occupants retain fresh skeletons while sharing immutable mesh/material resources.
+## Lada uses a full model scaled to its cabin, never the legacy cropped-canvas height.
+func set_occupant_pose(profile: StringName) -> void:
+	reset_pose()
+	if profile == &"trolley_standing":
+		_rotate("upper_arm_r", Vector3.RIGHT, 1.70)
+		_rotate("lower_arm_r", Vector3.RIGHT, 0.40)
+		skeleton.force_update_all_bone_transforms()
+		return
+	for suffix: String in ["_l", "_r"]:
+		_rotate("leg" + suffix, Vector3.RIGHT, 1.35)
+		_rotate("foot" + suffix, Vector3.RIGHT, -1.35)
+		_rotate("upper_arm" + suffix, Vector3.RIGHT, 0.95 if profile in [&"lada", &"trolley_driver"] else 0.30)
+		_rotate("lower_arm" + suffix, Vector3.RIGHT, 0.55)
+	skeleton.force_update_all_bone_transforms()
+
+func set_lod(distance: float, margin: float = 4.0) -> void:
+	uniform_mesh.visibility_range_end = distance
+	uniform_mesh.visibility_range_end_margin = margin
+
+## Height of the posed sole above this visual's origin. The two-segment occupant
+## rig uses leg + foot as thigh/shin, and opposing bends keep soles horizontal.
+func occupant_sole_height() -> float:
+	var lowest := INF
+	for suffix: String in ["_l", "_r"]:
+		var bone := skeleton.find_bone("foot" + suffix)
+		var authored_rest := skeleton.get_bone_global_rest(bone)
+		var point := Vector3(authored_rest.origin.x, 0.0, authored_rest.origin.z)
+		var posed := skeleton.get_bone_global_pose(bone) * authored_rest.affine_inverse() * point
+		lowest = minf(lowest, posed.y * visible_height)
+	return lowest
+
+## Two-bone arm reach in normalized model coordinates. Targets are authored by
+## the vehicle consumer; no gameplay transforms or cached mesh resources change.
+func reach_hands(left_target: Vector3, right_target: Vector3) -> void:
+	_reach_hand("_l", left_target)
+	_reach_hand("_r", right_target)
+	skeleton.force_update_all_bone_transforms()
+
+func _reach_hand(suffix: String, target: Vector3) -> void:
+	var upper := skeleton.find_bone("upper_arm" + suffix)
+	var lower := skeleton.find_bone("lower_arm" + suffix)
+	var hand := skeleton.find_bone("hand" + suffix)
+	var shoulder := skeleton.get_bone_global_rest(upper).origin
+	var upper_rest := skeleton.get_bone_rest(lower).origin
+	var lower_rest := skeleton.get_bone_rest(hand).origin
+	var upper_length := upper_rest.length()
+	var lower_length := lower_rest.length()
+	# The authored hand's visible centre is below its joint; solve once more
+	# after rotating that offset so the grip targets the palm, not the wrist.
+	var palm_offset := Vector3(0, -0.034, -0.008)
+	var wrist := target
+	for iteration in 3:
+		var reach := wrist - shoulder
+		var distance := clampf(reach.length(), absf(upper_length - lower_length) + 0.0001, upper_length + lower_length - 0.0001)
+		var toward := reach.normalized()
+		var bend := Vector3.DOWN - toward * Vector3.DOWN.dot(toward)
+		if bend.length_squared() < 0.0001:
+			bend = Vector3.FORWARD
+		bend = bend.normalized()
+		var along := (distance * distance + upper_length * upper_length - lower_length * lower_length) / (2.0 * distance)
+		var elbow := shoulder + toward * along + bend * sqrt(maxf(0.0, upper_length * upper_length - along * along))
+		var upper_rotation := Quaternion(upper_rest.normalized(), (elbow - shoulder).normalized())
+		var lower_rotation := Quaternion(lower_rest.normalized(), (shoulder + toward * distance - elbow).normalized())
+		skeleton.set_bone_pose_rotation(upper, upper_rotation)
+		skeleton.set_bone_pose_rotation(lower, upper_rotation.inverse() * lower_rotation)
+		wrist = target - lower_rotation * palm_offset

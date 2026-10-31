@@ -55,6 +55,8 @@ test: map
 	$(call godot_test,art01_sprite,120,ART01)
 	$(call godot_test,art09_test,60,ART09)
 	$(call godot_test,ip01_runtime_test,60,IP01_INDEPENDENT_RUNTIME)
+	$(call godot_test,ip01_civilian_geometry_test,60,IP01_CIVILIAN_GEOMETRY)
+	$(call godot_test,ip01_civilian_runtime_test,60,IP01_CIVILIAN_RUNTIME)
 	$(call godot_test,ip01_xray_test,60,IP01_INDEPENDENT_XRAY,,render)
 	$(call godot_test,demo_acceptance,60,DEMO_ACCEPTANCE)
 	$(call godot_test,stealth_test,60,STEALTH)

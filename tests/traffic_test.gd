@@ -17,6 +17,7 @@ extends SceneTree
 const Layout = preload("res://game/world/layout.gd")
 const Driver = preload("res://tests/playthrough_driver.gd")
 const TrafficScript = preload("res://game/world/traffic.gd")
+const Uniform = preload("res://game/characters/uniform_visual.gd")
 
 var failures: Array[String] = []
 var checks := 0
@@ -95,9 +96,10 @@ func _part_people() -> void:
 	if not check(people != null and people.driver != null, "trolleybus has Passengers with a driver"):
 		return
 	var driver: Node3D = people.driver
-	var head: Vector3 = driver.position + Vector3(0, 1.62, 0)   # центр головы мужика в ушанке (рост 1,8 м на холсте 2,0)
-	var top := _sprite_top(driver)
-	check(driver.visible and driver.sprite != null and driver.character.begins_with("resident_"), "driver: resident look %s, visible" % driver.character)
+	var head := _occupant_head(driver)
+	var top := _occupant_top(driver)
+	check(driver.visible and _occupant_renderable(driver) != null and driver.character.begins_with("resident_"), "driver: resident look %s, visible" % driver.character)
+	check(driver.uses_uniform_3d() == Uniform.civilians_enabled(), "driver selects the requested legacy/3D visual path")
 	check(top > Trolleybus.SILL + 0.4 and top < Trolleybus.EAVE - 0.05, "driver's head in the window band: head top %.2f m (%.2f–%.2f)" % [top, Trolleybus.SILL + 0.4, Trolleybus.EAVE - 0.05])
 	check(driver.position.x < -0.3 and driver.position.z < -4.6 and driver.position.z > -Trolleybus.HALF_LEN + 0.5, "driver sits left, behind the wheel (%s)" % driver.position)
 	# Лобовое: точка обзора спереди-слева на высоте глаз камеры.
@@ -120,7 +122,14 @@ func _part_people() -> void:
 			clear = clear and absf(hit.z - p) > 0.1
 		check(clear, "driver seen through the left side window from %s (crosses at y %.2f, z %.2f)" % [eye, hit.y, hit.z])
 	# Стенка за водителем и руль не на голове.
-	check(head.z < -4.6 and head.y > Trolleybus.SILL + 0.25 + 0.3, "driver's head clear of the partition (z −4.55) and the wheel (y %.2f)" % (Trolleybus.SILL + 0.25))
+	if driver.uses_uniform_3d():
+		var head_box := _occupant_model_bounds(driver, true)
+		# Actual wheel ring: radius .24, tilted Y axis (0,.87,-.5), tube .018.
+		# Check volume separation; the old guessed SVG face-centre Y is not a 3D bound.
+		var wheel_box := AABB(Vector3(-0.858, Trolleybus.SILL + 0.25 - 0.227, -5.488), Vector3(0.516, 0.454, 0.276))
+		check(head_box.end.z < -4.6 and not head_box.intersects(wheel_box), "driver's actual skinned head clears partition and original steering wheel")
+	else:
+		check(head.z < -4.6 and head.y > Trolleybus.SILL + 0.25 + 0.3, "driver's head clear of the partition (z −4.55) and the wheel (y %.2f)" % (Trolleybus.SILL + 0.25))
 	var shown: Array = people.shown()
 	check(shown.size() >= 3 and shown.size() <= 8, "passengers in the cabin: %d (3–8)" % shown.size())
 	var looks := {}
@@ -128,8 +137,9 @@ func _part_people() -> void:
 	var heads := true
 	for p in shown:
 		looks[p.character] = true
+		check(p.uses_uniform_3d() == Uniform.civilians_enabled(), p.name + " selects the requested legacy/3D visual path")
 		inside = inside and absf(p.position.x) < Trolleybus.HALF_W - 0.3 and absf(p.position.z) < Trolleybus.HALF_LEN - 0.6
-		var y := _sprite_top(p)
+		var y := _occupant_top(p)
 		heads = heads and y > Trolleybus.SILL + 0.35 and y < Trolleybus.EAVE - 0.05
 	check(looks.size() == shown.size(), "passengers all look different (%s)" % [looks.keys()])
 	var allowed := {}
@@ -142,13 +152,53 @@ func _part_people() -> void:
 	check(bodies == 0, "no bodies or collision shapes among the people (C2): %d" % bodies)
 	var lod := true
 	for p in shown + [driver]:
-		lod = lod and is_equal_approx(p.sprite.visibility_range_end, 60.0) and p.get_node_or_null("Shadow") == null
-	check(lod, "people sprites hidden beyond 60 m, no ground shadow blobs")
+		var renderable := _occupant_renderable(p)
+		lod = lod and renderable != null and is_equal_approx(renderable.visibility_range_end, 60.0) and p.get_node_or_null("Shadow") == null
+	check(lod, "people renderables hidden beyond 60 m, no ground shadow blobs")
 	check(not shown.any(func(p): return p.is_in_group(&"residents") or p.is_in_group(&"detection_sensors")), "people in the cabin are not residents and not stealth sensors")
 
-## Макушка облика в осях троллейбуса, м: самый высокий житель — 1,83 м на холсте 2,0 м (Residents.SILHOUETTES).
-func _sprite_top(p: Node3D) -> float:
-	return p.position.y + 1.83 * p.height_m / 2.0
+## Measured skinned silhouette for 3D, retaining the qualified legacy canvas bound.
+func _occupant_top(p: Node3D) -> float:
+	return _occupant_model_bounds(p).end.y if p.uses_uniform_3d() else p.position.y + 1.83 * p.height_m / 2.0
+
+func _occupant_head(p: Node3D) -> Vector3:
+	return _occupant_model_bounds(p, true).get_center() if p.uses_uniform_3d() else p.position + Vector3(0, 1.62, 0)
+
+func _occupant_renderable(p: Node3D) -> GeometryInstance3D:
+	return p.uniform_visual.uniform_mesh if p.uses_uniform_3d() else p.sprite
+
+## Real mesh deformation including Skin bind inverse, in the same cabin frame as
+## the windows/wheel. Selecting head vertices keeps arms/props out of sight rays.
+func _occupant_model_bounds(p: Node3D, head_only := false) -> AABB:
+	var visual: Node = p.uniform_visual
+	var skeleton: Skeleton3D = visual.skeleton
+	var instance: MeshInstance3D = visual.uniform_mesh
+	var cabin := p.get_parent() as Node3D
+	var minimum := Vector3.INF
+	var maximum := -Vector3.INF
+	for surface in instance.mesh.get_surface_count():
+		var arrays := instance.mesh.surface_get_arrays(surface)
+		var vertices: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
+		var bones: PackedInt32Array = arrays[Mesh.ARRAY_BONES]
+		var weights: PackedFloat32Array = arrays[Mesh.ARRAY_WEIGHTS]
+		for vertex in vertices.size():
+			var point := Vector3.ZERO
+			var is_head := false
+			for influence in 4:
+				var slot := vertex * 4 + influence
+				if weights[slot] <= 0.0:
+					continue
+				var bind := bones[slot]
+				var bone := instance.skin.get_bind_bone(bind)
+				point += (skeleton.get_bone_global_pose(bone) * instance.skin.get_bind_pose(bind) * vertices[vertex]) * weights[slot]
+				is_head = is_head or (skeleton.get_bone_name(bone) == "head" and weights[slot] > 0.5)
+			if head_only and not is_head:
+				continue
+			point = cabin.to_local(instance.global_transform * point)
+			minimum = minimum.min(point)
+			maximum = maximum.max(point)
+	check(minimum != Vector3.INF, p.name + " exposes real skinned " + ("head" if head_only else "body") + " geometry")
+	return AABB(minimum, maximum - minimum)
 
 # =====================================================================================
 # 1. Путь: правая полоса, по часовой стрелке, скругление 6 м

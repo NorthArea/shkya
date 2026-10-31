@@ -15,6 +15,9 @@ extends SceneTree
 
 const Layout = preload("res://game/world/layout.gd")
 const Driver = preload("res://tests/playthrough_driver.gd")
+const Uniform = preload("res://game/characters/uniform_visual.gd")
+const Catalog = preload("res://game/characters/character_catalog.gd")
+const SeatedVisual = preload("res://game/vehicles/lada_driver.gd")
 const OUT := "res://builds/screenshots/qa01"
 
 const SCENARIOS := {
@@ -48,6 +51,13 @@ var _lag := {}                   # подряд идущие нарушения 
 var textures_seen := {}
 var toast_frames := 0
 var sim_frames := 0
+var _outfit_heights := Vector2.ZERO
+var _player_capsule := Vector2.ZERO
+var _player_collider_transform := Transform3D.IDENTITY
+var _ram_trace_active := false
+var _ram_trace_hits: Dictionary = {}
+var _ram_max_snow_depth := 0.0
+var _ram_max_snow_lift := 0.0
 var pass_frames := {}            # проход -> кадров
 
 func _initialize() -> void:
@@ -189,10 +199,29 @@ func _pass_one() -> bool:
 	await drv.frames(10)
 	check(1, w.control_mode == &"in_car" and m.state == &"DRIVE_TO_KIOSK" and transitions.size() == n_before, "midway: re-entering changes no mission state")
 
-	# Неудачная парковка: носом в вал снега у северной обочины улицы A, затем «Сбросить автомобиль»
-	var pinned: int = await drv.ram(car.global_position + Vector3(6.0, 0.0, -14.0))
+	# Неудачная парковка у настоящей стены: снег на северной обочине проезжаем
+	# по C10, поэтому он не может служить неподвижным упором для этой проверки.
+	var ram_wall: Array = []
+	for solid: Array in Layout.SOLIDS:
+		if solid[0] == "H7_Middle":
+			ram_wall = solid
+			break
+	if ram_wall.is_empty():
+		check(5, false, "reset: canonical H7_Middle wall fixture is present")
+		return false
+	var ram_centre: Vector2 = ram_wall[2]
+	var ram_target := Vector3(ram_centre.x, 0, ram_centre.y)
+	print("DEMO_RAM_BEGIN: ", JSON.stringify({"car": str(car.global_transform), "target": str(ram_target), "wall": String(ram_wall[0]), "scope": "input-only approach across traversable snow to the canonical solid wall"}))
+	_ram_trace_hits.clear()
+	_ram_max_snow_depth = 0.0
+	_ram_max_snow_lift = 0.0
+	_ram_trace_active = true
+	var pinned: int = await drv.ram(ram_target)
+	_ram_trace_active = false
+	print("DEMO_RAM_TRACE: ", JSON.stringify({"target": str(ram_target), "final": str(car.global_transform), "low_speed_frames": pinned, "maximum_snow_depth": _ram_max_snow_depth, "maximum_snow_lift": _ram_max_snow_lift, "collider_contacts": _ram_trace_hits}))
 	var parked_at := car.global_position
-	check(5, pinned >= 60, "reset: car rammed into the snow bank and is pinned (%d frames) at %s" % [pinned, parked_at])
+	check(5, pinned >= 60, "reset: car reaches the real wall across traversable snow and is pinned (%d frames) at %s" % [pinned, parked_at])
+	check(5, int(_ram_trace_hits.get("LevelGeometry/" + String(ram_wall[0]), 0)) > 0, "reset: actual Lada slide contacts identify the canonical H7_Middle wall")
 	await drv.pause_key()
 	await drv.frames(3)
 	check(5, paused and _visible_texts(main).has("СБРОСИТЬ АВТОМОБИЛЬ"), "reset: Esc opens pause with «СБРОСИТЬ АВТОМОБИЛЬ»")
@@ -290,6 +319,7 @@ func _pass_one() -> bool:
 	check(1, w.control_mode == &"in_car" and m.state == &"RETURN_HOME", "09: in the car, still RETURN_HOME")
 	# POLISH-03 B: улица Б перекрыта ГСУМ — радио объявило объезд, мини-карта ведёт на север, домой по ROUTE_DETOUR.
 	var closure = w.get_node("LevelGeometry/Patrols/RoadClosure")
+	await _wait_detour_radio(closure)
 	check(1, m.road_closed and closure.active and closure.radio_shown == 1, "09: street B closed after the purchase, radio announced the detour")
 	await drv.frames(2)
 	var mm = w.get_node("GameHUD").minimap
@@ -496,6 +526,8 @@ func _monitor() -> void:
 		return
 	if w != _world:
 		_bind(w)
+	if _ram_trace_active:
+		_record_ram(w)
 	var m := w.mission
 	# Сценарий 2: маркер над Бабкой
 	var expected := ""
@@ -523,11 +555,14 @@ func _monitor() -> void:
 		_inv("3: no 3D bread, loaf or bag in the world outside the kiosk display", outside.is_empty(), str(outside))
 		_inv("3: kiosk display never changes (purchase spawns nothing)", props == _kiosk_goods, str(props))
 	# Сценарий 4: тот же облик Илюши
-	var look := _ilyusha_sprite(w)
-	var texture_path: String = look.texture.resource_path if look and look.texture else ""
-	if texture_path != "":
-		textures_seen[texture_path.get_file()] = true
-	_inv("4: Ilyusha is drawn only with his own ilyusha_* winter costume pictures", texture_path.get_file().begins_with("ilyusha_"), texture_path)
+	if Uniform.civilians_enabled():
+		_monitor_3d_outfit(w)
+	else:
+		var look := _ilyusha_sprite(w)
+		var texture_path: String = look.texture.resource_path if look and look.texture else ""
+		if texture_path != "":
+			textures_seen[texture_path.get_file()] = true
+		_inv("4: Ilyusha is drawn only with his own ilyusha_* winter costume pictures", texture_path.get_file().begins_with("ilyusha_"), texture_path)
 	_inv("4: Ilyusha visible on foot, hidden in the car", w.player.visible == (w.control_mode == &"on_foot"), "mode %s, visible %s" % [w.control_mode, w.player.visible])
 	# Сценарий 7: мини-карта и ромб
 	_check_navigation(w)
@@ -543,6 +578,46 @@ func _bind(w: DemoWorld) -> void:
 	w.mission.quest_completed.connect(func(_xp): completed_signals += 1)
 	_player_signature = _signature(w.player)
 	_kiosk_goods = _bread_props(w)
+	var look: Node = w.player.get_node("Visual/Look")
+	_outfit_heights = Vector2(look.height_m * Catalog.visible_height_ratio("ilyusha"), SeatedVisual.LADA_VISIBLE_HEIGHT)
+	var collider: CollisionShape3D = w.player.get_node("CollisionShape3D")
+	var capsule := collider.shape as CapsuleShape3D
+	_player_capsule = Vector2(capsule.radius, capsule.height)
+	_player_collider_transform = collider.transform
+
+func _monitor_3d_outfit(w: DemoWorld) -> void:
+	var on_foot: Node = w.player.get_node("Visual/Look")
+	var seated: Node = w.car.visual.get_node("Body/Driver")
+	var matches: bool = on_foot.uses_uniform_3d() and seated.uses_uniform_3d() and on_foot.sprite == null and seated.sprite == null
+	if matches:
+		var a: Node = on_foot.uniform_visual
+		var b: Node = seated.uniform_visual
+		matches = on_foot.resolved_character() == "ilyusha" and seated.resolved_character() == "ilyusha" and a.model.get_meta("drawing", "") == "ilyusha" and b.model.get_meta("drawing", "") == "ilyusha" and a.uniform_mesh.mesh == b.uniform_mesh.mesh and a.skeleton != b.skeleton
+		matches = matches and is_equal_approx(a.visible_height, _outfit_heights.x) and is_equal_approx(b.visible_height, _outfit_heights.y) and a.model.scale.is_equal_approx(Vector3.ONE * _outfit_heights.x) and b.model.scale.is_equal_approx(Vector3.ONE * _outfit_heights.y)
+		var legs: Skeleton3D = b.skeleton
+		matches = matches and is_equal_approx(legs.get_bone_pose_rotation(legs.find_bone("leg_l")).angle_to(Quaternion.IDENTITY), 1.35)
+	var collider: CollisionShape3D = w.player.get_node("CollisionShape3D")
+	var capsule := collider.shape as CapsuleShape3D
+	matches = matches and capsule != null and Vector2(capsule.radius, capsule.height).is_equal_approx(_player_capsule) and collider.transform.is_equal_approx(_player_collider_transform)
+	_inv("4: Ilyusha keeps the same original 3D winter outfit on foot and at the wheel, with fixed profile heights and gameplay body", matches, "mode=%s drawings=%s/%s heights=%s" % [w.control_mode, on_foot.resolved_character(), seated.resolved_character(), _outfit_heights])
+
+func _wait_detour_radio(closure: Node) -> void:
+	# Radio tuning finishes on the audio server's real clock. Await the actual
+	# producer result while supplying frames; never set tuning/caption internals.
+	var deadline := Time.get_ticks_msec() + 6000
+	while closure.radio_shown == 0 and Time.get_ticks_msec() < deadline:
+		await drv.frames(1)
+		OS.delay_msec(5)
+
+func _record_ram(w: DemoWorld) -> void:
+	var car: Lada = w.car
+	_ram_max_snow_depth = maxf(_ram_max_snow_depth, car.snow_depth)
+	_ram_max_snow_lift = maxf(_ram_max_snow_lift, car.snow_lift)
+	for index in car.get_slide_collision_count():
+		var hit := car.get_slide_collision(index)
+		var collider := hit.get_collider() as Node
+		var path := String(w.get_path_to(collider)) if collider != null else "null"
+		_ram_trace_hits[path] = int(_ram_trace_hits.get(path, 0)) + 1
 
 ## Цель по канону: до принятия — Бабка, после — машина, в пути — киоск, у киоска — окно, с хлебом — Бабка.
 func _expected_target(w: DemoWorld) -> Variant:
@@ -857,7 +932,7 @@ func _report() -> void:
 			note = " (structural; visual review of builds/screenshots/qa01/ %s)" % ("captured" if capture else "needs --capture")
 		if s == 8:
 			verdict = "NOT_RUN"
-			note = " (target PC not chosen by the owner; FPS on this Mac — make fps, reference only)"
+			note = " (native FPS is measured separately on the target Mac with make fps)"
 		print("SCENARIO %d %s — %d passed, %d failed — %s%s" % [s, verdict, r[0], r[1], SCENARIOS[s], note])
 	print("DEMO_ACCEPTANCE: %d checks, %d failures" % [_total(), failures.size()])
 	for f in failures:
