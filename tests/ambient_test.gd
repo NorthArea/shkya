@@ -360,8 +360,12 @@ func _part_door_slam() -> void:
 	check(sound.played["door_slam"] == before, "empty time does not create a phantom door slam")
 	var people: Node = world.get_node("LevelGeometry/Residents")
 	var resident: Resident = people.residents[0]
-	var at: Vector3 = people.life.spots[&"door_h1w"].pos
-	world.player.place(at + Vector3(0, 0, 3), 0.0)
+	var door: Dictionary = people.life.spots[&"door_h1w"]
+	var at: Vector3 = door.pos
+	var approach: Vector3 = people.life.nodes[door.node]
+	var facing: float = door.yaw + PI
+	world.player.place(approach, facing)
+	world.camera_rig.yaw = facing
 	world.camera_rig.snap()
 	for voice in sound._door_players:
 		voice.stop()
