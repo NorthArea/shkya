@@ -384,15 +384,19 @@ func _part_burst() -> void:
 	await drv.frames(60)
 	var east: Array = coins.active_positions().filter(func(p: Vector3) -> bool: return p.distance_to(drop) < 6.0)
 	check(east.size() == 4 and east.all(func(p: Vector3) -> bool: return p.x > drop.x + 0.3), "burst with allowed(): all 4 coins land on allowed spots (%d)" % east.size())
-	coins.spawn_burst(drop, 2, func(_p: Vector3) -> bool: return false)
+	var denied_money: int = world.mission.money
+	var pool_before: PackedInt32Array = coins._state.duplicate()
+	var denied_made: int = coins.spawn_burst(drop, 2, func(_p: Vector3) -> bool: return false)
+	var pool_unchanged: bool = coins._state == pool_before
 	await drv.frames(60)
 	var still: Array = coins.active_positions().filter(func(p: Vector3) -> bool: return Vector2(p.x - drop.x, p.z - drop.z).length() < 0.05)
-	check(still.size() == 2, "burst with no allowed spot: coins fall at the drop point (%d)" % still.size())
+	check(denied_made == 0 and pool_unchanged and still.is_empty() and world.mission.money == denied_money,
+		"burst with no allowed spot: returns zero, publishes no new slots or forbidden coins and grants no credit")
 	money = world.mission.money
-	for p in east + still:
+	for p in east:
 		world.player.place(Vector3(p.x, 0, p.z), 0.0)
 		await drv.frames(3)
-	check(world.mission.money == money + 6, "burst with allowed(): all picked up by walking (+%d)" % (world.mission.money - money))
+	check(world.mission.money == money + 4, "burst with allowed(): the 4 permitted coins are picked up by walking (+%d)" % (world.mission.money - money))
 	world.player.place(drop + Vector3(-3.0, -1.0, 0), 0.0)
 	await drv.frames(2)
 	money = world.mission.money

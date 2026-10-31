@@ -195,17 +195,21 @@ func _part_margins() -> void:
 func _part_setup() -> void:
 	print("--- setup ---")
 	check(ProjectSettings.get_setting("layer_names/3d_physics/layer_6") == "Breakable" and Breakables.LAYER == 32, "physics layer 6 «Breakable» = 32")
-	check(bk.objects.size() == Layout.BREAKABLES.size() and get_nodes_in_group(Breakables.GROUP).size() == Layout.BREAKABLES.size(), "one Breakable per record (%d)" % bk.objects.size())
+	var expected := Layout.BREAKABLES.size() + Layout.env_breakables().size()
+	check(bk.objects.size() == expected and get_nodes_in_group(Breakables.GROUP).size() == expected, "one Breakable per base/environment record (%d)" % expected)
 	var bad := []
 	for b: Breakables.Breakable in bk.objects:
-		if b.body.collision_layer != 32 or b.body.collision_mask != 0 or not b.is_intact() or b.hp != (3 if b.heavy else 1):
+		if b.body.collision_layer != (33 if b.env_index >= 0 else 32) or b.body.collision_mask != 0 or not b.is_intact() or b.hp != (3 if b.heavy else 1):
 			bad.append(b.id)
-	check(bad.is_empty(), "every object: StaticBody3D layer 32, mask 0, intact, hp 1 / 3 (bad %s)" % [bad])
+	check(bad.is_empty(), "every object: base layer 32 / environment World|32, mask 0, intact, hp 1 / 3 (bad %s)" % [bad])
 	var car: Lada = world.car
 	check(car.collision_mask & 32 != 0 and world.player.collision_mask & 32 != 0 and Ilyusha.PUNCH_MASK & 32 != 0, "Lada, Ilyusha and the punch see layer 32")
 	check(PathVehicle.SENSOR_MASK & 32 == 0 and CityVan.OBSTACLE_MASK & 32 == 0, "ring traffic sensors and the GSUM van do not see layer 32")
 	check((DetectionSensor.WORLD_MASK | DetectionSensor.SIGHT_CAR_MASK) & 32 == 0 and world.camera_rig.arm.collision_mask & 32 == 0, "stealth rays and the camera spring arm ignore layer 32")
-	var mms := bk.find_children("MM_*", "MultiMeshInstance3D", false, false)
+	var base_kinds := {}
+	for spec in Layout.BREAKABLES: base_kinds[spec[1]] = true
+	# Existing baked-look budgets and the 22-kind oracle belong to the original base objects.
+	var mms := bk.find_children("MM_*", "MultiMeshInstance3D", false, false).filter(func(n): return base_kinds.has(n.get_meta(&"kind", &"")))
 	var kinds := {}
 	var shadow_bad := []
 	var all_kinds := {}
@@ -687,7 +691,7 @@ func _part_coins() -> void:
 	coins.reset()
 	await drv.frames(2)
 
-## Выброс у каждого из 88 объектов: 5 монет с проверкой места ложатся вне коробок all_solids() (+0,3 м), дальше 2,3 м
+## Выброс у каждого из 88 сломанных объектов: 5 монет с проверкой места ложатся вне коробок all_solids() (+0,3 м), дальше 2,3 м
 ## от осей полос кольца, вне KIOSK_SQUARE/ROOF_AREA и в BOUNDS (независимо от Breakables.coin_spot_ok).
 func _part_coin_spots() -> void:
 	print("--- coin spots ---")
@@ -703,12 +707,19 @@ func _part_coin_spots() -> void:
 	var landed := 0
 	var centred := 0
 	var batch: Array = []
-	for i in bk.objects.size():
-		var b: Breakables.Breakable = bk.objects[i]
+	var base_objects: Array = bk.objects.filter(func(b): return b.env_index < 0)
+	var invalid_sources := []
+	for i in base_objects.size():
+		var b: Breakables.Breakable = base_objects[i]
+		# Production publishes after smash has removed this source's body; test damage awards no automatic coins.
+		var paid_before: int = bk.coins_dropped
+		b.smash(&"test", Vector3.FORWARD)
+		if b.state != &"broken" or b.blocks() or b.body.collision_layer != 0 or bk.coins_dropped != paid_before:
+			invalid_sources.append(b.id)
 		var at := b.global_ground() + Vector3.UP * clampf(b.size.y * 0.7, 0.6, 1.4)
 		coins.spawn_burst(at, 5, bk.coin_spot_ok.bind(b))
 		batch.append(b)
-		if batch.size() < 10 and i < bk.objects.size() - 1:
+		if batch.size() < 10 and i < base_objects.size() - 1:
 			continue
 		await drv.frames(45)
 		for p: Vector3 in coins.active_positions():
@@ -734,9 +745,11 @@ func _part_coin_spots() -> void:
 			if not why.is_empty():
 				bad.append("%s (%.1f; %.1f) %s" % [owner_b.id if owner_b else &"?", p.x, p.z, why])
 		coins.reset()
+		bk.reset_positions()
 		batch.clear()
 		await drv.frames(1)
-	check(landed == bk.objects.size() * 5, "every object bursts 5 coins that land (%d)" % landed)
+	check(invalid_sources.is_empty(), "every source is actually broken, nonblocking and pays no automatic test reward before its direct burst (%s)" % [invalid_sources])
+	check(landed == base_objects.size() * 5, "every object bursts 5 coins that land (%d)" % landed)
 	check(bad.is_empty(), "no burst coin in a wall, on a ring lane or on the kiosk square (%d bad %s)" % [bad.size(), bad.slice(0, 8)])
 	print("INFO: coins that found no free direction and fell at the object: %d of %d" % [centred, landed])
 
@@ -753,7 +766,7 @@ func _part_reset() -> void:
 	for b: Breakables.Breakable in bk.objects:
 		b.smash(&"test", Vector3.FORWARD)
 	bk.reset_positions()
-	var intact: Array = bk.objects.filter(func(b): return b.is_intact() and b.body.collision_layer == 32)
+	var intact: Array = bk.objects.filter(func(b): return b.is_intact() and b.body.collision_layer == (33 if b.env_index >= 0 else 32))
 	check(intact.size() == bk.objects.size() and bk.debris_count() == 0 and bk.breaks == 0, "reset_positions(): all intact, no debris, counters zero")
 
 # --- кадры ---

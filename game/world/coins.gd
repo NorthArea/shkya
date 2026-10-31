@@ -116,7 +116,8 @@ func reset() -> void:
 ## PUNCH-01: count монет разлетаются от точки at (сбитый дрон). В полёте не подбираются, после приземления
 ## парят как обычные и гаснут через LOOSE_LIFETIME. Возвращает, сколько выброшено (пул MAX_LOOSE).
 ## BREAK-02: allowed(точка приземления: Vector3) -> bool — где монете можно лечь (не в стене, не на полосе кольца);
-## направление перебирается BURST_TRIES раз, не нашлось — монета падает у точки выброса.
+## направление перебирается BURST_TRIES раз, затем проверяется вертикальный выброс;
+## если он тоже запрещён, оставшаяся часть выброса не создаётся.
 func spawn_burst(at: Vector3, count: int, allowed := Callable()) -> int:
 	var made := 0
 	var start := Vector3(at.x, maxf(at.y, HOVER), at.z)
@@ -138,6 +139,8 @@ func spawn_burst(at: Vector3, count: int, allowed := Callable()) -> int:
 					break
 			if not ok:
 				vel = Vector3(0.0, up, 0.0)
+				if not allowed.call(landing(start, vel)):
+					break
 		_pos[i] = start
 		_vel[i] = vel
 		_age[i] = 0.0

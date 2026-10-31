@@ -119,6 +119,7 @@ var puck_holder: Node3D
 var puck_flight := {}        # {"from", "to", "t", "time", "to_who" (житель или null — ворота), "by"}
 var hockey_passes := 0
 var hockey_shots := 0
+var _env_support := {}
 var _trees := {}     # узел-цель → [dist, next]
 
 func _init() -> void:
@@ -144,6 +145,7 @@ func _init() -> void:
 
 func reset() -> void:
 	reserved.clear()
+	_env_support.clear()
 	for k in props:
 		props[k].visible = false
 	puck_holder = null
@@ -261,7 +263,7 @@ func is_free(id: StringName, resident: Node3D = null) -> bool:
 	return list.has(resident) or list.size() < cap
 
 func reserve(id: StringName, resident: Node3D) -> bool:
-	if id == &"":
+	if id == &"" or not anchor_intact(id):
 		return false
 	var list: Array = reserved.get(id, [])
 	if list.has(resident):
@@ -289,6 +291,12 @@ func reserve(id: StringName, resident: Node3D) -> bool:
 func release(id: StringName, resident: Node3D) -> void:
 	if reserved.has(id):
 		reserved[id].erase(resident)
+
+## Поломка освобождает все места опоры, включая очередь и бронь ещё идущего жителя.
+func release_broken_supports() -> void:
+	for id in reserved.keys():
+		if not anchor_intact(id):
+			reserved.erase(id)
 
 func _same_social_group(a: Dictionary, b: Dictionary) -> bool:
 	if a.kind != b.kind:
@@ -352,11 +360,46 @@ func social_turn(resident: Node3D) -> Dictionary:
 
 ## Якорь точки цел (или его нет / разрушаемые не построены).
 func anchor_intact(id: StringName) -> bool:
-	var anchor: StringName = spots[id].anchor
-	if anchor == &"" or not is_instance_valid(breakables) or not breakables.has_method(&"get_by_id"):
+	if not is_instance_valid(breakables) or not breakables.has_method(&"get_by_id"):
 		return true
-	var b = breakables.get_by_id(anchor)
-	return b == null or b.is_intact()
+	var anchor: StringName = spots[id].anchor
+	if anchor != &"":
+		var b = breakables.get_by_id(anchor)
+		if b != null and not b.is_intact(): return false
+	for index: int in environment_support(id):
+		var b = breakables.env_at_index(index)
+		if b != null and not b.is_intact(): return false
+	return true
+
+## Реальные опоры занятия. Координаты и имена остаются данными Layout, не новой картой мира.
+func environment_support(id: StringName) -> Array:
+	var spot: Dictionary = spots[id]
+	if spot.kind == &"queue":
+		return environment_support(spot.service)
+	if _env_support.has(id): return _env_support[id]
+	var names: Array = []
+	var all := false
+	match spot.kind:
+		&"carpet": names = ["CarpetBar"]; all = true
+		&"hood": names = ["ParkedCar"]
+		&"slide": names = ["PropIceSlide", "PropIceSlideRamp"]; all = true
+		&"hockey": names = ["PropRinkBoard"]; all = true
+		&"bins": names = ["TrashBins", "TrashBinsH10"]
+		&"window": names = ["PropPress", "PropShawarma"]
+		&"look":
+			if id == &"look_press": names = ["PropPress"]
+		&"shop":
+			if id == &"shop24": names = ["Shop24"]
+	var indices: Array = []
+	var solids := Layout.all_solids()
+	for spec: Array in Layout.env_breakables():
+		var index: int = spec[6]
+		if not solids[index][0] in names: continue
+		var target: Vector2 = Layout.LIFE_HOOD_CAR if spot.kind == &"hood" else Vector2(spot.pos.x, spot.pos.z)
+		if all or (spec[2] as Vector2).distance_to(target) < 6.0:
+			indices.append(index)
+	_env_support[id] = indices
+	return indices
 
 ## Место в кадре (для ухода за край карты и возвращения).
 func on_screen(p: Vector3) -> bool:

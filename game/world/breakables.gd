@@ -85,16 +85,24 @@ const SNOW := Color(0.88, 0.91, 0.96)
 ## проходом. Сколько — по виду: light 1–2, heavy 3–5. Тот же объект снова даёт монеты не раньше COIN_COOLDOWN после
 ## прошлой выдачи (восстановление 60–120 с — фарм одного объекта не чаще раза в 4 мин); со всех разрушаемых — не
 ## больше COIN_WINDOW_CAP за COIN_WINDOW (проезд вдоль палисадника из 19 секций — 12, а не 19). Ломает тест или
-## кто-то ещё (by не car/punch) — монет нет. Монета ложится только вне коробок all_solids() (+COIN_SOLID_PAD), дальше
+## кто-то ещё (by не car/punch) — монет нет. Монета ложится вне постоянных и целых коробок (+COIN_SOLID_PAD), дальше
 ## COIN_LANE_MIN от осей полос кольца, вне KIOSK_SQUARE/ROOF_AREA (стелс C7), вне целых разрушаемых и в BOUNDS.
 const COINS := {&"fence": 1, &"planter": 1, &"cones": 1, &"laundry": 1, &"carpet": 1, &"sand_box": 1,
 	&"bin": 2, &"snowman": 2, &"sign_board": 2, &"crate": 2, &"stall": 2, &"sofa": 2, &"fort": 2, &"barrier": 2,
-	&"bench": 3, &"seesaw": 3, &"domino": 4, &"sandpit": 4, &"slide": 4, &"carousel": 5, &"swing": 5, &"playhouse": 5}
+	&"bench": 3, &"seesaw": 3, &"domino": 4, &"sandpit": 4, &"slide": 4, &"carousel": 5, &"swing": 5, &"playhouse": 5,
+	# BREAK-03: окружение (светлые 1–2, тяжёлые 3–5; общий лимит COIN_WINDOW_CAP тот же)
+	&"sign_post": 1, &"fence_long": 2, &"lamp": 3, &"pole": 3, &"lamp_yard": 3, &"birch": 3,
+	&"rowan": 3, &"bins": 3, &"bench_big": 3, &"poplar": 4, &"billboard": 4, &"parked": 4, &"pavilion": 5,
+	&"shop24": 5, &"shawarma": 5, &"press": 5, &"shells": 5, &"dovecote": 5, &"playground": 5,
+	&"carpet_post": 3, &"rink_board": 3, &"ice_slide": 4, &"ice_ramp": 3}
 const COIN_COOLDOWN := 240.0
 const COIN_WINDOW := 30.0
 const COIN_WINDOW_CAP := 12
 const COIN_SOLID_PAD := 0.45
 const COIN_LANE_MIN := 2.5           # как у раскладки монет (coins_test: кузов троллейбуса 1,25 от оси)
+const COIN_EMITTER_STEP := 0.5
+const COIN_EMITTER_RINGS := 48
+const COIN_EMITTER_DIRECTIONS := 32
 
 ## Надписи штендеров (Label3D на обеих досках).
 const SIGN_TEXT := {&"Z11_3": "ПРОДУКТЫ", &"Z17_2": "ПРОДУКТЫ 24\nХЛЕБ\nМОЛОКО"}
@@ -104,7 +112,36 @@ const SOUND := {&"planter": &"plastic", &"bin": &"metal", &"snowman": &"snow", &
 	&"barrier": &"wood", &"cones": &"plastic", &"fence": &"metal", &"sign_board": &"plastic", &"crate": &"wood",
 	&"sand_box": &"wood", &"laundry": &"plastic", &"carpet": &"snow", &"fort": &"snow", &"sofa": &"wood",
 	&"tires": &"plastic", &"stall": &"wood", &"swing": &"metal", &"slide": &"metal", &"sandpit": &"wood",
-	&"playhouse": &"wood", &"bench": &"wood", &"domino": &"wood"}
+	&"playhouse": &"wood", &"bench": &"wood", &"domino": &"wood",
+	&"lamp": &"metal", &"pole": &"metal", &"lamp_yard": &"metal", &"sign_post": &"metal", &"billboard": &"metal",
+	&"bins": &"metal", &"parked": &"metal", &"pavilion": &"metal", &"shop24": &"metal", &"shawarma": &"metal",
+	&"press": &"metal", &"shells": &"metal", &"fence_long": &"metal", &"playground": &"metal", &"birch": &"wood",
+	&"poplar": &"wood", &"rowan": &"wood", &"dovecote": &"wood", &"bench_big": &"wood",
+	&"carpet_post": &"metal", &"rink_board": &"wood", &"ice_slide": &"wood", &"ice_ramp": &"snow"}
+
+## BREAK-03 (решение владельца 30.10: «надо, чтобы всё, включая деревья»): окружение — записи
+## Layout.env_breakables(). Облик — прежний (узлы LevelGeometry/Props и экземпляры пакетов EnvDress, записанные в
+## LevelGeometry.break_visuals), из Looks — только остаток и обломки. Как ломается — ENV_MODE: topple — валится в
+## сторону удара за FALL_SECONDS (с ускорением), сбрасывает снег и куржак, лежит LIE_SECONDS и уходит в снег за
+## SINK_SECONDS, остаётся пень/обломок столба; shatter — стенки и стёкла разлетаются сразу, остаётся низкий каркас;
+## dent — припаркованная машина сминается и сдвигается (облик), коллизия остаётся, воет сигнализация. Фонарь гаснет
+## (LightingAndWeather.set_lamp) и загорается при восстановлении; провода на упавшем столбе оборваны, пока он лежит.
+const ENV_MODE := {&"lamp": &"topple", &"pole": &"topple", &"lamp_yard": &"topple", &"birch": &"topple",
+	&"poplar": &"topple", &"rowan": &"topple", &"sign_post": &"topple", &"billboard": &"topple", &"parked": &"dent"}
+const ENV_KINDS := [&"lamp", &"pole", &"lamp_yard", &"birch", &"poplar", &"rowan", &"sign_post", &"billboard",
+	&"pavilion", &"shop24", &"shawarma", &"press", &"shells", &"dovecote", &"bins", &"parked", &"bench_big",
+	&"playground", &"fence_long", &"carpet_post", &"rink_board", &"ice_slide", &"ice_ramp"]
+const LAMP_KINDS := [&"lamp", &"lamp_yard", &"shop24"]
+## Видимая высота (м): куда ложится дерево, качание от удара и проверка «вне кадра» при восстановлении.
+const ENV_HEIGHT := {&"poplar": 17.0, &"birch": 9.5, &"rowan": 5.0, &"lamp": 8.0, &"pole": 8.0, &"lamp_yard": 6.4,
+	&"sign_post": 3.4, &"billboard": 10.8, &"dovecote": 6.0, &"pavilion": 3.0, &"shop24": 3.6}
+const FALL_SECONDS := 0.9
+const FALL_ANGLE := PI * 0.48
+const LIE_SECONDS := 1.6
+const SINK_SECONDS := 0.7
+const DENT_SECONDS := 0.2
+const DENT_SHIFT := 0.18             # м: на сколько сдвигается смятая машина (облик и коллизия получают одну дельту)
+const DENT_SQUASH := 0.93
 
 var objects: Array = []          # Breakable по порядку Layout.BREAKABLES
 var breaks := 0
@@ -146,8 +183,15 @@ var _alarms := {}                # индекс машины → {left, node}
 var _lid_ready := {}             # индекс контейнера → clock
 var _connected_punch := false
 var _coins_node: Node
-var _coin_rects: Array = []      # коробки all_solids() с запасом COIN_SOLID_PAD
+var _coin_rects: Array = []      # постоянные коробки с запасом COIN_SOLID_PAD; разрушаемые проверяются живыми
 var _coin_lanes: Array = []      # оси полос кольца (Vector2)
+var _by_id := {}                 # id → Breakable
+var _remnant_users := {}         # ключ MultiMesh остатка → [Breakable]: узел виден, только пока хоть один сломан
+var _cut := []                   # BREAK-03: [узел, [Breakable]] — виден, пока ни один владелец не сломан
+var _wires := []                 # BREAK-03: [MultiMesh, индекс, Transform3D, [Breakable]] — провод на столбах
+var _lighting: Node
+var _by_solid := {}
+var env_objects: Array = []      # BREAK-03: Breakable окружения (Layout.env_breakables) по порядку
 
 static var _live: Array = []     # Breakable всех миров — для Resident.flight_distance
 
@@ -164,9 +208,42 @@ func _ready() -> void:
 	_build_meshes()
 	for spec: Array in Layout.BREAKABLES:
 		_add(spec)
+	_add_env()
 	_flush_multimeshes()
 	_build_debris()
 	_connect_punch()
+
+## BREAK-03: окружение (Layout.env_breakables): тело слоя 6, остаток из Looks, облик — из LevelGeometry.break_visuals.
+func _add_env() -> void:
+	var geo := get_parent()
+	var registry: Dictionary = geo.get("break_visuals") if geo and geo.get("break_visuals") is Dictionary else {}
+	var cut := {}       # узел → [Breakable]
+	var wires := {}     # "mm|индекс" → [MultiMesh, индекс, Transform3D, [id]]
+	for spec: Array in Layout.env_breakables():
+		var b := _add(spec)
+		b.mode = ENV_MODE.get(b.kind, &"shatter")
+		b.env_index = spec[6]
+		_by_solid[b.env_index] = b
+		b.body.collision_layer = LAYER | 1
+		env_objects.append(b)
+		var entry: Dictionary = registry.get(b.id, {})
+		b.attach_env(entry)
+		for node: Node3D in entry.get("cut", []):
+			if not cut.has(node):
+				cut[node] = []
+			cut[node].append(b)
+		for w: Array in entry.get("wires", []):
+			wires["%d|%d" % [(w[0] as MultiMesh).get_instance_id(), w[1]]] = w
+	for node in cut:
+		_cut.append([node, cut[node], node.visible, false])
+	for key in wires:
+		var w: Array = wires[key]
+		var owners: Array = []
+		for id: StringName in w[3]:
+			if _by_id.has(id):
+				owners.append(_by_id[id])
+		if not owners.is_empty():
+			_wires.append([w[0], w[1], w[2], owners])
 
 func _exit_tree() -> void:
 	for b in objects:
@@ -188,16 +265,21 @@ func spawn(spec: Array) -> Breakable:
 
 func _add(spec: Array) -> Breakable:
 	var b := Breakable.new()
+	b.env_index = int(spec[6]) if spec.size() > 6 else -1
 	b.setup(spec)
 	b.name = "Breakable_%s" % b.id
 	add_child(b)
 	b.root = self
 	objects.append(b)
 	_live.append(b)
+	_by_id[b.id] = b
 	b.broken.connect(func(o: Breakable, by: StringName): broken.emit(o, by))
 	b.restored.connect(func(o: Breakable): restored.emit(o))
 	var cx := floori(b.center.x / CLUSTER)
 	var cz := floori(b.center.y / CLUSTER)
+	if ENV_KINDS.has(b.kind):
+		cx = 0   # BREAK-03: у окружения из Looks только остаток — один MultiMesh на вид, виден, пока что-то сломано
+		cz = 0
 	# BREAK-02: части вида с одной ролью, материалом и вращением запечены в одну сетку (цвет — в вершинах): один
 	# экземпляр MultiMesh на группу вместо экземпляра на примитив — меньше вызовов отрисовки.
 	var groups := {}
@@ -217,6 +299,10 @@ func _add(spec: Array) -> Breakable:
 		var key := "%s|%d|%d|%s|%s|%s" % [b.kind, cx, cz, prim, first[3], "detail" if first[4] == "detail" else "main"]
 		var slot := {"key": key, "local": Transform3D.IDENTITY, "color": Color.WHITE, "role": first[4], "spin": first[5], "index": -1}
 		b.slots.append(slot)
+		if first[4] == "remnant":
+			if not _remnant_users.has(key):
+				_remnant_users[key] = []
+			_remnant_users[key].append(b)
 		if not _pending.has(key):
 			_pending[key] = []
 		_pending[key].append(slot)
@@ -308,10 +394,23 @@ func _flush_multimeshes() -> void:
 		if b.mm_dirty:
 			b.mm_dirty = false
 			_write(b)
+	for key: String in _remnant_users:
+		_refresh_remnant(key)
+
+## BREAK-03 (FPS): узел MultiMesh остатков рисуется, только пока сломан хоть один его объект.
+func _refresh_remnant(key: String) -> void:
+	var node: MultiMeshInstance3D = _mm_nodes.get(key)
+	if node:
+		node.visible = (_remnant_users[key] as Array).any(func(o: Breakable): return o.state == &"broken")
 
 ## Положение всех экземпляров объекта: поза (покачивание, рост) × вращение части × локальная сетка.
 func _write(b: Breakable) -> void:
+	if not b.env_nodes.is_empty() or not b.env_mm.is_empty():
+		_write_env(b)
 	var base := b.pose()
+	for slot in b.slots:
+		if slot["role"] == "remnant" and _remnant_users.has(slot["key"]):
+			_refresh_remnant(slot["key"])
 	var spin := Transform3D(Basis(Vector3.UP, b.spin_angle), Vector3.ZERO)
 	var zero := Transform3D(Basis.from_scale(Vector3.ZERO), b.global_ground())
 	for slot in b.slots:
@@ -332,6 +431,61 @@ func _write(b: Breakable) -> void:
 		mm.set_instance_transform(i, xf)
 		if mm.use_colors:
 			mm.set_instance_color(i, slot["color"])
+
+## Поиск динамической опоры для потребителей, которые хранят исходные коробки Layout.
+func env_at_index(index: int) -> Breakable:
+	return _by_solid.get(index)
+
+func _write_env(b: Breakable) -> void:
+	var delta := b.env_delta()
+	var hidden := b.env_hidden()
+	for i in b.env_nodes.size():
+		var node: Node3D = b.env_nodes[i]
+		if is_instance_valid(node):
+			node.global_transform = delta * b.env_node_xf[i]
+			node.visible = not hidden and b.env_node_visible[i]
+	if b.mode == &"dent":
+		b.body.global_transform = delta * b.base_xf()
+	for part: Array in b.env_mm:
+		var node: MultiMeshInstance3D = part[3]
+		if not is_instance_valid(node): continue
+		var xf: Transform3D = delta * part[4]
+		if hidden: xf.basis = Basis.from_scale(Vector3.ZERO)
+		(part[0] as MultiMesh).set_instance_transform(part[1], node.global_transform.affine_inverse() * xf)
+
+func register_cut(node: Node3D, id: StringName) -> void:
+	var owner: Breakable = _by_id.get(id)
+	if owner == null: return
+	for entry: Array in _cut:
+		if entry[0] == node:
+			if not (entry[1] as Array).has(owner): entry[1].append(owner)
+			return
+	_cut.append([node, [owner], node.visible, false])
+
+func _refresh_cut_wires() -> void:
+	for entry: Array in _cut:
+		var node: Node3D = entry[0]
+		if not is_instance_valid(node): continue
+		var intact := (entry[1] as Array).all(func(b: Breakable): return b.is_intact())
+		if not intact:
+			if not entry[3]: entry[2] = node.visible
+			entry[3] = true
+			node.visible = false
+		elif entry[3]:
+			node.visible = false if node.has_meta(&"life_support_prop") else entry[2]
+			entry[3] = false
+	for entry: Array in _wires:
+		var visible := (entry[3] as Array).all(func(b: Breakable): return b.is_intact())
+		var xf: Transform3D = entry[2]
+		if not visible: xf.basis = Basis.from_scale(Vector3.ZERO)
+		(entry[0] as MultiMesh).set_instance_transform(entry[1], xf)
+
+func _env_lamp(b: Breakable, on: bool) -> void:
+	if not LAMP_KINDS.has(b.kind): return
+	if not is_instance_valid(_lighting) and _world:
+		_lighting = _world.get_node_or_null("LightingAndWeather")
+	if is_instance_valid(_lighting) and _lighting.has_method("set_lamp"):
+		_lighting.set_lamp(b.center, on)
 
 func _build_meshes() -> void:
 	var box := BoxMesh.new()
@@ -417,8 +571,12 @@ func car_contacts(car: CharacterBody3D, before: Vector3, throttle: float, delta:
 			other_hit = true
 			_react(hit.get_position(), speed)
 			continue
+		if b.kind in [&"parked", &"bins"]:
+			_react(hit.get_position(), speed)
 		var outcome := b.car_contact(speed, absf(throttle) > 0.05, delta, into)
-		if outcome == &"light":
+		if outcome == &"dent":
+			other_hit = true
+		elif outcome == &"light":
 			any_broken = true
 		elif outcome == &"heavy":
 			any_broken = true
@@ -525,7 +683,7 @@ func spawn_debris(b: Breakable, dir: Vector3) -> void:
 		var horizontal: Vector3 = out * _rng.randf_range(0.8, 2.2) + flat_dir * _rng.randf_range(1.0, 2.5) * float(piece[2])
 		if away != Vector3.ZERO and horizontal.dot(away) < 0.0:
 			horizontal -= away * horizontal.dot(away) * 2.0   # от жителя
-		var start := b.global_ground() + Vector3(_rng.randf_range(-0.3, 0.3) * b.size.x, _rng.randf_range(0.2, 0.9) * b.size.y,
+		var start := b.global_ground() + Vector3(_rng.randf_range(-0.3, 0.3) * b.size.x, _rng.randf_range(0.1, 0.4) * minf(b.size.y, 2.0) if b.env_index >= 0 else _rng.randf_range(0.2, 0.9) * b.size.y,
 			_rng.randf_range(-0.3, 0.3) * b.size.z)
 		var slot := free_slots[k]
 		_debris[slot] = {"group": _debris_group, "pos": start,
@@ -537,7 +695,7 @@ func spawn_debris(b: Breakable, dir: Vector3) -> void:
 		_debris_mm.set_instance_color(slot, piece[1])
 	_debris_node.visible = true
 	debris_peak = maxi(debris_peak, debris_count())
-	_puff(b.global_ground(), b.kind == &"snowman" or b.kind == &"fort")
+	_puff(b.global_ground(), b.kind in [&"snowman", &"fort"] or b.env_index >= 0)
 
 func _free_group(group: int) -> void:
 	for i in DEBRIS_POOL:
@@ -692,10 +850,27 @@ func drop_coins(b: Breakable, by: StringName) -> int:
 	if n <= 0 or coins == null:
 		return 0
 	var at := b.global_ground() + Vector3.UP * clampf(b.size.y * 0.7, 0.6, 1.4)
+	if b.env_index >= 0:
+		var away := (_player.global_position - at) if is_instance_valid(_player) else b.fall_dir
+		away.y = 0.0
+		away = away.normalized() if away.length_squared() > 0.001 else Vector3.FORWARD
+		var reach := maxf(b.size.x, b.size.z) * 0.5
+		if by == &"punch":
+			# Выброс рядом с задетой гранью: длина забора не отодвигает монеты от его тонкого бока.
+			reach = INF
+			if not is_zero_approx(away.x):
+				reach = minf(reach, b.size.x * 0.5 / absf(away.x))
+			if not is_zero_approx(away.z):
+				reach = minf(reach, b.size.z * 0.5 / absf(away.z))
+		at += away * (reach + 0.8)
 	var made := 0
 	if by == &"car":
 		made = coins.spawn_to_collector(at, n)
 	else:
+		if b.env_index >= 0:
+			at = _coin_emitter(at)
+			if not at.is_finite():
+				return 0
 		made = coins.spawn_burst(at, n, coin_spot_ok.bind(b))
 	if made > 0:
 		b.coins_at = clock
@@ -703,6 +878,20 @@ func drop_coins(b: Breakable, by: StringName) -> int:
 		coins_dropped += made
 		coin_drops.append([clock, by, made, b.id])
 	return made
+
+## Сохраняем прежний выброс, если он допустим. У новых ENV внутри площадки/полос
+## выбираем ближайшее допустимое начало, чтобы и вертикальный запасной выброс был безопасен.
+func _coin_emitter(at: Vector3) -> Vector3:
+	if coin_spot_ok(at):
+		return at
+	for ring in range(1, COIN_EMITTER_RINGS + 1):
+		var radius := ring * COIN_EMITTER_STEP
+		for direction in COIN_EMITTER_DIRECTIONS:
+			var angle := TAU * direction / COIN_EMITTER_DIRECTIONS
+			var candidate := at + Vector3(cos(angle), 0.0, sin(angle)) * radius
+			if coin_spot_ok(candidate):
+				return candidate
+	return Vector3.INF
 
 ## Узел монет COINS-01 (как у дронов): группа «coins» или узел «Coins» в мире; нет — null.
 func _coins() -> Node:
@@ -715,12 +904,15 @@ func _coins() -> Node:
 	return _coins_node if _coins_node and _coins_node.has_method("spawn_to_collector") else null
 
 ## Можно ли монете лечь в p (выброс из сломанного b): не в стене, не на полосе кольца, не на площадке киоска.
-func coin_spot_ok(p: Vector3, b: Breakable = null) -> bool:
+func coin_spot_ok(p: Vector3, _owner: Breakable = null) -> bool:
 	var xz := Vector2(p.x, p.z)
 	if not Layout.BOUNDS.grow(-1.0).has_point(xz) or Layout.KIOSK_SQUARE.grow(1.0).has_point(xz) or Layout.ROOF_AREA.has_point(xz):
 		return false
 	if _coin_rects.is_empty():
-		for spec in Layout.all_solids():
+		var solids := Layout.all_solids()
+		for index in solids.size():
+			if not Layout.env_break_at(index).is_empty(): continue
+			var spec: Array = solids[index]
 			var c: Vector2 = spec[2]
 			var size: Vector3 = spec[3]
 			_coin_rects.append(Rect2(c - Vector2(size.x, size.z) * 0.5, Vector2(size.x, size.z)).grow(COIN_SOLID_PAD))
@@ -738,8 +930,9 @@ func coin_spot_ok(p: Vector3, b: Breakable = null) -> bool:
 			var c: Vector2 = pts[(i + 1) % pts.size()]
 			if xz.distance_to(Geometry2D.get_closest_point_to_segment(xz, a, c)) < COIN_LANE_MIN:
 				return false
+	# Смятая машина остаётся твёрдой, в том числе для монет собственного выброса.
 	for o: Breakable in objects:
-		if o != b and o.blocks() and o.rect().grow(0.2).has_point(xz):
+		if o.blocks() and o.rect().grow(COIN_SOLID_PAD if o.env_index >= 0 else 0.2).has_point(xz):
 			return false
 	return true
 
@@ -782,18 +975,19 @@ func in_view(b: Breakable) -> bool:
 	var camera := get_viewport().get_camera_3d() if is_inside_tree() else null
 	if camera == null:
 		return false
-	var xf := b.base_xf()
-	var h := Vector3(b.size.x * 0.5, b.size.y, b.size.z * 0.5)
-	if camera.is_position_in_frustum(xf * Vector3(0, h.y * 0.5, 0)):
-		return true
-	for sx in [-1.0, 1.0]:
-		for y in [0.0, h.y]:
-			for sz in [-1.0, 1.0]:
-				if camera.is_position_in_frustum(xf * Vector3(sx * h.x, y, sz * h.z)):
-					return true
-	# Объект крупнее кадра (камера внутри или вплотную): ни один угол не виден, но пирамида его пересекает.
-	var center := xf * Vector3(0, h.y * 0.5, 0)
-	return camera.global_position.distance_to(center) < h.length() + camera.near
+	var box := b.env_bounds if b.env_index >= 0 else b.base_xf() * AABB(Vector3(-b.size.x * 0.5, 0.0, -b.size.z * 0.5), b.size)
+	var corners: Array[Vector3] = []
+	for x in [box.position.x, box.end.x]:
+		for y in [box.position.y, box.end.y]:
+			for z in [box.position.z, box.end.z]:
+				corners.append(Vector3(x, y, z))
+	# The view may intersect a face without seeing a single corner (e.g. only a billboard's top).
+	var inside := camera.global_position - camera.global_basis.z * ((camera.near + camera.far) * 0.5)
+	for plane: Plane in camera.get_frustum():
+		var side := signf(plane.distance_to(inside))
+		if corners.all(func(point: Vector3): return plane.distance_to(point) * side < 0.0):
+			return false
+	return true
 
 ## На месте объекта нет тела: Илюша, «Лада», жители, собака (по коробке с запасом 0,3 м) и физика слоёв 2 и 4.
 func place_free(b: Breakable) -> bool:
@@ -814,7 +1008,8 @@ func place_free(b: Breakable) -> bool:
 			return false
 	return overlaps(b).is_empty()
 
-## Тела слоёв Player и Car, которые пересекает коробка объекта (уменьшенная на 0,05 м: касание вплотную — не пересечение).
+## Подвижные тела Player, Car и World (транспорт), пересекающие исходную коробку.
+## Статические земля/стены не блокируют возврат существовавшего здесь окружения.
 func overlaps(b: Breakable) -> Array:
 	if not is_inside_tree():
 		return []
@@ -823,9 +1018,10 @@ func overlaps(b: Breakable) -> Array:
 	box.size = b.body_size() - Vector3(0.1, 0.1, 0.1)
 	query.shape = box
 	query.transform = b.base_xf() * Transform3D(Basis.IDENTITY, Vector3(0, b.body_size().y * 0.5, 0))
-	query.collision_mask = 2 | 4
+	query.collision_mask = 1 | 2 | 4
 	query.exclude = [b.body.get_rid()]
-	return get_world_3d().direct_space_state.intersect_shape(query, 8)
+	var hits := get_world_3d().direct_space_state.intersect_shape(query, 64)
+	return hits.filter(func(hit: Dictionary): return hit.collider is CharacterBody3D or hit.collider is AnimatableBody3D)
 
 func next_restore_delay() -> float:
 	return _rng.randf_range(RESTORE_SECONDS.x, RESTORE_SECONDS.y)
@@ -835,8 +1031,10 @@ func reset_positions() -> void:
 	_rng.seed = SEED
 	for b in objects:
 		b.reset()
+		_env_lamp(b, true)
 		_write(b)
 	_animating.clear()
+	_refresh_cut_wires()
 	for i in DEBRIS_POOL:
 		_debris[i] = {}
 		_debris_mm.set_instance_transform(i, Transform3D(Basis.from_scale(Vector3.ZERO), Vector3.ZERO))
@@ -863,12 +1061,12 @@ func reset_positions() -> void:
 	_lid_ready.clear()
 
 ## Целые объекты в плане (с запасом pad) — препятствия для полёта сбитого жителя (Resident.flight_distance).
-## Мира нет — все записи Layout.BREAKABLES.
+## Мира нет — все записи Layout.BREAKABLES и Layout.env_breakables().
 static func intact_rects(pad: float) -> Array:
 	var out: Array = []
 	var alive := _live.filter(func(b): return is_instance_valid(b))
 	if alive.is_empty():
-		for spec: Array in Layout.BREAKABLES:
+		for spec: Array in Layout.BREAKABLES + Layout.env_breakables():
 			out.append(spec_rect(spec).grow(pad))
 		return out
 	for b: Breakable in alive:
@@ -886,10 +1084,7 @@ static func spec_rect(spec: Array) -> Rect2:
 	return Rect2(c - Vector2(hx, hz), Vector2(hx, hz) * 2.0)
 
 func get_by_id(id: StringName) -> Breakable:
-	for b in objects:
-		if b.id == id:
-			return b
-	return null
+	return _by_id.get(id)
 
 # --- тряска камеры ---
 
@@ -1076,6 +1271,64 @@ class Breakable extends Node3D:
 	var _wobble_axis := Vector3.RIGHT
 	var _spin_speed := 0.0
 	var _grow := 1.0
+	var mode: StringName = &""
+	var env_index := -1
+	var env_nodes: Array = []
+	var env_node_xf: Array[Transform3D] = []
+	var env_node_visible: Array[bool] = []
+	var env_mm: Array = []
+	var fall_dir := Vector3.RIGHT
+	var env_bounds := AABB()
+
+	func attach_env(entry: Dictionary) -> void:
+		env_bounds = base_xf() * AABB(Vector3(-size.x * 0.5, 0.0, -size.z * 0.5), size)
+		for node: Node3D in entry.get("nodes", []):
+			if not is_instance_valid(node): continue
+			env_nodes.append(node)
+			env_node_xf.append(node.global_transform)
+			env_node_visible.append(node.visible)
+			var geometry := node.find_children("*", "GeometryInstance3D", true, false)
+			if node is GeometryInstance3D: geometry.append(node)
+			for part: GeometryInstance3D in geometry:
+				if part.is_queued_for_deletion(): continue
+				var mesh: Mesh = (part as MeshInstance3D).mesh if part is MeshInstance3D else ((part as MultiMeshInstance3D).multimesh.mesh if part is MultiMeshInstance3D and (part as MultiMeshInstance3D).multimesh else null)
+				if mesh == null: continue
+				if part is MultiMeshInstance3D:
+					var mm: MultiMesh = (part as MultiMeshInstance3D).multimesh
+					for i in mm.instance_count:
+						env_bounds = env_bounds.merge((part.global_transform * mm.get_instance_transform(i)) * mesh.get_aabb())
+				else:
+					env_bounds = env_bounds.merge(part.global_transform * mesh.get_aabb())
+		for part: Array in entry.get("mm", []):
+			var item := part.duplicate()
+			item.append((part[3] as Node3D).global_transform * (part[2] as Transform3D))
+			env_mm.append(item)
+			env_bounds = env_bounds.merge((item[4] as Transform3D) * (part[0] as MultiMesh).mesh.get_aabb())
+
+	func env_hidden() -> bool:
+		return state == &"broken" and (mode == &"shatter" or (mode == &"topple" and root.clock - broken_at >= FALL_SECONDS + LIE_SECONDS + SINK_SECONDS))
+
+	## Мировая дельта вокруг основания; исходные узлы и экземпляры остаются в своих родителях.
+	func env_delta() -> Transform3D:
+		var pivot := global_ground()
+		var basis := Basis.IDENTITY
+		var shift := Vector3.ZERO
+		if state == &"broken" and mode == &"topple":
+			var age := maxf(root.clock - broken_at, 0.0)
+			var t := clampf(age / FALL_SECONDS, 0.0, 1.0)
+			basis = Basis(Vector3.UP.cross(fall_dir).normalized(), FALL_ANGLE * t * t)
+			shift.y = -maxf(size.y, ENV_HEIGHT.get(kind, 0.0)) * clampf((age - FALL_SECONDS - LIE_SECONDS) / SINK_SECONDS, 0.0, 1.0)
+		elif state == &"broken" and mode == &"dent":
+			var t := clampf((root.clock - broken_at) / DENT_SECONDS, 0.0, 1.0)
+			basis = Basis(Vector3.UP.cross(fall_dir).normalized(), 0.05 * t) * Basis.from_scale(Vector3.ONE.lerp(Vector3(0.97, DENT_SQUASH, 0.97), t))
+			shift = fall_dir * DENT_SHIFT * t
+		elif state == &"growing":
+			var g := maxf(1.0 - pow(1.0 - _grow, 3.0), 0.001)
+			basis = Basis.from_scale(Vector3(lerpf(0.6, 1.0, g), g, lerpf(0.6, 1.0, g)))
+		elif _wobble > 0.0:
+			var height := maxf(size.y, ENV_HEIGHT.get(kind, 0.0))
+			basis = Basis(_wobble_axis, sin(PI * (1.0 - _wobble / WOBBLE_SECONDS)) * WOBBLE_ANGLE * minf(1.0, 2.5 / height))
+		return Transform3D(basis, pivot + shift - basis * pivot)
 
 	func setup(spec: Array) -> void:
 		id = spec[0]
@@ -1101,7 +1354,7 @@ class Breakable extends Node3D:
 		add_child(body)
 
 	func body_size() -> Vector3:
-		return Vector3(size.x, maxf(size.y, MIN_BODY_HEIGHT), size.z)
+		return size if env_index >= 0 else Vector3(size.x, maxf(size.y, MIN_BODY_HEIGHT), size.z)
 
 	func global_ground() -> Vector3:
 		return Vector3(center.x, 0.0, center.y)
@@ -1122,14 +1375,25 @@ class Breakable extends Node3D:
 		return xf
 
 	func rect() -> Rect2:
-		return Breakables.spec_rect([id, kind, center, size, yaw])
+		if mode != &"dent" or state != &"broken":
+			return Breakables.spec_rect([id, kind, center, size, yaw])
+		var xf := env_delta() * base_xf()
+		var points: Array[Vector2] = []
+		for x in [-0.5, 0.5]:
+			for z in [-0.5, 0.5]:
+				for y in [0.0, 1.0]:
+					var point := xf * (size * Vector3(x, y, z))
+					points.append(Vector2(point.x, point.z))
+		var bounds := Rect2(points[0], Vector2.ZERO)
+		for point in points: bounds = bounds.expand(point)
+		return bounds
 
 	func is_intact() -> bool:
 		return state == &"intact"
 
 	## Целый и с коллизией (рост — тоже: коллизия возвращается в начале роста).
 	func blocks() -> bool:
-		return state != &"broken"
+		return state != &"broken" or mode == &"dent"
 
 	## Касание «Лады»: &"light"/&"heavy" — сломан этим касанием, &"" — нет.
 	func car_contact(speed: float, pushing: bool, delta: float, into: Vector3) -> StringName:
@@ -1142,7 +1406,7 @@ class Breakable extends Node3D:
 		if heavy:
 			if speed >= HEAVY_SPEED:
 				smash(&"car", into)
-				return &"heavy"
+				return &"dent" if mode == &"dent" else &"heavy"
 			return &""
 		if speed >= LIGHT_SPEED or (pushing and _push > PUSH_SECONDS):
 			smash(&"car", into)
@@ -1172,8 +1436,10 @@ class Breakable extends Node3D:
 		if state == &"broken":
 			return
 		state = &"broken"
-		body.collision_layer = 0
-		(body.get_child(0) as CollisionShape3D).disabled = true
+		fall_dir = Vector3(dir.x, 0.0, dir.z).normalized()
+		if fall_dir.length_squared() < 0.01: fall_dir = Vector3.RIGHT
+		body.collision_layer = (LAYER | 1) if mode == &"dent" else 0
+		(body.get_child(0) as CollisionShape3D).disabled = mode != &"dent"
 		breaks += 1
 		root.breaks += 1
 		last_by = by
@@ -1184,6 +1450,11 @@ class Breakable extends Node3D:
 		restore_left = root.next_restore_delay()
 		for node in extras:
 			node.visible = false
+		if kind == &"parked": root._react(global_ground(), ALARM_SPEED)
+		if kind == &"bins": root._react(global_ground(), LID_SPEED)
+		root._env_lamp(self, false)
+		root._refresh_cut_wires()
+		root.animate(self)
 		root._write(self)
 		root.spawn_debris(self, dir)
 		root.drop_coins(self, by)
@@ -1201,7 +1472,8 @@ class Breakable extends Node3D:
 			return
 		state = &"growing"
 		_grow = 0.0
-		body.collision_layer = LAYER
+		body.collision_layer = LAYER | (1 if env_index >= 0 else 0)
+		body.transform = Transform3D.IDENTITY
 		(body.get_child(0) as CollisionShape3D).disabled = false
 		for node in extras:
 			node.visible = true
@@ -1210,7 +1482,8 @@ class Breakable extends Node3D:
 
 	## Шаг анимации; false — анимация кончилась.
 	func animate(delta: float) -> bool:
-		var busy := false
+		var age := root.clock - broken_at
+		var busy := state == &"broken" and ((mode == &"topple" and age < FALL_SECONDS + LIE_SECONDS + SINK_SECONDS) or (mode == &"dent" and age < DENT_SECONDS))
 		if _wobble > 0.0:
 			_wobble = maxf(_wobble - delta, 0.0)
 			busy = busy or _wobble > 0.0
@@ -1224,6 +1497,8 @@ class Breakable extends Node3D:
 				state = &"intact"
 				restores += 1
 				root.restores += 1
+				root._env_lamp(self, true)
+				root._refresh_cut_wires()
 				restored.emit(self)
 			else:
 				busy = true
@@ -1233,7 +1508,8 @@ class Breakable extends Node3D:
 	func reset() -> void:
 		state = &"intact"
 		hp = HEAVY_HP if heavy else 1
-		body.collision_layer = LAYER
+		body.collision_layer = LAYER | (1 if env_index >= 0 else 0)
+		body.transform = Transform3D.IDENTITY
 		(body.get_child(0) as CollisionShape3D).disabled = false
 		_wobble = 0.0
 		_spin_speed = 0.0
@@ -1355,7 +1631,7 @@ class Looks:
 		&"bench", &"crate", &"stall"]
 
 	static func has_look(kind: StringName) -> bool:
-		return kind in KINDS
+		return kind in KINDS or kind in ENV_KINDS
 
 	static func _xf(scale: Vector3, at: Vector3, euler := Vector3.ZERO) -> Transform3D:
 		return Transform3D(Basis.from_euler(euler) * Basis.from_scale(scale), at)
@@ -1378,7 +1654,28 @@ class Looks:
 	static func _snow(prim: String, xf: Transform3D, role := "body", spin := false) -> Array:
 		return _p(prim, xf, SNOW_C, role, spin, "snow")
 
+	static func _environment_remnant(kind: StringName, size: Vector3) -> Array:
+		var out := []
+		if kind in [&"birch", &"poplar", &"rowan"]:
+			var diameter := maxf(size.x * 1.15, 0.24)
+			out.append(_p("cyl", _xf(Vector3(diameter, 0.12, diameter), Vector3(0, 0.06, 0)), WOOD, "remnant"))
+		elif kind in [&"lamp", &"pole", &"lamp_yard", &"sign_post", &"carpet_post", &"billboard"]:
+			out.append(_p("box", _xf(Vector3(maxf(size.x, 0.3), 0.06, maxf(size.z, 0.3)), Vector3(0, 0.03, 0)), STEEL, "remnant"))
+			out.append(_p("cyl", _xf(Vector3(0.14, 0.12, 0.14), Vector3(0, 0.06, 0)), STEEL, "remnant"))
+		elif kind == &"parked":
+			# The dented body remains visible; only small shards lie underneath.
+			for side in [-1.0, 1.0]:
+				out.append(_p("box", _xf(Vector3(0.1, 0.025, 0.15), Vector3(side * size.x * 0.3, 0.013, 0)), Color(0.4, 0.52, 0.58), "remnant"))
+		else:
+			var wood := kind in [&"dovecote", &"bench_big", &"rink_board", &"ice_slide"]
+			var color := WOOD if wood else STEEL
+			for side in [-1.0, 1.0]:
+				out.append(_p("box", _xf(Vector3(size.x, 0.06, 0.08), Vector3(0, 0.03, side * size.z * 0.4)), color, "remnant"))
+				out.append(_p("box", _xf(Vector3(0.08, 0.06, size.z), Vector3(side * size.x * 0.4, 0.03, 0)), color, "remnant"))
+		return out
+
 	static func parts(kind: StringName, size: Vector3) -> Array:
+		if ENV_KINDS.has(kind): return _environment_remnant(kind, size)
 		match kind:
 			&"bin": return _bin()
 			&"planter": return _planter()
@@ -1965,6 +2262,12 @@ class Looks:
 	## Обломки по виду: [размер, цвет, вес направления удара].
 	static func debris(kind: StringName, size: Vector3) -> Array:
 		var out := []
+		if ENV_KINDS.has(kind):
+			var wood := kind in [&"birch", &"poplar", &"rowan", &"dovecote", &"bench_big"]
+			for k in 12:
+				out.append([Vector3(0.12 + 0.05 * (k % 3), 0.06, 0.25 + 0.1 * (k % 4)), WOOD if wood else STEEL, 1.0])
+			for k in 6: out.append([Vector3(0.15, 0.1, 0.16), SNOW_C, 0.6])
+			return out
 		match kind:
 			&"snowman":
 				for k in 12:

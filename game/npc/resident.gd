@@ -421,6 +421,9 @@ func _tick(delta: float) -> void:
 	if state == &"board" or state == &"transit":
 		_tick_transit(delta)
 		return
+	if errand and spot_id != &"" and not life.anchor_intact(spot_id):
+		_activity_done()
+		return
 	if _lada_touches_pair(global_position, LADA_MARGIN) and _lada_speed() < KNOCK_MIN_SPEED:
 		_dodge_lada()
 		return
@@ -1337,9 +1340,10 @@ func _knock_finish() -> void:
 		_resume_transit(prior)
 		knock_log.append([clock, &"route", _flat(global_position)])
 		return
-	if errand and not _resume_act.is_empty() and _resume_act.spot == spot_id:
-		_resume_activity()
+	if errand and not _resume_act.is_empty():
 		knock_phase = &""
+		if not _resume_activity():
+			_activity_done()
 		knock_log.append([clock, &"route", _flat(global_position)])
 		return
 	_resume_act = {}
@@ -1414,7 +1418,10 @@ static func segment_clear(a: Vector3, b: Vector3) -> bool:
 ## объекты (Breakables.intact_rects) — такое же препятствие.
 static func flight_distance(from: Vector3, dir: Vector3, dist: float) -> float:
 	if _solid_rects.is_empty():
-		for spec in Layout.all_solids():
+		var solids := Layout.all_solids()
+		for index in solids.size():
+			if not Layout.env_break_at(index).is_empty(): continue
+			var spec: Array = solids[index]
 			var c: Vector2 = spec[2]
 			var size: Vector3 = spec[3]
 			_solid_rects.append(Rect2(c - Vector2(size.x, size.z) * 0.5, Vector2(size.x, size.z)).grow(BODY_RADIUS + KNOCK_SOLID_PAD))
@@ -1774,6 +1781,9 @@ func _on_errand_point() -> void:
 
 ## На месте точки: занятие по её виду.
 func _arrive() -> void:
+	if not life.anchor_intact(spot_id):
+		_activity_done()
+		return
 	var s: Dictionary = life.spots[spot_id]
 	if s.kind in [&"window", &"queue"]:
 		if _flat(global_position).distance_to(s.pos) > life.AT_SPOT:
@@ -2003,6 +2013,10 @@ static func move_toward_v(from: Vector3, to: Vector3, step: float) -> Vector3:
 
 ## Скрыт в подъезде, магазине или за краем карты: время вышло — выходит там же (край — только вне кадра).
 func _tick_hidden(delta: float) -> void:
+	if _acting and spot_id != &"" and not life.anchor_intact(spot_id):
+		_show()
+		_activity_done()
+		return
 	if get_tree().paused:
 		return
 	if state != &"inside" and state != &"away":
@@ -2494,7 +2508,15 @@ func snow_hit() -> void:
 	_flinch = 0.35
 
 ## Сбит на хоккее или с санками — встал и продолжил занятие с того места, где его сбили (_resume_act).
-func _resume_activity() -> void:
+func _resume_activity() -> bool:
+	if _resume_act.is_empty(): return false
+	var saved_spot: StringName = _resume_act.spot
+	# За время падения опору могли сломать и восстановить, а освобождённое место — занять.
+	# Своя прежняя бронь идемпотентна; чужая cap1 не даёт вернуть сохранённое занятие.
+	if saved_spot != spot_id or not life.is_free(saved_spot, self) or not life.reserve(saved_spot, self):
+		life.release(saved_spot, self)
+		_resume_act = {}
+		return false
 	state = &"activity"
 	_acting = true
 	_act_kind = _resume_act.kind
@@ -2504,6 +2526,7 @@ func _resume_activity() -> void:
 	_act_target = Vector3.INF
 	_resume_act = {}
 	resumes += 1
+	return true
 
 ## Санки с внуком: позади на верёвке SLED_BACK, разворачиваются за жителем; телепорт (дверь, сброс) — сразу за спиной.
 ## Сбитый — санки стоят, где были. Скрип — через каждые SLED_CREAK_STEP м пути санок.

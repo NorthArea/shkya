@@ -550,7 +550,8 @@ func _heavy_breakables() -> Array:
 	if root == null:
 		return out
 	for b in root.objects:
-		if b.heavy:
+		# Environment is already exercised by all_solids() in the geometry sweep.
+		if b.heavy and b.env_index < 0:
 			out.append(b)
 	return out
 

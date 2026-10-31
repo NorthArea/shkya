@@ -114,6 +114,7 @@ var _lighting: Node
 var _player: Node3D
 var _lada: Node3D
 var _people: Array[Node3D] = []
+var _breakables: Node
 var _walls := []            # [Rect2 XZ, высота]
 var _wall_cells := {}       # Vector2i → индексы _walls
 var _snag_points := []      # [Vector3 (x, низ, z), радиус, верх]
@@ -199,23 +200,25 @@ func _person_available(person: Node3D) -> bool:
 # --- данные арены ---
 
 func _collect_walls() -> void:
-	for spec in Layout.all_solids():
+	var solids := Layout.all_solids()
+	for index in solids.size():
+		var spec: Array = solids[index]
 		var size: Vector3 = spec[3]
 		if size.y < 1.2 or minf(size.x, size.z) < 0.6 or spec[1] in ["snow", "snow_bank", "parked_car", "bins", "bench"]:
 			continue
 		var xz: Vector2 = spec[2]
 		var rect := Rect2(xz - Vector2(size.x, size.z) * 0.5, Vector2(size.x, size.z))
 		var k := _walls.size()
-		_walls.append([rect, size.y])
+		_walls.append([rect, size.y, index])
 		_register(_wall_cells, rect.grow(VORTEX_RANGE), k)
 
 func _collect_snags() -> void:
 	for p in Layout.TREES:
-		_add_snag(Vector3(p.x, 2.2, p.y), 1.1, 6.5)
+		_add_snag(Vector3(p.x, 2.2, p.y), 1.1, 6.5, Layout.env_index_at(p))
 	for p in Layout.POPLARS:
-		_add_snag(Vector3(p.x, 3.0, p.y), 1.6, 9.5)
+		_add_snag(Vector3(p.x, 3.0, p.y), 1.6, 9.5, Layout.env_index_at(p))
 	for p in Layout.street_lamps() + Layout.trolley_poles():
-		_add_snag(Vector3(p.x, 0.6, p.y), 0.32, 7.6)
+		_add_snag(Vector3(p.x, 0.6, p.y), 0.32, 7.6, Layout.env_index_at(p))
 	for spec in Layout.all_solids():
 		if spec[1] != "fence" and spec[1] != "carpet_bar" and spec[1] != "sign_post":
 			continue
@@ -225,12 +228,21 @@ func _collect_snags() -> void:
 		var n := maxi(1, int(along.length()))
 		for k in n:
 			var c := xz - along * 0.5 + along * ((k + 0.5) / float(n))
-			_add_snag(Vector3(c.x, 0.05, c.y), 0.4, size.y + 0.15)
+			_add_snag(Vector3(c.x, 0.05, c.y), 0.4, size.y + 0.15, Layout.env_index_at(xz))
 
-func _add_snag(at: Vector3, radius: float, top: float) -> void:
+func _add_snag(at: Vector3, radius: float, top: float, owner_index := -1) -> void:
 	var k := _snag_points.size()
-	_snag_points.append([at, radius, top])
+	_snag_points.append([at, radius, top, owner_index])
 	_register(_snag_cells, Rect2(at.x - radius, at.z - radius, radius * 2.0, radius * 2.0), k)
+
+## Статические spatial-индексы остаются прежними; состояние реальной опоры проверяется при использовании.
+func _owner_present(index: int) -> bool:
+	if index < 0: return true
+	if not is_instance_valid(_breakables) and is_instance_valid(_world):
+		_breakables = _world.get_node_or_null("LevelGeometry/Breakables")
+	if not is_instance_valid(_breakables) or not _breakables.has_method("env_at_index"): return true
+	var owner = _breakables.env_at_index(index)
+	return owner == null or owner.is_intact() or (owner.mode == &"dent" and owner.blocks())
 
 func _register(cells: Dictionary, rect: Rect2, k: int) -> void:
 	for gx in range(floori(rect.position.x / CELL), floori(rect.end.x / CELL) + 1):
@@ -248,6 +260,7 @@ func ground_at(p: Vector3) -> float:
 	var h := SnowField.height_at(p.x, p.z)
 	for k in _wall_cells.get(_cell(p), []):
 		var w: Array = _walls[k]
+		if w.size() > 2 and not _owner_present(w[2]): continue
 		if (w[0] as Rect2).has_point(Vector2(p.x, p.z)) and float(w[1]) < WALL_HEIGHT and p.y > float(w[1]) - 0.5:
 			h = maxf(h, float(w[1]))
 	return h + GROUND_LIFT
@@ -275,6 +288,7 @@ func wind_at(p: Vector3, mean: Vector3) -> Vector3:
 	w.y += TURB_UP * (sin(p.x * 0.29 + p.z * 0.23 + t * 1.7) * 0.7 + sin(t * 0.6 + p.x * 0.1) * 0.3)
 	for k in _wall_cells.get(_cell(p), []):
 		var wall: Array = _walls[k]
+		if wall.size() > 2 and not _owner_present(wall[2]): continue
 		if float(wall[1]) < WALL_HEIGHT or p.y > float(wall[1]) + 1.0:
 			continue
 		var rect: Rect2 = wall[0]
@@ -338,6 +352,7 @@ func _fly(bag: Bag, mean: Vector3, delta: float) -> void:
 	# Стены домов: не сквозь, отскок мягкий.
 	for k in _wall_cells.get(_cell(p), []):
 		var wall: Array = _walls[k]
+		if wall.size() > 2 and not _owner_present(wall[2]): continue
 		var rect: Rect2 = (wall[0] as Rect2).grow(0.15)
 		var top := float(wall[1])
 		if p.y > top or not rect.has_point(Vector2(p.x, p.z)):
@@ -377,6 +392,7 @@ func _try_snag(bag: Bag) -> void:
 		if k == bag.last_snag and clock - bag.snag_released < SNAG_COOLDOWN:
 			continue
 		var s: Array = _snag_points[k]
+		if s.size() > 3 and not _owner_present(s[3]): continue
 		var at: Vector3 = s[0]
 		if p.y < at.y or p.y > float(s[2]) or Vector2(p.x - at.x, p.z - at.z).length() > float(s[1]):
 			continue
@@ -427,6 +443,11 @@ func _snagged(bag: Bag, mean: Vector3, g: float, delta: float) -> void:
 			return
 		var visual: Node3D = bag.snag_target.visual
 		bag.snag_point = visual.to_global(bag.snag_local)
+	elif bag.last_snag >= 0 and bag.last_snag < _snag_points.size():
+		var point: Array = _snag_points[bag.last_snag]
+		if point.size() > 3 and not _owner_present(point[3]):
+			_release(bag, mean)
+			return
 	bag.snag_left -= delta
 	bag.snag_time += delta
 	var w := wind_at(bag.snag_point, mean)
@@ -453,6 +474,9 @@ func _release(bag: Bag, w: Vector3) -> void:
 	releases += 1
 
 func _rest(bag: Bag, mean: Vector3, g: float, delta: float) -> void:
+	if bag.position.y > ground_at(bag.position) + 0.15:
+		_lift_off(bag, mean, 0.0)
+		return
 	bag.rest_left -= delta
 	bag.rest_time += delta
 	var p := bag.position

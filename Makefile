@@ -7,10 +7,11 @@ map:
 	python3 tools/generate_arena_map.py
 # Каждый набор: лог в builds/checks/make-test/, зелёным считается только итоговая строка
 # «ИМЯ: N checks, 0 failures» — Godot выходит с кодом 0 и при ошибке разбора скрипта (QA-01, З1).
-# $(1) — скрипт в tests/, $(2) — частота кадров, $(3) — метка итоговой строки.
+# $(1) — скрипт, $(2) — частота, $(3) — итоговая метка, $(4) — аргументы,
+# $(5) — render для проверок настоящих MultiMesh: RendererDummy не хранит их трансформы.
 define godot_test
 	@mkdir -p builds/checks/make-test
-	@./tools/run.command --headless --fixed-fps $(2) --script tests/$(1).gd > builds/checks/make-test/$(1)-$(2).log 2>&1; \
+	@./tools/run.command $(if $(5),,--headless) --fixed-fps $(2) --script tests/$(1).gd $(4) > builds/checks/make-test/$(1)-$(2).log 2>&1; \
 	status=$$?; grep -E '^$(3): [0-9]+ checks, [0-9]+ failures' builds/checks/make-test/$(1)-$(2).log; \
 	grep -qE '^$(3): [0-9]+ checks, 0 failures' builds/checks/make-test/$(1)-$(2).log && \
 	! grep -qE '^SCRIPT ERROR:|^ERROR: Condition "p_elem->_root" is true' builds/checks/make-test/$(1)-$(2).log && [ $$status -eq 0 ] || \
@@ -47,6 +48,8 @@ test: map
 	$(call godot_test,punch02_view_test,60,PUNCH02_VIEW)
 	$(call godot_test,knock_test,60,KNOCK)
 	$(call godot_test,break_test,60,BREAK)
+	$(call godot_test,break03_acceptance,60,BREAK03_ACCEPTANCE,,render)
+	$(call godot_test,break03_stealth,60,STEALTH)
 	$(call godot_test,drive02_snow,60,DRIVE02)
 	$(call godot_test,pad01_test,60,PAD01)
 	$(call godot_test,text01_test,60,TEXT01)
@@ -62,7 +65,7 @@ test: map
 	$(call godot_test,arena03_activity_test,60,ARENA03_ACTIVITY)
 	$(call godot_test,road01_test,60,ROAD01)
 	$(call godot_test,cross01_test,60,CROSS01)
-	$(call godot_test,arena03_city_life_test,60,ARENA03_CITY_LIFE)
+	$(call godot_test,arena03_city_life_test,60,ARENA03_CITY_LIFE,-- break)
 	$(call godot_test,arena03_exit_test,60,ARENA03_EXIT)
 capture: map
 	./tools/run.command --fixed-fps 60 --resolution 1920x1080 --script tools/capture/capture.gd

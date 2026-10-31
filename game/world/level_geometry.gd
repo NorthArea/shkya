@@ -37,6 +37,21 @@ var _environment: EnvDress = null
 var _skyline: Skyline = null
 var _vent_steam: Array[Vector3] = []   # устья вытяжек на крышах (_steam_puff)
 var _wires: Array[Transform3D] = []
+var _wire_owners: Array = []           # BREAK-03: id столбов провода _wires[i] ([] — ничей)
+var _wire_extra: Array = []            # BREAK-03: id, которым принадлежат следующие провода (подвесы пролёта)
+
+## BREAK-03 (C11): облик окружения, которое ломается, — id (Layout.env_breakables) → {"nodes": узлы, которые падают
+## вместе с объектом, "mm": [[MultiMesh, индекс, Transform3D экземпляра, узел MultiMeshInstance3D]], "cut": узлы,
+## которые прячутся, пока объект сломан (бельё между деревьями), "wires": [[MultiMesh, индекс, Transform3D, [id]]] —
+## провода, которые висят, только пока целы все их столбы}. Читает Breakables.
+var break_visuals := {}
+var _pole_ids := {}                    # Vector2i(x·10, z·10) столба → id
+
+## Запись облика id в break_visuals (создаётся при первом обращении).
+static func break_entry(registry: Dictionary, id: StringName) -> Dictionary:
+	if not registry.has(id):
+		registry[id] = {"nodes": [], "mm": [], "cut": [], "wires": []}
+	return registry[id]
 
 # Надписи: [текст, позиция, поворот y, размер шрифта, цвет].
 const SIGNS := [
@@ -109,6 +124,27 @@ func _build_solid(index: int, spec: Array) -> void:
 	var xz: Vector2 = spec[2]
 	var size: Vector3 = spec[3]
 	var body := Greybox.solid_box(spec[0] if index < Layout.SOLIDS.size() else "%s_%d" % [spec[0], index], Vector3(xz.x, size.y * 0.5, xz.y), size, Greybox.COLORS.get(kind, Color.GRAY))
+	# BREAK-03 (C11): окружение, которое ломается, — здесь только облик; коллизию слоя 6 строит Breakables, облик
+	# (узел и экземпляры пакетов EnvDress) записан в break_visuals под id записи.
+	var breakable: Array = Layout.env_break_at(index)
+	if not breakable.is_empty():
+		body.collision_layer = 0
+		(body.get_child(0) as CollisionShape3D).disabled = true
+		break_entry(break_visuals, breakable[0])["nodes"].append(body)
+		_env().owners = [breakable[0]]
+		if breakable[1] in [&"lamp", &"pole", &"lamp_yard"]:
+			_pole_ids[_pole_key(xz)] = breakable[0]
+	_build_solid_look(index, spec, body)
+	_env().owners = []
+
+## Ключ столба по центру (x/z с точностью 0,1 м) — для владельцев проводов.
+static func _pole_key(xz: Vector2) -> Vector2i:
+	return Vector2i(roundi(xz.x * 10.0), roundi(xz.y * 10.0))
+
+func _build_solid_look(index: int, spec: Array, body: StaticBody3D) -> void:
+	var kind: String = spec[1]
+	var xz: Vector2 = spec[2]
+	var size: Vector3 = spec[3]
 	var mesh := body.get_child(1) as MeshInstance3D
 	match kind:
 		"panel", "panel_low":
@@ -661,42 +697,62 @@ func _build_wires() -> void:
 	var b1 := Layout.RING[3]   # C∩B
 	for z in [a0.z - WIRE_PAIR, a0.z + WIRE_PAIR]:
 		var run: Array[Vector2] = [Vector2(-100, z)]
+		var supports: Array = [[]]   # край карты; следующий узел держится на своей поперечине
 		for x in spans_a:
 			run.append(Vector2(x, z))
+			supports.append(_wire_poles(Vector3(x, 0, 22.0), Vector3(x, 0, 42.0)))
 		run.append(Vector2(100, z))
-		_wire_run(run, wire)
+		supports.append([])
+		_wire_run(run, wire, supports)
 	for k: float in [-1.0, 1.0]:   # −1 — внутренний провод кольца, +1 — внешний
 		var off := k * WIRE_PAIR
 		var b_x := b1.x + off
 		var c_z := b1.z - off
 		var d_x := d1.x - off
 		var run: Array[Vector2] = [Vector2(b_x, 25.0)]
+		var supports: Array = [[]]
 		for z in Layout.B_SPANS:
 			run.append(Vector2(b_x, z))
+			supports.append(_wire_poles(Vector3(Layout.LAMP_B_WEST, 0, z), Vector3(Layout.LAMP_B_EAST, 0, z)))
 		run.append(Vector2(b_x, c_z))
+		supports.append(_corner_wire_poles(true))
 		for i in range(Layout.C_SPANS.size() - 1, -1, -1):
-			run.append(Vector2(Layout.C_SPANS[i], c_z))
+			var x: float = Layout.C_SPANS[i]
+			run.append(Vector2(x, c_z))
+			supports.append(_wire_poles(Vector3(x, 0, Layout.LAMP_C_NORTH), Vector3(x, 0, Layout.POLE_C_SOUTH)))
 		run.append(Vector2(d_x, c_z))
+		supports.append(_corner_wire_poles(false))
 		for i in range(Layout.D_SPANS.size() - 1, -1, -1):
-			run.append(Vector2(d_x, Layout.D_SPANS[i]))
+			var z: float = Layout.D_SPANS[i]
+			run.append(Vector2(d_x, z))
+			supports.append(_wire_poles(Vector3(Layout.LAMP_D_WEST, 0, z), Vector3(Layout.POLE_D_EAST, 0, z)))
 		run.append(Vector2(d_x, d0.z - WIRE_PAIR))
-		_wire_run(run, wire)
+		supports.append([])
+		_wire_run(run, wire, supports)
 		for pole in Layout.CORNER_POLES:
 			var corner := Vector3(b_x if pole.x > 0.0 else d_x, CONTACT_Y, c_z)
 			_wire(Vector3(pole.x, Layout.POLE_HEIGHT - 0.4, pole.y), corner, wire)
-	# Подвесы контактных проводов к поперечинам.
+	# Подвесы контактных проводов к поперечинам (BREAK-03: висят, пока целы оба столба поперечины).
 	for x in spans_a:
+		_wire_extra = _wire_poles(Vector3(x, 0, 22.0), Vector3(x, 0, 42.0))
 		for z in [a0.z - WIRE_PAIR, a0.z + WIRE_PAIR]:
 			_wire(Vector3(x, CONTACT_Y, z), Vector3(x, SPAN_Y - 0.33, z), wire)
+		_wire_extra = []
 	for z in Layout.B_SPANS:
+		_wire_extra = _wire_poles(Vector3(Layout.LAMP_B_WEST, 0, z), Vector3(Layout.LAMP_B_EAST, 0, z))
 		for x in [b1.x - WIRE_PAIR, b1.x + WIRE_PAIR]:
 			_wire(Vector3(x, CONTACT_Y, z), Vector3(x, SPAN_Y - 0.28, z), wire)
+		_wire_extra = []
 	for z in Layout.D_SPANS:
+		_wire_extra = _wire_poles(Vector3(Layout.LAMP_D_WEST, 0, z), Vector3(Layout.POLE_D_EAST, 0, z))
 		for x in [d1.x - WIRE_PAIR, d1.x + WIRE_PAIR]:
 			_wire(Vector3(x, CONTACT_Y, z), Vector3(x, SPAN_Y - 0.28, z), wire)
+		_wire_extra = []
 	for x in Layout.C_SPANS:
+		_wire_extra = _wire_poles(Vector3(x, 0, Layout.LAMP_C_NORTH), Vector3(x, 0, Layout.POLE_C_SOUTH))
 		for z in [b1.z - WIRE_PAIR, b1.z + WIRE_PAIR]:
 			_wire(Vector3(x, CONTACT_Y, z), Vector3(x, SPAN_Y - 0.28, z), wire)
+		_wire_extra = []
 	# Бытовые провода во дворе: от дворового фонаря к H1 и H2.
 	var yard_top := Vector3(-52.0, 5.9, 100.0)
 	for target in [Vector3(-52.0, 7.5, 108.0), Vector3(-78.0, 7.5, 92.0), Vector3(-78.0, 7.2, 93.0)]:
@@ -716,30 +772,59 @@ func _build_wires() -> void:
 				_sag_wire(Vector3(a.x, h, a.y), Vector3(b.x, h, b.y), 0.32 + 0.12 * _rand(i * 7 + k, 2), wire)
 	_sag_wire(Layout.KIOSK + Vector3(2.3, 3.4, -1.8), Vector3(61.0, 6.2, -86.0), 0.6, wire)
 
-## Контактный провод по точкам (x, z) на высоте CONTACT_Y с провисом между соседними.
-func _wire_run(points: Array[Vector2], material: Material) -> void:
+## Контактный провод: опоры каждой точки — столбы её поперечины или угловой оттяжки.
+## Сегмент держится только на опорах двух своих концов, включая снег и скрутки на нём.
+func _wire_run(points: Array[Vector2], material: Material, supports: Array) -> void:
 	for i in range(1, points.size()):
-		_sag_wire(Vector3(points[i - 1].x, CONTACT_Y, points[i - 1].y), Vector3(points[i].x, CONTACT_Y, points[i].y), 0.22, material)
+		var owners: Array = []
+		for id: StringName in supports[i - 1] + supports[i]:
+			if not owners.has(id): owners.append(id)
+		_sag_wire(Vector3(points[i - 1].x, CONTACT_Y, points[i - 1].y), Vector3(points[i].x, CONTACT_Y, points[i].y), 0.22, material, owners)
+
+## Та же угловая опора, к которой ниже проведена оттяжка каждого провода кольца.
+func _corner_wire_poles(east: bool) -> Array:
+	var owners: Array = []
+	for pole: Vector2 in Layout.CORNER_POLES:
+		if (pole.x > 0.0) != east: continue
+		var id: StringName = _pole_ids.get(_pole_key(pole), &"")
+		if id != &"": owners.append(id)
+	return owners
 
 ## Провод с провисом: ломаная из 8 отрезков по параболе; на части пролётов — снежная «гирлянда» поверх провода,
 ## у пролётов с заметным провисом — скрутки и изоляторы на концах (CITY-02 E).
-func _sag_wire(from: Vector3, to: Vector3, sag: float, material: Material) -> void:
+func _sag_wire(from: Vector3, to: Vector3, sag: float, material: Material, supports: Array = []) -> void:
 	var steps := 8
 	var prev := from
 	var seed := int(absf(from.x * 13.0 + from.z * 7.0 + to.x * 3.0 + to.z * 5.0))
+	var owners := _wire_poles(from, to)
+	for id: StringName in supports:
+		if not owners.has(id): owners.append(id)
+	_env().wire_owners = owners
 	for i in range(1, steps + 1):
 		var k := float(i) / steps
 		var p := from.lerp(to, k) - Vector3.UP * sag * 4.0 * k * (1.0 - k)
-		_wire(prev, p, material)
+		_wire(prev, p, material, owners)
 		_env().wire_snow(prev, p, seed + i)
 		prev = p
 	if sag >= 0.3:
 		_env().wire_twist(from, to, seed)
 		_env().wire_twist(to, from, seed + 1)
+	_env().wire_owners = []
 
 ## Отрезок провода — экземпляр общего MultiMesh (единичный цилиндр толщиной 4 см, ось Y — вдоль провода).
-func _wire(from: Vector3, to: Vector3, _material: Material) -> void:
+## owners — id столбов (BREAK-03); не заданы — столбы на концах отрезка и _wire_extra.
+func _wire(from: Vector3, to: Vector3, _material: Material, owners: Array = []) -> void:
 	_wires.append(_segment(from, to, 1.0))
+	_wire_owners.append(owners if not owners.is_empty() else _wire_poles(from, to))
+
+## Разрушаемые столбы, на которых держится провод from → to: на его концах (по x/z) и _wire_extra.
+func _wire_poles(from: Vector3, to: Vector3) -> Array:
+	var out: Array = _wire_extra.duplicate()
+	for p in [from, to]:
+		var id: StringName = _pole_ids.get(_pole_key(Vector2(p.x, p.z)), &"")
+		if id != &"" and not id in out:
+			out.append(id)
+	return out
 
 ## Преобразование единичного цилиндра (высота 1, радиус 0,5) в отрезок from → to толщиной 2·radius_scale·0,5.
 static func _segment(from: Vector3, to: Vector3, radius_scale: float) -> Transform3D:
@@ -930,11 +1015,17 @@ func _build_instances() -> void:
 	wire.height = 1.0
 	wire.radial_segments = 4
 	wire.rings = 1
-	_multimesh("Wires", wire, _wires, [], Materials.plain(Color(0.05, 0.05, 0.05), 0.5), false)
+	var wires_node := _multimesh("Wires", wire, _wires, [], Materials.plain(Color(0.05, 0.05, 0.05), 0.5), false)
+	if wires_node:
+		var owned := []
+		for i in _wire_owners.size():
+			if not (_wire_owners[i] as Array).is_empty():
+				owned.append([i, _wire_owners[i]])
+		EnvDress.register(break_visuals, wires_node, owned, "wires")
 
-func _multimesh(name: String, mesh: Mesh, transforms: Array[Transform3D], colors: Array[Color], material: Material, shadows: bool) -> void:
+func _multimesh(name: String, mesh: Mesh, transforms: Array[Transform3D], colors: Array[Color], material: Material, shadows: bool) -> MultiMeshInstance3D:
 	if transforms.is_empty():
-		return
+		return null
 	var mm := MultiMesh.new()
 	mm.transform_format = MultiMesh.TRANSFORM_3D
 	mm.use_colors = not colors.is_empty()
@@ -950,6 +1041,7 @@ func _multimesh(name: String, mesh: Mesh, transforms: Array[Transform3D], colors
 	instance.material_override = material
 	instance.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON if shadows else GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	add_child(instance)
+	return instance
 
 
 
@@ -1013,6 +1105,28 @@ func _build_bus_stop() -> void:
 	small.pixel_size = 0.0032
 	small.position = plate.position + Vector3(0, -0.1, 0.02)
 	root.add_child(small)
+	# BREAK-03: знак на опоре падает с опорой, знак «Тб 13» на стойке — с павильоном.
+	_adopt(root, Layout.ENV_BREAK_KINDS.keys(), pole)
+	_adopt(post, ["BusPavilion"], pav)
+	_adopt(sign_a, ["BusPavilion"], pav)
+
+## BREAK-03: узел node падает вместе с разрушаемым окружением, чья запись с именем из names стоит в xz (нет — ничего).
+func _adopt(node: Node3D, names: Array, xz: Vector2, key := "nodes") -> void:
+	var id := env_id_at(names, xz)
+	if id != &"":
+		break_entry(break_visuals, id)[key].append(node)
+		var runtime := get_node_or_null("Breakables")
+		if key == "cut" and runtime and runtime.has_method("register_cut"):
+			runtime.register_cut(node, id)
+
+## id записи Layout.env_breakables() с именем из names (пусто — любое) в точке xz; &"" — нет такой.
+static func env_id_at(names: Array, xz: Vector2) -> StringName:
+	var solids := Layout.all_solids()
+	for spec: Array in Layout.env_breakables():
+		var i: int = spec[6]
+		if (spec[2] as Vector2).distance_to(xz) < 0.1 and (names.is_empty() or (i >= 0 and solids[i][0] in names)):
+			return spec[0]
+	return &""
 
 ## Синий квадратный знак остановки с белым автобусом; лицом — локальная +z, повёрнут на yaw.
 func _stop_sign(sign_name: String, at: Vector3, yaw: float) -> Node3D:
@@ -1243,6 +1357,8 @@ func _carpet_post(size: Vector3, first: bool) -> Node3D:
 	_rod(root, Vector3(0, bar_y, 0), to + Vector3(0, bar_y, 0), 0.035, paint)
 	_rod(root, Vector3(0, base + 1.1, 0), to + Vector3(0, base + 1.1, 0), 0.03, paint)
 	_part(root, Vector3(0.12, 0.05, span.length() + 0.1), to * 0.5 + Vector3(0, bar_y + 0.06, 0), Materials.snow(0.0))
+	for part in root.get_children().slice(1):
+		_adopt(part, ["CarpetBar"], Layout.CARPET_BAR[1], "cut")
 	return root
 
 ## Три мусорных контейнера на бетонной площадке у проезда: крашеный металл, ручки-цапфы и колёса, крышки с шапкой
@@ -1670,6 +1786,7 @@ func _billboard(size: Vector3) -> Node3D:
 func _env() -> EnvDress:
 	if _environment == null:
 		_environment = EnvDress.new()
+		_environment.registry = break_visuals
 		add_child(_environment)
 	return _environment
 

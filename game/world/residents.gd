@@ -285,6 +285,7 @@ func _build_life_props() -> void:
 	var stripe := _box(carpet, "Stripe", Vector3(0.06, 1.2, 1.7), Vector3.ZERO, Color(0.85, 0.65, 0.25))
 	stripe.position = Vector3(0.002, 0.0, 0.0)
 	carpet.visible = false
+	carpet.set_meta(&"life_support_prop", true)
 	life.props[&"carpet"] = carpet
 	# Капот «Жигулей» (PARKED у гаражей двора): машина передом на север, к мужику (LevelGeometry._zhiguli), капот поднят
 	# у северного торца, шарнир у лобового стекла. LIFE-02: угол +HOOD_OPEN — передняя кромка вверх и наружу (прежний −1
@@ -319,6 +320,12 @@ func _build_life_props() -> void:
 			for x in [-0.75, 0.75]:
 				_box(root, "BenchLeg", Vector3(0.08, 0.45, 0.4), Vector3(c.x + x * size.x * 0.5, 0.225, c.y + 0.05), Color(0.25, 0.25, 0.27))
 	_build_p2_props(root, have)
+	var geometry := get_parent()
+	for support in ["Hood", "HoodRod"]:
+		geometry._adopt(root.get_node(support), ["ParkedCar"], Layout.LIFE_HOOD_CAR, "cut")
+	for at: Vector2 in Layout.CARPET_BAR:
+		geometry._adopt(carpet, ["CarpetBar"], at, "cut")
+
 
 ## PEOPLE-03 (P2): шайба на льду коробки (её водят хоккеисты, life.hockey_step); прилавок-ящик торговки у гаражей C —
 ## если Z19_1 нет среди разрушаемых (без коллизии, как столик домино) — и банки с соленьями на нём (видны, пока она
@@ -389,6 +396,8 @@ func _connect_breakables() -> void:
 		_breakables.broken.connect(_on_broken)
 
 func _on_broken(b: Node3D, _by: StringName) -> void:
+	if life:
+		life.release_broken_supports()
 	var nearest: Resident = null
 	var best := BREAK_GLANCE_DISTANCE
 	for resident in residents:
