@@ -409,6 +409,15 @@ func _garage_row(body: Node3D, name: String, size: Vector3) -> void:
 	body.add_child(_slab(Vector3(size.x, 0.0, size.z), Vector3(0, size.y * 0.5 + 0.04, 0), 0.06))
 	EnvDress.kit_emit(k, body, "GarageDress")
 	EnvDress.kit_emit(near, body, "GarageNear", 60.0)
+	if on_square and long_z and side > 0.0:
+		# CROSS-01: краска на последнем южном боксе, ниже номера; существующая парковка остаётся прежней.
+		var parking := _label(QuestLines.PARKING_SIGN, 56, Color(0.92, 0.90, 0.77))
+		parking.name = "ParkingSign"
+		parking.pixel_size = 0.0045
+		parking.shaded = true
+		parking.position = _gpos(long_z, length * 0.5 - unit * 0.5, -size.y * 0.17, face + side * 0.076)
+		parking.rotation.y = PI * 0.5
+		body.add_child(parking)
 	if name == "Garages_C" and not long_z:
 		_graffiti(body, size, count, unit, side)
 

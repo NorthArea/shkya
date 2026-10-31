@@ -26,6 +26,7 @@ const INK := Color(0.12, 0.10, 0.08)
 const POP_SECONDS := 0.15
 
 const TOAST_SECONDS := 2.0
+const PARKING_HINT_SECONDS := 6.0
 const MARKER_Y := 2.62   # над шапкой Бабки: верх облика 2,07 м при height_m 2,17 (ART-01, PLAY-02)
 ## POLISH-03 A (критик, k_01): «!»/«?» крупнее, с покачиванием, пульсом и мягким ореолом; издалека — крупнее
 ## (размер растёт с расстоянием до камеры от MARKER_NEAR_M до MARKER_SCALE_MAX), чтобы читаться через двор.
@@ -164,7 +165,8 @@ func _physics_process(_delta: float) -> void:
 	_earn_hint()
 	# Прибытие: Илюша или машина на площадке киоска, пока миссия ждёт прибытия.
 	if mission.state == MissionDirector.DRIVE_TO_KIOSK and world.kiosk_zone.is_occupied():
-		mission.notify_arrived_kiosk()
+		if mission.notify_arrived_kiosk() and world.control_mode == &"in_car":
+			world.show_hide_hint(QuestLines.PARKING_HINT, PARKING_HINT_SECONDS, true)
 	mission.set_nearby(_nearby())
 	# Подсказки зон наблюдателей — из MissionDirector, как у остальных зон (C3).
 	for id in _observer_zones:
@@ -180,6 +182,8 @@ func _earn_hint() -> void:
 		return
 	if world.player.hide_mode != HideTuning.NONE or world.is_stealth_failing():
 		return
+	if world.player.current_interactable() != null:
+		return
 	var sound: Node = world.get_node_or_null("SoundDirector")
 	if sound == null or sound.gag_playing():
 		return
@@ -188,7 +192,7 @@ func _earn_hint() -> void:
 		return
 	for drone in swarm.drones:
 		if drone.visible and drone.global_position.distance_to(world.player.global_position) < 6.0:
-			world.show_hide_hint(CoinLines.earn_hint(PadInput.pad_active), 6.0)
+			world.show_hide_hint(CoinLines.earn_hint(PadInput.pad_active), 6.0, true)
 			_earn_hint_shown = true
 			return
 

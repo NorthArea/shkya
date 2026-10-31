@@ -46,6 +46,7 @@ var fail_presenter: Node = null
 ## EXT-02: подсказка-отказ в укрытии («СНИМИ КОРОБКУ», «ВЫХОД ЗАНЯТ»), HUD — get_hud_state()["hide_hint"].
 var _hide_hint := ""
 var _hide_hint_left := 0.0
+var _hide_hint_passive := false
 
 @onready var player: Ilyusha = $Ilyusha
 @onready var camera_rig: CameraRig = $CameraRig
@@ -294,9 +295,10 @@ func refuse_in_hide(interaction_id: StringName) -> bool:
 	return true
 
 ## EXT-02: показать подсказку-отказ в строке подсказки HUD на seconds (укрытия: «ВЫХОД ЗАНЯТ» и т. п.).
-func show_hide_hint(text: String, seconds := HideTuning.HINT_SECONDS) -> void:
+func show_hide_hint(text: String, seconds := HideTuning.HINT_SECONDS, passive := false) -> void:
 	_hide_hint = text
 	_hide_hint_left = seconds if text != "" else 0.0
+	_hide_hint_passive = passive
 
 ## Экран провала открыт (для HUD и тестов).
 func is_stealth_failing() -> bool:
@@ -323,6 +325,10 @@ func get_hud_state() -> Dictionary:
 				prompt = HideTuning.refusal_for(player.hide_mode, zone.interaction_id)
 	elif _hint_left > 0.0:
 		prompt = _hint
+	var hide_hint := _hide_hint if _hide_hint_left > 0.0 else ""
+	# CROSS-01: парковочная подсказка уступает взаимодействию, диалогу и экрану провала.
+	if _hide_hint_passive and (prompt != "" or ui_blocking or quest_flow.is_dialog_open() or is_stealth_failing()):
+		hide_hint = ""
 	var target_id: StringName = objective.get("target_id", &"")
 	return {
 		"title": objective.get("title", ""),
@@ -340,7 +346,7 @@ func get_hud_state() -> Dictionary:
 		"stealth_toast": _stealth_toast_text() if _stealth_toast_left > 0.0 else "",
 		# EXT-02: режим укрытия и подсказка-отказ (HUD показывает её вместо prompt, пока не пуста).
 		"hide_mode": player.hide_mode,
-		"hide_hint": _hide_hint if _hide_hint_left > 0.0 else "",
+		"hide_hint": hide_hint,
 		# Кошелёк и источники заработка; цель появляется после принятия и исчезает после покупки.
 		"money": mission.money,
 		"money_goal": 0 if mission.state in [MissionDirector.NOT_STARTED, MissionDirector.OFFERED, MissionDirector.RETURN_HOME, MissionDirector.COMPLETE] else MissionDirector.BREAD_PRICE,
