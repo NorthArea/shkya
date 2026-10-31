@@ -19,6 +19,10 @@ SOURCES = ["game/world/layout.gd", "game/world/ambient.gd", "game/world/props.gd
 FONT = ROOT / "assets/fonts/Pangolin-Regular.ttf"
 PAPER, INK, SNOW, ROAD = "#f5f2e9", "#263e49", "#eaf0f1", "#7e8d94"
 ORANGE, TEAL, RED = "#d47435", "#387d7b", "#aa514c"
+SECTOR_COLUMNS = ("А", "Б", "В", "Г", "Д")
+SECTOR_ROWS = 5
+SECTOR_LINE = "#1769bc"
+SECTOR_LINE_WIDTH = 3.5
 
 
 def fingerprint():
@@ -115,9 +119,28 @@ def clipped_segment(a, b, box):
     return [[a[i]+(b[i]-a[i])*t for i in (0,1)] for t in (low,high)]
 
 
+def sector_grid(bounds):
+    """Derive navigation sectors from exported Layout.BOUNDS; +x east, +z south."""
+    x_edges = [bounds["x"] + bounds["width"] * i / len(SECTOR_COLUMNS)
+               for i in range(len(SECTOR_COLUMNS) + 1)]
+    z_edges = [bounds["z"] + bounds["height"] * i / SECTOR_ROWS
+               for i in range(SECTOR_ROWS + 1)]
+    cells = []
+    for row in range(SECTOR_ROWS):
+        for column, letter in enumerate(SECTOR_COLUMNS):
+            cells.append({"label": f"{letter}{row + 1}", "bounds": {
+                "x": x_edges[column], "z": z_edges[row],
+                "width": x_edges[column + 1] - x_edges[column],
+                "height": z_edges[row + 1] - z_edges[row]}})
+    return {"columns": list(SECTOR_COLUMNS), "rows": list(range(1, SECTOR_ROWS + 1)),
+            "bounds": dict(bounds), "units": "meters", "axes": {"x": "east", "z": "south"},
+            "x_edges": x_edges, "z_edges": z_edges, "cells": cells}
+
+
 def render(data, output, digest):
     d = Draw(2060, 1810)
     bounds = data["bounds"]
+    sectors = sector_grid(bounds)
     scale = min(1180 / bounds["width"], 1460 / bounds["height"])
     left, top = 105, 220
     mw, mh = bounds["width"]*scale, bounds["height"]*scale
@@ -129,12 +152,19 @@ def render(data, output, digest):
     d.text((105,116),"Арена города Н.",56,INK,"start")
     d.text((105,166),"Зимний квартал • навигационная карта • вид сверху",25,TEAL,"start")
     d.rect((left,top,mw,mh),SNOW,"#b6c6cb",2)
-    for i in range(1,8):
-        x=left+mw*i/8; d.line([(x,top),(x,top+mh)],"#dce5e7",1)
-    for i in range(1,10):
-        y=top+mh*i/10; d.line([(left,y),(left+mw,y)],"#dce5e7",1)
     for surface in data["surfaces"]:
         d.rect(rect(surface["center"],surface["size"]), ROAD if surface["kind"]=="road" else "#d6e0e0" if surface["kind"]=="sidewalk" else "#dee7e5")
+    # Above ground surfaces, below buildings, paths, routes and labels.
+    for x in sectors["x_edges"][1:-1]:
+        d.line([point((x,bounds["z"])),point((x,bounds["z"]+bounds["height"]))],SECTOR_LINE,SECTOR_LINE_WIDTH,dash=9)
+    for z in sectors["z_edges"][1:-1]:
+        d.line([point((bounds["x"],z)),point((bounds["x"]+bounds["width"],z))],SECTOR_LINE,SECTOR_LINE_WIDTH,dash=9)
+    for i, letter in enumerate(sectors["columns"]):
+        x=(sectors["x_edges"][i]+sectors["x_edges"][i+1])/2
+        d.text((point((x,bounds["z"]))[0],top-27),letter,34,SECTOR_LINE)
+    for i, number in enumerate(sectors["rows"]):
+        z=(sectors["z_edges"][i]+sectors["z_edges"][i+1])/2
+        d.text((left-32,point((bounds["x"],z))[1]),str(number),34,SECTOR_LINE)
     for surface in data["surfaces"]:
         if surface["kind"]=="yard_road":
             c=surface["center"]; size=surface["size"]
@@ -218,6 +248,9 @@ def render(data, output, digest):
     legend=[("#4b626b","Дома"),("#b6a995","Гаражи"),(ROAD,"Проезжая часть"),("#b7cbd4","Снежные валы; разрывы — проходы"),(TEAL,"Тропинки и пешая связность"),(RED,"Посты у киоска")]
     for i,(color,text) in enumerate(legend):
         y=395+i*60; d.rect((sx,y-10,32,20),color,None,radius=3); d.text((sx+50,y),text,22,INK,"start")
+    d.line([(sx,755),(sx+32,755)],SECTOR_LINE,SECTOR_LINE_WIDTH,dash=9)
+    d.text((sx+50,755),"Сектора: буква сверху, номер слева.",22,INK,"start")
+    d.text((sx+50,789),"Например, В3 — центр карты.",22,INK,"start")
     d.rect((sx-20,820,550,290),"#e8e4d8",None,radius=18)
     d.text((sx,865),"За хлебом",32,INK,"start")
     d.line([(sx,924),(sx+68,924)],ORANGE,5,dash=9);d.text((sx+87,924),"На машине до парковки",23,INK,"start")
@@ -231,7 +264,8 @@ def render(data, output, digest):
     for x in [left,left+bar/2,left+bar]: d.line([(x,y-7),(x,y+7)],INK,2)
     for x,text in [(left,"0"),(left+bar/2,"25"),(left+bar,"50 м")]:d.text((x,y+25),text,19,INK)
     d.text((left+mw,y+18),"Размер арены: %g × %g м"%(bounds["width"],bounds["height"]),21,INK,"end")
-    metadata={"schema":1,"source_fingerprint":digest,"sources":SOURCES,"coverage":data["coverage"]}
+    metadata={"schema":1,"source_fingerprint":digest,"sources":SOURCES,"coverage":data["coverage"],
+              "sector_grid":sectors}
     d.save(output,metadata)
 
 
