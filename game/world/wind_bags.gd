@@ -29,12 +29,14 @@ const GROUP := &"wind_bags"
 const SEED := 3003
 
 ## Пакеты: [вид, точка старта x/z]. Вид: &"shop" — красно-зелёная «майка» «ВСЁ ПО ПЛАНУ», &"white" — белый
-## «СПАСИБО ЗА ПОКУПКУ!», &"black" — чёрный мусорный (тяжелее, летает ниже).
+## «СПАСИБО ЗА ПОКУПКУ!», &"black" — чёрный мусорный (тяжелее, летает ниже),
+## &"plan_white" — белая «майка» «ВСЕ ПО ПЛАНУ / ПРОДУКТЫ У ДОМА», та же, что в меню.
 const BAGS: Array = Layout.WIND_BAGS
 const SOURCES: Array[Vector2] = Layout.WIND_BAG_SOURCES
 
 const BAG_SIZE := Vector2(0.44, 0.64)   # м, ширина и высота «майки» с ручками
 const BAG_SCALE := 1.25                 # крупнее настоящего: читается с игровой камеры
+const PLAN_WHITE_START_HEIGHT := 0.85   # м над снегом: низкий пролёт во дворе с начала игры
 const GRID := Vector2i(8, 12)
 
 # --- ветер ---
@@ -146,7 +148,7 @@ func _ready() -> void:
 		bag.name = "Bag%d_%s" % [i, spec[0]]
 		bag.kind = spec[0]
 		bag.index = i
-		bag.weight = 1.6 if bag.kind == &"black" else (0.85 if bag.kind == &"white" else 1.0)
+		bag.weight = 1.6 if bag.kind == &"black" else (0.85 if bag.kind in [&"white", &"plan_white"] else 1.0)
 		bag.liftoff_gust = _rng.randf_range(LIFTOFF_GUST.x, LIFTOFF_GUST.y)
 		add_child(bag)
 		bag.look = MeshInstance3D.new()
@@ -161,6 +163,9 @@ func _ready() -> void:
 		_put_down(bag, Vector3(p.x, 0.0, p.y), _rng.randf_range(0.0, TAU))
 		bag.rest_left = _rng.randf_range(0.0, REST_MIN.y)
 		bags.append(bag)
+		if bag.kind == &"plan_white":
+			bag.position.y += PLAN_WHITE_START_HEIGHT
+			_lift_off(bag, wind_mean(), 1.0)
 	rustle = AudioStreamPlayer3D.new()
 	rustle.name = "Rustle"
 	rustle.stream = RUSTLE
@@ -729,6 +734,13 @@ func _material(kind: StringName) -> ShaderMaterial:
 	m.shader = BagShader
 	m.set_shader_parameter("bag_size", BAG_SIZE)
 	match kind:
+		&"plan_white":
+			m.set_shader_parameter("base_color", Color(0.96, 0.96, 0.94))
+			m.set_shader_parameter("band_mode", 0.0)
+			m.set_shader_parameter("ink_color", Color(0.12, 0.13, 0.12))
+			m.set_shader_parameter("gloss", 0.27)
+			m.set_shader_parameter("backlight_k", 0.6)
+			_print(m, ["ВСЕ", "ПО ПЛАНУ"], "ПРОДУКТЫ У ДОМА")
 		&"shop":
 			m.set_shader_parameter("base_color", Color(0.93, 0.92, 0.88))
 			m.set_shader_parameter("band_color", Color(0.80, 0.09, 0.07))

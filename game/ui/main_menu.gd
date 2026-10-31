@@ -153,7 +153,7 @@ func _build_backdrop() -> void:
 	menu_bag = MenuBag.new()
 	menu_bag.name = "MenuBag"
 	for bag in wind_bags.bags:
-		if bag.kind == &"shop":
+		if bag.kind == &"plan_white":
 			menu_bag.material = bag.look.material_override
 			break
 	backdrop.add_child(menu_bag)

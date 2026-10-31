@@ -1,5 +1,5 @@
 extends SceneTree
-## MENU-02: реальный фон меню, естественное движение камеры/пакета и настройки.
+## MENU-02: контрольные фазы полёта в меню, настройки и пакет в игровом дворе.
 ## tools/run.command --resolution 1920x1080 --fixed-fps 60 --script tools/capture/menu02.gd
 const OUT := "res://builds/screenshots/MENU-02"
 const TIMES := [0.05, 3.0, 6.0, 8.0, 9.5, 13.0, 16.0, 20.0, 24.0, 28.0, 32.0]
@@ -17,10 +17,14 @@ func _run() -> void:
 	for i in 3:
 		await process_frame
 	var menu: Node = main.menu
+	# Выбор фазы явно задан: потеря фокуса окна не пропускает точки и не дублирует файлы.
+	menu.set_process(false)
 	for t in TIMES:
-		while menu._orbit_time < t:
+		menu._orbit_time = t
+		menu._process(0.0)
+		for i in 3:
 			await process_frame
-		await _shot("menu_%05.1f" % menu._orbit_time)
+		await _shot("menu_%05.1f" % t)
 	menu.settings_button.pressed.emit()
 	for i in 8:
 		await process_frame
@@ -29,13 +33,17 @@ func _run() -> void:
 	for i in 8:
 		await process_frame
 	await _shot("menu_return")
+	menu.start_button.pressed.emit()
+	for i in 4:
+		await process_frame
+	await _shot("gameplay_low_bag")
 	main.queue_free()
 	for i in 3:
 		await process_frame
 	OS.delay_msec(100)
 	await process_frame
 	print("MENU02_CAPTURE: %d frames, %d failures" % [saved, failures])
-	quit(0 if failures == 0 and saved == TIMES.size() + 2 else 1)
+	quit(0 if failures == 0 and saved == TIMES.size() + 3 else 1)
 
 func _shot(label: String) -> void:
 	await RenderingServer.frame_post_draw
