@@ -101,8 +101,10 @@ const COIN_WINDOW_CAP := 12
 const COIN_SOLID_PAD := 0.45
 const COIN_LANE_MIN := 2.5           # как у раскладки монет (coins_test: кузов троллейбуса 1,25 от оси)
 const COIN_EMITTER_STEP := 0.5
-const COIN_EMITTER_RINGS := 48
+const COIN_EMITTER_LOCAL_RADIUS := Ilyusha.PUNCH_REACH # перенос начала — не дальше выноса обычного удара
 const COIN_EMITTER_DIRECTIONS := 32
+const COIN_EMITTER_FINE_STEP := 0.05
+const COIN_EMITTER_FINE_DIRECTIONS := 180
 
 ## Надписи штендеров (Label3D на обеих досках).
 const SIGN_TEXT := {&"Z11_3": "ПРОДУКТЫ", &"Z17_2": "ПРОДУКТЫ 24\nХЛЕБ\nМОЛОКО"}
@@ -885,13 +887,27 @@ func drop_coins(b: Breakable, by: StringName) -> int:
 		coin_drops.append([clock, by, made, b.id])
 	return made
 
-## Сохраняем прежний выброс, если он допустим. У новых ENV внутри площадки/полос
-## выбираем ближайшее допустимое начало, чтобы и вертикальный запасной выброс был безопасен.
+## Допустимое исходное начало сохраняется. Иначе ищем только рядом с ним, у задетой грани;
+## если локальной безопасной точки нет, drop_coins возвращает ноль до учёта награды.
 func _coin_emitter(at: Vector3) -> Vector3:
 	if coin_spot_ok(at):
 		return at
-	for ring in range(1, COIN_EMITTER_RINGS + 1):
-		var radius := ring * COIN_EMITTER_STEP
+	for ring in range(1, ceili(COIN_EMITTER_LOCAL_RADIUS / COIN_EMITTER_STEP) + 1):
+		var radius := minf(ring * COIN_EMITTER_STEP, COIN_EMITTER_LOCAL_RADIUS)
+		for direction in COIN_EMITTER_DIRECTIONS:
+			var angle := TAU * direction / COIN_EMITTER_DIRECTIONS
+			var candidate := at + Vector3(cos(angle), 0.0, sin(angle)) * radius
+			if coin_spot_ok(candidate):
+				return candidate
+	# У границы досягаемости проверяем и узкие промежутки между направлениями.
+	for direction in COIN_EMITTER_FINE_DIRECTIONS:
+		var angle := TAU * direction / COIN_EMITTER_FINE_DIRECTIONS
+		var candidate := at + Vector3(cos(angle), 0.0, sin(angle)) * COIN_EMITTER_LOCAL_RADIUS
+		if coin_spot_ok(candidate):
+			return candidate
+	# Узкая безопасная полоса может лежать между крупными кольцами.
+	for ring in range(1, ceili(COIN_EMITTER_LOCAL_RADIUS / COIN_EMITTER_FINE_STEP) + 1):
+		var radius := minf(ring * COIN_EMITTER_FINE_STEP, COIN_EMITTER_LOCAL_RADIUS)
 		for direction in COIN_EMITTER_DIRECTIONS:
 			var angle := TAU * direction / COIN_EMITTER_DIRECTIONS
 			var candidate := at + Vector3(cos(angle), 0.0, sin(angle)) * radius

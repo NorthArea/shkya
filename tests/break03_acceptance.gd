@@ -8,6 +8,19 @@ const SnowShader = preload("res://game/world/shaders/snow.gdshader")
 const CoinStates = preload("res://game/world/coins.gd")
 const IMMUTABLE_KINDS = ["panel", "panel_low", "garage", "kiosk", "snow", "snow_bank"]
 const IMMUTABLE_NAMES = ["DogHouse", "KioskPavilion", "KioskBins"]
+# Independent geometric receipt certifies these standard legal player-side witnesses.
+const COIN_LOCAL_DENIED_IDS = [
+	&"Zhiguli_B", &"StreetLamp_45", &"StreetLamp_46", &"StreetSign_114",
+	&"TrolleyPole_120", &"TrolleyPole_121", &"TrolleyPole_131", &"ParkedCar_173",
+	&"ParkedCar_174", &"ParkedCar_175", &"ParkedCar_176"]
+const COIN_LOCAL_RELOCATED_IDS = [
+	&"Zhiguli_A", &"StreetLamp_29", &"StreetLamp_40", &"StreetLamp_42",
+	&"StreetLamp_44", &"StreetLamp_47", &"StreetLamp_48", &"StreetLamp_49",
+	&"StreetLamp_50", &"StreetLamp_51", &"StreetLamp_52", &"StreetLamp_53",
+	&"StreetLamp_54", &"StreetLamp_55", &"StreetLamp_56", &"TrolleyPole_126",
+	&"ParkedCar_161", &"ParkedCar_162", &"ParkedCar_166", &"ParkedCar_169",
+	&"ParkedCar_170", &"ParkedCar_171", &"ParkedCar_172", &"PropRinkBoard_187",
+	&"PropRinkBoard_188", &"PropIceSlide_189"]
 var checks = 0
 var failures: Array[String] = []
 var main: Node
@@ -660,6 +673,8 @@ func _environment_coins() -> void:
 	bk.reset_positions()
 	var coins = geo.get_node("Coins")
 	coins.reset()
+	for id in COIN_LOCAL_DENIED_IDS + COIN_LOCAL_RELOCATED_IDS:
+		check(bk.get_by_id(id) != null, "%s frozen local-reward expectation refers to an actual source" % id)
 	var total = 0
 	var zero = []
 	var unsafe = []
@@ -680,6 +695,10 @@ func _environment_coins() -> void:
 		check(witness.is_finite(), "%s has a legal player-side coin-drop witness" % b.id)
 		if not witness.is_finite(): witness = Layout.SPAWN
 		world.player.position = witness
+		var nominal := _coin_policy_nominal(b, witness)
+		check(nominal.is_finite(), "%s has a geometric short-face nominal emitter" % b.id)
+		var expected: int = 0 if b.id in COIN_LOCAL_DENIED_IDS else Breakables.coin_count(b.kind, b.heavy)
+		var before_reward := _coin_policy_snapshot(b, coins)
 		# Capture actual newly published AIR slots before any physics advances their trajectory.
 		var before_slots: PackedInt32Array = coins._state.duplicate()
 		var drop_started_us := Time.get_ticks_usec()
@@ -698,19 +717,36 @@ func _environment_coins() -> void:
 			source_distance = maxf(source_distance, flat.distance_to(b.center))
 			source_clearance = maxf(source_clearance, flat.distance_to(nearest))
 			emitted.append({"slot": slot, "position": at})
+			var local_distance := Vector2(at.x - nominal.x, at.z - nominal.z).length()
+			check(local_distance <= Ilyusha.PUNCH_REACH or is_equal_approx(local_distance, Ilyusha.PUNCH_REACH),
+				"%s publishes within punch reach of its geometric short-face emitter" % b.id)
+			check(bk.coin_spot_ok(at, b), "%s actual emitter satisfies every unchanged placement guard" % b.id)
+			if b.id in COIN_LOCAL_RELOCATED_IDS:
+				check(not at.is_equal_approx(nominal), "%s relocates its forbidden original emitter locally" % b.id)
+			else:
+				check(at.is_equal_approx(nominal), "%s preserves its independently safe original emitter" % b.id)
 		check(emitted.size() == made, "%s actual newly published AIR slots match the returned reward" % b.id)
 		max_emitter_distance = maxf(max_emitter_distance, source_distance)
 		max_emitter_clearance = maxf(max_emitter_clearance, source_clearance)
 		var displacement = {"id": String(b.id), "center_distance_xz": source_distance, "source_rect_clearance_xz": source_clearance}
 		if source_distance > 0.0: displaced_emitters.append(displacement)
 		print("COIN_EMITTER_TELEMETRY: ", JSON.stringify({"id": String(b.id), "source_center": b.global_ground(),
-			"source_rect": source_rect, "made": made, "elapsed_us": elapsed_us, "new_air_slots": emitted, "displacement": displacement}))
-		check(made == Breakables.coin_count(b.kind, b.heavy), "%s emits its configured reward through the real drop path" % b.id)
-		check(bk.drop_coins(b, &"punch") == 0, "%s cannot immediately pay again during cooldown" % b.id)
+			"source_rect": source_rect, "made": made, "expected": expected, "nominal": nominal,
+			"elapsed_us": elapsed_us, "new_air_slots": emitted, "displacement": displacement}))
+		check(made == expected, "%s emits its exact independently certified reward (%d)" % [b.id, expected])
+		if expected == 0:
+			check(_coin_policy_unchanged(before_reward, b, coins), "%s denied reward preserves every slot, wallet, counter, window and cooldown" % b.id)
+			check(bk.drop_coins(b, &"punch") == 0 and _coin_policy_unchanged(before_reward, b, coins),
+				"%s repeated local rejection creates no reward or cooldown accounting" % b.id)
+		else:
+			check(b.coins_at == bk.clock and b.coins_given == before_reward.given + made and bk.coins_dropped == before_reward.dropped + made,
+				"%s successful local reward retains exact credit and cooldown accounting" % b.id)
+			var after_reward := _coin_policy_snapshot(b, coins)
+			check(bk.drop_coins(b, &"punch") == 0 and _coin_policy_unchanged(after_reward, b, coins),
+				"%s cannot immediately pay again during cooldown or mutate reward accounting" % b.id)
 		_away()
 		if made == 0: zero.append(b.id)
 		else: paid_kinds[b.kind] = true
-		check(made >= 0 and made <= Breakables.coin_count(b.kind, b.heavy), "%s emits at most its actual configured reward" % b.id)
 		total += made
 		made_batch += made
 		batch += 1
@@ -750,6 +786,36 @@ func _environment_coins() -> void:
 	check(reward == Breakables.COIN_WINDOW_CAP, "environment and original objects share the same global coin-window cap")
 	coins.reset()
 	bk.reset_positions()
+
+# Ray/edge intersections independently express the existing short-face offset.
+func _coin_policy_nominal(b, witness: Vector3) -> Vector3:
+	var rect: Rect2 = b.rect()
+	var origin: Vector2 = b.center
+	var direction := (Vector2(witness.x, witness.z) - origin).normalized()
+	var far := origin + direction * (rect.size.length() + 1.0)
+	var corners: Array[Vector2] = [rect.position, Vector2(rect.end.x, rect.position.y), rect.end, Vector2(rect.position.x, rect.end.y)]
+	var face := Vector2.INF
+	var best := INF
+	for i in 4:
+		var intersection = Geometry2D.segment_intersects_segment(origin, far, corners[i], corners[(i + 1) % 4])
+		if intersection == null: continue
+		var point: Vector2 = intersection
+		if origin.distance_to(point) < best:
+			best = origin.distance_to(point)
+			face = point
+	if not face.is_finite(): return Vector3.INF
+	face += direction * 0.8
+	return Vector3(face.x, clampf(b.size.y * 0.7, 0.6, 1.4), face.y)
+
+func _coin_policy_snapshot(b, coins) -> Dictionary:
+	return {"at": b.coins_at, "given": b.coins_given, "dropped": bk.coins_dropped,
+		"drops": bk.coin_drops.duplicate(true), "wallet": world.mission.money, "state": coins._state.duplicate(),
+		"position": coins._pos.duplicate(), "velocity": coins._vel.duplicate(), "age": coins._age.duplicate()}
+
+func _coin_policy_unchanged(before: Dictionary, b, coins) -> bool:
+	return b.coins_at == before.at and b.coins_given == before.given and bk.coins_dropped == before.dropped \
+		and bk.coin_drops == before.drops and world.mission.money == before.wallet and coins._state == before.state \
+		and coins._pos == before.position and coins._vel == before.velocity and coins._age == before.age
 
 func _coin_witness(b) -> Vector3:
 	var inward: Vector2 = (Layout.BOUNDS.get_center() - b.center).normalized()
