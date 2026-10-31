@@ -463,9 +463,15 @@ func register_cut(node: Node3D, id: StringName) -> void:
 	_cut.append([node, [owner], node.visible, false])
 
 func _refresh_cut_wires() -> void:
-	for entry: Array in _cut:
+	# Residents может удалить LifeProps; проверяем ссылку до присваивания Node3D.
+	var index := 0
+	while index < _cut.size():
+		var entry: Array = _cut[index]
+		if not is_instance_valid(entry[0]):
+			_cut.remove_at(index)
+			continue
 		var node: Node3D = entry[0]
-		if not is_instance_valid(node): continue
+		index += 1
 		var intact := (entry[1] as Array).all(func(b: Breakable): return b.is_intact())
 		if not intact:
 			if not entry[3]: entry[2] = node.visible
