@@ -2300,9 +2300,17 @@ func _build_work_tool() -> void:
 	var steel := Color(0.25, 0.31, 0.34)
 	match _act_kind:
 		&"dig":
-			_work_part(Vector3(0.07, 1.15, 0.07), Vector3(0, -0.05, 0), wood)
-			_work_part(Vector3(0.38, 0.42, 0.07), Vector3(0, -0.76, -0.04), steel)
-			_work_part(Vector3(0.23, 0.065, 0.07), Vector3(0, 0.54, 0), wood)
+			_work_part(Vector3(0.07, 1.15, 0.07), Vector3(0, -0.05, 0), Color(0.78, 0.53, 0.26))
+			# Полотно и светлая кромка делят прежнюю коробку: внешний размер и контакт не меняются.
+			_work_part(Vector3(0.38, 0.35, 0.07), Vector3(0, -0.725, -0.04), Color(0.48, 0.59, 0.64))
+			_work_part(Vector3(0.38, 0.07, 0.07), Vector3(0, -0.935, -0.04), Color(0.80, 0.86, 0.89))
+			_work_part(Vector3(0.23, 0.065, 0.07), Vector3(0, 0.54, 0), Color(0.86, 0.65, 0.32))
+			# Небольшая собственная яркость только лопаты сохраняет её части в синей тени ограды.
+			for part: MeshInstance3D in _work_tool.get_children():
+				var material := part.material_override as StandardMaterial3D
+				material.emission_enabled = true
+				material.emission = material.albedo_color
+				material.emission_energy_multiplier = 0.12
 		&"carpet":
 			_work_part(Vector3(0.065, 0.58, 0.065), Vector3(0, 0.18, 0), wood)
 			var ring := TorusMesh.new()
