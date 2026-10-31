@@ -331,7 +331,7 @@ func _build_life_props() -> void:
 ## если Z19_1 нет среди разрушаемых (без коллизии, как столик домино) — и банки с соленьями на нём (видны, пока она
 ## торгует). Своя простая геометрия, без теней от мелочи.
 func _build_p2_props(root: Node3D, have: Callable) -> void:
-	var puck := _box(root, "Puck", Vector3(0.076, 0.025, 0.076), Vector3(Layout.RINK[0].x, LifeScript.PUCK_Y, Layout.RINK[0].y), Color(0.05, 0.05, 0.06))
+	var puck := _box(root, "Puck", Vector3(0.13, 0.035, 0.13), Vector3(Layout.RINK[0].x, LifeScript.PUCK_Y, Layout.RINK[0].y), Color(0.05, 0.05, 0.06))
 	puck.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	life.props[&"puck"] = puck
 	for spec in Layout.PROPS_BREAKABLES:

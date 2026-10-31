@@ -2222,8 +2222,9 @@ func _pose_activity() -> void:
 			&"hood", &"dig", &"carpet":
 				if _working_now():
 					var stroke := _work_stroke()
-					visual.scale.y *= 1.0 - 0.09 * stroke
-					offset.y -= 0.04 * stroke
+					visual.scale.y *= 1.0 - 0.14 * stroke
+					offset += _forward(facing_yaw) * 0.08 * stroke
+					offset.y -= 0.06 * stroke
 					_pose_work_tool(stroke)
 			&"sweep":
 				if _broom == null:
@@ -2255,7 +2256,13 @@ func _pose_activity() -> void:
 
 func _work_stroke() -> float:
 	var phase := fposmod(_act_t / float(WORK_PERIODS[_act_kind]) + index * 0.17, 1.0)
-	return 0.5 + 0.5 * cos((phase - WORK_CONTACT) * TAU)
+	var after_contact := fposmod(phase - WORK_CONTACT, 1.0)
+	if after_contact < 0.09:
+		return 1.0
+	if after_contact < 0.34:
+		return 1.0 - smoothstep(0.09, 0.34, after_contact)
+	# Поднятый инструмент ждёт следующего короткого удара, а не качается маятником.
+	return smoothstep(0.82, 1.0, after_contact)
 
 ## У раскопки одна рабочая позиция; двое остальных смотрят, а не копают воздух сбоку.
 func _working_now() -> bool:
@@ -2284,23 +2291,23 @@ func _pose_work_tool(stroke: float) -> void:
 	_work_tool.visible = true
 	var f := _forward(facing_yaw)
 	_work_tool.position = f * 0.45 + Vector3(-f.z, 0.0, f.x) * 0.33 + Vector3.UP * 1.05
-	var tilt := lerpf(-0.65, 0.35, stroke) if _act_kind == &"dig" else lerpf(-0.1, -1.4, stroke)
+	var tilt := lerpf(-0.85, 0.35, stroke) if _act_kind == &"dig" else lerpf(0.05, -1.4, stroke)
 	_work_tool.rotation = Vector3(0.0, facing_yaw, 0.0)
 	_work_tool.rotate_object_local(Vector3.RIGHT, tilt)
 
 func _build_work_tool() -> void:
-	var wood := Color(0.44, 0.30, 0.17)
-	var steel := Color(0.58, 0.61, 0.59)
+	var wood := Color(0.62, 0.40, 0.18)
+	var steel := Color(0.25, 0.31, 0.34)
 	match _act_kind:
 		&"dig":
-			_work_part(Vector3(0.05, 1.15, 0.05), Vector3(0, -0.05, 0), wood)
-			_work_part(Vector3(0.32, 0.38, 0.05), Vector3(0, -0.76, -0.04), steel)
-			_work_part(Vector3(0.20, 0.045, 0.05), Vector3(0, 0.54, 0), wood)
+			_work_part(Vector3(0.07, 1.15, 0.07), Vector3(0, -0.05, 0), wood)
+			_work_part(Vector3(0.38, 0.42, 0.07), Vector3(0, -0.76, -0.04), steel)
+			_work_part(Vector3(0.23, 0.065, 0.07), Vector3(0, 0.54, 0), wood)
 		&"carpet":
-			_work_part(Vector3(0.045, 0.52, 0.045), Vector3(0, 0.18, 0), wood)
+			_work_part(Vector3(0.065, 0.58, 0.065), Vector3(0, 0.18, 0), wood)
 			var ring := TorusMesh.new()
 			ring.inner_radius = 0.17
-			ring.outer_radius = 0.21
+			ring.outer_radius = 0.23
 			ring.rings = 16
 			ring.ring_segments = 6
 			var head := MeshInstance3D.new()
@@ -2310,12 +2317,12 @@ func _build_work_tool() -> void:
 			head.material_override = _work_material(wood)
 			head.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 			_work_tool.add_child(head)
-			_work_part(Vector3(0.04, 0.35, 0.04), Vector3(0, 0.64, 0), wood)
+			_work_part(Vector3(0.055, 0.35, 0.055), Vector3(0, 0.64, 0), wood)
 		&"hood":
-			_work_part(Vector3(0.07, 0.40, 0.05), Vector3(0, 0.1, 0), steel)
+			_work_part(Vector3(0.09, 0.50, 0.07), Vector3(0, 0.1, 0), Color(0.63, 0.68, 0.70))
 			for side in [-1.0, 1.0]:
-				_work_part(Vector3(0.07, 0.16, 0.06), Vector3(side * 0.075, 0.34, 0), steel)
-			_work_part(Vector3(0.20, 0.07, 0.06), Vector3(0, 0.25, 0), steel)
+				_work_part(Vector3(0.09, 0.19, 0.075), Vector3(side * 0.085, 0.40, 0), steel)
+			_work_part(Vector3(0.26, 0.09, 0.075), Vector3(0, 0.30, 0), steel)
 
 func _work_material(color: Color) -> StandardMaterial3D:
 	var material := StandardMaterial3D.new()
@@ -2611,9 +2618,9 @@ func _make_sled() -> Node3D:
 func _make_stick() -> Node3D:
 	var root := Node3D.new()
 	root.name = "Stick"
-	var shaft := _part3(root, _boxm(Vector3(0.03, 0.03, 1.25)), Vector3(0.0, 0.48, 0.42), _plain(Color(0.55, 0.38, 0.22)), Vector3(0.82, 0.0, 0.0))
+	var shaft := _part3(root, _boxm(Vector3(0.05, 0.05, 1.25)), Vector3(0.0, 0.48, 0.42), _plain(Color(0.64, 0.40, 0.17)), Vector3(0.82, 0.0, 0.0))
 	shaft.name = "Shaft"
-	_part3(root, _boxm(Vector3(0.28, 0.06, 0.035)), Vector3(-0.1, 0.05, 0.0), _plain(Color(0.12, 0.12, 0.14)))   # крюк, обмотан изолентой
+	_part3(root, _boxm(Vector3(0.34, 0.08, 0.07)), Vector3(-0.1, 0.05, 0.0), _plain(Color(0.055, 0.06, 0.07)))   # крюк, обмотан изолентой
 	root.visible = false
 	return root
 
