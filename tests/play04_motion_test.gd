@@ -10,11 +10,11 @@ const PRESERVED_WALK_MPS := 4.0
 const PRESERVED_APEX_M := 1.8877
 const PRESERVED_FLIGHT_S := 1.25
 const PRESERVED_APEX_SECONDS := 0.616666666666667
-const SPEED_TOLERANCE_MPS := 0.01 # below one original acceleration step; no max-speed retuning
+const SPEED_TOLERANCE_MPS := 0.01 # below one original acceleration step; ordinary walk cap remains unchanged; responsiveness is covered by PLAY04_RESPONSE
 const HEIGHT_TOLERANCE_M := 0.02 # 2 cm permits collision safe-margin variation, not roof reach changes
 const TIME_TOLERANCE_TICKS := 2.0 # takeoff/landing discretization, no gravity/jump-tempo retuning
-const TURN_SPEED_FLOOR := 0.9 # scalar speed: at most 10% transient loss; rejects vector cancellation
-const NONLINEAR_MARGIN := 0.03 # 3% full-speed gap visibly separates curve from baseline linear response
+const TURN_SETTLED_SPEED_FLOOR := 0.9 # полезная скорость после короткого разворота
+const RESPONSE_SLOPE_RATIO := 1.5 # чувствительность стика возрастает от малых отклонений к большим
 const AIR_SPEED_TOLERANCE := 0.02 # 2% numerical margin around inertial coast, no release brake
 const AIR_DIRECTION_TOLERANCE_RAD := 0.02 # ~1 degree; collision-free released input adds no turn
 const CAMERA_HEIGHT_TOLERANCE_M := 0.05 # 5 cm on flat ground: hold ground view, baseline follows 1.86 m
@@ -40,13 +40,16 @@ func _assess() -> int:
 		"partial inputs remain ordered after actual InputMap deadzone")
 	check(half.steady_mps > SPEED_TOLERANCE_MPS and half.steady_mps < three_quarters.steady_mps and three_quarters.steady_mps < full.steady_mps,
 		"partial-stick speed stays positive and monotonic")
-	for partial: Dictionary in [half, three_quarters]:
-		check(partial.fraction_of_full <= partial.strength_effective - NONLINEAR_MARGIN,
-			"partial effective stick %.3f has nonlinear sublinear speed response" % partial.strength_effective)
+	var low_slope: float = half.steady_mps / half.strength_effective
+	var high_slope: float = (three_quarters.steady_mps - half.steady_mps) / (three_quarters.strength_effective - half.strength_effective)
+	check(high_slope >= low_slope * RESPONSE_SLOPE_RATIO,
+		"stick response gains sensitivity toward larger deflections while retaining fine low-speed control")
 	for name in ["turn90", "turn180"]:
 		var turn: Dictionary = measurements[name]
-		check(turn.min_speed_ratio >= TURN_SPEED_FLOOR,
-			name + ": full-stick turn preserves scalar speed without cancellation stop")
+		check(turn.final.speed >= PRESERVED_WALK_MPS * TURN_SETTLED_SPEED_FLOOR,
+			name + ": full-stick turn regains useful travel after braking through the direction change")
+		check(absf(angle_difference(turn.entry_facing_rad, turn.first_motion_rad)) < PI * 0.5,
+			name + ": first turn tick does not instantly reverse physical travel")
 		check(turn.max_speed_mps <= PRESERVED_WALK_MPS + SPEED_TOLERANCE_MPS,
 			name + ": turning does not increase the speed limit")
 		var requested_turn := PI * 0.5 if name == "turn90" else PI

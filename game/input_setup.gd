@@ -12,6 +12,7 @@ const KEYS := {
 	"move_right": [KEY_D],
 	"interact": [KEY_E],      # взаимодействие, вход и выход из машины
 	"handbrake": [KEY_SPACE], # ручник в машине
+	"sprint": [KEY_SHIFT],   # быстрый бег пешком (PLAY-04)
 	"jump": [KEY_SPACE],      # прыжок пешком (та же клавиша: пешком ручника нет)
 	"punch": [KEY_F],         # удар пешком (PUNCH-01); ещё ЛКМ — MOUSE
 	"pause": [KEY_ESCAPE],    # пауза, перезапуск, сброс автомобиля
@@ -38,6 +39,7 @@ const JOY := {
 	"look_up": [[JOY_AXIS_RIGHT_Y, -1.0]],
 	"look_down": [[JOY_AXIS_RIGHT_Y, 1.0]],
 	"interact": [JOY_BUTTON_X],
+	"sprint": [JOY_BUTTON_LEFT_SHOULDER],
 	"jump": [JOY_BUTTON_A],
 	"handbrake": [JOY_BUTTON_B],
 	"punch": [JOY_BUTTON_B],   # PUNCH-01: пешком B — удар, в машине — ручник (Илюша в машине ввод не читает)

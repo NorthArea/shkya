@@ -15,9 +15,14 @@ extends CharacterBody3D
 const CharacterSpriteScript = preload("res://game/characters/character_sprite.gd")
 const HideTuning = preload("res://game/stealth/hide_tuning.gd")
 
-const WALK_SPEED := 4.0         # 2,2 роста/с при фигуре 1,8 м, как у эталона (PLAY-02)
+const WALK_SPEED := 4.0
+const RUN_SPEED := 8.0          # удерживаемый бег; своя настройка по разделению walk/turbo в C++
 const ACCELERATION := 30.0
-const DECELERATION := 11.0      # остановка за ~0,4 с, как у эталона (PLAY-01)
+const DECELERATION := 11.0      # прежнее торможение укрытий
+const GROUND_BRAKE := 24.0      # обычный ход: короткая остановка без скольжения после отпускания
+const MOTION_ACCELERATION := 40.0 # ограничение изменения фактической скорости, включая разворот
+const INPUT_SPEED_SCALE := 0.69 # нормализация квадратной аналоговой кривой; C++ Character::GetInputScale
+const INPUT_TURN_THRESHOLD := 0.01 # рад: направление должно выйти из зоны дрожания стика
 const TURN_RATE := 12.0
 const AIR_ACCELERATION := 8.0   # м/с²: ввод добавляет управление к скорости отрыва, без тормоза при отпускании
 const PROBE_RADIUS := 0.5
@@ -53,8 +58,9 @@ var hide_visual: Node3D
 ## Фактический путь в плоскости XZ с последней смены режима, м (вращение бочки «по пройденному пути»).
 var hide_travel := 0.0
 var _look: Node3D
-var _last_input := Vector2.ZERO
+var _basis_input := Vector2.ZERO # направление последней привязки ввода к камере
 var _ground_speed := 0.0
+var _air_speed_limit := WALK_SPEED # сохраняет импульс разбега после отпускания бега в прыжке
 ## PUNCH-01: сколько ударов начато и сколько задели цель; цели последнего попадания.
 var punches := 0
 var punch_hits := 0
@@ -101,38 +107,48 @@ func _physics_process(delta: float) -> void:
 	var input := Vector2.ZERO
 	if input_enabled:
 		input = Input.get_vector(&"move_left", &"move_right", &"move_forward", &"move_back")
-	# Курс ходьбы — от камеры на момент смены клавиш (CameraRig.input_yaw): автодоводка камеры
-	# не закручивает Илюшу, пока держишь те же клавиши (PLAY-02).
-	if camera_rig and not input.is_equal_approx(_last_input):
-		camera_rig.sync_input_yaw()
-	_last_input = input
+	# Опора курса меняется при новом направлении, но не от силы или дрожания стика.
+	# Сравнение с последней привязкой позволяет медленному намеренному повороту накопиться.
+	var input_direction := input.normalized()
+	var starts_or_stops := input_direction.is_zero_approx() != _basis_input.is_zero_approx()
+	if starts_or_stops or absf(_basis_input.angle_to(input_direction)) >= INPUT_TURN_THRESHOLD:
+		if camera_rig:
+			camera_rig.sync_input_yaw()
+		_basis_input = input_direction
 	var yaw := camera_rig.input_yaw if camera_rig else 0.0
 	var limit := speed_limit()
 	var direction := Vector3(input.x, 0.0, input.y).rotated(Vector3.UP, yaw)
 	if limit <= 0.0:
 		direction = Vector3.ZERO   # сугроб: движения и поворота нет
 	var horizontal := Vector3(velocity.x, 0.0, velocity.z)
-	if hide_mode != HideTuning.NONE or not input_enabled:
-		# Укрытия и блокировка ввода сохраняют прежние пределы и остановку.
+	if not input_enabled:
+		horizontal = Vector3.ZERO
+		_ground_speed = 0.0
+		_air_speed_limit = WALK_SPEED
+	elif hide_mode != HideTuning.NONE:
+		# Укрытия сохраняют прежние пределы и остановку.
 		var rate := ACCELERATION if direction.length_squared() > 0.01 else DECELERATION
 		horizontal = horizontal.move_toward(direction * limit, rate * delta)
 		_ground_speed = horizontal.length()
 	elif is_on_floor():
-		# PLAY-04: скорость отдельно от направления и плавного взгляда; разворот не гасит ход.
+		# Желаемая скорость и фактическое движение разделены: разворот проходит через короткое торможение.
 		# Нелинейная кривая применяется после штатной мёртвой зоны Input.get_vector().
 		var strength := direction.length()
-		var wanted_speed := strength * strength * limit
+		var wanted_speed := minf(strength * strength / INPUT_SPEED_SCALE, 1.0) * limit
 		# После столкновения velocity содержит только остаток скольжения. Повторное использование
 		# его длины как скорости разгона каждый кадр гасило касательное движение вдоль стены.
 		if strength <= 0.0:
 			_ground_speed = horizontal.length()
-		var rate := ACCELERATION if wanted_speed > _ground_speed else DECELERATION
+		var rate := ACCELERATION if wanted_speed > _ground_speed else GROUND_BRAKE
 		_ground_speed = move_toward(_ground_speed, wanted_speed, rate * delta)
-		horizontal = (direction.normalized() if strength > 0.0 else horizontal.normalized()) * _ground_speed
+		var wanted_velocity := (direction.normalized() if strength > 0.0 else horizontal.normalized()) * _ground_speed
+		horizontal = horizontal.move_toward(wanted_velocity, MOTION_ACCELERATION * delta)
 	else:
 		# В воздухе нет наземного тормоза: отпускание оставляет дрейф, ввод меняет импульс постепенно.
 		horizontal = (horizontal + direction * direction.length() * AIR_ACCELERATION * delta).limit_length(limit)
 		_ground_speed = horizontal.length()
+	if is_on_floor():
+		_air_speed_limit = maxf(limit, horizontal.length())
 	velocity.x = horizontal.x
 	velocity.z = horizontal.z
 	if is_on_floor():
@@ -203,14 +219,20 @@ func place(point: Vector3, facing_yaw: float) -> void:
 	global_position = point
 	velocity = Vector3.ZERO
 	_ground_speed = 0.0
+	_air_speed_limit = WALK_SPEED
+	_basis_input = Vector2.ZERO
 	visual.rotation.y = facing_yaw
 	reset_physics_interpolation()
 
 # --- EXT-02: укрытия ---
 
-## Предел горизонтальной скорости в текущем режиме, м/с: обычный — WALK_SPEED, коробка 1,2, бочка 2,6, сугроб 0.
+## Укрытия сохраняют свои пределы. В воздухе остаётся предел последнего наземного шага.
 func speed_limit() -> float:
-	return HideTuning.speed_for(hide_mode, WALK_SPEED)
+	if hide_mode != HideTuning.NONE:
+		return HideTuning.speed_for(hide_mode, WALK_SPEED)
+	if not is_on_floor():
+		return _air_speed_limit
+	return RUN_SPEED if input_enabled and Input.is_action_pressed(&"sprint") else WALK_SPEED
 
 ## Стоит: горизонтальная скорость меньше HideTuning.STILL_SPEED (0,1 м/с).
 func is_still() -> bool:
@@ -267,6 +289,8 @@ func _apply_hide_mode(mode: StringName, spot: Node) -> void:
 			child.queue_free()
 	var limit := speed_limit()
 	var horizontal := Vector2(velocity.x, velocity.z).limit_length(limit)
+	_ground_speed = horizontal.length()
+	_air_speed_limit = WALK_SPEED
 	velocity.x = horizontal.x
 	velocity.y = minf(velocity.y, 0.0)
 	velocity.z = horizontal.y
