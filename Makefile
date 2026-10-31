@@ -1,4 +1,4 @@
-.PHONY: run editor test capture fps map
+.PHONY: run editor test test-headless capture fps map
 run: map
 	./tools/run.command
 editor: map
@@ -10,7 +10,7 @@ map:
 # $(1) — скрипт, $(2) — частота, $(3) — итоговая метка, $(4) — аргументы,
 # $(5) — render для настоящих MultiMesh и камеры после native physics;
 # $(6) — realtime: без fixed-fps для естественных AudioServer finished callbacks.
-define godot_test
+define run_godot_test
 	@mkdir -p builds/checks/make-test
 	@./tools/run.command $(if $(5),,--headless) $(if $(6),,--fixed-fps $(2)) --script tests/$(1).gd $(4) > builds/checks/make-test/$(1)-$(2).log 2>&1; \
 	status=$$?; grep -E '^$(3): [0-9]+ checks, [0-9]+ failures' builds/checks/make-test/$(1)-$(2).log; \
@@ -18,6 +18,14 @@ define godot_test
 	! grep -qE '^SCRIPT ERROR:|^ERROR: CameraRig:|^ERROR: Condition "p_elem->_root" is true' builds/checks/make-test/$(1)-$(2).log && [ $$status -eq 0 ] || \
 	{ echo "FAIL: $(1) ($(2) fps), лог builds/checks/make-test/$(1)-$(2).log"; grep -E 'FAIL|SCRIPT ERROR|Parse Error|CameraRig:|p_elem->_root' builds/checks/make-test/$(1)-$(2).log | head -20; exit 1; }
 endef
+
+# Безоконный набор явно пропускает проверки, которым нужен настоящий рендер.
+define godot_test
+$(if $(and $(filter 1,$(HEADLESS_ONLY)),$(5)),@echo "NOT RUN [requires native renderer]: $(1)",$(call run_godot_test,$(1),$(2),$(3),$(4),$(5),$(6)))
+endef
+
+test-headless: HEADLESS_ONLY=1
+test-headless: test
 
 test: map
 	$(call godot_test,smoke_runner,60,SMOKE)
