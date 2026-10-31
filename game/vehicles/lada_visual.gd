@@ -14,6 +14,11 @@ const WHITE := Color(0.86, 0.85, 0.80)
 const BEIGE := Color(0.84, 0.79, 0.68)
 const PLAYER_MODEL := &"vaz2106"
 
+static func set_indicators(visual: Node3D, on: bool) -> void:
+	var material := visual.get_meta("indicator_material", null) as StandardMaterial3D
+	if material:
+		material.emission_energy_multiplier = 4.0 if on else 0.0
+
 ## Огни (POLISH-02, п. 8): без водителя фары погашены, задние тусклые; с водителем горят; при торможении ярче.
 enum Lights { OFF, ON, BRAKE }
 const TAIL_ENERGY := [0.25, 1.2, 4.0]
@@ -87,6 +92,13 @@ static func build(paint := BEIGE, plate := PLATE, player := true, rust := 0.8, s
 	var snow := clampf(snow_depth * 4.0, 0.2, 0.8)
 	var paint_material := VehicleMesh.paint(paint, rust, 1.0, snow, 0.55)
 	var body := dress(root, model, paint_material, VehicleMesh.glass(0.03 if player else 0.07), head, tail, plate, snow_depth)
+	# Instance material illuminates the actual amber lenses; it follows body damage and every transform.
+	var indicators := VehicleMesh.lamp(Color(1.0, 0.55, 0.10), Color(1.0, 0.5, 0.05), 0.0)
+	var body_mesh := body.get_node("BodyMesh") as MeshInstance3D
+	var amber_slot := (body_mesh.mesh.get_meta("slots", []) as Array).find("lens_amber")
+	if amber_slot >= 0:
+		body_mesh.set_surface_override_material(amber_slot, indicators)
+	root.set_meta("indicator_material", indicators)
 	var wheels: Array[Node3D] = []
 	var steer: Array[Node3D] = []
 	for spot in wheel_spots(model):
