@@ -223,6 +223,8 @@ func _input(event: InputEvent) -> void:
 		return
 	if not _opened:
 		return
+	if event is InputEventJoypadMotion:
+		return # Native GUI navigation owns the left stick while the phone is open.
 	if event.is_action_pressed(&"pause") or event.is_action_pressed(&"ui_cancel"):
 		close_phone()
 		get_viewport().set_input_as_handled()
@@ -345,6 +347,8 @@ func _build() -> void:
 		button.pressed.connect(select_tab.bind(key))
 		tabs.add_child(button)
 		tab_buttons[key] = button
+	tab_buttons[&"news"].focus_neighbor_right = tab_buttons[&"news"].get_path_to(tab_buttons[&"sms"])
+	tab_buttons[&"sms"].focus_neighbor_left = tab_buttons[&"sms"].get_path_to(tab_buttons[&"news"])
 	page_control = Control.new()
 	page_control.name = "Page"
 	page_control.custom_minimum_size = Vector2(0, 470)
@@ -381,7 +385,8 @@ func _build() -> void:
 	var close := _button("УБРАТЬ ТЕЛЕФОН")
 	close.pressed.connect(close_phone)
 	column.add_child(close)
-	column.add_child(_label("P / ↓ — убрать   ←→ — листать   LB/RB — разделы", 19))
+	column.add_child(_label("LB/RB — НОВОСТИ / СМС   Стик + A — выбрать", 19))
+	column.add_child(_label("P / ↓ — убрать    ←→ — листать", 19))
 	overlay.hide()
 
 func _fit_panel() -> void:
