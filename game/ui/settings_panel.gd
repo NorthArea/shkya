@@ -53,7 +53,7 @@ func _ready() -> void:
 	music_credit.scroll_active = false
 	music_credit.add_theme_font_size_override("normal_font_size", 14)
 	music_credit.add_theme_color_override("default_color", INK_SOFT)
-	music_credit.text = "Радио: [url=https://incompetech.com/music/royalty-free/index.html?isrc=USUAN1100499]Cold Funk — Kevin MacLeod (incompetech.com)[/url] · [url=https://creativecommons.org/licenses/by/4.0/]CC BY 4.0[/url]\nПерекодировано, громкость адаптирована. Классика — Paul Pitman / Olga Gurevich, [url=https://musopen.org/]Musopen[/url]."
+	music_credit.text = "Радио: Kevin MacLeod (incompetech.com) · [url=https://creativecommons.org/licenses/by/4.0/]CC BY 4.0[/url]\n[url=https://incompetech.com/music/royalty-free/index.html?isrc=USUAN1100499]Cold Funk[/url] · [url=https://incompetech.com/music/royalty-free/index.html?isrc=USUAN1300012]Local Forecast - Elevator[/url] · [url=https://incompetech.com/music/royalty-free/index.html?isrc=USUAN1400011]Monkeys Spinning Monkeys[/url] · [url=https://incompetech.com/music/royalty-free/index.html?isrc=USUAN1100772]Sneaky Snitch[/url]\nПерекодировано, громкость адаптирована. Классика — Paul Pitman / Olga Gurevich, [url=https://musopen.org/]Musopen[/url]."
 	music_credit.meta_clicked.connect(func(url: Variant): OS.shell_open(str(url)))
 	box.add_child(music_credit)
 	var gap := Control.new()

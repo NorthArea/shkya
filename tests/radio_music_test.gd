@@ -3,6 +3,12 @@ extends SceneTree
 
 const Materials = preload("res://game/world/materials.gd")
 const VehicleMesh = preload("res://game/vehicles/vehicle_mesh.gd")
+const EXPECTED_LIVE_PATHS: Array[String] = [
+	"res://assets/audio/radio/cold_funk.ogg",
+	"res://assets/audio/radio/local_forecast_elevator.ogg",
+	"res://assets/audio/radio/monkeys_spinning_monkeys.ogg",
+	"res://assets/audio/radio/sneaky_snitch.ogg",
+]
 
 var failures: Array[String] = []
 var checks := 0
@@ -36,9 +42,14 @@ func _run() -> void:
 	if music == null:
 		await _finish()
 		return
+	var live_paths: Array = music.get_script().get_script_constant_map().get("LIVE_PATHS", [])
+	check(live_paths == EXPECTED_LIVE_PATHS, "live playlist contains the four licensed recordings in the selected order")
+	if live_paths != EXPECTED_LIVE_PATHS:
+		await _finish()
+		return
 	check(not music.player.playing, "bed is silent on foot")
 	check(music.player.stream is AudioStreamOggVorbis and not music.player.stream.loop, "Cold Funk has a natural end for between-track news")
-	check(music.player.stream.packet_sequence == load(music.LIVE_PATH).packet_sequence, "the sole bed is the selected Cold Funk recording")
+	check(music.player.stream.packet_sequence == load(music.LIVE_PATH).packet_sequence, "the first live track remains the selected Cold Funk recording")
 	check(music.player.bus == &"Master", "radio does not share Chopin's pause filter")
 	world.car.enter(world.player)
 	await _frames(2)
@@ -145,6 +156,10 @@ func _run() -> void:
 	check(not music.player.playing and music.between_tracks(), "next song waits for the entire between-track announcement")
 	await _frames(900)
 	check(music.player.playing and sound.radio_text() == "", "next song starts after the announced text finishes")
+	check(_live_recording_is(1), "first completed gap advances from Cold Funk to Local Forecast")
+	await _playlist_cycles()
+	var before_pause: AudioStream = music.player.stream
+	var before_pause_position: float = music.player.get_playback_position()
 	main.set_paused(true)
 	await _frames(50)
 	check(not music.switch_station(), "pause ignores station switching")
@@ -155,6 +170,15 @@ func _run() -> void:
 	check(not main.music.player.playing or not music.player.playing or music.player.stream_paused, "car bed waits for Chopin's resume fade to finish")
 	await _frames(60)
 	check(music.player.playing and not music.player.stream_paused and not main.music.player.playing, "bed resumes after pause Chopin stops")
+	check(music.player.stream == before_pause and music.player.get_playback_position() >= before_pause_position - 0.1, "pause preserves the current live recording and cursor")
+	var before_station: AudioStream = music.player.stream
+	var before_station_position: float = music.player.get_playback_position()
+	check(music.switch_station(), "switch away from a non-first live recording")
+	await _frames(120)
+	check(music.switch_station(), "return to the non-first live recording")
+	await _frames(120)
+	check(music.player.stream == before_station and music.player.get_playback_position() >= before_station_position - 0.1, "classical round trip preserves live track identity and cursor")
+	var before_exit: AudioStream = music.player.stream
 	check(world.exit_car(), "real driver exits from the parked car")
 	check(not music.player.playing and _voices() == 0, "exit synchronously stops music and announcers")
 	var saved: float = music.resume_position
@@ -164,6 +188,7 @@ func _run() -> void:
 	world.enter_car()
 	await _frames(120)
 	check(music.player.playing and music.player.get_playback_position() >= saved - 0.1, "next entry resumes the saved track cursor")
+	check(music.player.stream == before_exit and _live_recording_is(1), "re-entry resumes the non-first live recording instead of Cold Funk")
 	for index in 3:
 		world.exit_car()
 		world.enter_car()
@@ -176,6 +201,37 @@ func _run() -> void:
 	await _frames(100)
 	check(not music.player.playing and not music.tuning.playing, "cancelled tuning cannot restart music during the failure card")
 	await _finish()
+
+func _live_recording_is(index: int) -> bool:
+	return music.player.stream is AudioStreamOggVorbis and music.player.stream.packet_sequence == load(EXPECTED_LIVE_PATHS[index]).packet_sequence
+
+func _playlist_cycles() -> void:
+	# Настоящий AudioServer finished: сокращаем только текущий тестовый stream.
+	# Следующий трек должен быть настоящей записью; ожидаемый порядок задан независимо.
+	for step in 8:
+		var expected := (step + 2) % EXPECTED_LIVE_PATHS.size()
+		var short_track := AudioStreamWAV.new()
+		short_track.format = AudioStreamWAV.FORMAT_16_BITS
+		short_track.mix_rate = 48000
+		var pcm := PackedByteArray()
+		pcm.resize(9600)
+		short_track.data = pcm
+		music.player.stream = short_track
+		music.player.play()
+		await _until_wall(func(): return music.between_tracks(), 2000)
+		check(music.between_tracks() and not music.player.playing, "cycle %d waits in the real finished gap" % step)
+		await _until_wall(func(): return sound.radio_text() != "", 1000)
+		check(sound.radio_text() != "" and not music.player.playing, "cycle %d admits news before the next recording" % step)
+		sound.hide_radio_line()
+		await _until_wall(func(): return music.player.playing, 1000)
+		check(_live_recording_is(expected) and not music.between_tracks(), "cycle %d starts expected live recording %d after the gap" % [step, expected])
+
+func _until_wall(condition: Callable, milliseconds: int) -> void:
+	var deadline := Time.get_ticks_msec() + milliseconds
+	while not condition.call() and Time.get_ticks_msec() < deadline:
+		OS.delay_msec(5)
+		await process_frame
+	await _frames(2)
 
 func _voices() -> int:
 	return int(sound.radio.playing) + int(sound.car_radio.player.playing)

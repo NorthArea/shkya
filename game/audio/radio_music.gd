@@ -4,6 +4,12 @@ extends Node
 
 const PadInput = preload("res://game/ui/pad_input.gd")
 const LIVE_PATH := "res://assets/audio/radio/cold_funk.ogg"
+const LIVE_PATHS: Array[String] = [
+	LIVE_PATH,
+	"res://assets/audio/radio/local_forecast_elevator.ogg",
+	"res://assets/audio/radio/monkeys_spinning_monkeys.ogg",
+	"res://assets/audio/radio/sneaky_snitch.ogg",
+]
 const TUNE_PATH := "res://assets/audio/radio/radio_tune.wav"
 const CLASSICAL_PATHS: Array[String] = [
 	"res://assets/audio/radio/beethoven_moonlight_1.ogg",
@@ -27,7 +33,8 @@ var station_label: Label
 var resume_position := 0.0
 var sound: Node
 var world: Node
-var _live: AudioStreamOggVorbis
+var _live: Array[AudioStream] = []
+var _live_index := 0
 var _classical: Array[AudioStream] = []
 var _classical_index := 0
 var _positions := [0.0, 0.0]
@@ -43,8 +50,10 @@ func setup(director: Node) -> void:
 	world = sound.world
 	# Узел следит за паузой, но сами плееры замирают вместе с миром.
 	process_mode = Node.PROCESS_MODE_ALWAYS
-	_live = load(LIVE_PATH).duplicate() as AudioStreamOggVorbis
-	_live.loop = false
+	for path in LIVE_PATHS:
+		var track := load(path).duplicate() as AudioStreamOggVorbis
+		track.loop = false
+		_live.append(track)
 	for path in CLASSICAL_PATHS:
 		if ResourceLoader.exists(path):
 			var track: AudioStream = load(path).duplicate() as AudioStream
@@ -56,7 +65,7 @@ func setup(director: Node) -> void:
 	player.process_mode = Node.PROCESS_MODE_PAUSABLE
 	player.bus = &"Master"
 	player.volume_db = BASE_DB
-	player.stream = _live
+	player.stream = _live[_live_index]
 	add_child(player)
 	player.finished.connect(_track_finished)
 	tuning = AudioStreamPlayer.new()
@@ -111,7 +120,7 @@ func _tune_finished() -> void:
 func _start_track() -> void:
 	if not _tuned or not driver_active() or get_tree().paused or _theme_playing() or (station == Station.LIVE and _between_tracks):
 		return
-	player.stream = _live if station == Station.LIVE else _classical[_classical_index]
+	player.stream = _live[_live_index] if station == Station.LIVE else _classical[_classical_index]
 	player.volume_db = target_db()
 	player.stream_paused = false
 	player.play(_positions[station])
@@ -123,12 +132,16 @@ func claim_gap() -> void:
 	_gap_claimed = true
 
 func finish_gap() -> void:
+	if not between_tracks():
+		return
+	_live_index = (_live_index + 1) % _live.size()
+	_positions[Station.LIVE] = 0.0
 	_between_tracks = false
 	_gap_claimed = false
 	_start_track()
 
 func _track_finished() -> void:
-	if station == Station.LIVE and driver_active() and _tuned:
+	if station == Station.LIVE and driver_active() and _tuned and not _between_tracks:
 		_positions[station] = 0.0
 		_between_tracks = true
 		_gap_claimed = false
@@ -172,7 +185,8 @@ func _physics_process(delta: float) -> void:
 	var suspended: bool = get_tree().paused or _theme_playing()
 	player.stream_paused = suspended
 	if not suspended:
-		if _tuned and not player.playing:
+		# AudioServer may stop before main-thread finished delivery; retain that playback.
+		if _tuned and not player.playing and not player.has_stream_playback():
 			_start_track()
 		var target: float = target_db()
 		var seconds: float = DUCK_SECONDS if target < player.volume_db else RESTORE_SECONDS

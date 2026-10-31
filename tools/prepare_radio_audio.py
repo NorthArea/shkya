@@ -23,6 +23,9 @@ TARGET_RMS_DB = -20.0
 PEAK_DB = -1.5
 MASTERS = {
     "cold_funk": ("cold_funk_original.mp3", "a7d0b772f05b99c4ac3df28cb2feaa5190781c2b87bceef5052cc45408b6fc75"),
+    "local_forecast_elevator": ("local_forecast_elevator.mp3", "8c46b44e65324bc339fbbc3e770611d671f6c74a40f3ec8dd50332c082b25cc9"),
+    "monkeys_spinning_monkeys": ("monkeys_spinning_monkeys.mp3", "a5bb345c23849ad0786aa0bc5157a9f2d4039660fe00282e55754d475f36dc14"),
+    "sneaky_snitch": ("sneaky_snitch.mp3", "db1710333d68a215277f77e4e17e1a64bf4ed38f87c70f8d0f56b16b6aa4f884"),
     "beethoven_moonlight_1": ("beethoven_moonlight_1.ogg", "035a31b8d67de4b0574110592a6f8ce2f6e51dfc7f884e16f918e47e327d7d66"),
     "chopin_nocturne_1": ("chopin_nocturne_1.flac", "30fa44a60dc09033b7be9d381a3344d93099cef746a3faf9cf1eafe54d53c398"),
 }

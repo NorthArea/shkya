@@ -1,7 +1,7 @@
 extends SceneTree
 ## Native capture: tools/run.command --resolution 1920x1080 --max-fps 60 --script tools/capture/radio01.gd -- --skip-intro
-## The first news delay is shortened only for capture; text, sound and gameplay are real.
-const OUT := "res://builds/screenshots/RADIO-01"
+## Captures the real tuning/music/weather timing; no private delay overrides.
+const OUT := "res://builds/screenshots/RADIO-01/playlist"
 var main: Node
 func _initialize() -> void: call_deferred("run")
 func frames(count: int) -> void:
@@ -30,7 +30,6 @@ func run() -> void:
 	var sound: Node = world.get_node("SoundDirector")
 	var music: Node = sound.car_radio.music
 	while not music.player.playing: await process_frame
-	sound._radio_delay = 0.0
 	while sound.radio_text() == "": await process_frame
 	await shot("live_news_and_music")
 	var key := InputEventKey.new()
