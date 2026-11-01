@@ -203,6 +203,8 @@ static func sedan_meshes(model: StringName) -> Dictionary:
 	var b := VehicleMesh.Builder.new()
 	var glass := VehicleMesh.Builder.new()
 	var cabin := VehicleMesh.Builder.new()
+	for builder in [b, glass, cabin]:
+		builder.record_parts = model == PLAYER_MODEL
 	var length: float = spec["length"]
 	var hl := length * 0.5
 	var w: float = spec["half_w"]
@@ -246,7 +248,9 @@ static func _open_cabin_hull(b: VehicleMesh.Builder, stations: Array, spec: Dict
 		rows.append(shell)
 		upper_rows.append(PackedVector3Array([ring[top - 1], ring[top], ring[top + 1]]))
 		refs.append(Vector3(0, (station[1] + station[2]) * 0.5, station[0]))
+	b.triangle_part = &"side_shell"
 	b.grid("paint", rows, false, refs)
+	b.triangle_part = &""
 	for index in stations.size() - 1:
 		var middle_z: float = (stations[index][0] + stations[index + 1][0]) * 0.5
 		if middle_z > spec["ws"][0].y + 0.10 and middle_z < spec["rear"][0].y - 0.10:
@@ -300,8 +304,10 @@ static func _greenhouse(b: VehicleMesh.Builder, glass: VehicleMesh.Builder, spec
 		# Боковые стёкла: передняя дверь (A–B) и задняя (B–«парус»), плоскость с завалом внутрь.
 		var out := Vector3(s * (eave - sill), gw - rw, 0.0).normalized()
 		var lean := (wst.y - wsb.y) / (wst.x - wsb.x)
+		glass.triangle_part = &"door_glass_l" if s < 0 else &""
 		glass.pane("glass", Vector3(s * (gw - 0.004), sill + 0.01, wsb.y + 0.05), Vector3(s * (gw - 0.004), sill + 0.01, bz - 0.035),
 			Vector3(s * (rw + 0.004), eave - 0.012, bz - 0.015), Vector3(s * (rw + 0.004), eave - 0.012, wsb.y + lean * (eave - 0.012 - wsb.x) + 0.04), out, 0.0, 2, 1)
+		glass.triangle_part = &""
 		glass.pane("glass", Vector3(s * (gw - 0.004), sill + 0.01, bz + 0.035), Vector3(s * (gw - 0.004), sill + 0.01, float(cz[0]) - 0.02),
 			Vector3(s * (rw + 0.004), eave - 0.012, float(cz[1]) - 0.015), Vector3(s * (rw + 0.004), eave - 0.012, bz + 0.055), out, 0.0, 2, 1)
 		# Водосток и обводы окон: у 2105 чёрная резина, у 2106/ГАЗ-24 заметный хром.
@@ -310,14 +316,18 @@ static func _greenhouse(b: VehicleMesh.Builder, glass: VehicleMesh.Builder, spec
 		var c_trim := Vector3(s * 0.025, 0, 0.012)
 		b.tube(frame, a0 + a_trim, a1 + a_trim, 0.012, 4)
 		b.tube(frame, c0 + c_trim, c1 + c_trim, 0.012, 4)
+		b.triangle_part = &"belt_trim_l" if s < 0 else &""
 		b.tube(frame, Vector3(s * gw, sill, wsb.y + 0.01), Vector3(s * gw, sill, rb.y - 0.01), 0.012, 4)
+		b.triangle_part = &""
 		b.tube(frame, Vector3(s * (rw + 0.019), eave + 0.018, wst.y),
 			Vector3(s * (rw + 0.019), eave + 0.018, rt.y), 0.013, 4)
 		if spec["front"] != "rect":
 			# Форточка передней двери — характерная вертикальная перемычка классических кузовов.
 			var quarter_z := wsb.y + 0.33
+			b.triangle_part = &"door_quarter_l" if s < 0 else &""
 			b.tube("chrome", Vector3(s * gw, sill + 0.015, quarter_z),
 				Vector3(s * (rw + 0.016), eave - 0.015, quarter_z + 0.025), 0.009, 4)
+			b.triangle_part = &""
 		if spec["front"] == "volga":
 			# Вытяжные прорези на широкой задней стойке, не дополнительное окно.
 			for k in 3:
@@ -354,7 +364,9 @@ static func _cabin(b: VehicleMesh.Builder, spec: Dictionary) -> void:
 	b.box("dark", Vector3(gw * 2.0 - 0.04, 0.004, rb.y - wsb.y - 0.02), Vector3(0, y, (wsb.y + rb.y) * 0.5))
 	if occupants_3d:
 		for side: float in [-1.0, 1.0]:
+			b.triangle_part = &"inner_wall_l" if side < 0 else &""
 			b.box("dark", Vector3(0.024, belt - LadaDriver.LADA_FLOOR, rb.y - wsb.y - 0.18), Vector3(side * (gw - 0.035), (belt + LadaDriver.LADA_FLOOR) * 0.5, (wsb.y + rb.y) * 0.5))
+		b.triangle_part = &""
 		b.box("dark", Vector3(gw * 2.0 - 0.08, belt - LadaDriver.LADA_FLOOR, 0.024), Vector3(0, (belt + LadaDriver.LADA_FLOOR) * 0.5, wsb.y + 0.10))
 		b.box("dark", Vector3(gw * 2.0 - 0.08, belt - LadaDriver.LADA_FLOOR, 0.024), Vector3(0, (belt + LadaDriver.LADA_FLOOR) * 0.5, rb.y - 0.10))
 		b.rbox("cloth", Vector3(0.50, 0.12, 0.50), Vector3(-0.345, 0.37, -0.10), 0.04)
@@ -488,13 +500,18 @@ static func _details(b: VehicleMesh.Builder, spec: Dictionary, hl: float, w: flo
 			var low := _bottom_at(bottom, axles, r, arch, z) + 0.03
 			b.box("dark", Vector3(0.004, belt - 0.02 - low, 0.007), Vector3(x, (belt - 0.02 + low) * 0.5, z))
 		for z in [bz - 0.1, float(cz[0]) - 0.02]:
+			b.triangle_part = &"door_handle_l" if s < 0 and z == bz - 0.1 else &""
 			b.rbox("chrome", Vector3(0.014, 0.024, 0.11), Vector3(s * (w + 0.008), belt - 0.11, z), 0.008)
+		b.triangle_part = &"belt_trim_l" if s < 0 else &""
 		b.rbox("trim" if front == "rect" else "chrome", Vector3(0.012, 0.035, hl * 2.0 - 0.7), Vector3(s * (w + 0.004), r + arch + 0.05, 0.0), 0.006)
+		b.triangle_part = &""
 		b.rbox("lens_amber", Vector3(0.008, 0.03, 0.06), Vector3(s * (w + 0.003), belt - 0.18, -hl + 0.45), 0.004)
 		var mirror := Vector3(s * (w + 0.11), belt + 0.06, wsb.y + 0.14)
+		b.triangle_part = &"door_mirror_l" if s < 0 else &""
 		b.tube("trim", Vector3(s * (w - 0.04), belt + 0.01, wsb.y + 0.12), mirror, 0.012, 4)
 		b.rbox("trim", Vector3(0.06, 0.09, 0.13), mirror, 0.025)
 		b.box("chrome", Vector3(0.045, 0.07, 0.004), mirror + Vector3(0, 0, 0.066))
+		b.triangle_part = &""
 		# Подкрылки и грязевые щитки — без «сквозного» вида через арку.
 		for axle in axles:
 			b.box("dark", Vector3(0.008, arch * 1.1, arch * 1.9), Vector3(s * (float(spec["track"]) - 0.12), r + arch * 0.25, axle))

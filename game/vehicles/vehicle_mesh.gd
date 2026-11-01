@@ -386,6 +386,10 @@ class Builder:
 	var surfaces := {}
 	var order: Array[String] = []
 	var xf := Transform3D.IDENTITY
+	var record_parts := false
+	var triangle_part: StringName = &""
+	var _triangle_counts := {}
+	var _part_ranges := {}
 
 	## Поперечное сечение кузова: кольцо от низа по правому борту вверх и по левому вниз.
 	func section(z: float, yb: float, yt: float, w: float, wt: float, rb: float, rt: float, seg := 4) -> PackedVector3Array:
@@ -427,6 +431,16 @@ class Builder:
 		var wb := (nbasis * nb).normalized()
 		var wc := (nbasis * nc).normalized()
 		var st := _st(slot)
+		if record_parts:
+			var count: int = _triangle_counts.get(slot, 0)
+			if triangle_part != &"":
+				var ranges: Array = _part_ranges.get(slot, [])
+				if not ranges.is_empty() and ranges[-1][0] + ranges[-1][1] == count and ranges[-1][2] == triangle_part:
+					ranges[-1][1] += 1
+				else:
+					ranges.append([count, 1, triangle_part])
+				_part_ranges[slot] = ranges
+			_triangle_counts[slot] = count + 1
 		if (pb - pa).cross(pc - pa).dot(wa + wb + wc) > 0.0:
 			_vertex(st, pa, wa, ua, uv2)
 			_vertex(st, pc, wc, uc, uv2)
@@ -619,6 +633,7 @@ class Builder:
 	func commit(materials := {}) -> ArrayMesh:
 		var mesh := ArrayMesh.new()
 		var slots: Array = []
+		var parts: Array = []
 		for slot in order:
 			var st: SurfaceTool = surfaces[slot]
 			st.commit(mesh)
@@ -626,5 +641,9 @@ class Builder:
 			if m != null:
 				mesh.surface_set_material(mesh.get_surface_count() - 1, m)
 			slots.append(slot)
+			if record_parts:
+				parts.append(_part_ranges.get(slot, []).duplicate(true))
 		mesh.set_meta("slots", slots)
+		if record_parts:
+			mesh.set_meta("triangle_parts", parts)
 		return mesh

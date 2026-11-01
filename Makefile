@@ -79,6 +79,7 @@ test: map
 	$(call godot_test,stealth_test,60,STEALTH)
 	$(call godot_test,traffic_test,60,TRAFFIC)
 	$(call godot_test,car01_cabin_clearance_test,60,CAR01_CABIN)
+	$(call godot_test,character04_door_test,60,CHARACTER04_DOOR)
 	$(call godot_test,trolley01_driver_clearance_test,60,TROLLEY01_DRIVER)
 	$(call godot_test,light01_occlusion_test,60,LIGHT01_OCCLUSION_CONFIG)
 	$(call godot_test,car02_family_test,60,CAR02_INDEPENDENT)
