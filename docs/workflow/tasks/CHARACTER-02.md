@@ -12,3 +12,5 @@
 - **Отмена/приоритет:** place/enter/hide/reset/fail/input lock очищают pending air action/hit/second credit; пауза/телефон замораживают состояние без накопления ввода. Не допустить двух владельцев reset в CHARACTER-02/04.
 - **Независимая QA:** второй/запрещённый третий прыжок, раннее/позднее окно, natural fall, jump+punch, ровно один hit, импульс/отпускание бега, потолок/стена/крыша машины, pause/reset/enter/hide/fail. Реальные Main/player → цели; MOTION/PAD/PUNCH/укрытия/периметр/стелс и затронутые seat/rig проверки.
 - **Ограничения/evidence:** число жителей, их маршруты, миссии/экономика, сенсоры, камера/автомобиль сохраняются. Свои код/текстуры/модели/скелет; `builds/checks/CHARACTER-02/`. Только headless/Dummy; игровой вид/ощущения/GPU/FPS остаются открыты.
+
+- **Проверенный компонент:** `character_air_motion.gd`; root unit 47/0 и независимый source-review после исправления takeoff/landing/stomp recovery. `blocks_ground_motion()` задаёт обязательную блокировку наземного XZ. Сам Ilyusha, цели, периметр и позы ещё не подключены; evidence `builds/checks/CHARACTER-02/character02_air_unit_test-reviewed.log`.
