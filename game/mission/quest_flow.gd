@@ -19,6 +19,7 @@ const DialogPanelScript = preload("res://game/ui/dialog_panel.gd")
 const CoinLines = preload("res://game/mission/coin_lines.gd")   # COINS-01: отказ продавщицы при нехватке денег
 const PadInput = preload("res://game/ui/pad_input.gd")
 const HideTuning = preload("res://game/stealth/hide_tuning.gd")
+const Catalog = preload("res://game/characters/character_catalog.gd")
 const FinaleScript = preload("res://game/mission/finale.gd")    # POLISH-03 B: протокол и сцена этапа 10 после него
 const ACCEPT_SOUND := preload("res://assets/audio/quest_accept.wav")
 const PAPER := Color(0.93, 0.87, 0.72)
@@ -27,7 +28,7 @@ const POP_SECONDS := 0.15
 
 const TOAST_SECONDS := 2.0
 const PARKING_HINT_SECONDS := 6.0
-const MARKER_Y := 2.62   # над шапкой Бабки: верх облика 2,07 м при height_m 2,17 (ART-01, PLAY-02)
+const MARKER_Y := Catalog.RF_ADULT_FEMALE_REFERENCE_M + 0.55
 ## POLISH-03 A (критик, k_01): «!»/«?» крупнее, с покачиванием, пульсом и мягким ореолом; издалека — крупнее
 ## (размер растёт с расстоянием до камеры от MARKER_NEAR_M до MARKER_SCALE_MAX), чтобы читаться через двор.
 const MARKER_PIXEL := 0.0085
@@ -49,7 +50,7 @@ const BUBBLE_PIXEL := 0.0035
 const BUBBLE_PAD := 34.0
 const BUBBLE_TAIL := 56.0
 const BUBBLE_DOWNSCALE := 2.0
-const BUBBLE_Y := 2.55
+const BUBBLE_Y := Catalog.RF_ADULT_FEMALE_REFERENCE_M + 0.48
 const BUBBLE_GAP := 0.06  # м между первым и вторым пузырём
 
 var world: Node

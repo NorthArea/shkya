@@ -415,7 +415,8 @@ func _build_visual() -> Node3D:
 	var look = CharacterSpriteScript.new()
 	look.name = "Look"
 	look.character = "ilyusha"
-	look.height_m = 2.0   # фигура ≈1,8 м — чуть выше крыши «Лады», как в концепте 04 и у эталона (PLAY-01)
+	look.interpolate_bone_pose = true
+	look.height_m = CharacterSpriteScript.Catalog.canvas_height_for("ilyusha", CharacterSpriteScript.Catalog.ILYUSHA_VISIBLE_HEIGHT_M)
 	root.add_child(look)
 	_look = look
 	hide_visual = Node3D.new()

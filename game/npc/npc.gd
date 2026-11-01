@@ -5,13 +5,14 @@ extends Node3D
 ## (look_at_target / stop_looking — вызывает QuestFlow). Поворачивается только облик, не узел и не зона E.
 
 const CharacterSpriteScript = preload("res://game/characters/character_sprite.gd")
+const Catalog = preload("res://game/characters/character_catalog.gd")
 const InteractableScript = preload("res://game/interaction/interactable.gd")
 
 @export var interaction_id: StringName
 @export var character := "babka"
 ## Только рисунок ART-09; роль, голос, диалог и сенсор остаются у прежнего NPC.
 @export var appearance := ""
-@export var height_m := 2.17  # Бабка крупнее Илюши (паспорт ART-01); ×0,83 вместе с Илюшей (PLAY-02)
+@export var height_m := Catalog.canvas_height_for("babka", Catalog.RF_ADULT_FEMALE_REFERENCE_M)
 @export var tint := Color(1.06, 1.02, 0.88)  # тёплее, как лицо и платье Бабки на концептах 02, 10
 @export var facing_yaw := 0.0  # поворот облика относительно узла (зона взаимодействия не поворачивается)
 @export var solid := true

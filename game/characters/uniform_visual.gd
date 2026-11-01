@@ -60,12 +60,15 @@ func configure(drawing: String, height: float, color: Color) -> void:
 		model = GuardModel.new().build_model()
 	else:
 		model = CivilianModel.new().build_model(drawing)
-	model.scale = Vector3.ONE * height
 	add_child(model)
 	skeleton = model.get_node("Skeleton3D") as Skeleton3D
 	# Non-animated consumers need the authored bind pose before their first frame.
 	skeleton.reset_bone_poses()
 	uniform_mesh = skeleton.get_node("UniformMesh") as MeshInstance3D
+	var bind_bounds := uniform_mesh.mesh.get_aabb()
+	assert(bind_bounds.size.y > 0.0, "Character bind geometry must have positive height")
+	model.scale = Vector3.ONE * (height / bind_bounds.size.y)
+	model.position.y = -bind_bounds.position.y * model.scale.y
 	uniform_mesh.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON
 	var key := drawing + ":" + color.to_html()
 	if not _tinted_meshes.has(key):
@@ -130,7 +133,7 @@ func prepare_locomotion() -> void:
 	rig = LocomotionRig.new()
 	rig.build(author_skeleton, author_mesh, _kind not in ["police", "guard", "police_long", "police_round", "guard_alt"])
 	gait = LocomotionPose.new()
-	gait.configure(rig)
+	gait.configure(rig, _kind == "ilyusha")
 	author_mesh.visible = false
 	skeleton = rig.skeleton
 	uniform_mesh = rig.mesh
@@ -198,7 +201,7 @@ func set_occupant_pose(profile: StringName) -> void:
 	if profile == &"lada":
 		# The chin tuck clears the roof; Ilyusha sits back from the steering wheel.
 		var head := skeleton.find_bone("head")
-		var head_offset := Vector3(0, -0.055 if _kind == "ilyusha" else -0.018, 0.035 if _kind == "ilyusha" else 0.0)
+		var head_offset := Vector3(0, -0.075 if _kind == "ilyusha" else -0.018, 0.035 if _kind == "ilyusha" else 0.0)
 		skeleton.set_bone_pose_position(head, skeleton.get_bone_rest(head).origin + head_offset)
 	for suffix: String in ["_l", "_r"]:
 		_rotate("leg" + suffix, Vector3.RIGHT, 1.65 if profile == &"lada" else 1.35)
@@ -229,7 +232,7 @@ func occupant_sole_height() -> float:
 				var bind := bones[slot]
 				var bone := uniform_mesh.skin.get_bind_bone(bind)
 				point += (skeleton.get_bone_global_pose(bone) * uniform_mesh.skin.get_bind_pose(bind) * vertices[index]) * weights[slot]
-			lowest = minf(lowest, point.y * visible_height)
+			lowest = minf(lowest, (model.transform * point).y)
 	return lowest
 
 ## Two-bone arm reach in normalized model coordinates. Targets are authored by
