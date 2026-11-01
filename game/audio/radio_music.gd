@@ -3,6 +3,7 @@ extends Node
 ## Отдельные плееры музыки и настройки не занимают короткий канал диктора CarRadio.
 
 const PadInput = preload("res://game/ui/pad_input.gd")
+const RadioTimeline = preload("res://game/audio/radio_timeline.gd")
 const LIVE_PATH := "res://assets/audio/radio/cold_funk.ogg"
 const LIVE_PATHS: Array[String] = [
 	LIVE_PATH,
@@ -13,7 +14,7 @@ const LIVE_PATHS: Array[String] = [
 const TUNE_PATH := "res://assets/audio/radio/radio_tune.wav"
 const CLASSICAL_PATHS: Array[String] = [
 	"res://assets/audio/radio/beethoven_moonlight_1.ogg",
-	"res://assets/audio/radio/chopin_nocturne_1.ogg",
+	"res://assets/audio/radio/ride_of_the_valkyries.ogg",
 ]
 const BASE_DB := -5.0
 const DUCK_DB := -15.0
@@ -22,22 +23,32 @@ const TUNE_DB := -1.0
 const DUCK_SECONDS := 0.35
 const RESTORE_SECONDS := 0.8
 const STATION_SECONDS := 4.0
-const STATION_NAMES := ["Радио Н. · 101,4 FM", "Классика · 104,2 FM"]
+const SEEK_DRIFT_SECONDS := 0.5
+const STATION_NAMES := ["Радио Н. · 101,4 FM", "Классика · 104,2 FM", "Без радио"]
 
-enum Station { LIVE, CLASSICAL }
+enum Station { LIVE, CLASSICAL, OFF }
 
 var station := Station.LIVE
 var player: AudioStreamPlayer
 var tuning: AudioStreamPlayer
 var station_label: Label
-var resume_position := 0.0
+var resume_position: float:
+	get:
+		return _timelines[station].position if station != Station.OFF else 0.0
 var sound: Node
 var world: Node
 var _live: Array[AudioStream] = []
-var _live_index := 0
+var _live_index: int:
+	get:
+		return _timelines[Station.LIVE].index
 var _classical: Array[AudioStream] = []
-var _classical_index := 0
-var _positions := [0.0, 0.0]
+var _classical_index: int:
+	get:
+		return _timelines[Station.CLASSICAL].index
+var _timelines: Array = []
+var _playback_station := -1
+var _playback_revision := -1
+var _awaiting_boundary := false
 var _tune_pending := false
 var _tuned := false
 var _station_left := 0.0
@@ -60,6 +71,11 @@ func setup(director: Node) -> void:
 			if track is AudioStreamOggVorbis:
 				track.loop = false
 			_classical.append(track)
+	for tracks: Array in [_live, _classical]:
+		var lengths: Array[float] = []
+		for track: AudioStream in tracks:
+			lengths.append(track.get_length())
+		_timelines.append(RadioTimeline.new(lengths))
 	player = AudioStreamPlayer.new()
 	player.name = "RadioBed"
 	player.process_mode = Node.PROCESS_MODE_PAUSABLE
@@ -90,9 +106,7 @@ func news_enabled() -> bool:
 func switch_station() -> bool:
 	if not driver_active() or get_tree().paused or world.ui_blocking:
 		return false
-	_save_position()
-	station = Station.CLASSICAL if station == Station.LIVE else Station.LIVE
-	resume_position = _positions[station]
+	station = (station + 1) % STATION_NAMES.size()
 	_begin_tune()
 	return true
 
@@ -104,10 +118,12 @@ func _begin_tune() -> void:
 	player.stop()
 	tuning.stop()
 	_tuned = false
-	_tune_pending = true
+	_tune_pending = station != Station.OFF
+	_awaiting_boundary = false
 	sound.suspend_radio_voice()
 	_station_left = STATION_SECONDS
-	tuning.play()
+	if _tune_pending:
+		tuning.play()
 
 func _tune_finished() -> void:
 	# Устаревшее завершение после выхода/новой настройки ничего не запускает.
@@ -118,49 +134,48 @@ func _tune_finished() -> void:
 	_start_track()
 
 func _start_track() -> void:
-	if not _tuned or not driver_active() or get_tree().paused or _theme_playing() or (station == Station.LIVE and _between_tracks):
+	if station == Station.OFF or not _tuned or not driver_active() or get_tree().paused or _theme_playing() or (station == Station.LIVE and _between_tracks):
 		return
+	_playback_station = station
+	_playback_revision = _timelines[station].revision
+	_awaiting_boundary = false
 	player.stream = _live[_live_index] if station == Station.LIVE else _classical[_classical_index]
 	player.volume_db = target_db()
 	player.stream_paused = false
-	player.play(_positions[station])
+	player.play(_timelines[station].position)
+
+func broadcast_state(which: int) -> Dictionary:
+	assert(which == Station.LIVE or which == Station.CLASSICAL)
+	return {"index": _timelines[which].index, "position": _timelines[which].position}
 
 func between_tracks() -> bool:
 	return station == Station.LIVE and _between_tracks
 
 func claim_gap() -> void:
-	_gap_claimed = true
+	if between_tracks():
+		_gap_claimed = true
 
 func finish_gap() -> void:
 	if not between_tracks():
 		return
-	_live_index = (_live_index + 1) % _live.size()
-	_positions[Station.LIVE] = 0.0
 	_between_tracks = false
 	_gap_claimed = false
 	_start_track()
 
 func _track_finished() -> void:
-	if station == Station.LIVE and driver_active() and _tuned and not _between_tracks:
-		_positions[station] = 0.0
-		_between_tracks = true
-		_gap_claimed = false
-	elif station == Station.CLASSICAL and driver_active() and _tuned:
-		_classical_index = (_classical_index + 1) % _classical.size()
-		_positions[station] = 0.0
-		_start_track()
-
-func _save_position() -> void:
-	if player.playing:
-		_positions[station] = player.get_playback_position()
-	resume_position = _positions[station]
+	# AudioServer can finish before the world-time boundary, or deliver an old end
+	# after a new stream has started. Neither notification owns the station clock.
+	if station == Station.OFF or not _tuned or not driver_active() or player.playing or player.has_stream_playback():
+		return
+	if _playback_station == station and _playback_revision == _timelines[station].revision:
+		_awaiting_boundary = true
 
 func stop() -> void:
-	_save_position()
 	player.stop()
 	tuning.stop()
 	_tune_pending = false
 	_tuned = false
+	_awaiting_boundary = false
 	_station_left = 0.0
 	station_label.visible = false
 
@@ -178,16 +193,32 @@ func _theme_playing() -> bool:
 func _physics_process(delta: float) -> void:
 	if player == null:
 		return
+	var suspended: bool = get_tree().paused or _theme_playing()
+	var boundaries := [0, 0]
+	if not suspended:
+		for which in _timelines.size():
+			boundaries[which] = _timelines[which].advance(delta)
 	if not driver_active():
 		if player.playing or tuning.playing or _tuned:
 			stop()
 		return
-	var suspended: bool = get_tree().paused or _theme_playing()
 	player.stream_paused = suspended
 	if not suspended:
-		# AudioServer may stop before main-thread finished delivery; retain that playback.
-		if _tuned and not player.playing and not player.has_stream_playback():
-			_start_track()
+		if _tuned and station != Station.OFF:
+			if boundaries[station] > 0:
+				player.stop()
+				_awaiting_boundary = false
+				if station == Station.LIVE:
+					if not _between_tracks:
+						_between_tracks = true
+						_gap_claimed = false
+				else:
+					_start_track()
+			# Retain an ended playback until AudioServer delivers its finished event.
+			if not player.playing and not player.has_stream_playback() and not _awaiting_boundary:
+				_start_track()
+			elif player.playing and absf(player.get_playback_position() - _timelines[station].position) > SEEK_DRIFT_SECONDS:
+				player.seek(_timelines[station].position)
 		var target: float = target_db()
 		var seconds: float = DUCK_SECONDS if target < player.volume_db else RESTORE_SECONDS
 		player.volume_db = move_toward(player.volume_db, target, (BASE_DB - PRIORITY_DB) * delta / seconds)

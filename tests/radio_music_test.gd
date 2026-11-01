@@ -87,11 +87,14 @@ func _run() -> void:
 	check(music.station == music.Station.CLASSICAL and music.player.playing, "classical station plays its own continuous playlist")
 	check(music._classical.size() == 2 and not music.player.stream.loop, "classical playlist has both prepared recordings with natural endings")
 	var classical_before: AudioStream = music.player.stream
-	# Реальный сигнал конца композиции, без ожидания нескольких минут исполнения.
-	music.player.stop()
+	var classical_state: Dictionary = music.broadcast_state(music.Station.CLASSICAL)
 	music.player.finished.emit()
+	check(music.broadcast_state(music.Station.CLASSICAL) == classical_state,
+		"an early finished notification cannot advance the broadcast clock")
+	_advance_boundary(music.Station.CLASSICAL)
 	await _frames(2)
-	check(music.player.playing and music.player.stream != classical_before and not music.player.stream.loop, "finished classical track advances to the next recording")
+	check(music.player.playing and music.player.stream != classical_before and not music.player.stream.loop,
+		"the classical world-time boundary advances to the next recording")
 	check(sound.radio_text() == "" and _voices() == 0 and sound.radio_shown == 1, "classical station has no news or announcer")
 	check(absf(sound._subtitle_left - remaining) < 0.05, "classical station freezes remaining story reading time")
 	check(music.station_label.text.contains("Классика") and music.station_label.text.contains("R"), "station HUD shows name, frequency and keyboard binding")
@@ -103,7 +106,17 @@ func _run() -> void:
 	button.pressed = false
 	Input.parse_input_event(button)
 	await _frames(2)
-	check(music.station == music.Station.LIVE and music.tuning.playing, "real right D-pad input retunes to Radio N")
+	check(music.station == music.Station.OFF and not music.player.playing and not music.tuning.playing and _voices() == 0,
+		"real right D-pad input selects silent OFF after classical without tuning")
+	check(sound.engine.playing, "OFF leaves the real car engine sound running")
+	button = button.duplicate() as InputEventJoypadButton
+	button.pressed = true
+	Input.parse_input_event(button)
+	button = button.duplicate() as InputEventJoypadButton
+	button.pressed = false
+	Input.parse_input_event(button)
+	await _frames(2)
+	check(music.station == music.Station.LIVE and music.tuning.playing, "the next real right D-pad input retunes OFF to Radio N")
 	await _frames(120)
 	check(music.station == music.Station.LIVE and sound.radio_text() == QuestLines.RADIO and sound.radio_shown == 1 and sound.radio.playing, "returning live resumes the preserved first story caption")
 	world.quest_flow._open_chain(QuestLines.VENDOR_CHAIN, [{"id": &"close", "text": "ЗАКРЫТЬ"}], &"vendor")
@@ -132,7 +145,7 @@ func _run() -> void:
 	var detour_remaining: float = closure._radio_left
 	await _frames(200)
 	check(closure.radio_shown == 0 and closure._radio_left == detour_remaining and sound.radio_text() == "" and _voices() == 0, "classic freezes detour news without a caption or voice")
-	check(music.switch_station(), "return live for the pending detour announcement")
+	_return_live("return live for the pending detour announcement")
 	var detour_limit := 1200
 	while closure.radio_shown == 0 and detour_limit > 0:
 		await _frames(1)
@@ -143,25 +156,29 @@ func _run() -> void:
 		await _frames(1)
 		detour_limit -= 1
 	await _frames(60)
-	# Обычная передача допускается только после реального finished, без таймера езды.
+	# Обычная передача допускается только на границе эфира, без таймера езды.
 	var before_plays: int = sound.car_radio.plays
 	await _frames(120)
 	check(sound.car_radio.plays == before_plays and music.player.playing, "parked track is not interrupted by a periodic timer")
-	music.player.stop()
-	music.player.finished.emit()
+	var before_gap: int = music.broadcast_state(music.Station.LIVE).index
+	_advance_boundary(music.Station.LIVE)
 	await _frames(3)
-	check(sound.car_radio.plays == before_plays + 1 and sound.radio_text() != "", "track finished admits one routine announcement")
+	check(sound.car_radio.plays == before_plays + 1 and sound.radio_text() != "", "the broadcast boundary admits one routine announcement")
 	check(sound.radio.playing and not sound.car_radio.player.playing and _voices() == 1, "routine caption uses the single mumble voice")
 	await _frames(40)
 	check(not music.player.playing and music.between_tracks(), "next song waits for the entire between-track announcement")
 	await _frames(900)
 	check(music.player.playing and sound.radio_text() == "", "next song starts after the announced text finishes")
-	check(_live_recording_is(1), "first completed gap advances from Cold Funk to Local Forecast")
+	check(_live_recording_is((before_gap + 1) % EXPECTED_LIVE_PATHS.size()), "completed news slot joins the next scheduled live recording")
 	await _playlist_cycles()
 	var before_pause: AudioStream = music.player.stream
 	var before_pause_position: float = music.player.get_playback_position()
+	var live_before_pause: Dictionary = music.broadcast_state(music.Station.LIVE)
+	var classical_before_pause: Dictionary = music.broadcast_state(music.Station.CLASSICAL)
 	main.set_paused(true)
 	await _frames(50)
+	check(music.broadcast_state(music.Station.LIVE) == live_before_pause and music.broadcast_state(music.Station.CLASSICAL) == classical_before_pause,
+		"real pause freezes both broadcasts, including the unselected station")
 	check(not music.switch_station(), "pause ignores station switching")
 	check(main.music.player.playing and main.music.muffled(), "pause keeps the existing muffled Chopin")
 	check(not music.player.playing or music.player.stream_paused, "car music cannot sound together with pause Chopin")
@@ -172,23 +189,32 @@ func _run() -> void:
 	check(music.player.playing and not music.player.stream_paused and not main.music.player.playing, "bed resumes after pause Chopin stops")
 	check(music.player.stream == before_pause and music.player.get_playback_position() >= before_pause_position - 0.1, "pause preserves the current live recording and cursor")
 	var before_station: AudioStream = music.player.stream
-	var before_station_position: float = music.player.get_playback_position()
+	var before_station_position: float = music.broadcast_state(music.Station.LIVE).position
 	check(music.switch_station(), "switch away from a non-first live recording")
 	await _frames(120)
-	check(music.switch_station(), "return to the non-first live recording")
+	check(music.switch_station() and music.station == music.Station.OFF, "classical round trip includes the silent OFF position")
+	check(not music.tuning.playing and not music.player.playing and _voices() == 0, "OFF creates no tuning or voice")
+	await _frames(60)
+	check(music.switch_station(), "return from OFF to the scheduled live recording")
 	await _frames(120)
-	check(music.player.stream == before_station and music.player.get_playback_position() >= before_station_position - 0.1, "classical round trip preserves live track identity and cursor")
+	check(music.player.stream == before_station and music.broadcast_state(music.Station.LIVE).position >= before_station_position + 3.0,
+		"live broadcast keeps progressing while classical and OFF are selected")
+	check(absf(music.player.get_playback_position() - music.broadcast_state(music.Station.LIVE).position) <= music.SEEK_DRIFT_SECONDS + 0.15,
+		"returning live joins the current scheduled offset instead of a saved listening cursor")
 	var before_exit: AudioStream = music.player.stream
 	check(world.exit_car(), "real driver exits from the parked car")
 	check(not music.player.playing and _voices() == 0, "exit synchronously stops music and announcers")
-	var saved: float = music.resume_position
-	await _frames(15)
-	check(not music.player.playing, "bed stays stopped on foot")
+	var saved: Dictionary = music.broadcast_state(music.Station.LIVE)
+	await _frames(60)
+	check(not music.player.playing and music.broadcast_state(music.Station.LIVE).position >= saved.position + 0.8,
+		"bed stays stopped on foot while the broadcast clock continues")
 	check(not music.switch_station() and not music.tuning.playing, "station switching is ignored on foot")
 	world.enter_car()
 	await _frames(120)
-	check(music.player.playing and music.player.get_playback_position() >= saved - 0.1, "next entry resumes the saved track cursor")
-	check(music.player.stream == before_exit and _live_recording_is(1), "re-entry resumes the non-first live recording instead of Cold Funk")
+	check(music.player.playing and music.player.get_playback_position() >= saved.position + 0.8,
+		"next entry joins a later current broadcast offset")
+	check(music.player.stream == before_exit and _live_recording_is(music.broadcast_state(music.Station.LIVE).index),
+		"re-entry uses the scheduled recording instead of restarting Cold Funk")
 	for index in 3:
 		world.exit_car()
 		world.enter_car()
@@ -206,25 +232,37 @@ func _live_recording_is(index: int) -> bool:
 	return music.player.stream is AudioStreamOggVorbis and music.player.stream.packet_sequence == load(EXPECTED_LIVE_PATHS[index]).packet_sequence
 
 func _playlist_cycles() -> void:
-	# Настоящий AudioServer finished: сокращаем только текущий тестовый stream.
-	# Следующий трек должен быть настоящей записью; ожидаемый порядок задан независимо.
+	# Real recording lengths define each boundary; notification delivery owns no time.
+	var initial: int = music.broadcast_state(music.Station.LIVE).index
 	for step in 8:
-		var expected := (step + 2) % EXPECTED_LIVE_PATHS.size()
-		var short_track := AudioStreamWAV.new()
-		short_track.format = AudioStreamWAV.FORMAT_16_BITS
-		short_track.mix_rate = 48000
-		var pcm := PackedByteArray()
-		pcm.resize(9600)
-		short_track.data = pcm
-		music.player.stream = short_track
-		music.player.play()
-		await _until_wall(func(): return music.between_tracks(), 2000)
-		check(music.between_tracks() and not music.player.playing, "cycle %d waits in the real finished gap" % step)
+		var expected := (initial + step + 1) % EXPECTED_LIVE_PATHS.size()
+		_advance_boundary(music.Station.LIVE)
+		await _frames(3)
+		check(music.between_tracks() and not music.player.playing, "cycle %d waits in the scheduled news slot" % step)
 		await _until_wall(func(): return sound.radio_text() != "", 1000)
-		check(sound.radio_text() != "" and not music.player.playing, "cycle %d admits news before the next recording" % step)
+		check(sound.radio_text() != "" and not music.player.playing, "cycle %d admits news before rejoining the broadcast" % step)
 		sound.hide_radio_line()
 		await _until_wall(func(): return music.player.playing, 1000)
-		check(_live_recording_is(expected) and not music.between_tracks(), "cycle %d starts expected live recording %d after the gap" % [step, expected])
+		check(_live_recording_is(expected) and not music.between_tracks(), "cycle %d joins scheduled live recording %d after the slot" % [step, expected])
+
+func _advance_boundary(which: int) -> void:
+	var state: Dictionary = music.broadcast_state(which)
+	var tracks: Array = music._live if which == music.Station.LIVE else music._classical
+	var remaining: float = tracks[state.index].get_length() - state.position
+	music.set_physics_process(false)
+	music._physics_process(maxf(0.0, remaining - 0.02))
+	check(music.broadcast_state(which).index == state.index,
+		"recording index remains unchanged just before its world-time boundary")
+	music._physics_process(0.04)
+	music.set_physics_process(true)
+	check(music.broadcast_state(which).index == (state.index + 1) % tracks.size(),
+		"world-time boundary advances the scheduled recording exactly once")
+
+func _return_live(label: String) -> void:
+	check(music.switch_station() and music.station == music.Station.OFF, "classical cycles through OFF")
+	check(not music.player.playing and not music.tuning.playing and _voices() == 0, "OFF has neither music, narrator nor tuning")
+	check(sound.engine.playing, "OFF does not stop the car's world sound")
+	check(music.switch_station() and music.station == music.Station.LIVE, label)
 
 func _until_wall(condition: Callable, milliseconds: int) -> void:
 	var deadline := Time.get_ticks_msec() + milliseconds
@@ -260,6 +298,7 @@ func _finish() -> void:
 	music = null
 	Materials.clear_cache()
 	VehicleMesh.cache().clear()
+	OS.delay_msec(100)
 	await process_frame
 	print("RADIO01: %d checks, %d failures" % [checks, failures.size()])
 	quit(0 if failures.is_empty() else 1)

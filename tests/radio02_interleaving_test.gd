@@ -56,7 +56,7 @@ func _run() -> void:
 	var urgent_left: float = sound._subtitle_left
 	await _frames(30)
 	check(sound.radio_text() == "" and not sound.radio.playing and is_equal_approx(sound._subtitle_left, urgent_left), "classical freezes the urgent remainder and has no narrator")
-	check(music.switch_station(), "return to live while urgent remainder is pending")
+	_return_live("return to live while urgent remainder is pending")
 	await _until(func(): return music._tuned, 4.0)
 	await _until(func(): return sound.radio_text() == ORDINARY, 8.0)
 	check(sound.radio_text() == ORDINARY, "urgent completion resumes the interrupted ordinary event instead of losing it")
@@ -81,16 +81,18 @@ func _run() -> void:
 	await _finish()
 
 func _natural_end() -> void:
-	var short_track := AudioStreamWAV.new()
-	short_track.format = AudioStreamWAV.FORMAT_16_BITS
-	short_track.mix_rate = 48000
-	var pcm := PackedByteArray()
-	pcm.resize(9600)
-	short_track.data = pcm
-	music.player.stream = short_track
-	music.player.play()
-	await _until(func(): return music.between_tracks(), 2.0)
-	check(music.between_tracks(), "a finite stream opens the gap through its real finished signal")
+	# A station boundary is owned by world time, never AudioServer.finished.
+	var state: Dictionary = music.broadcast_state(music.Station.LIVE)
+	var remaining: float = music._live[state.index].get_length() - state.position
+	music.set_physics_process(false)
+	music._physics_process(maxf(0.0, remaining - 0.02))
+	check(not music.between_tracks() and music.broadcast_state(music.Station.LIVE).index == state.index,
+		"ordinary news remains blocked just before the real broadcast boundary")
+	music._physics_process(0.04)
+	music.set_physics_process(true)
+	await _frames(3)
+	check(music.between_tracks() and music.broadcast_state(music.Station.LIVE).index == (state.index + 1) % music._live.size(),
+		"world-time completion opens one silent news slot at the next broadcast recording")
 
 func _until(condition: Callable, seconds: float) -> void:
 	var end := Time.get_ticks_msec() + int(seconds * 1000)
@@ -115,6 +117,8 @@ func _finish() -> void:
 	await _frames(5)
 	Materials.clear_cache()
 	VehicleMesh.cache().clear()
+	OS.delay_msec(100)
+	await process_frame
 	main = null
 	world = null
 	sound = null
@@ -122,3 +126,10 @@ func _finish() -> void:
 	music = null
 	print("RADIO02_INTERLEAVE: %d checks, %d failures" % [checks, failures.size()])
 	quit(0 if failures.is_empty() else 1)
+
+func _return_live(label: String) -> void:
+	check(music.switch_station() and music.station == music.Station.OFF, "classical cycles to the third OFF position")
+	check(not music.player.playing and not music.tuning.playing and not sound.radio.playing and not music.news_enabled(),
+		"OFF is immediately silent without tuning or narrator")
+	check(sound.engine.playing, "OFF preserves the actual engine world sound")
+	check(music.switch_station() and music.station == music.Station.LIVE, label)

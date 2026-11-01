@@ -178,7 +178,7 @@ func _reset_world() -> void:
 func _wait_radio_tuning(sound: Node) -> void:
 	var cue: AudioStreamPlayer = sound.car_radio.music.tuning
 	var deadline_ms: int = Time.get_ticks_msec() + ceili(cue.stream.get_length() * 1000.0) + 1500
-	while cue.playing and Time.get_ticks_msec() < deadline_ms:
+	while (cue.playing or not sound.car_radio.music._tuned) and Time.get_ticks_msec() < deadline_ms:
 		OS.delay_msec(10)
 		await process_frame
 	check(not cue.playing and sound.car_radio.music.news_enabled(), "receiver finishes its actual tuning sound before news timing starts")

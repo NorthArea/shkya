@@ -78,6 +78,10 @@ func _physics_process(delta: float) -> void:
 	if not music.news_enabled() or not sound.radio_available():
 		return
 	if sound.radio_shown == 0:
+		# Первое включение может попасть на последние секунды чужого эфира.
+		# До вводной погоды продолжаем музыку через границы песен.
+		if music.between_tracks():
+			music.finish_gap()
 		# Только действительно звучащая музыка: пауза/классика/диалог сюда не попадают.
 		if music.player.playing and not music.player.stream_paused and sound._subtitle_left <= 0.0:
 			_first_music += delta

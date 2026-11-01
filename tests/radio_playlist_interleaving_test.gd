@@ -1,5 +1,5 @@
 extends SceneTree
-## Independent witness: AudioServer end can precede delivery of player.finished.
+## Independent witness: early/delayed AudioServer notifications cannot own world-time boundaries.
 const Materials = preload("res://game/world/materials.gd")
 const VehicleMesh = preload("res://game/vehicles/vehicle_mesh.gd")
 const FIRST := "res://assets/audio/radio/cold_funk.ogg"
@@ -74,20 +74,35 @@ func _run() -> void:
 		return
 
 	music.player.set_process_internal(true)
+	await _until(func(): return finished_count == 1, 2.0)
+	check(music._live_index == 0 and receiver.queue_size() == 1 and sound.radio_text() == "",
+		"delivered early finished does not advance the recording or consume the confirmed event")
+	check(finished_count == 1 and not music.between_tracks() and not music.player.playing,
+		"restoring early finished delivery does not open a broadcast slot")
+	var current: Dictionary = music.broadcast_state(music.Station.LIVE)
+	var remaining: float = music._live[current.index].get_length() - current.position
+	music._physics_process(maxf(0.0, remaining - 0.02))
+	check(music._live_index == 0 and not music.between_tracks(), "the real world-time recording is still active just before its boundary")
+	music._physics_process(0.04)
+	check(music._live_index == 1 and music.between_tracks(), "the station clock advances exactly once and opens the ordinary-news slot")
 	music.set_physics_process(true)
-	await _until(func(): return finished_count == 1 and music.between_tracks(), 2.0)
-	check(finished_count == 1 and music.between_tracks() and not music.player.playing, "restoring delivery emits one real finished and opens one silent gap")
 	await _until(func(): return sound.radio_text() == ORDINARY, 2.0)
-	check(sound.radio_text() == ORDINARY and music._live_index == 0 and not music.player.playing, "the queued ordinary event owns the gap before any index advance")
+	check(sound.radio_text() == ORDINARY and music._live_index == 1 and not music.player.playing, "the queued event owns the local silent slot while the broadcast index is already next")
 	await _frames(12)
-	check(sound.radio_text() == ORDINARY and music.between_tracks() and music._live_index == 0 and not music.player.playing, "the next recording stays blocked while ordinary news remains unread")
+	check(sound.radio_text() == ORDINARY and music.between_tracks() and music._live_index == 1 and not music.player.playing, "local music remains silent while ordinary news is unread and the broadcast clock continues")
 	await _until(func(): return music.player.playing and sound.radio_text() == "", 15.0)
-	check(_recording_is(NEXT) and music._live_index == 1 and not music.between_tracks(), "natural news completion advances exactly once to Local Forecast")
-	check(finished_count == 1 and receiver.plays == plays_before + 1 and receiver.queue_size() == 0, "one natural track ending produces exactly one ordinary announcement")
+	check(_recording_is(NEXT) and music._live_index == 1 and not music.between_tracks(), "natural news completion joins the already scheduled Local Forecast recording")
+	check(finished_count == 1 and receiver.plays == plays_before + 1 and receiver.queue_size() == 0, "one world-time boundary produces exactly one confirmed ordinary announcement")
+	check(music.broadcast_state(music.Station.LIVE).position > 0.2 and absf(music.player.get_playback_position() - music.broadcast_state(music.Station.LIVE).position) <= music.SEEK_DRIFT_SECONDS + 0.15,
+		"the recording continues in the background during news and resumes at its current offset")
 	var resumed: AudioStream = music.player.stream
 	music.finish_gap()
 	music.finish_gap()
 	check(music._live_index == 1 and music.player.stream == resumed and music.player.playing and receiver.plays == plays_before + 1, "duplicate gap completion leaves the next recording and announcement count unchanged")
+	var after_gap: Dictionary = music.broadcast_state(music.Station.LIVE)
+	music.player.finished.emit()
+	check(music.broadcast_state(music.Station.LIVE) == after_gap and not music.between_tracks() and receiver.plays == plays_before + 1,
+		"a stale finished notification after resumption cannot advance the station or duplicate news")
 	await _finish()
 
 func _recording_is(path: String) -> bool:
@@ -120,6 +135,8 @@ func _finish() -> void:
 	await _frames(5)
 	Materials.clear_cache()
 	VehicleMesh.cache().clear()
+	OS.delay_msec(100)
+	await process_frame
 	main = null
 	world = null
 	sound = null

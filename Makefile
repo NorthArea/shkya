@@ -62,6 +62,7 @@ test: map
 	$(call godot_test,radio02_news_test,60,RADIO02,--max-fps 60,,realtime)
 	$(call godot_test,radio02_interleaving_test,60,RADIO02_INTERLEAVE,--max-fps 60,,realtime)
 	$(call godot_test,radio_playlist_interleaving_test,60,RADIO_PLAYLIST_INTERLEAVE,--max-fps 60,,realtime)
+	$(call godot_test,radio03_broadcast_test,60,RADIO03,--max-fps 60,,realtime)
 	$(call godot_test,polish01_stuck,60,STUCK)
 	$(call godot_test,art01_sprite,60,ART01)
 	$(call godot_test,art01_sprite,120,ART01)

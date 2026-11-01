@@ -187,10 +187,13 @@ func _check_car_radio(world: DemoWorld, sound) -> void:
 	await _wait_radio_tuning(sound)
 	await _frames(120)
 	check(sound.radio_text() == "" and receiver.music.player.playing, "ordinary music is never interrupted by an elapsed periodic timer")
-	receiver.music.player.stop()
-	receiver.music.player.finished.emit()
+	var state: Dictionary = receiver.music.broadcast_state(receiver.music.Station.LIVE)
+	var remaining: float = receiver.music._live[state.index].get_length() - state.position
+	receiver.music.set_physics_process(false)
+	receiver.music._physics_process(remaining + 0.02)
+	receiver.music.set_physics_process(true)
 	await _frames(3)
-	check(sound.radio_text() != "" and sound.radio.playing and not receiver.music.player.playing, "natural finished boundary has one announcer and no music restart")
+	check(sound.radio_text() != "" and sound.radio.playing and not receiver.music.player.playing, "world-time broadcast boundary has one announcer and no music restart")
 	sound.show_gag(["Тестовый гэг"], 1.5)
 	await _frames(3)
 	check(not sound.radio.playing and sound.subtitle_label.text == "Тестовый гэг", "gag receives priority over between-track news")
@@ -203,7 +206,7 @@ func _check_car_radio(world: DemoWorld, sound) -> void:
 func _wait_radio_tuning(sound: Node) -> void:
 	var cue: AudioStreamPlayer = sound.car_radio.music.tuning
 	var deadline_ms: int = Time.get_ticks_msec() + ceili(cue.stream.get_length() * 1000.0) + 1500
-	while cue.playing and Time.get_ticks_msec() < deadline_ms:
+	while (cue.playing or not sound.car_radio.music._tuned) and Time.get_ticks_msec() < deadline_ms:
 		OS.delay_msec(10)
 		await process_frame
 	check(not cue.playing and sound.car_radio.music.news_enabled(), "receiver finishes its actual tuning sound before news timing starts")

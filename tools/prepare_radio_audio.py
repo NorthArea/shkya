@@ -28,6 +28,7 @@ MASTERS = {
     "sneaky_snitch": ("sneaky_snitch.mp3", "db1710333d68a215277f77e4e17e1a64bf4ed38f87c70f8d0f56b16b6aa4f884"),
     "beethoven_moonlight_1": ("beethoven_moonlight_1.ogg", "035a31b8d67de4b0574110592a6f8ce2f6e51dfc7f884e16f918e47e327d7d66"),
     "chopin_nocturne_1": ("chopin_nocturne_1.flac", "30fa44a60dc09033b7be9d381a3344d93099cef746a3faf9cf1eafe54d53c398"),
+    "ride_of_the_valkyries": ("ride_of_the_valkyries_milman.wav", "14c81cb9f4e733aff6ec510e5794c37823093994b77186739be0d00857f074bc"),
 }
 
 def rms_db(samples: np.ndarray) -> float:
@@ -99,10 +100,15 @@ def tuning() -> dict:
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("source_dir", type=Path)
+    parser.add_argument("--tracks", nargs="+", choices=MASTERS, help="Prepare only these masters; keep the other assets unchanged")
+    parser.add_argument("--skip-tuning", action="store_true", help="Keep the existing original tuning effect")
+    parser.add_argument("--report", type=Path, default=ROOT / "builds/checks/RADIO-01/asset-audio.json")
     args = parser.parse_args()
     OUT.mkdir(parents=True, exist_ok=True)
-    report = {"tracks": [prepare(args.source_dir, name, spec) for name, spec in MASTERS.items()], "tuning": tuning()}
-    evidence = ROOT / "builds/checks/RADIO-01"
-    evidence.mkdir(parents=True, exist_ok=True)
-    (evidence / "asset-audio.json").write_text(json.dumps(report, indent=2) + "\n")
+    names = args.tracks or list(MASTERS)
+    report = {"tracks": [prepare(args.source_dir, name, MASTERS[name]) for name in names]}
+    if not args.skip_tuning:
+        report["tuning"] = tuning()
+    args.report.parent.mkdir(parents=True, exist_ok=True)
+    args.report.write_text(json.dumps(report, indent=2) + "\n")
     print(json.dumps(report, indent=2))
