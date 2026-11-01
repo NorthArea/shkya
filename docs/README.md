@@ -19,6 +19,7 @@
 
 - [workflow/README.md](workflow/README.md) — как брать работу, статусы, общие контракты C1–C11.
 - [workflow/backlog.md](workflow/backlog.md) — очередь и единственный живой статус задач, открытые вопросы владельцу.
+- [requests/OWNER_MESSAGES.md](requests/OWNER_MESSAGES.md) — дословный архив просьб, уточнений и команд владельца; [JSON](requests/owner_messages.json) сохраняет исходные записи и связи с задачами для продолжения после перезапуска.
 - `workflow/tasks/` — карточки открытых задач.
 - [Запуск, управление, проверки](../README.md); правила для агентов — [AGENTS.md](../AGENTS.md).
 

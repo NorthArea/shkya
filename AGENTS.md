@@ -26,6 +26,7 @@ Godot 4.7.2, GDScript, Forward+, 1920×1080. `make run` — игра, `make test
 
 ## Процесс
 
+- Исходные просьбы владельца сохранены в [docs/requests/OWNER_MESSAGES.md](docs/requests/OWNER_MESSAGES.md), данные — в `docs/requests/owner_messages.json`. После перезапуска сверять связанные поручения с backlog; новые содержательные сообщения добавлять дословно в архив. Архив не заменяет DECISIONS и не содержит живых статусов.
 - Очередь, зависимости и единственный живой статус — [docs/workflow/backlog.md](docs/workflow/backlog.md); правила и контракты — [docs/workflow/README.md](docs/workflow/README.md); карточки открытых задач — `docs/workflow/tasks/` (закрытые удаляются). Не заводить дубли канона, отдельные progress и отчёты приёмки.
 - Логи проверок — `builds/checks/<ID>/`, кадры — `builds/screenshots/<ID>/`; `builds/` вне Git. Съёмщики кадров — `tools/capture/`.
 - Технический PASS не заменяет ручной проход: проверка каркаса — не готовность миссии.
