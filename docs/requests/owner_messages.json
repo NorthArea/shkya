@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "source_thread": "01a18dc0-9ae6-7c02-9b5f-70a15a73b205",
-  "snapshot_at_utc": "2026-11-01T06:31:33.646956+00:00",
+  "snapshot_at_utc": "2026-11-01T07:19:37.561609+00:00",
   "scope": "Все записи роли user текущего диалога до снимка. Служебные вставки отмечены отдельно. Исходный текст не исправлялся. Живые статусы только в docs/workflow/backlog.md, решения только в docs/DECISIONS.md.",
   "previous_independent_audit": {
     "record_count": 105,
@@ -1103,6 +1103,68 @@
       "text": "пока хватит только настроек разрешения",
       "sha256": "fe939ce36e435629724a28ffba3363c1dc6ce4fa4814b32fc63a9ff7a9fbd3f0",
       "task_ids": []
+    },
+    {
+      "id": "MSG-0115",
+      "timestamp_utc": "2026-11-01T07:01:21.630909+00:00",
+      "timestamp_basis": "archive_capture_time; original message timestamp unavailable",
+      "kind": "message",
+      "text": "1) меня абсолюно не страивают новый персонажи. Я хочу похожих на предыдущих, но в 3д. 2) я просил исправить тени и свет в игре. где? 3) у Илюше ноги торчат из дна машины. проверяй такие моменты 4) в машине 2106 тектуры крышы провалились в салон",
+      "sha256": "a110bc0f15416e82ee12a33f226f75ad01eec061959e8d65f0fc3d34fa85f5ef",
+      "task_ids": [
+        "IP-01",
+        "LIGHT-01",
+        "CAR-01"
+      ]
+    },
+    {
+      "id": "MSG-0116",
+      "timestamp_utc": "2026-11-01T07:01:21.630909+00:00",
+      "timestamp_basis": "archive_capture_time; original message timestamp unavailable",
+      "kind": "message",
+      "text": "новые модели просто отвратительные я хочу как у Евы Морозовой из ШКЯ",
+      "sha256": "237e9e5e9b4d163220d7c44b849f934eac3e68b66a4fd772b5b96ed6cbd42826",
+      "task_ids": [
+        "IP-01"
+      ]
+    },
+    {
+      "id": "MSG-0117",
+      "timestamp_utc": "2026-11-01T07:01:21.630909+00:00",
+      "timestamp_basis": "archive_capture_time; original message timestamp unavailable",
+      "kind": "message",
+      "text": "распараллеливай работу и не забывай про сабагентов и клонов",
+      "sha256": "4fcbdc6c36552f972550b3e523cae5367006a2b4cee2cb1143493706d6e94677",
+      "task_ids": [
+        "IP-01",
+        "LIGHT-01",
+        "CAR-01"
+      ]
+    },
+    {
+      "id": "MSG-0118",
+      "timestamp_utc": "2026-11-01T07:06:33.778811+00:00",
+      "timestamp_basis": "archive_capture_time; original message timestamp unavailable",
+      "kind": "message",
+      "text": "я же просил запускать тесты в фоне и мы это закрепили. какого хуя",
+      "sha256": "1e37e47bcefecfb90900eae10f59315ad6448672dbaefc8c36e134e4526c7e46",
+      "task_ids": [
+        "CHECK-01",
+        "LIGHT-01",
+        "IP-01",
+        "CAR-01"
+      ]
+    },
+    {
+      "id": "MSG-0119",
+      "timestamp_utc": "2026-11-01T07:19:37.561609+00:00",
+      "timestamp_basis": "archive_capture_time; original message timestamp unavailable",
+      "kind": "message",
+      "text": "Останавливаю оконные проверки. Дальше — безоконные тесты;\nсделай что-нибудь чтобы это переживало эту сессию и запуск других чистых сессий",
+      "sha256": "e6a2b79511b20f8d2d54f2e12d9c3256eea6e4ba6952d42673d351f45dab5857",
+      "task_ids": [
+        "CHECK-01"
+      ]
     }
   ]
 }

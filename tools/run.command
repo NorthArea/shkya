@@ -15,9 +15,10 @@ for argument in "$@"; do
         --windowed|-w|--fullscreen|-f|--maximized|-m) explicit_window_mode=1 ;;
     esac
 done
-if [ "$scripted" -eq 1 ] && [ "$explicit_window_mode" -eq 0 ]; then
+# godot.sh enforces background diagnostics even for direct script calls.
+if [ "$scripted" -eq 1 ] && [ "$explicit_window_mode" -eq 0 ] && [ "${GODOT_VISIBLE_CHECKS:-0}" = 1 ]; then
     set -- --windowed "$@"
-elif [ "$game_launch" -eq 1 ] && [ "$explicit_window_mode" -eq 0 ]; then
+elif [ "$scripted" -eq 0 ] && [ "$game_launch" -eq 1 ] && [ "$explicit_window_mode" -eq 0 ]; then
     set -- --fullscreen "$@"
 fi
 if [ "$prepare" -eq 1 ]; then

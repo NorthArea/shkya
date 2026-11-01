@@ -1,4 +1,6 @@
-.PHONY: run editor test test-headless capture fps map
+.PHONY: run editor test test-headless test-native capture fps map
+# Visible GPU checks are opt-in; ordinary test invocations never open a window.
+HEADLESS_ONLY ?= 1
 run: map
 	./tools/run.command
 editor: map
@@ -24,10 +26,15 @@ define godot_test
 $(if $(and $(filter 1,$(HEADLESS_ONLY)),$(5)),@echo "NOT RUN [requires native renderer]: $(1)",$(call run_godot_test,$(1),$(2),$(3),$(4),$(5),$(6)))
 endef
 
+test-native: HEADLESS_ONLY=0
+test-native: export GODOT_VISIBLE_CHECKS=1
+test-native: test
+
 test-headless: HEADLESS_ONLY=1
 test-headless: test
 
 test: map
+	@python3 tests/background_checks_test.py
 	$(call godot_test,smoke_runner,60,SMOKE)
 	$(call godot_test,resolution01_test,60,RESOLUTION01)
 	$(call godot_test,resolution01_ui_test,60,RESOLUTION01_UI)
