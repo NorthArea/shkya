@@ -15,6 +15,9 @@ static func uses_3d() -> bool:
 func _model_visible_height(drawing: String) -> float:
 	return LADA_VISIBLE_HEIGHT if occupant_profile == &"lada" else super._model_visible_height(drawing)
 
+func _uses_locomotion() -> bool:
+	return false
+
 func _ready() -> void:
 	super._ready()
 	var shadow := get_node_or_null("Shadow")

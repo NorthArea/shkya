@@ -1,6 +1,6 @@
 extends RefCounted
 ## Solid 3D translations of the approved character drawings. Soles=0, top=1, forward=-Z.
-## Ilyusha follows the PNG concepts; other civilians follow the previous authored drawings.
+## Ilyusha and the other civilians follow the project's approved original 2D drawings.
 const Builder = preload("res://game/characters/models/uniform_mesh_builder.gd")
 const Police = preload("res://game/characters/models/police_model.gd")
 const Guard = preload("res://game/characters/models/guard_model.gd")
@@ -44,7 +44,7 @@ func build_model(drawing: String = "ilyusha") -> Node3D:
 	_initialize_rest(model)
 	model.set_meta("drawing", drawing)
 	model.set_meta("forward_axis", "-Z")
-	model.set_meta("design_status", "PNG concept reconstruction; visual acceptance required" if drawing == "ilyusha" else "previous approved drawings translated to solid 3D; visual acceptance required")
+	model.set_meta("design_status", "approved original 2D drawings translated to solid 3D; visual acceptance required")
 	_own(model, model)
 	var packed := PackedScene.new()
 	if packed.pack(model) == OK:
@@ -117,7 +117,7 @@ func _hero_palette() -> Dictionary:
 
 func _design(drawing: String) -> Dictionary:
 	match drawing:
-		"ilyusha": return {"drawing": drawing, "hem": 0.34, "shoulder": 0.69, "width": 0.195, "head_y": 0.82, "elbow_y": 0.515, "hand_y": 0.335}
+		"ilyusha": return {"drawing": drawing, "hem": 0.274, "shoulder": 0.535, "width": 0.18, "head_y": 0.63, "elbow_y": 0.425, "hand_y": 0.293}
 		"babka": return {"drawing": drawing, "hem": 0.045, "shoulder": 0.615, "width": 0.265, "head_y": 0.74}
 		"vendor": return {"drawing": drawing, "hem": 0.04, "shoulder": 0.59, "width": 0.23, "head_y": 0.72}
 	assert(false, "No approved hero drawing: " + drawing)
@@ -344,18 +344,32 @@ func _curve(a: Vector3, control: Vector3, end: Vector3, count: int = 10) -> Pack
 		points.append(a * (1 - t) * (1 - t) + control * 2 * t * (1 - t) + end * t * t)
 	return points
 
-func _smooth_curve(control: PackedVector3Array) -> PackedVector3Array:
-	var points := PackedVector3Array()
-	for i in range(control.size() - 1):
-		var a := control[maxi(0, i - 1)]
-		var c := control[i]
-		var d := control[i + 1]
-		var e := control[mini(control.size() - 1, i + 2)]
-		for j in 3:
-			var t := float(j) / 3.0
-			points.append((c * 2.0 + (d - a) * t + (a * 2.0 - c * 5.0 + d * 4.0 - e) * t * t + (-a + c * 3.0 - d * 3.0 + e) * t * t * t) * 0.5)
-	points.append(control[-1])
+func _ilyusha_svg_curve(a: Vector2, control_a: Vector2, control_b: Vector2, end: Vector2, steps: int = 12) -> PackedVector2Array:
+	var points := PackedVector2Array()
+	for index in range(steps + 1):
+		var t := float(index) / steps
+		points.append(a * pow(1.0 - t, 3) + control_a * 3.0 * pow(1.0 - t, 2) * t + control_b * 3.0 * (1.0 - t) * t * t + end * t * t * t)
 	return points
+
+func _ilyusha_svg_rows(outline: PackedVector2Array, depth_ratio: float) -> Array[Vector3]:
+	# The drawing's baseline is y=590 and its tuft crest is approximately y=49.
+	var rows: Array[Vector3] = []
+	for index in range(outline.size() - 1, -1, -1):
+		var point := outline[index]
+		var width := maxf(absf(point.x - 200.0) / 541.0, 0.002)
+		rows.append(Vector3(width, (590.0 - point.y) / 541.0, maxf(width * depth_ratio, 0.004)))
+	return rows
+
+func _ilyusha_head_rows() -> Array[Vector3]:
+	var outline := _ilyusha_svg_curve(Vector2(200, 86), Vector2(258, 86), Vector2(278, 150), Vector2(294, 206))
+	outline.append_array(_ilyusha_svg_curve(Vector2(294, 206), Vector2(308, 264), Vector2(262, 302), Vector2(200, 302)).slice(1))
+	return _ilyusha_svg_rows(outline, 0.88)
+
+func _ilyusha_coat_rows() -> Array[Vector3]:
+	# Right half of the same cubic paths used by jacket_front(), including its top.
+	var outline := _ilyusha_svg_curve(Vector2(200, 286.5), Vector2(243.75, 286.5), Vector2(287.5, 291), Vector2(305, 300), 4)
+	outline.append_array(_ilyusha_svg_curve(Vector2(305, 300), Vector2(332, 332), Vector2(328, 420), Vector2(298, 442)).slice(1))
+	return _ilyusha_svg_rows(outline, 0.82)
 
 func _fur_collar(b: Builder) -> void:
 	const AROUND := 48
@@ -365,7 +379,7 @@ func _fur_collar(b: Builder) -> void:
 	for i in AROUND:
 		var angle := TAU * i / AROUND
 		var outward := Vector3(cos(angle), 0, sin(angle)).normalized()
-		var center := Vector3(cos(angle) * 0.155, 0.701 - maxf(0.0, -sin(angle)) * 0.045 + maxf(0.0, sin(angle)) * 0.003, sin(angle) * 0.107)
+		var center := Vector3(cos(angle) * 0.164, 0.580 - maxf(0.0, -sin(angle)) * 0.047, sin(angle) * 0.114)
 		var lobe := 0.031 + 0.007 * cos(angle * 11.0)
 		var vertical_lobe := 0.031 + 0.009 * cos(angle * 11.0)
 		for j in CROSS:
@@ -384,14 +398,17 @@ func _fur_collar(b: Builder) -> void:
 
 func _tuft(b: Builder) -> void:
 	# One joined lumpy silhouette from the authored tuft, with a rounded front/back.
-	var outline: Array[Vector2] = [Vector2(-0.087, 0.878), Vector2(-0.093, 0.890), Vector2(-0.087, 0.904),
-		Vector2(-0.075, 0.908), Vector2(-0.076, 0.923), Vector2(-0.063, 0.935), Vector2(-0.049, 0.935),
-		Vector2(-0.048, 0.950), Vector2(-0.036, 0.964), Vector2(-0.022, 0.966), Vector2(-0.021, 0.981),
-		Vector2(-0.012, 0.994), Vector2(0, 1.0), Vector2(0.014, 0.992), Vector2(0.020, 0.977),
-		Vector2(0.037, 0.971), Vector2(0.047, 0.958), Vector2(0.045, 0.943), Vector2(0.063, 0.939),
-		Vector2(0.076, 0.926), Vector2(0.075, 0.913), Vector2(0.088, 0.903), Vector2(0.093, 0.887),
-		Vector2(0.082, 0.878), Vector2(0.043, 0.884), Vector2(0.0, 0.880), Vector2(-0.042, 0.884)]
-	var center := Vector2(0, 0.931)
+	var source := _ilyusha_svg_curve(Vector2(156, 106), Vector2(144, 88), Vector2(160, 70), Vector2(176, 74), 6)
+	for curve: Array in [[Vector2(176, 74), Vector2(178, 54), Vector2(198, 42), Vector2(210, 54)],
+		[Vector2(210, 54), Vector2(228, 50), Vector2(244, 66), Vector2(238, 80)],
+		[Vector2(238, 80), Vector2(256, 86), Vector2(254, 106), Vector2(240, 108)],
+		[Vector2(240, 108), Vector2(210, 114), Vector2(180, 114), Vector2(156, 106)]]:
+		source.append_array(_ilyusha_svg_curve(curve[0], curve[1], curve[2], curve[3], 6).slice(1))
+	source.resize(source.size() - 1)
+	var outline: Array[Vector2] = []
+	for point in source: outline.append(Vector2((200.0 - point.x) / 541.0, minf(1.0, (590.0 - point.y) / 541.0)))
+	var center := Vector2(0, (590.0 - 84.0) / 541.0)
+	const DEPTH := 0.082
 	const RINGS := 8
 	var points: Array[Vector3] = []
 	var normals: Array[Vector3] = []
@@ -399,8 +416,8 @@ func _tuft(b: Builder) -> void:
 		var t := PI * float(ring) / RINGS
 		for point in outline:
 			var xy := center + (point - center) * sin(t)
-			points.append(Vector3(xy.x, xy.y, -cos(t) * 0.055))
-			var radial := Vector3((point.x - center.x) / 0.09, (point.y - center.y) / 0.07, 0).normalized()
+			points.append(Vector3(xy.x, xy.y, -cos(t) * DEPTH))
+			var radial := Vector3((point.x - center.x) / 0.09, (point.y - center.y) / 0.06, 0).normalized()
 			normals.append((radial * sin(t) + Vector3.FORWARD * cos(t)).normalized())
 	for ring in RINGS:
 		for i in outline.size():
@@ -410,8 +427,23 @@ func _tuft(b: Builder) -> void:
 			var e := a + outline.size()
 			b._triangle(points[a], points[c], points[d], normals[a], normals[c], normals[d], "accent", 3)
 			b._triangle(points[a], points[d], points[e], normals[a], normals[d], normals[e], "accent", 3)
-	for spec: Vector4 in [Vector4(-0.037, 0.909, 0.013, 0.009), Vector4(0.027, 0.921, 0.014, 0.009), Vector4(-0.016, 0.947, 0.012, 0.008), Vector4(0.005, 0.976, 0.008, 0.006)]:
-		b.tube(_curve(Vector3(spec.x - spec.z, spec.y, -0.050), Vector3(spec.x, spec.y + spec.w, -0.060), Vector3(spec.x + spec.z, spec.y, -0.050), 6), 0.0022, "ink", 3, 5)
+	for spec: Vector4 in [Vector4(-0.041, 0.928, 0.022, 0.016), Vector4(0.011, 0.939, 0.022, 0.016), Vector4(-0.011, 0.969, 0.015, 0.011), Vector4(0.044, 0.913, 0.018, 0.013)]:
+		var line := _curve(Vector3(spec.x - spec.z, spec.y, 0), Vector3(spec.x, spec.y + spec.w, 0), Vector3(spec.x + spec.z, spec.y, 0), 6)
+		for index in line.size():
+			line[index].x = -line[index].x
+			var ray := Vector2(line[index].x, line[index].y) - center
+			var boundary := INF
+			for edge_index in outline.size():
+				var a := outline[edge_index] - center
+				var edge := outline[(edge_index + 1) % outline.size()] - outline[edge_index]
+				var denominator := ray.cross(edge)
+				if absf(denominator) < 0.000001: continue
+				var along := a.cross(ray) / denominator
+				var distance := a.cross(edge) / denominator
+				if along >= 0.0 and along <= 1.0 and distance > 0.0: boundary = minf(boundary, distance)
+			var fraction := 0.0 if is_inf(boundary) else 1.0 / boundary
+			line[index].z = -DEPTH * sqrt(maxf(0.0, 1.0 - fraction * fraction)) - 0.003
+		b.tube(line, 0.0022, "ink", 3, 5)
 
 func _cap_lace(b: Builder) -> void:
 	const STEPS := 48
@@ -459,22 +491,6 @@ func _offset_new_part(b: Builder, material: String, start: int, offset: Vector3)
 	for index in range(start, points.size()): points[index] += offset
 	part["positions"] = points
 
-func _ilyusha_soft_rows(rows: Array[Vector3]) -> Array[Vector3]:
-	var rounded: Array[Vector3] = []
-	for index in range(rows.size() - 1):
-		var before := rows[maxi(0, index - 1)]
-		var a := rows[index]
-		var c := rows[index + 1]
-		var after := rows[mini(rows.size() - 1, index + 2)]
-		var middle := (a + c) * 0.5625 - (before + after) * 0.0625
-		middle.x = clampf(middle.x, minf(a.x, c.x), maxf(a.x, c.x))
-		middle.y = (a.y + c.y) * 0.5
-		middle.z = clampf(middle.z, minf(a.z, c.z), maxf(a.z, c.z))
-		rounded.append(a)
-		rounded.append(middle)
-	rounded.append(rows[-1])
-	return rounded
-
 func _ilyusha_row_at(rows: Array[Vector3], y: float) -> Vector3:
 	for index in range(rows.size() - 1):
 		if y >= rows[index].y and y <= rows[index + 1].y:
@@ -482,78 +498,64 @@ func _ilyusha_row_at(rows: Array[Vector3], y: float) -> Vector3:
 	return rows[0] if y < rows[0].y else rows[-1]
 
 func _ilyusha_boot(b: Builder, side: float, foot: int) -> void:
-	var start: int = b._parts["cloth"]["positions"].size()
-	b.vertex_tints["cloth"] = Color("3c363d")
-	b.body_profile([Vector3(0.076, 0.022, 0.113), Vector3(0.081, 0.039, 0.120), Vector3(0.072, 0.063, 0.108), Vector3(0.060, 0.090, 0.066), Vector3(0.060, 0.127, 0.064)], "cloth", foot, 20)
-	_offset_new_part(b, "cloth", start, Vector3(side * 0.092, 0, -0.027))
-	start = b._parts["ink"]["positions"].size() if b._parts.has("ink") else 0
-	b.body_profile([Vector3(0.074, 0.0, 0.108), Vector3(0.083, 0.009, 0.121), Vector3(0.083, 0.023, 0.121), Vector3(0.078, 0.030, 0.114)], "ink", foot, 20)
-	_offset_new_part(b, "ink", start, Vector3(side * 0.092, 0, -0.027))
-	for z: float in [-0.092, -0.065, -0.038]:
-		b.tube(PackedVector3Array([Vector3(side * 0.092 - 0.024, 0.074, z), Vector3(side * 0.092 + 0.024, 0.074, z + 0.009)]), 0.002, "ink", foot, 5)
-	for z: float in [-0.11, -0.065, -0.02, 0.025, 0.065]:
-		b.box(Vector3(side * 0.092, 0.005, z), Vector3(0.132, 0.010, 0.014), "ink", foot)
+	var x := side * 48.0 / 541.0
+	b.vertex_tints["cloth"] = Color("3a3436")
+	b.ellipsoid(Vector3(x, 0.038, -0.025), Vector3(0.085, 0.038, 0.102), "cloth", foot, 20, 10)
+	var start: int = b._parts["ink"]["positions"].size() if b._parts.has("ink") else 0
+	b.body_profile([Vector3(0.070, 0.0, 0.087), Vector3(0.085, 0.009, 0.102), Vector3(0.084, 0.019, 0.101)], "ink", foot, 20)
+	_offset_new_part(b, "ink", start, Vector3(x, 0, -0.025))
+	b.tube(PackedVector3Array([Vector3(x - 0.037, 0.051, -0.115), Vector3(x + 0.037, 0.051, -0.115)]), 0.002, "ink", foot, 5)
 
 func _ilyusha_hand(b: Builder, side: float, hand: int) -> void:
-	var x := side * 0.243
-	b.ellipsoid(Vector3(x, 0.337, -0.013), Vector3(0.035, 0.032, 0.022), "skin", hand, 14, 8)
-	for finger in 4:
-		var fx := x + (finger - 1.5) * 0.015
-		var length := 0.018 + (0.003 if finger in [1, 2] else 0.0)
-		b.ellipsoid(Vector3(fx, 0.310 - length * 0.18, -0.015), Vector3(0.0075, length, 0.010), "skin", hand, 6, 5)
-		b.tube(PackedVector3Array([Vector3(fx - 0.0075, 0.316, -0.024), Vector3(fx - 0.0075, 0.302, -0.024)]), 0.0013, "ink", hand, 5)
-	b.tube(_curve(Vector3(x - side * 0.026, 0.346, -0.020), Vector3(x - side * 0.043, 0.328, -0.031), Vector3(x - side * 0.035, 0.315, -0.027)), 0.010, "skin", hand, 8)
+	var x := side * 126.0 / 541.0
+	b.ellipsoid(Vector3(x, 0.291, -0.013), Vector3(0.038, 0.041, 0.025), "skin", hand, 16, 10)
+	b.tube(_curve(Vector3(x - side * 0.011, 0.285, -0.038), Vector3(x - side * 0.004, 0.263, -0.037), Vector3(x + side * 0.007, 0.259, -0.032)), 0.0018, "ink", hand, 5)
 
 func _ilyusha_sleeve(b: Builder, side: float, upper: int, lower: int) -> void:
-	var rows: Array[Vector3] = _ilyusha_soft_rows([Vector3(0.050, 0.377, 0.061), Vector3(0.064, 0.404, 0.077),
-		Vector3(0.069, 0.432, 0.084), Vector3(0.064, 0.458, 0.078), Vector3(0.070, 0.493, 0.083),
-		Vector3(0.071, 0.523, 0.085), Vector3(0.066, 0.548, 0.079), Vector3(0.068, 0.582, 0.080),
-		Vector3(0.065, 0.612, 0.077), Vector3(0.061, 0.637, 0.071), Vector3(0.056, 0.665, 0.069), Vector3(0.039, 0.687, 0.052)])
+	var rows: Array[Vector3] = [Vector3(0.035, 0.330, 0.048), Vector3(0.037, 0.373, 0.056), Vector3(0.044, 0.438, 0.064), Vector3(0.047, 0.489, 0.066), Vector3(0.034, 0.534, 0.050)]
 	var start: int = b._parts["cloth"]["positions"].size()
-	b.body_profile(rows, "cloth", upper, 10)
+	b.body_profile(rows, "cloth", upper, 20)
 	var part: Dictionary = b._parts["cloth"]
 	var points: PackedVector3Array = part["positions"]
 	var bones: PackedInt32Array = part["bones"]
 	var weights: PackedFloat32Array = part["weights"]
 	for index in range(start, points.size()):
-		var upper_amount := clampf((points[index].y - 0.377) / 0.310, 0.0, 1.0)
-		points[index].x += side * lerpf(0.243, 0.181, upper_amount)
-		var bend := 1.0 - smoothstep(0.485, 0.560, points[index].y)
+		var upper_amount := clampf((points[index].y - 0.330) / 0.204, 0.0, 1.0)
+		points[index].x += side * lerpf(0.233, 0.175, upper_amount)
+		var bend := 1.0 - smoothstep(0.400, 0.465, points[index].y)
 		bones[index * 4 + 1] = lower
 		weights[index * 4] = 1.0 - bend
 		weights[index * 4 + 1] = bend
 	part["positions"] = points
 	part["bones"] = bones
 	part["weights"] = weights
-	for y: float in [0.458, 0.548, 0.637]:
-		var seam := PackedVector3Array()
-		var band := _ilyusha_row_at(rows, y)
-		var cx := side * lerpf(0.243, 0.181, (y - 0.377) / 0.310)
-		for i in 17:
-			var a := TAU * i / 16.0
-			seam.append(Vector3(cx + cos(a) * (band.x + 0.001), y, sin(a) * (band.z + 0.001)))
-		var seam_bone := lower if y < 0.515 else upper
-		b.tube(seam, 0.0018, "ink", seam_bone, 4)
+	var y := (590.0 - 372.0) / 541.0
+	var band := _ilyusha_row_at(rows, y)
+	var cx := side * lerpf(0.233, 0.175, (y - 0.330) / 0.204)
+	var line := PackedVector3Array()
+	for index in 13:
+		var x := lerpf(-band.x * 0.88, band.x * 0.88, float(index) / 12.0)
+		var curve_y := y - sin(float(index) * PI / 12.0) * 0.008
+		var z := -band.z * sqrt(maxf(0.0, 1.0 - pow(x / band.x, 2))) - 0.002
+		line.append(Vector3(cx + x, curve_y, z))
+	b.tube(line, 0.0018, "ink", lower, 5)
 
 func _approved_hero(b: Builder, drawing: String) -> void:
 	var hero := drawing == "ilyusha"
 	var granny := drawing == "babka"
-	b.vertex_tints["cloth"] = Color("9ef561") if hero else Color("b6ba78") if granny else Color("4e3b2d")
-	b.vertex_tints["skin"] = Color("eaa2c2") if hero else Color("fffde2") if granny else Color("ebd198")
-	b.vertex_tints["accent"] = Color("f3c23f") if hero else Color("a9ad6e") if granny else Color("8c3b3b")
+	b.vertex_tints["cloth"] = Color("a2f03a") if hero else Color("b6ba78") if granny else Color("4e3b2d")
+	b.vertex_tints["skin"] = Color("f4b3cd") if hero else Color("fffde2") if granny else Color("ebd198")
+	b.vertex_tints["accent"] = Color("ebc458") if hero else Color("a9ad6e") if granny else Color("8c3b3b")
 	b.vertex_tints["trim"] = Color("f6f3ea") if hero else Color.WHITE if granny else Color("b9b2a0")
-	var hem := 0.34 if hero else 0.045 if granny else 0.04
-	var shoulder := 0.69 if hero else 0.615 if granny else 0.59
-	var width := 0.195 if hero else 0.265 if granny else 0.23
+	var hem := 0.274 if hero else 0.045 if granny else 0.04
+	var shoulder := 0.535 if hero else 0.615 if granny else 0.59
+	var width := 0.18 if hero else 0.265 if granny else 0.23
 	var levels: Array[Vector3] = [Vector3(width * 0.83, hem, 0.11), Vector3(width, hem + 0.06, 0.14), Vector3(width * 1.06, (hem + shoulder) * 0.5, 0.15), Vector3(width, shoulder - 0.045, 0.14), Vector3(width * 0.70, shoulder, 0.095)]
 	if granny:
 		levels = [Vector3(0.292, hem, 0.125), Vector3(0.315, 0.13, 0.152), Vector3(0.327, 0.32, 0.169), Vector3(0.314, 0.46, 0.163), Vector3(0.280, 0.57, 0.143), Vector3(0.222, 0.64, 0.108), Vector3(0.157, 0.668, 0.080), Vector3(0.151, 0.692, 0.067), Vector3(0.120, 0.715, 0.045), Vector3(0.070, 0.730, 0.030)]
 	elif hero:
-		levels = _ilyusha_soft_rows([Vector3(0.190, 0.340, 0.142), Vector3(0.210, 0.365, 0.162), Vector3(0.220, 0.395, 0.180),
-			Vector3(0.216, 0.430, 0.174), Vector3(0.225, 0.465, 0.186), Vector3(0.224, 0.505, 0.184),
-			Vector3(0.213, 0.540, 0.172), Vector3(0.217, 0.575, 0.176), Vector3(0.210, 0.610, 0.166),
-			Vector3(0.185, 0.640, 0.142), Vector3(0.173, 0.670, 0.123), Vector3(0.129, 0.692, 0.091)])
-	b.body_profile(levels, "cloth", 2, 16 if hero else 24)
+		levels = _ilyusha_coat_rows()
+	b.body_profile(levels, "cloth", 2, 24)
 	if drawing == "vendor":
 		# The apron shares the coat envelope and skin triangles, so opposing steps
 		# cannot send a separate flat panel through the garment underneath.
@@ -566,8 +568,8 @@ func _approved_hero(b: Builder, drawing: String) -> void:
 				for corner in 3: colors[index + corner] = Color("b9b2a0")
 		part["colors"] = colors
 	if hero:
-		b.vertex_tints["cloth"] = Color("285f2d")
-		b.ellipsoid(Vector3(0, 0.326, 0.017), Vector3(0.184, 0.060, 0.116), "cloth", 1, 20, 10)
+		b.vertex_tints["cloth"] = Color("2f8a36")
+		b.box(Vector3(0, 0.261, 0.012), Vector3(172.0 / 541.0, 26.0 / 541.0, 0.146), "cloth", 1)
 	# Hips and legs remain separate solids with the existing animation skeleton.
 	for side: float in [-1.0, 1.0]:
 		var leg := 10 if side > 0 else 12
@@ -575,25 +577,16 @@ func _approved_hero(b: Builder, drawing: String) -> void:
 		var upper := 4 if side > 0 else 7
 		var lower := upper + 1
 		var hand := upper + 2
-		b.vertex_tints["cloth"] = Color("285f2d") if hero else Color("68635b")
+		b.vertex_tints["cloth"] = Color("2f8a36") if hero else Color("68635b")
 		if hero:
 			var start: int = b._parts["cloth"]["positions"].size()
-			var leg_rows: Array[Vector3] = _ilyusha_soft_rows([Vector3(0.060, 0.100, 0.060), Vector3(0.079, 0.118, 0.076), Vector3(0.095, 0.149, 0.087),
-				Vector3(0.093, 0.191, 0.085), Vector3(0.100, 0.215, 0.092), Vector3(0.098, 0.256, 0.090), Vector3(0.106, 0.285, 0.098), Vector3(0.102, 0.333, 0.091)])
-			b.body_profile(leg_rows, "cloth", leg, 14)
+			var leg_rows: Array[Vector3] = [Vector3(42.0 / 541.0, 34.0 / 541.0, 0.069), Vector3(45.0 / 541.0, 70.0 / 541.0, 0.074), Vector3(46.4 / 541.0, 110.0 / 541.0, 0.076), Vector3(46.0 / 541.0, 154.0 / 541.0, 0.075)]
+			b.body_profile(leg_rows, "cloth", leg, 20)
 			var trousers: Dictionary = b._parts["cloth"]
 			var trouser_vertices: PackedVector3Array = trousers["positions"]
 			for index in range(start, trouser_vertices.size()):
-				trouser_vertices[index] += Vector3(side * 0.087, 0, 0.012)
+				trouser_vertices[index] += Vector3(side * 48.0 / 541.0, 0, 0.012)
 			trousers["positions"] = trouser_vertices
-			for fold_y: float in [0.154, 0.216, 0.285]:
-				var fold := PackedVector3Array()
-				for i in 6:
-					var t := float(i) / 5.0
-					var fx := lerpf(-0.059, 0.059, t)
-					var fy := fold_y + sin(t * PI) * 0.012
-					fold.append(Vector3(side * 0.087 + fx, fy, _face_z(leg_rows, 1.0, fx, fy) + 0.012))
-				b.tube(fold, 0.0015, "ink", leg, 4)
 		else:
 			b.ellipsoid(Vector3(side * 0.087, 0.166, 0.012), Vector3(0.045, 0.14, 0.077), "cloth", leg, 12, 8)
 		if hero:
@@ -601,7 +594,7 @@ func _approved_hero(b: Builder, drawing: String) -> void:
 		else:
 			b.ellipsoid(Vector3(side * 0.087, 0.038, -0.025), Vector3(0.045, 0.038, 0.093), "ink", foot, 14, 8)
 			b.box(Vector3(side * 0.087, 0.008, -0.027), Vector3(0.08, 0.016, 0.15), "ink", foot)
-		b.vertex_tints["cloth"] = Color("9ef561") if hero else Color("b6ba78") if granny else Color("4e3b2d")
+		b.vertex_tints["cloth"] = Color("a2f03a") if hero else Color("b6ba78") if granny else Color("4e3b2d")
 		var x := side * (width + 0.018)
 		if drawing == "vendor":
 			_vendor_sleeve(b, side, upper, lower)
@@ -623,19 +616,27 @@ func _approved_hero(b: Builder, drawing: String) -> void:
 				b.ellipsoid(Vector3(finger_x, shoulder - 0.350, -0.161), Vector3(0.0038, 0.005, 0.001), "ink", hand, 6, 4)
 	if hero:
 		# Quilted bands wrap around the full jacket rather than lying on a card.
-		for y: float in [0.430, 0.540, 0.640]:
+		for y: float in [(590.0 - 344.0) / 541.0, (590.0 - 392.0) / 541.0]:
 			var seam := PackedVector3Array()
-			var band := _ilyusha_row_at(levels, y)
 			for i in 25:
 				var a := TAU * i / 24.0
-				seam.append(Vector3(cos(a) * (band.x + 0.001), y, sin(a) * (band.z + 0.001)))
+				var drop := absf(sin(a)) * 8.0 / 541.0
+				var row := _ilyusha_row_at(levels, y - drop)
+				seam.append(Vector3(cos(a) * (row.x + 0.001), y - drop, sin(a) * (row.z + 0.001)))
 			b.tube(seam, 0.0022, "ink", 2, 4)
 		var zip := PackedVector3Array()
 		for row in levels: zip.append(Vector3(0, row.y, -row.z - 0.002))
 		b.tube(zip, 0.0018, "ink", 2, 4)
 		_fur_collar(b)
-		b.ellipsoid(Vector3(0, 0.654, 0.110), Vector3(0.142, 0.089, 0.075), "cloth", 2, 20, 10)
-		b.tube(_curve(Vector3(-0.114, 0.674, 0.157), Vector3(0, 0.562, 0.195), Vector3(0.114, 0.674, 0.157)), 0.0022, "ink", 2, 5)
+		var hood_center := Vector3(0, (590.0 - 310.0) / 541.0, 0.146)
+		var hood_radii := Vector3(64.0 / 541.0, 44.0 / 541.0, 0.060)
+		b.ellipsoid(hood_center, hood_radii, "cloth", 2, 20, 10)
+		var hood_line := _curve(Vector3(-42.0 / 541.0, (590.0 - 300.0) / 541.0, 0), Vector3(0, (590.0 - 326.0) / 541.0, 0), Vector3(42.0 / 541.0, (590.0 - 300.0) / 541.0, 0))
+		for index in hood_line.size():
+			var section := 1.0 - pow(hood_line[index].x / hood_radii.x, 2) - pow((hood_line[index].y - hood_center.y) / hood_radii.y, 2)
+			hood_line[index].z = hood_center.z + hood_radii.z * sqrt(maxf(0.0, section)) + 0.002
+		b.tube(hood_line, 0.0022, "ink", 2, 5)
+		b.tube(PackedVector3Array([Vector3(0, 138.0 / 541.0, -0.064), Vector3(0, 128.0 / 541.0, -0.064)]), 0.0018, "ink", 1, 5)
 	elif granny:
 		for i in 10:
 			var y := 0.12 + i * 0.046
@@ -652,8 +653,7 @@ func _approved_hero(b: Builder, drawing: String) -> void:
 		b.vertex_tints["cloth"] = Color("4e3b2d")
 	var face: Array[Vector3]
 	if hero:
-		face = [Vector3(0.015, 0.665, 0.022), Vector3(0.061, 0.680, 0.049), Vector3(0.100, 0.710, 0.073),
-			Vector3(0.112, 0.750, 0.086), Vector3(0.106, 0.802, 0.088), Vector3(0.089, 0.852, 0.078), Vector3(0.064, 0.879, 0.056), Vector3(0.020, 0.891, 0.022)]
+		face = _ilyusha_head_rows()
 	elif granny:
 		face = [Vector3(0.02, 0.64, 0.035), Vector3(0.08, 0.65, 0.073), Vector3(0.123, 0.68, 0.099), Vector3(0.129, 0.73, 0.109), Vector3(0.106, 0.80, 0.103), Vector3(0.096, 0.87, 0.09), Vector3(0.082, 0.901, 0.071), Vector3(0.02, 0.91, 0.025)]
 	else:
@@ -677,48 +677,61 @@ func _approved_hero(b: Builder, drawing: String) -> void:
 	if not hero:
 		b.ellipsoid(Vector3(0, 0.642 if granny else 0.621, 0), Vector3(0.058, 0.035, 0.068), "skin", 3, 12, 8)
 	_head_cage(b, face, 0.72)
-	var eye_y := 0.792 if hero else 0.822 if granny else 0.797
-	var eye_x := 0.043 if hero else 0.044 if granny else 0.046
+	var eye_y := (590.0 - 206.0) / 541.0 if hero else 0.822 if granny else 0.797
+	var eye_x := 38.0 / 541.0 if hero else 0.044 if granny else 0.046
 	for side: float in [-1.0, 1.0]:
 		var ex := eye_x * side
 		if hero:
-			b.vertex_tints["trim"] = Color("df91ad")
-			_face_oval(b, face, ex, eye_y, 0.021, 0.014, "trim", 0.0010)
+			b.vertex_tints["trim"] = Color("e296b6")
+			_face_oval(b, face, ex, eye_y, 17.0 / 541.0, 13.0 / 541.0, "trim", 0.0010)
 			b.vertex_tints["trim"] = Color("f6f3ea")
-		var eye_w := 0.014 if hero else 0.014 if granny else 0.022
-		var eye_h := 0.006 if hero else 0.0055 if granny else 0.009
+		var eye_w := 9.0 / 541.0 if hero else 0.014 if granny else 0.022
+		var eye_h := 5.0 / 541.0 if hero else 0.0055 if granny else 0.009
 		var lid_y := eye_y + 0.0015
-		_face_oval(b, face, ex, eye_y, eye_w + 0.0025, eye_h + 0.0025, "ink", 0.0022, lid_y + 0.003)
-		_face_oval(b, face, ex, eye_y, eye_w, eye_h, "eye", 0.0033, lid_y)
-		_face_oval(b, face, ex + side * 0.003, eye_y - 0.0007, 0.0042 if hero else 0.0040 if granny else 0.0051, 0.0042 if hero else 0.0040 if granny else 0.0051, "ink", 0.0044, lid_y)
-		_face_line(b, face, 0.72, _curve(Vector3(ex - eye_w - 0.003, lid_y, 0), Vector3(ex, lid_y + 0.007, 0), Vector3(ex + eye_w + 0.003, lid_y, 0)), 0.0028 if hero or not granny else 0.0020, "ink", 0.005)
+		var lid_limit := INF if hero else lid_y
+		_face_oval(b, face, ex, eye_y, eye_w + 0.0025, eye_h + 0.0025, "ink", 0.0022, lid_limit + 0.003)
+		_face_oval(b, face, ex, eye_y, eye_w, eye_h, "eye", 0.0033, lid_limit)
+		_face_oval(b, face, ex + side * 0.003, eye_y - 0.0007, 3.2 / 541.0 if hero else 0.0040 if granny else 0.0051, 3.2 / 541.0 if hero else 0.0040 if granny else 0.0051, "ink", 0.0044, lid_limit)
 		if hero:
-			_face_line(b, face, 0.72, _curve(Vector3(ex - 0.021, eye_y + 0.029, 0), Vector3(ex, eye_y + 0.043, 0), Vector3(ex + 0.021, eye_y + 0.027, 0)), 0.0022)
+			_face_line(b, face, 0.72, _curve(Vector3(ex - 13.0 / 541.0, 389.0 / 541.0, 0), Vector3(ex, 394.0 / 541.0, 0), Vector3(ex + 13.0 / 541.0, 389.0 / 541.0, 0)), 0.0029, "ink", 0.005)
+		else:
+			_face_line(b, face, 0.72, _curve(Vector3(ex - eye_w - 0.003, lid_y, 0), Vector3(ex, lid_y + 0.007, 0), Vector3(ex + eye_w + 0.003, lid_y, 0)), 0.0028 if not granny else 0.0020, "ink", 0.005)
+		if hero:
+			_face_line(b, face, 0.72, _curve(Vector3(ex - 18.0 / 541.0, 414.0 / 541.0, 0), Vector3(ex, 424.0 / 541.0, 0), Vector3(ex + 18.0 / 541.0, 412.0 / 541.0, 0)), 0.0029)
 			b.vertex_tints["trim"] = Color("ee8da8")
-			var cx := side * 0.071
-			var cy := 0.747
-			_face_oval(b, face, cx, cy, 0.018, 0.014, "trim", 0.0013)
+			var cx := side * 62.0 / 541.0
+			var cy := 354.0 / 541.0
+			_face_oval(b, face, cx, cy, 15.0 / 541.0, 12.0 / 541.0, "trim", 0.0013)
 			b.vertex_tints["trim"] = Color("f6f3ea")
 		else:
 			_face_line(b, face, 0.72, _curve(Vector3(ex - 0.017, eye_y - 0.015, 0), Vector3(ex, eye_y - 0.024, 0), Vector3(ex + 0.017, eye_y - 0.015, 0)), 0.0019)
 			_face_line(b, face, 0.72, _curve(Vector3(side * 0.020, eye_y - 0.010, 0), Vector3(side * 0.035, eye_y - 0.045, 0), Vector3(side * 0.042, eye_y - 0.091, 0)), 0.0023)
-		var ear_y := 0.787 if hero else 0.82
-		var ear_x := (0.112 if hero else 0.123 if granny else 0.152) * side
-		b.ellipsoid(Vector3(ear_x, ear_y, 0.008), Vector3(0.013 if hero else 0.017, 0.024 if hero else 0.035, 0.021 if hero else 0.027), "skin", 3, 8 if hero else 12, 6 if hero else 8)
+		var ear_y := 378.0 / 541.0 if hero else 0.82
+		var ear_x := (96.0 / 541.0 if hero else 0.123 if granny else 0.152) * side
 		if hero:
-			b.tube(_curve(Vector3(ear_x, ear_y + 0.017, -0.008), Vector3(ear_x + side * 0.011, ear_y, -0.020), Vector3(ear_x, ear_y - 0.017, -0.008)), 0.0018, "ink", 3, 5)
+			var ear := _curve(Vector3(ear_x, ear_y + 16.0 / 541.0, 0), Vector3(ear_x + side * 0.036, ear_y, -0.006), Vector3(ear_x, ear_y - 16.0 / 541.0, 0))
+			b.tube(ear, 0.006, "skin", 3, 8)
+			for index in ear.size(): ear[index].z -= 0.007
+			b.tube(ear, 0.0018, "ink", 3, 5)
+		else:
+			b.ellipsoid(Vector3(ear_x, ear_y, 0.008), Vector3(0.017, 0.035, 0.027), "skin", 3, 12, 8)
 	if hero:
 		# The curled trunk is a real curved volume, visible in profile too.
-		var trunk := PackedVector3Array([Vector3(0, 0.790, -0.090), Vector3(-0.002, 0.773, -0.119), Vector3(0.002, 0.763, -0.153), Vector3(0.010, 0.764, -0.181), Vector3(0.020, 0.778, -0.204), Vector3(0.025, 0.800, -0.211), Vector3(0.020, 0.817, -0.205)])
-		b.tube(_smooth_curve(trunk), 0.015, "skin", 3, 12)
-		b.ellipsoid(trunk[-1], Vector3.ONE * 0.015, "skin", 3, 12, 7)
-		b.ellipsoid(Vector3(0.020, 0.817, -0.221), Vector3(0.0035, 0.0035, 0.0015), "ink", 3, 8, 4)
-		var mouth_y := 0.716
-		_face_oval(b, face, 0, mouth_y, 0.044, 0.011, "ink", 0.0022)
-		_face_oval(b, face, 0, mouth_y, 0.038, 0.006, "eye", 0.0034)
-		for x: float in [-0.026, -0.013, 0.0, 0.013, 0.026]:
-			_face_line(b, face, 0.72, PackedVector3Array([Vector3(x, mouth_y - 0.005, 0), Vector3(x, mouth_y + 0.005, 0)]), 0.0010, "ink", 0.0048)
-		_face_line(b, face, 0.72, _curve(Vector3(-0.026, 0.695, 0), Vector3(0, 0.681, 0), Vector3(0.026, 0.695, 0)), 0.0020)
+		var nose_xy := _ilyusha_svg_curve(Vector2(200, 190), Vector2(194, 214), Vector2(194, 236), Vector2(208, 242), 8)
+		nose_xy.append_array(_ilyusha_svg_curve(Vector2(208, 242), Vector2(222, 248), Vector2(234, 236), Vector2(230, 222), 8).slice(1))
+		var trunk := PackedVector3Array()
+		for index in nose_xy.size():
+			var t := float(index) / (nose_xy.size() - 1)
+			trunk.append(Vector3((200.0 - nose_xy[index].x) / 541.0, (590.0 - nose_xy[index].y) / 541.0, lerpf(-0.151, -0.297, smoothstep(0.0, 1.0, t))))
+		b.tube(trunk, 0.0215, "skin", 3, 12)
+		b.ellipsoid(trunk[-1], Vector3.ONE * 0.0215, "skin", 3, 12, 7)
+		b.ellipsoid(trunk[-1] + Vector3.FORWARD * 0.022, Vector3(0.0059, 0.0059, 0.002), "ink", 3, 8, 4)
+		var mouth_y := 332.0 / 541.0
+		_face_oval(b, face, 1.0 / 541.0, mouth_y, 33.0 / 541.0, 8.0 / 541.0, "ink", 0.0022)
+		_face_oval(b, face, 1.0 / 541.0, mouth_y, 29.0 / 541.0, 4.5 / 541.0, "eye", 0.0034)
+		for x: float in [-20.0, -10.0, 0.0, 10.0, 20.0]:
+			_face_line(b, face, 0.72, PackedVector3Array([Vector3(x / 541.0, 328.0 / 541.0, 0), Vector3(x / 541.0, 337.0 / 541.0, 0)]), 0.0014, "ink", 0.0048)
+		_face_line(b, face, 0.72, _curve(Vector3(-22.0 / 541.0, 314.0 / 541.0, 0), Vector3(0, 300.0 / 541.0, 0), Vector3(22.0 / 541.0, 314.0 / 541.0, 0)), 0.0028)
 		_tuft(b)
 	else:
 		var nose_top := eye_y + 0.011

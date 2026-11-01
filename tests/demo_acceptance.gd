@@ -52,6 +52,7 @@ var textures_seen := {}
 var toast_frames := 0
 var sim_frames := 0
 var _outfit_heights := Vector2.ZERO
+var _outfit_meshes: Array[Mesh] = []
 var _seated_leg_poses: Array[Quaternion] = []
 var _player_capsule := Vector2.ZERO
 var _player_collider_transform := Transform3D.IDENTITY
@@ -87,6 +88,7 @@ func _run() -> void:
 	for kind: String in ["AudioStreamPlayer", "AudioStreamPlayer3D"]:
 		for player: Node in main.find_children("*", kind, true, false):
 			player.stop()
+	_outfit_meshes.clear()
 	main.queue_free()
 	main = null
 	_world = null
@@ -590,9 +592,11 @@ func _bind(w: DemoWorld) -> void:
 	_kiosk_goods = _bread_props(w)
 	var look: Node = w.player.get_node("Visual/Look")
 	_outfit_heights = Vector2(look.height_m * Catalog.visible_height_ratio("ilyusha"), SeatedVisual.LADA_VISIBLE_HEIGHT)
+	_outfit_meshes.clear()
 	_seated_leg_poses.clear()
 	if Uniform.civilians_enabled():
 		var seated: Node = w.car.visual.get_node("Body/Driver")
+		_outfit_meshes.assign([look.uniform_visual.uniform_mesh.mesh, seated.uniform_visual.uniform_mesh.mesh])
 		var seated_rig: Skeleton3D = seated.uniform_visual.skeleton
 		for bone_name: String in ["leg_l", "leg_r"]:
 			var bone := seated_rig.find_bone(bone_name)
@@ -610,7 +614,8 @@ func _monitor_3d_outfit(w: DemoWorld) -> void:
 	if matches:
 		var a: Node = on_foot.uniform_visual
 		var b: Node = seated.uniform_visual
-		matches = on_foot.resolved_character() == "ilyusha" and seated.resolved_character() == "ilyusha" and a.model.get_meta("drawing", "") == "ilyusha" and b.model.get_meta("drawing", "") == "ilyusha" and a.uniform_mesh.mesh == b.uniform_mesh.mesh and a.skeleton != b.skeleton
+		matches = on_foot.resolved_character() == "ilyusha" and seated.resolved_character() == "ilyusha" and a.model.get_meta("drawing", "") == "ilyusha" and b.model.get_meta("drawing", "") == "ilyusha" and a.author_mesh.mesh == b.author_mesh.mesh and a.skeleton != b.skeleton
+		matches = matches and _outfit_meshes.size() == 2 and a.uniform_mesh.mesh == _outfit_meshes[0] and b.uniform_mesh.mesh == _outfit_meshes[1]
 		matches = matches and is_equal_approx(a.visible_height, _outfit_heights.x) and is_equal_approx(b.visible_height, _outfit_heights.y) and a.model.scale.is_equal_approx(Vector3.ONE * _outfit_heights.x) and b.model.scale.is_equal_approx(Vector3.ONE * _outfit_heights.y)
 		var legs: Skeleton3D = b.skeleton
 		matches = matches and _seated_leg_poses.size() == 2

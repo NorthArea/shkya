@@ -11,6 +11,8 @@ const Layout = preload("res://game/world/layout.gd")
 var checks := 0
 var errors: Array[String] = []
 var main: Node
+const NORMAL_REPACK_BUDGET := 0.0002
+var normal_witness_checked := false
 
 func _initialize() -> void:
 	call_deferred("_run")
@@ -98,6 +100,32 @@ func hand_surface_to_wheel(occupant: Node3D, suffix: String) -> float:
 				nearest = minf(nearest, point.distance_to(Geometry3D.get_closest_point_to_segment(point, rim[index], rim[(index + 1) % rim.size()])))
 	return nearest
 
+# A normal is accepted only when it is the exact independent engine identity
+# roundtrip AND remains within the measured octahedral-repack error budget.
+# The control mesh receives source arrays, never adapter-produced normal data.
+func normals_preserved(source: PackedVector3Array, active: PackedVector3Array, control: PackedVector3Array) -> bool:
+	return active == control and normal_budget(source, active)
+
+func normal_budget(source: PackedVector3Array, active: PackedVector3Array) -> bool:
+	if source.size() != active.size(): return false
+	for index in source.size():
+		var before := source[index]
+		var after := active[index]
+		if not before.is_finite() or not after.is_finite(): return false
+		if absf(before.length() - 1.0) > NORMAL_REPACK_BUDGET or absf(after.length() - 1.0) > NORMAL_REPACK_BUDGET: return false
+		if before.dot(after) <= 0.0 or before.distance_to(after) > NORMAL_REPACK_BUDGET: return false
+	return true
+
+func check_normal_witness(source: PackedVector3Array, control: PackedVector3Array) -> void:
+	if normal_witness_checked or control.is_empty(): return
+	normal_witness_checked = true
+	var changed := control.duplicate()
+	var tangent := control[0].cross(Vector3.RIGHT)
+	if tangent.length_squared() < 0.01: tangent = control[0].cross(Vector3.UP)
+	changed[0] = (control[0] + tangent.normalized() * 0.00004).normalized()
+	check(changed != control and normal_budget(source, changed), "normal witness reaches exact-control boundary while staying finite/unit/within 2e-4")
+	check(not normals_preserved(source, changed, control), "normal oracle rejects a changed direction even inside the repack tolerance")
+
 func trolley_sill_lid_triangles(mesh: Mesh) -> int:
 	var count := 0
 	for surface in mesh.get_surface_count():
@@ -110,6 +138,39 @@ func trolley_sill_lid_triangles(mesh: Mesh) -> int:
 			if absf(centre.x) < 1.0 and absf(centre.z) < 5.4 and absf(a.y - 1.72) < 0.0001 and absf(b.y - 1.72) < 0.0001 and absf(c.y - 1.72) < 0.0001 and (b - a).cross(c - a).length() > 0.001:
 				count += 1
 	return count
+
+func check_rig(visual: Node, label_: String) -> void:
+	var author: Skeleton3D = visual.author_skeleton
+	var authored: MeshInstance3D = visual.author_mesh
+	var active: Skeleton3D = visual.skeleton
+	var mesh: MeshInstance3D = visual.uniform_mesh
+	check(author.get_bone_count() == 14 and authored.skin.get_bind_count() == 14 and authored.get_node(authored.skeleton) == author, label_ + " retains the authored 14-bone rig and Skin")
+	var walking_adapter := active != author
+	var expected := 16 if walking_adapter else 14
+	check(active.get_bone_count() == expected and mesh.skin != null and mesh.skin.get_bind_count() == expected and mesh.get_node(mesh.skeleton) == active, label_ + " live mesh binds to its actual 14-author/16-locomotion skeleton")
+	check((walking_adapter and visual.rig != null and active == visual.rig.skeleton and mesh == visual.rig.mesh and not authored.visible and mesh.visible) or (not walking_adapter and mesh == authored and authored.visible), label_ + " exactly the selected author or locomotion mesh is active")
+	var names_preserved := true
+	for bone in 14:
+		names_preserved = names_preserved and active.get_bone_name(bone) == author.get_bone_name(bone)
+	if walking_adapter:
+		for suffix in ["_l", "_r"]:
+			names_preserved = names_preserved and (active.find_bone("knee" + suffix) >= 14 or active.find_bone("ankle" + suffix) >= 14)
+	check(names_preserved, label_ + " preserves artist bone names and adds the two leg joints separately")
+	var seen := {}
+	var binds_valid := true
+	for bind in mesh.skin.get_bind_count():
+		var bone := mesh.skin.get_bind_bone(bind)
+		if bone < 0 or bone >= active.get_bone_count() or seen.has(bone):
+			binds_valid = false
+			continue
+		seen[bone] = true
+		var identity := active.get_bone_global_rest(bone) * mesh.skin.get_bind_pose(bind)
+		binds_valid = binds_valid and identity.is_finite() and identity.origin.length() < 0.0001 and identity.basis.is_equal_approx(Basis.IDENTITY)
+	check(binds_valid and seen.size() == active.get_bone_count(), label_ + " live Skin has unique valid inverse-rest binds")
+	var materials_shared := mesh.mesh.get_surface_count() == authored.mesh.get_surface_count()
+	for surface in mini(mesh.mesh.get_surface_count(), authored.mesh.get_surface_count()):
+		materials_shared = materials_shared and mesh.mesh.surface_get_material(surface) == authored.mesh.surface_get_material(surface)
+	check(materials_shared, label_ + " locomotion preserves authored material resources")
 
 func _run() -> void:
 	create_timer(100.0, true, false, true).timeout.connect(func(): quit(2))
@@ -131,7 +192,7 @@ func _run() -> void:
 		check(look.uses_uniform_3d() and look.sprite == null, actor.name + " actual consumer uses a skinned 3D look")
 		if not look.uses_uniform_3d():
 			continue
-		check(look.uniform_visual.skeleton.get_bone_count() == 14, actor.name + " has its own live 14-bone skeleton")
+		check_rig(look.uniform_visual, actor.name)
 		check(look.find_children("*", "CollisionObject3D", true, false).is_empty(), actor.name + " appearance adds no physics")
 	# Factory consumers such as portrait capture have no CharacterSprite physics tick.
 	for drawing: String in ["police", "guard"]:
@@ -156,7 +217,15 @@ func _run() -> void:
 		if live == null:
 			continue
 		check(rest(live.skeleton) and rest(spare.uniform_visual.skeleton), drawing + " fresh and cached instances start at authored rest")
-		check(live.uniform_mesh.mesh == spare.uniform_visual.uniform_mesh.mesh and live.skeleton != spare.uniform_visual.skeleton, drawing + " shares immutable mesh, not live bone poses")
+		check(live.author_mesh.mesh == spare.uniform_visual.author_mesh.mesh and live.author_mesh.skin == spare.uniform_visual.author_mesh.skin and live.author_skeleton != spare.uniform_visual.author_skeleton, drawing + " shares immutable artist mesh/Skin, not author poses")
+		var authored_mesh: Mesh = live.author_mesh.mesh
+		var authored_skin: Skin = live.author_mesh.skin
+		var author_arrays: Array[Array] = []
+		var identity_control := ArrayMesh.new()
+		for surface in authored_mesh.get_surface_count():
+			var snapshot := authored_mesh.surface_get_arrays(surface).duplicate(true)
+			author_arrays.append(snapshot)
+			identity_control.add_surface_from_arrays(authored_mesh.surface_get_primitive_type(surface), snapshot)
 		var expected := 2.0 * Catalog.visible_height_ratio(drawing)
 		var legacy_texture: Texture2D = load("res://assets/art/characters/%s_front_idle.svg" % drawing)
 		var legacy_image := legacy_texture.get_image()
@@ -165,11 +234,41 @@ func _run() -> void:
 		check(absf(expected - 2.0 * float(legacy_image.get_used_rect().size.y) / legacy_image.get_height()) < 0.00001, drawing + " code catalog preserves independently measured previous visible size")
 		var box := bounds(live, sandbox)
 		check(absf(box.position.y) < 0.015 and absf(box.end.y - expected) < 0.02, drawing + " rest has soles at ground and preserved visible height")
-		for phase: float in [0.25, 0.75]:
-			live.update_walk(look.walk_stride * 4.0 * phase, true, 1.0 / 60.0, look.walk_stride)
+		# Contact-based gait needs elapsed time and matching actor displacement;
+		# two unrelated distance snapshots imply an artificial near-teleport speed.
+		var velocity := Vector3.FORWARD * 1.5
+		for step in 60:
+			look.position += velocity / 60.0
+			live.update_locomotion(velocity, true, &"locomotion", 1.0 / 60.0)
 			live.skeleton.force_update_all_bone_transforms()
-			box = bounds(live, sandbox)
-			check(box.position.y >= -0.08 and box.end.y >= expected * 0.9, drawing + " true skinned gait keeps feet/height")
+			if step in [15, 45]:
+				box = bounds(live, sandbox)
+				check(box.position.y >= -0.08 and box.end.y >= expected * 0.9, drawing + " true skinned gait keeps feet/height")
+		check_rig(live, drawing + " walking")
+		spare.uniform_visual.update_locomotion(Vector3.ZERO, true, &"locomotion", 1.0 / 60.0)
+		check(live.uniform_mesh.mesh == spare.uniform_visual.uniform_mesh.mesh and live.uniform_mesh.skin == spare.uniform_visual.uniform_mesh.skin and live.skeleton != spare.uniform_visual.skeleton, drawing + " locomotion shares immutable mesh/Skin with independent poses")
+		check(live.author_mesh.mesh == authored_mesh and live.author_mesh.skin == authored_skin, drawing + " locomotion leaves original author resources intact")
+		var shape_preserved: bool = live.uniform_mesh.mesh.get_surface_count() == authored_mesh.get_surface_count()
+		var source_immutable: bool = authored_mesh.get_surface_count() == author_arrays.size()
+		var normal_preserved := true
+		var normal_max_delta := 0.0
+		for surface in mini(live.uniform_mesh.mesh.get_surface_count(), mini(authored_mesh.get_surface_count(), author_arrays.size())):
+			var original: Array = author_arrays[surface]
+			var active: Array = live.uniform_mesh.mesh.surface_get_arrays(surface)
+			var control := identity_control.surface_get_arrays(surface)
+			source_immutable = source_immutable and original == authored_mesh.surface_get_arrays(surface)
+			for attribute in [Mesh.ARRAY_VERTEX, Mesh.ARRAY_COLOR, Mesh.ARRAY_INDEX]:
+				shape_preserved = shape_preserved and original[attribute] == active[attribute]
+			var before: PackedVector3Array = original[Mesh.ARRAY_NORMAL]
+			var after: PackedVector3Array = active[Mesh.ARRAY_NORMAL]
+			var canonical: PackedVector3Array = control[Mesh.ARRAY_NORMAL]
+			normal_preserved = normal_preserved and normals_preserved(before, after, canonical)
+			for index in mini(before.size(), after.size()): normal_max_delta = maxf(normal_max_delta, before[index].distance_to(after[index]))
+			check_normal_witness(before, canonical)
+		check(shape_preserved, drawing + " locomotion preserves every author vertex, colour and topology array exactly")
+		check(source_immutable, drawing + " original author arrays remain exactly unchanged after locomotion adaptation")
+		check(normal_preserved, drawing + " normals exactly match independent Godot identity roundtrip within finite/unit/hemisphere 2e-4 budget")
+		print("IP01_CIVILIAN_NORMAL_REPACK: %s max_source_delta=%.9f budget=%.9f exact_engine_control=%s" % [drawing, normal_max_delta, NORMAL_REPACK_BUDGET, normal_preserved])
 		check(rest(spare.uniform_visual.skeleton), drawing + " gait does not mutate cached sibling")
 		live.set_walk_speed(0.0)
 		check(rest(live.skeleton), drawing + " stop resets every authored rest transform")

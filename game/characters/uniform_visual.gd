@@ -3,6 +3,8 @@ extends Node3D
 const PoliceModel = preload("res://game/characters/models/police_model.gd")
 const GuardModel = preload("res://game/characters/models/guard_model.gd")
 const CivilianModel = preload("res://game/characters/models/civilian_model.gd")
+const LocomotionRig = preload("res://game/characters/locomotion_rig.gd")
+const LocomotionPose = preload("res://game/characters/locomotion_pose.gd")
 const CIVILIANS_ENABLED_BY_DEFAULT := true
 const ENABLED_BY_DEFAULT := true
 const EMISSION_FLOOR := 0.12
@@ -27,6 +29,13 @@ var visible_height := 1.0
 var _kind := ""
 var _walk_speed := -1.0
 var _manual_distance := 0.0
+var author_skeleton: Skeleton3D
+var author_mesh: MeshInstance3D
+var rig: LocomotionRig
+var gait: LocomotionPose
+var _occupant := false
+var _legacy_distance := 0.0
+var _xrays: Array[MeshInstance3D] = []
 
 static func enabled() -> bool:
 	return ENABLED_BY_DEFAULT or "--uniform3d" in OS.get_cmdline_user_args() or "--uniform3d" in OS.get_cmdline_args()
@@ -81,6 +90,8 @@ func configure(drawing: String, height: float, color: Color) -> void:
 			tinted.surface_set_material(surface, material)
 		_tinted_meshes[key] = tinted
 	uniform_mesh.mesh = _tinted_meshes[key]
+	author_skeleton = skeleton
+	author_mesh = uniform_mesh
 
 static func _emission_floor(surface_name: String) -> float:
 	# Keep black trim dark while the winter cloth and faces retain their local colour.
@@ -93,26 +104,38 @@ static func _emission_floor(surface_name: String) -> float:
 			return INK_EMISSION_FLOOR
 	return EMISSION_FLOOR
 
-func update_walk(distance: float, walking: bool, delta: float, stride: float) -> void:
+func update_walk(distance: float, walking: bool, delta: float, _stride: float) -> void:
 	if _walk_speed >= 0.0:
 		walking = _walk_speed > 0.0
 		_manual_distance += _walk_speed * delta
 		distance = _manual_distance
-	if not walking:
-		reset_pose()
+	var speed := maxf(0.0, distance - _legacy_distance) / maxf(delta, 0.0001) if walking else 0.0
+	_legacy_distance = distance
+	update_locomotion(-global_basis.z.normalized() * speed, true, &"locomotion", delta)
+
+func update_locomotion(velocity: Vector3, grounded: bool, mode: StringName, delta: float, vertical_speed := 0.0, action_phase := 0.0) -> void:
+	if _occupant:
 		return
-	var phase := distance * TAU / (stride * 4.0)
-	var step := sin(phase)
-	_rotate("leg_l", Vector3.RIGHT, step * 0.25)
-	_rotate("leg_r", Vector3.RIGHT, -step * 0.25)
-	_rotate("foot_l", Vector3.RIGHT, -step * 0.09)
-	_rotate("foot_r", Vector3.RIGHT, step * 0.09)
-	_rotate("spine", Vector3.UP, step * 0.022)
-	if _kind == "guard" or (_kind not in ["police", "police_long", "police_round", "guard_alt"]):
-		_rotate("upper_arm_l", Vector3.RIGHT, -step * 0.13)
-		_rotate("upper_arm_r", Vector3.RIGHT, step * 0.13)
-	var hips := skeleton.find_bone("hips")
-	skeleton.set_bone_pose_position(hips, skeleton.get_bone_rest(hips).origin + Vector3(0, (1.0 - cos(phase * 2.0)) * 0.0025, 0))
+	prepare_locomotion()
+	if _walk_speed == 0.0:
+		mode = &"knock"
+	elif _walk_speed > 0.0:
+		# Explicit inspection/capture override; gameplay consumers publish root motion.
+		velocity = -global_basis.z.normalized() * _walk_speed
+	gait.update(velocity, grounded, mode, delta, vertical_speed, action_phase)
+
+func prepare_locomotion() -> void:
+	if rig != null or _occupant:
+		return
+	rig = LocomotionRig.new()
+	rig.build(author_skeleton, author_mesh, _kind not in ["police", "guard", "police_long", "police_round", "guard_alt"])
+	gait = LocomotionPose.new()
+	gait.configure(rig)
+	author_mesh.visible = false
+	skeleton = rig.skeleton
+	uniform_mesh = rig.mesh
+	_rebind_xrays()
+	skeleton.force_update_all_bone_transforms()
 
 func _rotate(bone_name: String, axis: Vector3, angle: float) -> void:
 	skeleton.set_bone_pose_rotation(skeleton.find_bone(bone_name), Quaternion(axis, angle))
@@ -125,6 +148,8 @@ func set_walk_speed(speed: float) -> void:
 
 func reset_pose() -> void:
 	skeleton.reset_bone_poses()
+	if gait != null:
+		gait.reset()
 
 func build_xray() -> MeshInstance3D:
 	if _xray_shader == null:
@@ -142,11 +167,28 @@ func build_xray() -> MeshInstance3D:
 	result.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	result.visible = false
 	skeleton.add_child(result)
+	_xrays.append(result)
 	return result
+
+func _rebind_xrays() -> void:
+	for xray: MeshInstance3D in _xrays:
+		if not is_instance_valid(xray):
+			continue
+		xray.reparent(skeleton, false)
+		xray.mesh = uniform_mesh.mesh
+		xray.skin = uniform_mesh.skin
+		xray.skeleton = NodePath("..")
 
 ## Occupants retain fresh skeletons while sharing immutable mesh/material resources.
 ## Lada uses a full model scaled to its cabin, never the legacy cropped-canvas height.
 func set_occupant_pose(profile: StringName) -> void:
+	_occupant = true
+	if rig != null:
+		rig.mesh.visible = false
+		skeleton = author_skeleton
+		uniform_mesh = author_mesh
+		author_mesh.visible = true
+		_rebind_xrays()
 	reset_pose()
 	if profile == &"trolley_standing":
 		_rotate("upper_arm_r", Vector3.RIGHT, 1.70)
@@ -156,7 +198,7 @@ func set_occupant_pose(profile: StringName) -> void:
 	if profile == &"lada":
 		# The chin tuck clears the roof; Ilyusha sits back from the steering wheel.
 		var head := skeleton.find_bone("head")
-		var head_offset := Vector3(0, -0.038 if _kind == "ilyusha" else -0.018, 0.02 if _kind == "ilyusha" else 0.0)
+		var head_offset := Vector3(0, -0.055 if _kind == "ilyusha" else -0.018, 0.035 if _kind == "ilyusha" else 0.0)
 		skeleton.set_bone_pose_position(head, skeleton.get_bone_rest(head).origin + head_offset)
 	for suffix: String in ["_l", "_r"]:
 		_rotate("leg" + suffix, Vector3.RIGHT, 1.65 if profile == &"lada" else 1.35)

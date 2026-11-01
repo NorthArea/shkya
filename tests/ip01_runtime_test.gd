@@ -66,11 +66,44 @@ func verify_gait(visual: Node, floor_y: float, label_: String) -> void:
 	var hips := skeleton.find_bone("hips")
 	var rest := skeleton.get_bone_rest(hips).origin
 	var pose := skeleton.get_bone_pose_position(hips)
-	check(pose.y >= rest.y - 0.00001 and pose.y <= rest.y + 0.02, label_ + " retains hips rest-origin while adding small positive bob")
+	check(pose.is_finite() and (pose - rest).length() <= 0.08, label_ + " retains bounded hips displacement relative to authored rest, including IK crouch")
 	var bounds := skinned_bounds(visual, floor_y)
 	check(bounds.feet_minimum >= -FOOT_GROUND_TOL, "%s skinned feet remain near ground, y=%.4f" % [label_, bounds.feet_minimum])
 	check(bounds.maximum >= visual.visible_height * 0.9, "%s full model height survives walking, top=%.4f" % [label_, bounds.maximum])
 	observations.append({"phase": label_, "hips_rest": str(rest), "hips_pose": str(pose), "bounds": bounds})
+func check_rig(visual: Node, label_: String) -> void:
+	var author: Skeleton3D = visual.author_skeleton
+	var authored: MeshInstance3D = visual.author_mesh
+	var active: Skeleton3D = visual.skeleton
+	var mesh: MeshInstance3D = visual.uniform_mesh
+	check(author.get_bone_count() == 14 and authored.skin.get_bind_count() == 14 and authored.get_node(authored.skeleton) == author, label_ + " retains the authored 14-bone rig and Skin")
+	var walking_adapter := active != author
+	var expected := 16 if walking_adapter else 14
+	check(active.get_bone_count() == expected and mesh.skin != null and mesh.skin.get_bind_count() == expected and mesh.get_node(mesh.skeleton) == active, label_ + " live mesh binds to its actual 14-author/16-locomotion skeleton")
+	check((walking_adapter and visual.rig != null and active == visual.rig.skeleton and mesh == visual.rig.mesh and not authored.visible and mesh.visible) or (not walking_adapter and mesh == authored and authored.visible), label_ + " exactly the selected author or locomotion mesh is active")
+	var names_preserved := true
+	for bone in 14:
+		names_preserved = names_preserved and active.get_bone_name(bone) == author.get_bone_name(bone)
+	if walking_adapter:
+		for suffix in ["_l", "_r"]:
+			names_preserved = names_preserved and (active.find_bone("knee" + suffix) >= 14 or active.find_bone("ankle" + suffix) >= 14)
+	check(names_preserved, label_ + " preserves artist bone names and adds the two leg joints separately")
+	var seen := {}
+	var binds_valid := true
+	for bind in mesh.skin.get_bind_count():
+		var bone := mesh.skin.get_bind_bone(bind)
+		if bone < 0 or bone >= active.get_bone_count() or seen.has(bone):
+			binds_valid = false
+			continue
+		seen[bone] = true
+		var identity := active.get_bone_global_rest(bone) * mesh.skin.get_bind_pose(bind)
+		binds_valid = binds_valid and identity.is_finite() and identity.origin.length() < 0.0001 and identity.basis.is_equal_approx(Basis.IDENTITY)
+	check(binds_valid and seen.size() == active.get_bone_count(), label_ + " live Skin has unique valid inverse-rest binds")
+	var materials_shared := mesh.mesh.get_surface_count() == authored.mesh.get_surface_count()
+	for surface in mini(mesh.mesh.get_surface_count(), authored.mesh.get_surface_count()):
+		materials_shared = materials_shared and mesh.mesh.surface_get_material(surface) == authored.mesh.surface_get_material(surface)
+	check(materials_shared, label_ + " locomotion preserves authored material resources")
+
 func run() -> void:
 	DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path("res://builds/checks/IP-01/regression"))
 	create_timer(80.0, true, false, true).timeout.connect(func(): quit(2))
@@ -99,7 +132,8 @@ func run() -> void:
 		var visual: Node = look.uniform_visual
 		identities[actor.name] = {"sensor": actor.sensor.get_instance_id(), "body": actor.get_node("Body").get_instance_id()}
 		check(look.sprite == null and look.find_children("*", "Sprite3D", true, false).is_empty(), actor.name + " has no surviving billboard")
-		check(look.find_children("*", "Skeleton3D", true, false).size() == 1, actor.name + " has one independent live skeleton")
+		check_rig(visual, actor.name)
+		check(look.find_children("*", "Skeleton3D", true, false).size() == (2 if visual.skeleton != visual.author_skeleton else 1), actor.name + " has only its author rig and optional independent locomotion rig")
 		check(look.find_children("*", "CollisionObject3D", true, false).is_empty(), actor.name + " visual adds no gameplay collision")
 		var expected_height := alpha_height("police" if actor == officer else "guard", actor.height_m)
 		check(absf(visual.visible_height - expected_height) <= 0.00001 and absf(visual.model.scale.y - expected_height) <= 0.00001, actor.name + " matches old SVG visible-alpha height, not gallery convention")
@@ -122,7 +156,9 @@ func run() -> void:
 	spare.height_m = officer.height_m
 	spare_actor.add_child(spare)
 	await frames(3)
-	check(spare.uniform_visual.uniform_mesh.mesh == officer_uniform.uniform_mesh.mesh and spare.uniform_visual.skeleton != officer_uniform.skeleton, "same-kind instances share mesh and keep separate live bones")
+	spare.uniform_visual.update_locomotion(Vector3.ZERO, true, &"locomotion", 1.0 / 60.0)
+	officer_uniform.update_locomotion(Vector3.ZERO, true, &"locomotion", 1.0 / 60.0)
+	check(spare.uniform_visual.uniform_mesh.mesh == officer_uniform.uniform_mesh.mesh and spare.uniform_visual.uniform_mesh.skin == officer_uniform.uniform_mesh.skin and spare.uniform_visual.skeleton != officer_uniform.skeleton, "same-kind locomotion instances share mesh/Skin and keep separate live bones")
 	var initial: Vector3 = officer.global_position
 	var target := initial + Vector3(1.5, 0.0, 0.0)
 	officer.move_post(target)
@@ -131,6 +167,8 @@ func run() -> void:
 	check(officer.global_position.distance_to(initial) >= 0.30 and officer.global_position.distance_to(initial) <= 0.43, "real patrol keeps original 1.5m/s movement")
 	check(not officer.sensor.enabled and not officer.xray.visible, "moving officer hides xray along with sensor")
 	check(not idle_pose(officer_uniform.skeleton), "actual parent movement drives skinned gait")
+	check_rig(officer_uniform, "officer real walking")
+	check(officer.xray.mesh == officer_uniform.uniform_mesh.mesh and officer.xray.skin == officer_uniform.uniform_mesh.skin and officer.xray.get_parent() == officer_uniform.skeleton and officer.xray.get_node(officer.xray.skeleton) == officer_uniform.skeleton, "walking officer xray follows the current mesh/Skin and active skeleton")
 	verify_gait(officer_uniform, officer.global_position.y, "officer real walking")
 	check(idle_pose(spare.uniform_visual.skeleton) and idle_pose(guard_uniform.skeleton), "walking one instance leaves spare/guard bones at rest")
 	await frames(70)

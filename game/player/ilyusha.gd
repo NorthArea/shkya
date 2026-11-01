@@ -162,6 +162,7 @@ func _physics_process(delta: float) -> void:
 	var wall_angle := wall_min_slide_angle
 	if input_enabled and hide_mode == HideTuning.NONE and is_on_floor():
 		wall_min_slide_angle = 0.0
+	var impact_speed := velocity.y
 	move_and_slide()
 	wall_min_slide_angle = wall_angle
 	hide_travel += Vector2(global_position.x - before.x, global_position.z - before.z).length()
@@ -175,6 +176,13 @@ func _physics_process(delta: float) -> void:
 			camera_rig.follow_heading = atan2(-direction.x, -direction.z)
 		camera_rig.follow_speed = Vector2(velocity.x, velocity.z).length() if input_enabled else 0.0
 	_punch_step(delta)
+	var pose_mode := &"locomotion"
+	if hide_mode != HideTuning.NONE or not visible:
+		pose_mode = &"hidden"
+	elif _punch_time >= 0.0:
+		pose_mode = &"punch"
+	_look.submit_locomotion((global_position - before) / delta if delta > 0 else Vector3.ZERO,
+		is_on_floor(), pose_mode, impact_speed, maxf(0.0, _punch_time / PUNCH_SWING))
 
 func _unhandled_input(event: InputEvent) -> void:
 	# ЛКМ при свободной мыши — только захват мыши (Main), не удар; событие не съедаем — Main захватит мышь.

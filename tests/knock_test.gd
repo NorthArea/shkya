@@ -26,6 +26,7 @@ const OUT := "res://builds/screenshots/KNOCK-01"
 
 var failures: Array[String] = []
 var checks := 0
+var _finishing := false
 var main: Node
 var drv
 var world: DemoWorld
@@ -691,7 +692,28 @@ func check(condition: bool, label: String) -> bool:
 	return condition
 
 func _finish(code := -1) -> void:
+	if _finishing:
+		return
+	_finishing = true
 	print("KNOCK: %d checks, %d failures" % [checks, failures.size()])
 	for f in failures:
 		print("  FAIL: ", f)
-	quit(code if code >= 0 else (0 if failures.is_empty() else 1))
+	_cleanup.call_deferred(code if code >= 0 else (0 if failures.is_empty() else 1))
+
+func _cleanup(exit_code: int) -> void:
+	paused = false
+	if is_instance_valid(main):
+		for audio_player in main.find_children("*", "AudioStreamPlayer", true, false) + main.find_children("*", "AudioStreamPlayer3D", true, false):
+			audio_player.stop()
+		main.queue_free()
+	main = null
+	world = null
+	drv = null
+	residents.clear()
+	residents_node = null
+	sound = null
+	for index in 4:
+		await process_frame
+	OS.delay_msec(100)
+	await process_frame
+	quit(exit_code)

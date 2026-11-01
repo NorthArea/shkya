@@ -115,6 +115,39 @@ func _check_identities_and_bodies(world: DemoWorld, phase: String) -> void:
 	check(world.babka.solid and babka_body.collision_layer == 1 and babka_body.collision_mask == 0 and babka_capsule != null and is_equal_approx(babka_capsule.radius, 0.7) and is_equal_approx(babka_capsule.height, 1.8) and babka_collider.position.is_equal_approx(Vector3(0, 0.9, 0)), phase + ": Babka retains the original solid capsule")
 	check(not world.vendor.solid and world.vendor.get_node_or_null("Body") == null, phase + ": vendor retains the original non-solid body")
 
+func check_rig(visual: Node, label_: String) -> void:
+	var author: Skeleton3D = visual.author_skeleton
+	var authored: MeshInstance3D = visual.author_mesh
+	var active: Skeleton3D = visual.skeleton
+	var mesh: MeshInstance3D = visual.uniform_mesh
+	check(author.get_bone_count() == 14 and authored.skin.get_bind_count() == 14 and authored.get_node(authored.skeleton) == author, label_ + " retains the authored 14-bone rig and Skin")
+	var walking_adapter := active != author
+	var expected := 16 if walking_adapter else 14
+	check(active.get_bone_count() == expected and mesh.skin != null and mesh.skin.get_bind_count() == expected and mesh.get_node(mesh.skeleton) == active, label_ + " live mesh binds to its actual 14-author/16-locomotion skeleton")
+	check((walking_adapter and visual.rig != null and active == visual.rig.skeleton and mesh == visual.rig.mesh and not authored.visible and mesh.visible) or (not walking_adapter and mesh == authored and authored.visible), label_ + " exactly the selected author or locomotion mesh is active")
+	var names_preserved := true
+	for bone in 14:
+		names_preserved = names_preserved and active.get_bone_name(bone) == author.get_bone_name(bone)
+	if walking_adapter:
+		for suffix in ["_l", "_r"]:
+			names_preserved = names_preserved and (active.find_bone("knee" + suffix) >= 14 or active.find_bone("ankle" + suffix) >= 14)
+	check(names_preserved, label_ + " preserves artist bone names and adds the two leg joints separately")
+	var seen := {}
+	var binds_valid := true
+	for bind in mesh.skin.get_bind_count():
+		var bone := mesh.skin.get_bind_bone(bind)
+		if bone < 0 or bone >= active.get_bone_count() or seen.has(bone):
+			binds_valid = false
+			continue
+		seen[bone] = true
+		var identity := active.get_bone_global_rest(bone) * mesh.skin.get_bind_pose(bind)
+		binds_valid = binds_valid and identity.is_finite() and identity.origin.length() < 0.0001 and identity.basis.is_equal_approx(Basis.IDENTITY)
+	check(binds_valid and seen.size() == active.get_bone_count(), label_ + " live Skin has unique valid inverse-rest binds")
+	var materials_shared := mesh.mesh.get_surface_count() == authored.mesh.get_surface_count()
+	for surface in mini(mesh.mesh.get_surface_count(), authored.mesh.get_surface_count()):
+		materials_shared = materials_shared and mesh.mesh.surface_get_material(surface) == authored.mesh.surface_get_material(surface)
+	check(materials_shared, label_ + " locomotion preserves authored material resources")
+
 func _check_3d(world: DemoWorld, look: CharacterSprite) -> void:
 	for actor: Node3D in [world.player, world.babka, world.vendor]:
 		var actor_look: CharacterSprite = actor.get_node("Visual/Look")
@@ -123,7 +156,8 @@ func _check_3d(world: DemoWorld, look: CharacterSprite) -> void:
 		var mesh: MeshInstance3D = visual.uniform_mesh
 		var skeleton: Skeleton3D = visual.skeleton
 		check(visual.model.get_meta("drawing", "") == actor_look.resolved_character() and visual.model.get_meta("forward_axis", "") == "-Z", actor.name + " real model matches its selected original drawing and forward axis")
-		check(mesh.mesh is ArrayMesh and mesh.skin != null and mesh.skin.get_bind_count() == 14 and skeleton.get_bone_count() == 14 and mesh.get_node(mesh.skeleton) == skeleton, actor.name + " has real skinned geometry and its own live skeleton")
+		check(mesh.mesh is ArrayMesh, actor.name + " has real skinned geometry")
+		check_rig(visual, actor.name)
 		check(mesh.mesh.get_aabb().size.x > 0.2 and mesh.mesh.get_aabb().size.z > 0.1, actor.name + " appearance has actual width and depth")
 		check(_rest_pose(skeleton), actor.name + " stationary visual starts at authored rest")
 	world.player.place(Layout.SPAWN, PI * 0.5)
@@ -170,21 +204,24 @@ func _check_3d(world: DemoWorld, look: CharacterSprite) -> void:
 		seen[look.frame] = true
 		if look.frame == -1:
 			idle_samples += 1
+		skeleton = look.uniform_visual.skeleton
 		leg_moved = leg_moved or skeleton.get_bone_pose_rotation(skeleton.find_bone("leg_l")).angle_to(Quaternion.IDENTITY) > 0.02
 		arm_moved = arm_moved or skeleton.get_bone_pose_rotation(skeleton.find_bone("upper_arm_l")).angle_to(Quaternion.IDENTITY) > 0.01
 	Input.action_release(&"move_forward")
 	check(world.player.global_position.distance_to(from) > 0.5, "3D gait is driven by actual player movement through physics")
 	check(idle_samples == 0, "3D walking never drops to idle between physics steps (idle samples: %d)" % idle_samples)
 	check(seen.has(0) and seen.has(1) and seen.has(2) and seen.has(3), "3D walking retains all four distance-based phases (seen %s)" % [seen.keys()])
+	check_rig(look.uniform_visual, "walking player")
+	check(look.uniform_visual.skeleton != look.uniform_visual.author_skeleton, "walking animates the active locomotion skeleton")
 	check(leg_moved and arm_moved, "3D walking animates actual leg and arm bones")
 	for npc: Node3D in [world.babka, world.vendor]:
 		var npc_look: CharacterSprite = npc.get_node("Visual/Look")
 		check(_rest_pose(npc_look.uniform_visual.skeleton) and npc_look.uniform_visual.skeleton != skeleton, npc.name + " idle bones remain independent of the walking player")
 	await _physics(int(Engine.physics_ticks_per_second * 0.5))
-	check(look.frame == -1 and _rest_pose(skeleton), "stopping resets every 3D bone to authored rest")
+	check(look.frame == -1 and _rest_pose(look.uniform_visual.skeleton), "stopping resets every live 3D bone to authored rest")
 	world.player.place(Layout.SPAWN + Vector3(5, 0, 0), PI * 0.5)
 	await _physics(2)
-	check(look.frame == -1 and _rest_pose(skeleton), "teleport restores 3D idle without manufacturing a walking pose")
+	check(look.frame == -1 and _rest_pose(look.uniform_visual.skeleton), "teleport restores live 3D idle without manufacturing a walking pose")
 
 func _physics(count: int) -> void:
 	for i in count:

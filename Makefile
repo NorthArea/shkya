@@ -68,6 +68,7 @@ test: map
 	$(call godot_test,art01_sprite,120,ART01)
 	$(call godot_test,art09_test,60,ART09)
 	$(call godot_test,ip01_runtime_test,60,IP01_INDEPENDENT_RUNTIME)
+	$(call godot_test,locomotion01_test,60,LOCOMOTION01)
 	$(call godot_test,ip01_legacy_likeness_test,60,IP01_LIKENESS)
 	$(call godot_test,ip01_ilyusha_concept_test,60,IP01_ILYUSHA_CONCEPT)
 	$(call godot_test,ip01_hero_details_test,60,IP01_HERO_DETAILS)

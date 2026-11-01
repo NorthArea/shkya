@@ -383,12 +383,35 @@ func _ready() -> void:
 	if errand:
 		_errand_begin()
 
+var _locomotion_delta := 0.0
+var _locomotion_position := Vector3.INF
+
 func _physics_process(delta: float) -> void:
+	var before := _locomotion_position if _locomotion_position != Vector3.INF else global_position
+	_locomotion_delta = 0.0
+	_tick_resident(delta)
+	if _locomotion_delta <= 0.0:
+		return
+	var movement := (global_position - before) / _locomotion_delta
+	_locomotion_position = global_position
+	var pose_mode := &"locomotion"
+	if hidden:
+		pose_mode = &"hidden"
+	elif state == &"knocked" and knock_phase != &"back":
+		pose_mode = &"knock"
+	elif _acting and state == &"activity":
+		pose_mode = &"activity"
+	var look := _look()
+	if look != null:
+		look.submit_locomotion(movement, true, pose_mode)
+
+func _tick_resident(delta: float) -> void:
 	if route.size() < 2 or delta <= 0.0:
 		return
 	delta = _lod_delta(delta)
 	if delta <= 0.0:
 		return   # LIFE-01: далеко и вне кадра — копит время до следующего обновления
+	_locomotion_delta = delta
 	clock += delta
 	_tick_bubble(delta)
 	if hidden:

@@ -1,11 +1,11 @@
 extends SceneTree
-## MSG-0131 independent COARSE guards, not proof of a 1:1 likeness.
-## Sources inspected directly: concepts/01,02,04,08 PNG; DECISIONS and CHARACTERS.
-## Those perspective views show head+tuft about 1/4--1/3 of the figure and a
-## comparable/larger long puffer. They do not define exact front/3D anatomy.
-## Matching CPU view 02 and owner GPU inspection remain required.
+## Existing runner path retained; the current oracle is the approved idle SVG.
+## CPU-rasterized isolated artwork paths supply independent contour bounds.
+## Inspect the author mesh; the runtime gait adapter has its own skeleton/skin.
+## These coarse guards cannot establish 1:1 likeness or replace owner acceptance.
 
 const Models = preload("res://game/characters/models/civilian_model.gd")
+const SOURCE := "res://assets/art/characters/ilyusha_%s_idle.svg"
 var checks := 0
 var failures := 0
 var groups: Dictionary = {}
@@ -20,6 +20,18 @@ func check(ok: bool, message: String) -> void:
 		push_error("IP01_ILYUSHA_CONCEPT: " + message)
 
 func _run() -> void:
+	var reference := {
+		"face": _svg_bounds("front", "M200,86"),
+		"tuft": _svg_bounds("front", "M156.0,106"),
+		"torso": _svg_bounds("front", "M95,300"),
+		"trousers": _svg_bounds("front", "M106,436"),
+		"boot": _svg_bounds("front", "M106,554.0"),
+		"side_face": _svg_bounds("side", "M140,108"),
+		"side_nose": _svg_bounds("side", "M264,200"),
+	}
+	if failures > 0:
+		quit(1)
+		return
 	var model := Models.new().build_model("ilyusha")
 	var skeleton := model.get_node("Skeleton3D") as Skeleton3D
 	var instance := skeleton.get_node("UniformMesh") as MeshInstance3D
@@ -53,47 +65,55 @@ func _run() -> void:
 			if bone_name in ["hand_l", "hand_r"] and _pink(color): _add(bone_name, point)
 			if bone_name in ["spine", "hips"] and _pale(color): _add("fur", point)
 	for required in ["head", "pink_head", "tuft", "coat", "torso", "sleeve_l", "sleeve_r", "trousers", "boots", "hand_l", "hand_r", "fur"]:
-		check(groups.has(required) and groups[required].size() >= 12, "concept region exists: " + required)
+		check(groups.has(required) and groups[required].size() >= 12, "approved SVG region exists: " + required)
 	if failures == 0:
-		_relations()
+		_relations(reference)
 	model.free()
-	print("IP01_ILYUSHA_CONCEPT_NOT_RUN: exact likeness, scallop/face/hood/hand anatomy, matching CPU view 02, owner GPU review")
-	print("IP01_ILYUSHA_CONCEPT: %d checks, %d failures; coarse PNG regression guards only, never 1:1 acceptance" % [checks, failures])
+	print("IP01_ILYUSHA_CONCEPT_NOT_RUN: contour XOR, facial expression, gait/seating, game lighting/GPU and owner likeness acceptance")
+	print("IP01_ILYUSHA_CONCEPT: %d checks, %d failures; independent SVG-derived coarse geometry guards, never 1:1 acceptance" % [checks, failures])
 	quit(0 if failures == 0 else 1)
 
-func _relations() -> void:
+func _relations(reference: Dictionary) -> void:
 	var all := _bounds("all")
 	var head := _bounds("head")
 	var pink := _bounds("pink_head")
 	var tuft := _bounds("tuft")
-	var coat := _bounds("torso")
+	var torso := _bounds("torso")
 	var trousers := _bounds("trousers")
 	var boots := _bounds("boots")
-	var fur := _bounds("fur")
+	var face_source: Rect2 = reference.face
+	var tuft_source: Rect2 = reference.tuft
+	var torso_source: Rect2 = reference.torso
+	var trouser_source: Rect2 = reference.trousers
+	var boot_source: Rect2 = reference.boot
+	var source_height := boot_source.end.y - tuft_source.position.y
 	var height := all.size.y
-	var head_fraction := head.size.y / height
-	var coat_to_head := coat.size.y / head.size.y
-	print("IP01_ILYUSHA_CONCEPT_METRICS head_fraction=%.4f coat/head=%.4f head/coat_width=%.4f trousers_green_height=%.4f" % [head_fraction, coat_to_head, pink.size.x / coat.size.x, trousers.size.y / height])
-	# Broad bands account for perspective and the absent clean front view. The
-	# old 47% SVG head + short jacket is deliberately outside both upper guards.
-	check(head_fraction >= 0.22 and head_fraction <= 0.38, "head+tuft is roughly a quarter to a third, not the obsolete 47 percent head")
-	check(coat_to_head >= 0.90, "long puffer torso is comparable to or taller than head+tuft")
-	check(coat.size.y / height >= 0.27, "puffer occupies a substantial vertical part of the figure")
-	check(pink.size.x / coat.size.x >= 0.35 and pink.size.x / coat.size.x <= 0.90, "compact pink head does not dominate the puffer width")
-	check(coat.size.z >= pink.size.z * 0.45, "puffer is a volume around the torso")
-	check(trousers.size.y / height >= 0.20 and trousers.end.y < coat.end.y, "dark green long trousers remain below the puffer")
-	check(boots.position.y < trousers.position.y + height * 0.03 and boots.size.y / height >= 0.055, "dark winter boots reach the ground and have a visible shaft")
-	check(fur.size.x >= pink.size.x * 0.80 and fur.size.z >= height * 0.07, "large pale hood/collar border wraps around the upper torso")
+	var head_source_height := face_source.end.y - tuft_source.position.y
+	print("IP01_ILYUSHA_SVG_METRICS source_head/H=%.4f mesh_head/H=%.4f source_coat/head=%.4f mesh_coat/head=%.4f" % [head_source_height / source_height, head.size.y / height, torso_source.size.y / head_source_height, torso.size.y / head.size.y])
+	# Fixed artwork-relative tolerances allow solid ears and collar overlap;
+	# they are not inferred from the current generated model.
+	_near(head.size.y / height, head_source_height / source_height, 0.045, "large head+tuft fraction from approved SVG")
+	_near(pink.size.x / height, face_source.size.x / source_height, 0.045, "front pink head width including small solid ears")
+	_near(tuft.size.y / height, tuft_source.size.y / source_height, 0.025, "short lumpy tuft height, not withdrawn tall cone")
+	_near(tuft.size.x / height, tuft_source.size.x / source_height, 0.030, "yellow tuft width")
+	_near(torso.size.y / head.size.y, torso_source.size.y / head_source_height, 0.11, "short puffer relative to the large SVG head")
+	_near(torso.position.y / height, (boot_source.end.y - torso_source.end.y) / source_height, 0.035, "puffer hem leaves original long trouser section")
+	_near(trousers.size.y / height, trouser_source.size.y / source_height, 0.045, "straight dark green trouser height")
+	_near(boots.size.y / height, boot_source.size.y / source_height, 0.035, "low broad boots, not invented tall shafts")
+	check(absf(all.position.y) <= height * 0.01, "soles remain at ground level")
+	check(torso.size.z >= height * 0.15 and pink.size.z >= height * 0.20, "SVG reconstruction retains real body/head volumes")
+	var fur := _bounds("fur")
+	check(fur.size.x >= pink.size.x * 0.80 and fur.size.z >= height * 0.07, "pale scalloped collar wraps around upper torso")
 	for side in ["l", "r"]:
 		var sleeve := _bounds("sleeve_" + side)
 		var hand := _bounds("hand_" + side)
-		check(sleeve.size.y >= head.size.y * 0.65 and sleeve.size.z >= height * 0.055, "padded lime sleeve retains length and volume: " + side)
-		check(hand.size.y / height >= 0.025 and hand.size.y / height <= 0.13 and hand.end.y < sleeve.end.y, "pink hand remains a compact visible volume at its cuff: " + side)
-	var lower_tuft := _slice_width("tuft", tuft.position.y, tuft.position.y + tuft.size.y * 0.35)
-	var upper_tuft := _slice_width("tuft", tuft.position.y + tuft.size.y * 0.75, tuft.end.y)
-	check(tuft.position.y > pink.get_center().y and upper_tuft < lower_tuft * 0.85, "yellow tuft sits atop the head and narrows toward its cone tip")
-	# A coarse profile proxy for the visibly upturned projecting pink nose. This
-	# cannot establish the exact S outline, facial expression or scallop drawing.
+		# Approved idle mittens occupy SVG y410..454, centered at about432.
+		_near(hand.get_center().y / height, (boot_source.end.y - 432.0) / source_height, 0.040, "pink mitten location: " + side)
+		check(hand.end.y < sleeve.end.y and sleeve.size.z > height * 0.05, "sleeve and mitten retain solid volume: " + side)
+	var side_face: Rect2 = reference.side_face
+	var side_nose: Rect2 = reference.side_nose
+	var profile_source := side_face.merge(side_nose)
+	_near(pink.size.z / height, profile_source.size.x / source_height, 0.085, "long trunk and head preserve approved side depth")
 	var near_front: Array[Vector3] = []
 	var extreme_front: Array[Vector3] = []
 	for point: Vector3 in groups["pink_head"]:
@@ -101,31 +121,55 @@ func _relations() -> void:
 		if point.z <= pink.position.z + pink.size.z * 0.08: extreme_front.append(point)
 	var front := _point_bounds(near_front)
 	var tip := _point_bounds(extreme_front)
-	check(front.size.y > height * 0.025 and tip.get_center().y > front.position.y + height * 0.01, "projecting pink nose has an upward profile beyond its lower bend")
+	check(tip.get_center().y > front.position.y + height * 0.015, "side trunk tip curls upward beyond lower bend")
 
-# Independent source RGB samples from PNG 02 (unlit artwork, not author code):
-# coat patch(530,550)-(615,595) median159/245/98; head(570,410)-(620,447)
-# 231/158/189; tuft(580,364)-(610,385)239/192/64; trousers(560,742)-(610,777)
-# 41/89/44; boots(610,860)-(640,875)41/33/38; fur233/221/214.
-# These broad colour-family ranges allow artwork shading and sRGB variation;
-# they deliberately do not reimpose obsolete exact SVG hex colours.
+func _svg_bounds(view: String, prefix: String) -> Rect2:
+	var parser := XMLParser.new()
+	var error := parser.open(SOURCE % view)
+	check(error == OK, "approved " + view + " SVG is readable")
+	if error != OK: return Rect2()
+	while parser.read() == OK:
+		if parser.get_node_type() != XMLParser.NODE_ELEMENT or parser.get_node_name() != "path": continue
+		var path := parser.get_named_attribute_value_safe("d")
+		var fill := parser.get_named_attribute_value_safe("fill")
+		if not path.begins_with(prefix) or fill.is_empty() or fill == "none": continue
+		var image := Image.new()
+		error = image.load_svg_from_string('<svg xmlns="http://www.w3.org/2000/svg" width="800" height="1200" viewBox="0 0 400 600"><path d="%s" fill="white"/></svg>' % path)
+		check(error == OK, "isolated approved contour rasterizes: " + prefix)
+		if error != OK: return Rect2()
+		var used := image.get_used_rect()
+		check(used.size.x > 0 and used.size.y > 0, "approved contour is nonempty: " + prefix)
+		return Rect2(Vector2(used.position) / 2.0, Vector2(used.size) / 2.0)
+	check(false, "approved contour not found: " + prefix)
+	return Rect2()
+
+func _near(actual: float, expected: float, tolerance: float, message: String) -> void:
+	check(absf(actual - expected) <= tolerance, "%s: actual %.4f, SVG %.4f, tolerance %.4f" % [message, actual, expected, tolerance])
+
+# Palette classes come from tools/generate_characters.py / approved SVG fills.
+func _in_palette(c: Color, palette: Array) -> bool:
+	for value: String in palette:
+		var expected := Color(value)
+		if Vector3(c.r - expected.r, c.g - expected.g, c.b - expected.b).length() < 0.015: return true
+	return false
+
 func _lime(c: Color) -> bool:
-	return c.g > 0.65 and c.r > 0.35 and c.r < 0.85 and c.b < 0.55 and c.g > c.r + 0.12
+	return _in_palette(c, ["a2f03a", "c8ff78", "7fcb22"])
 
 func _pink(c: Color) -> bool:
-	return c.r > 0.65 and c.g > 0.35 and c.g < 0.85 and c.b > 0.45 and c.r > c.g + 0.10 and c.b > c.g + 0.03
+	return _in_palette(c, ["f4b3cd", "fad3e3", "e296b6"])
 
 func _yellow(c: Color) -> bool:
-	return c.r > 0.70 and c.g > 0.50 and c.b < 0.55 and c.r > c.b + 0.30
+	return _in_palette(c, ["ebc458", "cfa43a"])
 
 func _dark_green(c: Color) -> bool:
-	return c.g > 0.15 and c.g < 0.47 and c.g > c.r + 0.10 and c.g > c.b + 0.10
+	return _in_palette(c, ["2f8a36", "226a29", "1b5521"])
 
 func _dark(c: Color) -> bool:
-	return maxf(c.r, maxf(c.g, c.b)) < 0.32
+	return _in_palette(c, ["3a3436", "1c1819"])
 
 func _pale(c: Color) -> bool:
-	return minf(c.r, minf(c.g, c.b)) > 0.70 and maxf(c.r, maxf(c.g, c.b)) - minf(c.r, minf(c.g, c.b)) < 0.20
+	return _in_palette(c, ["f6f3ea"])
 
 func _add(group: String, point: Vector3) -> void:
 	if not groups.has(group): groups[group] = []

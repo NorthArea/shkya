@@ -36,17 +36,27 @@ var _idle := {}
 var _walk := {}
 var _distance := 0.0
 var _last := Vector3.INF
+var _actor: Node3D
+var _controlled := false
+var _velocity := Vector3.ZERO
+var _grounded := true
+var _pose_mode := &"locomotion"
+var _vertical_speed := 0.0
+var _action_phase := 0.0
 
 func resolved_character() -> String:
 	return appearance if appearance in APPEARANCES else character
 
 func _ready() -> void:
+	_actor = get_parent().get_parent() as Node3D if get_parent() != null else null
 	var drawing := resolved_character()
 	if UniformVisual.use_for(drawing):
 		uniform_visual = UniformVisual.new()
 		uniform_visual.name = "UniformVisual"
 		uniform_visual.configure(drawing, _model_visible_height(drawing), tint)
 		add_child(uniform_visual)
+		if _uses_locomotion():
+			uniform_visual.prepare_locomotion()
 		add_child(_shadow())
 		return
 	for v in [&"front", &"back", &"side"]:
@@ -116,24 +126,53 @@ func _process(_delta: float) -> void:
 ## Путь копится на шаге физики: в _process при physics_interpolation положение между шагами
 ## не меняется, и на 120+ к/с ходьба сбрасывалась бы в стойку (ревью ART-01, P1).
 func _physics_process(delta: float) -> void:
-	var at := global_position
+	# Visual offsets (punches, work, breathing) are not travelled ground distance.
+	var at := _actor.global_position if is_instance_valid(_actor) else global_position
 	var moved := 0.0
 	if _last != Vector3.INF:
 		moved = Vector2(at.x - _last.x, at.z - _last.z).length()
 	_last = at
-	if moved > 1.0:  # телепорт (place, перезапуск) — не шаг
+	var teleport := moved > 1.0
+	if teleport:  # телепорт (place, перезапуск) — не шаг
 		moved = 0.0
-	if delta > 0.0 and moved / delta >= WALK_SPEED_MIN:
-		_distance += moved
+		_distance = 0.0
+		if uniform_visual != null:
+			uniform_visual.reset_pose()
+	var velocity := _velocity if _controlled else Vector3.ZERO
+	if not _controlled and delta > 0.0 and not teleport:
+		velocity = (at - _last_root) / delta if _last_root != Vector3.INF else Vector3.ZERO
+	if teleport:
+		velocity = Vector3.ZERO
+	_last_root = at
+	var moving := velocity.length() >= WALK_SPEED_MIN and not teleport
+	if moving:
+		_distance += Vector2(velocity.x, velocity.z).length() * delta
 		frame = int(_distance / walk_stride) % 4
 	else:
-		_distance = 0.0
 		frame = -1
 	if uniform_visual != null:
-		uniform_visual.update_walk(_distance, frame >= 0, delta, walk_stride)
+		var pose_mode := _pose_mode if _controlled else &"locomotion"
+		if not is_visible_in_tree():
+			pose_mode = &"hidden"
+		uniform_visual.update_locomotion(velocity, _grounded, pose_mode, delta, _vertical_speed, _action_phase)
+
+var _last_root := Vector3.INF
+
+## Parent publishes measured root motion, never desired input or a visual offset.
+## Retained samples let sparse NPC updates keep their cadence between actor ticks.
+func submit_locomotion(world_velocity: Vector3, grounded: bool, mode: StringName = &"locomotion", vertical_speed := 0.0, action_phase := 0.0) -> void:
+	_controlled = true
+	_velocity = world_velocity
+	_grounded = grounded
+	_pose_mode = mode
+	_vertical_speed = vertical_speed
+	_action_phase = action_phase
 
 func _model_visible_height(drawing: String) -> float:
 	return height_m * Catalog.visible_height_ratio(drawing)
+
+func _uses_locomotion() -> bool:
+	return true
 
 func uses_uniform_3d() -> bool:
 	return uniform_visual != null
