@@ -325,9 +325,17 @@ func _run() -> void:
 	var look: Node = resident.visual.get_node("Look")
 	car.velocity = Vector3(5.0, 0.0, 0.0)
 	resident.knock()
+	var knock_gait_phase: float = look.uniform_visual.gait.phase
 	await frames(3)
 	check(resident.state == &"knocked" and look.sprite == null, "real resident knock enters the existing 3D roll path")
-	check(rest(look.uniform_visual.skeleton), "knock freezes 3D gait at rest")
+	check(look.uniform_visual.gait.mode == &"knock" and look.uniform_visual.gait.motion_weight == 0.0 \
+		and look.uniform_visual.gait.speed == 0.0 and look.uniform_visual.gait.phase == knock_gait_phase,
+		"knock freezes 3D gait phase, speed and locomotion weight")
+	var recovery_actions := {&"fly": &"flail", &"down": &"down", &"getup": &"getup"}
+	check(recovery_actions.has(resident.knock_phase) and look.uniform_visual.last_action_valid \
+		and look.uniform_visual.last_action_kind == recovery_actions.get(resident.knock_phase) \
+		and not rest(look.uniform_visual.skeleton),
+		"real knock phase owns a valid active recovery pose on the actual 3D skeleton")
 	residents.reset_positions()
 	await frames(2)
 	check(resident.state != &"knocked" and resident.knock_roll == 0.0, "reset restores resident state and visual roll")

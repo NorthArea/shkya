@@ -6,13 +6,13 @@ extends RefCounted
 ## Roles map semantic names to ACTIVE bone indices; knee/ankle are never inferred
 ## from historical author14 foot_* names. Grip transforms remain in world space.
 
-const ACTIONS := [&"none", &"chat", &"listen", &"dig", &"flail", &"down", &"getup"]
+const ACTIONS := [&"none", &"chat", &"listen", &"dig", &"flail", &"down", &"getup", &"jump_kick", &"stomp_antic", &"stomp_air", &"stomp_land"]
 const UPPER_ROLES := ["spine", "head", "upper_arm_l", "lower_arm_l", "upper_arm_r", "lower_arm_r"]
 const RECOVERY_ROLES := ["hips", "spine", "head", "upper_arm_l", "lower_arm_l", "hand_l",
 	"upper_arm_r", "lower_arm_r", "hand_r", "thigh_l", "knee_l", "ankle_l", "thigh_r", "knee_r", "ankle_r"]
 
 ## request: kind:StringName, phase/stroke/reaction/weight:float in0..1,
-## speaker:bool, grips:{"_l":Transform3D,"_r":Transform3D} for dig only.
+## speaker:bool, aim_yaw:bounded local torso angle, grips:{"_l":Transform3D,"_r":Transform3D} for dig only.
 ## result: valid/active/full_body:bool, kind:StringName, error:String,
 ## bone_offsets:{active_bone:int -> Transform3D}, grips:{suffix -> descriptor}.
 ## Offsets already include weight; compose fresh_bone_pose * offset once.
@@ -21,7 +21,7 @@ const RECOVERY_ROLES := ["hips", "spine", "head", "upper_arm_l", "lower_arm_l", 
 static func sample(request: Dictionary, roles: Dictionary) -> Dictionary:
 	var kind := StringName(request.get("kind", &"none"))
 	if kind not in ACTIONS: return _empty(kind, false, "unsupported_kind")
-	for field: String in ["phase", "stroke", "reaction", "weight"]:
+	for field: String in ["phase", "stroke", "reaction", "weight", "aim_yaw"]:
 		if not is_finite(float(request.get(field, 1.0 if field == "weight" else 0.0))):
 			return _empty(kind, false, "nonfinite_" + field)
 	var weight := clampf(float(request.get("weight", 1.0)), 0.0, 1.0)
@@ -30,7 +30,8 @@ static func sample(request: Dictionary, roles: Dictionary) -> Dictionary:
 	var phase := clampf(float(request.get("phase", 0.0)), 0.0, 1.0)
 	var stroke := clampf(float(request.get("stroke", 0.0)), 0.0, 1.0)
 	var reaction := clampf(float(request.get("reaction", 0.0)), 0.0, 1.0)
-	var full_body := kind in [&"flail", &"down", &"getup"]
+	var aim_yaw := clampf(float(request.get("aim_yaw", 0.0)), -PI / 3.0, PI / 3.0)
+	var full_body := kind in [&"flail", &"down", &"getup", &"jump_kick", &"stomp_antic", &"stomp_air"]
 	var required: Array = RECOVERY_ROLES if full_body else ["spine", "head"] if kind == &"listen" else UPPER_ROLES.duplicate()
 	if kind == &"dig": required.append_array(["hand_l", "hand_r"])
 	var seen := {}
@@ -61,7 +62,28 @@ static func sample(request: Dictionary, roles: Dictionary) -> Dictionary:
 		&"dig":
 			# Existing tool trajectory and its contact/sound phase stay authoritative.
 			# Hands are solved to the supplied grips after these torso offsets.
-			rotations = {"spine": Vector3(-0.10 - stroke * 0.19, 0, 0), "head": Vector3(0.05 + stroke * 0.08, 0, 0)}
+			rotations = {"spine": Vector3(-0.10 - stroke * 0.19, aim_yaw, 0), "head": Vector3(0.05 + stroke * 0.08, 0, 0)}
+		&"jump_kick", &"stomp_antic", &"stomp_air":
+			var kick := sin(phase * PI) if kind == &"jump_kick" else 0.0
+			var drop := smoothstep(0.0, 0.3, phase) if kind == &"stomp_air" else 0.0
+			var tuck := smoothstep(0.0, 1.0, phase) if kind == &"stomp_antic" else 1.0 - drop if kind == &"stomp_air" else 0.0
+			rotations = {"hips": Vector3(-kick * 0.08, 0, 0), "spine": Vector3(kick * 0.12 - tuck * 0.13, 0, 0), "head": Vector3(-kick * 0.06 + tuck * 0.08, 0, 0)}
+			for suffix: String in ["_l", "_r"]:
+				var side := 1.0 if suffix == "_l" else -1.0
+				rotations["upper_arm" + suffix] = Vector3(-tuck * 0.52 + side * kick * 0.18, 0, side * (kick * 0.20 + drop * 0.28))
+				rotations["lower_arm" + suffix] = Vector3(-tuck * 0.42 - kick * 0.20, 0, 0)
+				rotations["hand" + suffix] = Vector3.ZERO
+				rotations["thigh" + suffix] = Vector3((0.85 if suffix == "_r" else -0.18) * kick + tuck * 0.42 + drop * 0.18, 0, 0)
+				rotations["knee" + suffix] = Vector3((0.04 if suffix == "_r" else -0.40) * kick - tuck * 0.78 + drop * 0.20, 0, 0)
+				rotations["ankle" + suffix] = Vector3(-kick * 0.12 - tuck * 0.14 + drop * 0.12, 0, 0)
+		&"stomp_land":
+			# Grounded landing contacts/crouch remain owned by the gait solver.
+			var settle := 1.0 - smoothstep(0.0, 1.0, phase)
+			rotations = {"spine": Vector3(-settle * 0.20, 0, 0), "head": Vector3(settle * 0.10, 0, 0)}
+			for suffix: String in ["_l", "_r"]:
+				var side := 1.0 if suffix == "_l" else -1.0
+				rotations["upper_arm" + suffix] = Vector3(settle * 0.14, 0, side * settle * 0.22)
+				rotations["lower_arm" + suffix] = Vector3(-settle * 0.20, 0, 0)
 		&"flail":
 			var beat := sin(phase * TAU * 2.0)
 			rotations = {"hips": Vector3(beat * 0.07, 0, 0), "spine": Vector3(-0.12, 0, beat * 0.07), "head": Vector3(0.08, 0, -beat * 0.08)}

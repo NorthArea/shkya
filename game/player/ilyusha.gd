@@ -14,6 +14,7 @@ extends CharacterBody3D
 
 const CharacterSpriteScript = preload("res://game/characters/character_sprite.gd")
 const HideTuning = preload("res://game/stealth/hide_tuning.gd")
+const AirMotionScript = preload("res://game/player/character_air_motion.gd")
 
 const WALK_SPEED := 4.0
 const RUN_SPEED := 8.0          # удерживаемый бег; своя настройка по разделению walk/turbo в C++
@@ -24,9 +25,7 @@ const MOTION_ACCELERATION := 40.0 # ограничение изменения ф
 const INPUT_SPEED_SCALE := 0.69 # нормализация квадратной аналоговой кривой; C++ Character::GetInputScale
 const INPUT_TURN_THRESHOLD := 0.01 # рад: направление должно выйти из зоны дрожания стика
 const TURN_RATE := 12.0
-const AIR_ACCELERATION := 8.0   # м/с²: ввод добавляет управление к скорости отрыва, без тормоза при отпускании
 const PROBE_RADIUS := 0.5
-const JUMP_VELOCITY := 6.0        # подскок ≈1,8 м: на крышу «Лады» (1,4 м) с запасом — решение владельца 28.10.2026
 # PUNCH-01: удар.
 const PUNCH_SWING := 0.35         # с: весь замах (рывок вперёд и пружина назад)
 const PUNCH_HIT_AT := 0.14        # с от нажатия: пик рывка — момент попадания
@@ -38,6 +37,11 @@ const PUNCH_LOW := 0.8
 const PUNCH_HIGH := 2.3
 const PUNCH_LUNGE := 0.38         # м: рывок облика вперёд
 const PUNCH_MASK := 1 | 4 | 16 | 32    # World (Бабка, патруль), Car (жители), 16 — дроны (Drones.HIT_LAYER), 32 — разрушаемые (BREAK-01)
+const STOMP_RADIUS := 1.8
+const STOMP_HEIGHT := 0.8
+const STOMP_LEVEL_MARGIN := 0.3
+const STOMP_MASK := 4 | 32
+const STOMP_QUERY_LIMIT := 64
 
 ## Режим укрытия сменился (old → new). Подписчики — укрытия и HUD; шкалу не трогает.
 signal hide_mode_changed(old: StringName, new: StringName)
@@ -45,7 +49,12 @@ signal hide_mode_changed(old: StringName, new: StringName)
 signal punched
 signal punch_landed(targets: Array)
 
-var input_enabled := true
+var air_motion := AirMotionScript.new()
+var input_enabled := true:
+	set(value):
+		input_enabled = value
+		if not value:
+			_cancel_character_actions()
 var camera_rig: CameraRig
 var visual: Node3D
 var probe: Area3D
@@ -70,6 +79,7 @@ var _punch_pending := false      # попадание ещё не считали
 var _punch_cooldown := 0.0
 var _punch_tween: Tween
 var _punch_shape: SphereShape3D
+var _stomp_shape: CylinderShape3D
 
 func _ready() -> void:
 	collision_layer = 2       # Player
@@ -101,11 +111,16 @@ func _ready() -> void:
 	add_child(probe)
 	_punch_shape = SphereShape3D.new()
 	_punch_shape.radius = PUNCH_RADIUS
-	visibility_changed.connect(_cancel_punch)   # посадка в машину прячет Илюшу: замах не доигрывается
+	_stomp_shape = CylinderShape3D.new()
+	_stomp_shape.radius = STOMP_RADIUS
+	_stomp_shape.height = STOMP_HEIGHT
+	visibility_changed.connect(_cancel_character_actions)
 
 func _physics_process(delta: float) -> void:
+	var motion_allowed := input_enabled and visible and can_change_hide_mode()
+	var air_allowed := motion_allowed and hide_mode == HideTuning.NONE
 	var input := Vector2.ZERO
-	if input_enabled:
+	if motion_allowed:
 		input = Input.get_vector(&"move_left", &"move_right", &"move_forward", &"move_back")
 	# Опора курса меняется при новом направлении, но не от силы или дрожания стика.
 	# Сравнение с последней привязкой позволяет медленному намеренному повороту накопиться.
@@ -121,7 +136,7 @@ func _physics_process(delta: float) -> void:
 	if limit <= 0.0:
 		direction = Vector3.ZERO   # сугроб: движения и поворота нет
 	var horizontal := Vector3(velocity.x, 0.0, velocity.z)
-	if not input_enabled:
+	if not motion_allowed:
 		horizontal = Vector3.ZERO
 		_ground_speed = 0.0
 		_air_speed_limit = WALK_SPEED
@@ -143,19 +158,17 @@ func _physics_process(delta: float) -> void:
 		_ground_speed = move_toward(_ground_speed, wanted_speed, rate * delta)
 		var wanted_velocity := (direction.normalized() if strength > 0.0 else horizontal.normalized()) * _ground_speed
 		horizontal = horizontal.move_toward(wanted_velocity, MOTION_ACCELERATION * delta)
-	else:
-		# В воздухе нет наземного тормоза: отпускание оставляет дрейф, ввод меняет импульс постепенно.
-		horizontal = (horizontal + direction * direction.length() * AIR_ACCELERATION * delta).limit_length(limit)
-		_ground_speed = horizontal.length()
+	if is_on_floor() and air_motion.blocks_ground_motion():
+		horizontal = Vector3.ZERO
+		_ground_speed = 0.0
 	if is_on_floor():
 		_air_speed_limit = maxf(limit, horizontal.length())
 	velocity.x = horizontal.x
 	velocity.z = horizontal.z
-	if is_on_floor():
-		var jump := input_enabled and hide_mode == HideTuning.NONE and Input.is_action_just_pressed(&"jump")
-		velocity.y = JUMP_VELOCITY if jump else 0.0
-	else:
-		velocity.y -= get_gravity().length() * delta
+	velocity = air_motion.begin_step(delta, velocity, is_on_floor(), direction, limit,
+		air_allowed and Input.is_action_just_pressed(&"jump"), air_allowed)
+	if not is_on_floor():
+		_ground_speed = Vector2(velocity.x, velocity.z).length()
 	var before := global_position
 	# При прямом задании курса малый касательный ввод должен давать скольжение, а не
 	# остановку под штатным углом 15°. Укрытия сохраняют прежнюю контактную динамику.
@@ -165,6 +178,10 @@ func _physics_process(delta: float) -> void:
 	var impact_speed := velocity.y
 	move_and_slide()
 	wall_min_slide_angle = wall_angle
+	var air_events: Dictionary = air_motion.resolve_contacts(is_on_floor(), is_on_ceiling())
+	velocity.y += float(air_events.vertical_correction)
+	if air_events.landed:
+		_air_speed_limit = WALK_SPEED
 	hide_travel += Vector2(global_position.x - before.x, global_position.z - before.z).length()
 	if direction.length_squared() > 0.01:
 		var facing := atan2(-direction.x, -direction.z)
@@ -176,6 +193,11 @@ func _physics_process(delta: float) -> void:
 			camera_rig.follow_heading = atan2(-direction.x, -direction.z)
 		camera_rig.follow_speed = Vector2(velocity.x, velocity.z).length() if input_enabled else 0.0
 	_punch_step(delta)
+	if can_punch():
+		if air_events.air_hit:
+			_resolve_punch()
+		elif air_events.stomp_landed:
+			_resolve_stomp()
 	var pose_mode := &"locomotion"
 	if hide_mode != HideTuning.NONE or not visible:
 		pose_mode = &"hidden"
@@ -183,6 +205,7 @@ func _physics_process(delta: float) -> void:
 		pose_mode = &"punch"
 	_look.submit_locomotion((global_position - before) / delta if delta > 0 else Vector3.ZERO,
 		is_on_floor(), pose_mode, impact_speed, maxf(0.0, _punch_time / PUNCH_SWING))
+	_publish_air_action()
 
 func _unhandled_input(event: InputEvent) -> void:
 	# ЛКМ при свободной мыши — только захват мыши (Main), не удар; событие не съедаем — Main захватит мышь.
@@ -224,6 +247,7 @@ func current_interactable() -> Interactable:
 
 ## Поставить на точку и остановить (появление, перезапуск, выход из машины).
 func place(point: Vector3, facing_yaw: float) -> void:
+	_cancel_character_actions()
 	global_position = point
 	velocity = Vector3.ZERO
 	_ground_speed = 0.0
@@ -286,6 +310,7 @@ func force_hide_mode(mode: StringName, spot: Node = null) -> void:
 		_apply_hide_mode(mode, spot)
 
 func _apply_hide_mode(mode: StringName, spot: Node) -> void:
+	_cancel_character_actions()
 	var old := hide_mode
 	hide_mode = mode
 	hide_owner = spot if mode != HideTuning.NONE else null
@@ -303,8 +328,6 @@ func _apply_hide_mode(mode: StringName, spot: Node) -> void:
 	velocity.y = minf(velocity.y, 0.0)
 	velocity.z = horizontal.y
 	hide_mode_changed.emit(old, mode)
-	if mode != HideTuning.NONE:
-		_cancel_punch()
 
 # --- PUNCH-01: удар ---
 
@@ -317,6 +340,16 @@ func can_punch() -> bool:
 func punch() -> bool:
 	if _punch_cooldown > 0.0 or _punch_time >= 0.0 or not can_punch():
 		return false
+	if air_motion.blocks_ground_motion():
+		return false
+	if not is_on_floor():
+		if air_motion.request_air_attack(false) == &"":
+			return false
+		punches += 1
+		_punch_cooldown = PUNCH_COOLDOWN
+		punched.emit()
+		_publish_air_action()
+		return true
 	punches += 1
 	_punch_time = 0.0
 	_punch_pending = true
@@ -327,7 +360,7 @@ func punch() -> bool:
 
 ## Идёт замах (от нажатия до конца PUNCH_SWING).
 func is_punching() -> bool:
-	return _punch_time >= 0.0
+	return _punch_time >= 0.0 or air_motion.action in [&"jump_kick", &"stomp_antic", &"stomp_air", &"stomp_land"]
 
 ## Направление взгляда облика в плоскости XZ.
 func facing_dir() -> Vector3:
@@ -381,6 +414,31 @@ func _resolve_punch() -> void:
 			target = owner_node
 		if not target in targets:
 			targets.append(target)
+	_deliver_attack(targets)
+
+func _resolve_stomp() -> void:
+	var query := PhysicsShapeQueryParameters3D.new()
+	query.shape = _stomp_shape
+	query.transform = Transform3D(Basis.IDENTITY, global_position + Vector3.UP * (STOMP_HEIGHT * 0.5))
+	query.collision_mask = STOMP_MASK
+	query.collide_with_areas = false
+	query.collide_with_bodies = true
+	query.exclude = [get_rid()]
+	var targets: Array = []
+	for hit in get_world_3d().direct_space_state.intersect_shape(query, STOMP_QUERY_LIMIT):
+		var collider: Object = hit.get("collider")
+		if not collider is Node3D:
+			continue
+		var target := (collider as Node3D).get_parent() as Node3D
+		if target == null or not (target is Resident or target.is_in_group(&"breakables")):
+			continue
+		if absf(target.global_position.y - global_position.y) > STOMP_LEVEL_MARGIN:
+			continue
+		if not target in targets:
+			targets.append(target)
+	_deliver_attack(targets)
+
+func _deliver_attack(targets: Array) -> void:
 	last_punch_targets = targets
 	if not targets.is_empty():
 		punch_hits += 1
@@ -409,13 +467,27 @@ func _cancel_punch() -> void:
 		_look.position = Vector3.ZERO
 		_look.scale = Vector3.ONE
 
+func _cancel_character_actions() -> void:
+	air_motion.cancel()
+	_cancel_punch()
+	if _look:
+		_look.submit_action({"kind": &"none", "phase": 0.0, "weight": 1.0})
+
+func _publish_air_action() -> void:
+	var state: Dictionary = air_motion.snapshot()
+	var kind: StringName = state.action
+	if kind == &"" or not can_punch():
+		kind = &"none"
+	_look.submit_action({"kind": kind, "phase": float(state.action_phase), "weight": 1.0})
+
 func _build_visual() -> Node3D:
 	var root := Node3D.new()
 	root.name = "Visual"
 	var look = CharacterSpriteScript.new()
 	look.name = "Look"
 	look.character = "ilyusha"
-	look.height_m = 2.0   # фигура ≈1,8 м — чуть выше крыши «Лады», как в концепте 04 и у эталона (PLAY-01)
+	look.interpolate_bone_pose = true
+	look.height_m = CharacterSpriteScript.Catalog.canvas_height_for("ilyusha", CharacterSpriteScript.Catalog.ILYUSHA_VISIBLE_HEIGHT_M)
 	root.add_child(look)
 	_look = look
 	hide_visual = Node3D.new()

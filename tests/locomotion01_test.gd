@@ -540,9 +540,14 @@ func _resident_sparse_lod() -> void:
 	root.add_child(fixture)
 	var camera := Camera3D.new()
 	fixture.add_child(camera)
+	camera.global_position = Vector3(0, 10, 0)
+	camera.look_at(camera.global_position + Vector3.BACK, Vector3.UP)
 	var resident := ResidentScript.new()
 	resident.character = "resident_man"
-	resident.setup(0, [Vector3(100, 0, 100), Vector3(100, 0, 500)], [], 0)
+	var canonical: Array = ResidentScript.Layout.RESIDENT_ROUTES[7]
+	var from: Vector3 = canonical[0]
+	var to: Vector3 = from + (Vector3(canonical[1]) - from).normalized() * 8.0
+	resident.setup(0, [from, to], [], 0)
 	fixture.add_child(resident)
 	resident.set_physics_process(false)
 	resident.set_process(false)
@@ -552,6 +557,7 @@ func _resident_sparse_lod() -> void:
 	life.camera = camera
 	resident.life = life
 	resident.errand = true
+	check(resident._motion_step_clear(from, to), "sparse LOD fixture uses a canonically clear permitted pedestrian leg")
 	check(camera.global_position.distance_to(resident.global_position) > resident.LOD_DISTANCE and not camera.is_position_in_frustum(resident.global_position + Vector3.UP), "real resident fixture reaches sparse offscreen LOD")
 	var zero_between_ticks := 0
 	var sparse_ticks := 0
@@ -597,7 +603,10 @@ func _resident_knock_return() -> void:
 	check(resident.state == &"knocked" and resident.knock_phase == &"fly", "real Resident.knock enters the flight branch before return acceptance")
 	var samples := _sole_samples(look.uniform_visual)
 	var counts := {&"fly": 0, &"down": 0, &"getup": 0, &"back": 0}
+	var posed_samples := {&"fly": 0, &"down": 0, &"getup": 0}
+	var expected_actions := {&"fly": &"flail", &"down": &"down", &"getup": &"getup"}
 	var frozen := true
+	var action_owned := true
 	var back_animated := true
 	var back_distance := 0.0
 	var back_pose_delta := 0.0
@@ -615,7 +624,9 @@ func _resident_knock_return() -> void:
 			counts[kind] = int(counts[kind]) + 1
 			frozen = frozen and phase_after == phase_before
 			frozen = frozen and look.uniform_visual.gait.mode == &"knock" and look.uniform_visual.gait.motion_weight == 0.0
-			frozen = frozen and _rest(look.uniform_visual.skeleton)
+			action_owned = action_owned and look.uniform_visual.last_action_valid \
+				and look.uniform_visual.last_action_kind == expected_actions[kind]
+			if not _rest(look.uniform_visual.skeleton): posed_samples[kind] = int(posed_samples[kind]) + 1
 		elif kind == &"back":
 			var distance := _planar(resident.global_position - before).length()
 			if distance > 0.0001:
@@ -633,11 +644,13 @@ func _resident_knock_return() -> void:
 			break
 	for kind: StringName in [&"fly", &"down", &"getup"]:
 		check(int(counts[kind]) >= 10, "real knocked Resident executes nonempty " + String(kind) + " samples")
-	check(frozen, "real flight/down/getup own the full pose and freeze travelled-step phase")
+		check(int(posed_samples[kind]) > 0, "real " + String(kind) + " action deforms the active recovery skeleton")
+	check(frozen, "real flight/down/getup freeze gait phase and suppress locomotion weight")
+	check(action_owned, "real flight/down/getup retain their explicit valid flail/down/getup action ownership")
 	check(int(counts[&"back"]) >= 30 and back_distance >= 2.0, "real knocked Resident physically walks its return path")
 	check(back_animated and back_pose_delta >= 0.02, "real back path publishes locomotion, advances phase and deforms actual skinned soles")
 	check(completed, "real back path finishes and restores the existing walking route")
-	print("LOCOMOTION01_KNOCK_RETURN ", JSON.stringify({"phase_samples": counts, "back_distance_m": back_distance, "back_sole_excursion_m": back_pose_delta, "completed": completed}))
+	print("LOCOMOTION01_KNOCK_RETURN ", JSON.stringify({"phase_samples": counts, "posed_samples": posed_samples, "back_distance_m": back_distance, "back_sole_excursion_m": back_pose_delta, "completed": completed}))
 	fixture.free()
 
 func _sole_samples(visual: Node3D) -> Array:

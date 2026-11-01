@@ -616,7 +616,7 @@ func _monitor_3d_outfit(w: DemoWorld) -> void:
 		var b: Node = seated.uniform_visual
 		matches = on_foot.resolved_character() == "ilyusha" and seated.resolved_character() == "ilyusha" and a.model.get_meta("drawing", "") == "ilyusha" and b.model.get_meta("drawing", "") == "ilyusha" and a.author_mesh.mesh == b.author_mesh.mesh and a.skeleton != b.skeleton
 		matches = matches and _outfit_meshes.size() == 2 and a.uniform_mesh.mesh == _outfit_meshes[0] and b.uniform_mesh.mesh == _outfit_meshes[1]
-		matches = matches and is_equal_approx(a.visible_height, _outfit_heights.x) and is_equal_approx(b.visible_height, _outfit_heights.y) and a.model.scale.is_equal_approx(Vector3.ONE * _outfit_heights.x) and b.model.scale.is_equal_approx(Vector3.ONE * _outfit_heights.y)
+		matches = matches and is_equal_approx(a.visible_height, _outfit_heights.x) and is_equal_approx(b.visible_height, _outfit_heights.y) and a.author_mesh.mesh.get_aabb().size.y > 0.0 and b.author_mesh.mesh.get_aabb().size.y > 0.0 and a.model.scale.is_equal_approx(Vector3.ONE * (_outfit_heights.x / a.author_mesh.mesh.get_aabb().size.y)) and b.model.scale.is_equal_approx(Vector3.ONE * (_outfit_heights.y / b.author_mesh.mesh.get_aabb().size.y))
 		var legs: Skeleton3D = b.skeleton
 		matches = matches and _seated_leg_poses.size() == 2
 		for index in _seated_leg_poses.size():

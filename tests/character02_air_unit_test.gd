@@ -11,6 +11,7 @@ func _initialize() -> void:
 	_air_attacks()
 	_reset_and_contacts()
 	_rates()
+	_midpoint_contract()
 	print("CHARACTER02_AIR_UNIT: %d checks, %d failures; controller/collisions/perimeter NOT_RUN" % [checks, failures])
 	quit(0 if failures == 0 else 1)
 
@@ -31,16 +32,19 @@ func _jumps() -> void:
 	var standing: Vector3 = air.begin_step(DT, Vector3(2, -3, 0), true, Vector3.ZERO, 4, false)
 	check(standing == Vector3(2, 0, 0), "ground contact clears vertical drift without changing controller horizontal motion")
 	var velocity: Vector3 = air.begin_step(DT, Vector3(8, 0, 0), true, Vector3.ZERO, 8.0, true)
-	check(is_equal_approx(velocity.y, sqrt(2.0 * Air.GRAVITY * Air.FIRST_HEIGHT)), "first jump derives impulse from chosen height and gravity")
+	var impulse := sqrt(2.0 * Air.GRAVITY * Air.FIRST_HEIGHT)
+	check(is_equal_approx(velocity.y, impulse - 0.5 * Air.GRAVITY * DT), "first jump proposes the analytic mean velocity of its launch step")
 	check(velocity.x == 8.0 and air.jump_count == 1 and air.phase == &"launch", "launch preserves sprint momentum and starts the first jump")
-	check(air.resolve_contacts(false).took_off, "takeoff is reported after controller resolves the move")
+	var takeoff: Dictionary = air.resolve_contacts(false)
+	check(takeoff.took_off, "takeoff is reported after controller resolves the move")
+	check(is_equal_approx(velocity.y + float(takeoff.vertical_correction), impulse - Air.GRAVITY * DT), "resolved free launch restores physical endpoint velocity")
 	check(not air.resolve_contacts(false).took_off, "duplicate contact resolution cannot repeat takeoff")
 	velocity = air.begin_step(DT, Vector3(8, 3, 0), false, Vector3.ZERO, 8, true)
 	check(air.jump_count == 1 and velocity.y < 3.0, "early second jump above its upward window is rejected")
 	velocity = air.begin_step(DT, Vector3(8, 0, 0), false, Vector3.ZERO, 8, false)
 	check(air.jump_count == 1 and velocity.y < 0, "rejected early press is not buffered until the apex")
 	velocity = air.begin_step(DT, Vector3(8, 2, 0), false, Vector3.ZERO, 8, true)
-	check(air.jump_count == 2 and is_equal_approx(velocity.y, sqrt(2.0 * Air.GRAVITY * Air.SECOND_HEIGHT)), "second jump accepts the upper window boundary")
+	check(air.jump_count == 2 and is_equal_approx(velocity.y, sqrt(2.0 * Air.GRAVITY * Air.SECOND_HEIGHT) - 0.5 * Air.GRAVITY * DT), "second jump accepts the physical upper window boundary and proposes its mean launch velocity")
 	velocity = air.begin_step(DT, Vector3(8, 0, 0), false, Vector3.ZERO, 8, true)
 	check(air.jump_count == 2 and velocity.y < 0, "third jump is rejected")
 	air = _launched()
@@ -76,8 +80,10 @@ func _air_attacks() -> void:
 	check(velocity == Vector3.ZERO and air.action == &"stomp_antic", "stomp hold does not accumulate gravity")
 	velocity = air.begin_step(0.05, velocity, false, Vector3.RIGHT, 8, false)
 	check(air.action == &"stomp_air" and velocity.y < 0 and velocity.x == 0 and velocity.z == 0, "stomp leaves anticipation into a strictly downward fall")
+	velocity.y += float(air.resolve_contacts(false).vertical_correction)
 	var previous_y := velocity.y
 	velocity = air.begin_step(DT, velocity, false, Vector3.RIGHT, 8, false)
+	velocity.y += float(air.resolve_contacts(false).vertical_correction)
 	check(is_equal_approx(previous_y - velocity.y, Air.GRAVITY * Air.STOMP_GRAVITY_FACTOR * DT), "stomp uses its chosen stronger gravity without air steering")
 	var event: Dictionary = air.resolve_contacts(true)
 	check(event.landed and event.stomp_landed and not event.air_hit, "stomp emits one landing pulse for the controller's existing targets")
@@ -134,7 +140,7 @@ func _rates() -> void:
 		var velocity := Vector3.ZERO
 		for tick in int(hz / 10):
 			velocity = air.begin_step(1.0 / hz, velocity, false, Vector3.RIGHT, 8, false)
-			air.resolve_contacts(false)
+			velocity.y += float(air.resolve_contacts(false).vertical_correction)
 		check(absf(velocity.x - 3.6) < 0.0001 and absf(velocity.y + 2.5) < 0.0001, "air acceleration is integrated per second at %d Hz" % hz)
 		if reference != Vector3.INF:
 			check(velocity.distance_to(reference) < 0.0001, "equal elapsed air time agrees across physics rates")
@@ -142,3 +148,48 @@ func _rates() -> void:
 	var air := _launched()
 	var velocity: Vector3 = air.begin_step(DT, Vector3(8, 2, 0), false, Vector3.ZERO, 8, false)
 	check(velocity.x == 8 and velocity.z == 0, "releasing air input preserves takeoff horizontal momentum")
+
+func _midpoint_contract() -> void:
+	for hz: int in [30, 60, 120]:
+		var dt := 1.0 / hz
+		for second: bool in [false, true]:
+			var flight := _launched() if second else Air.new()
+			var flight_velocity := Vector3.ZERO
+			var flight_height := 0.0
+			var impulse := sqrt(2.0 * Air.GRAVITY * (Air.SECOND_HEIGHT if second else Air.FIRST_HEIGHT))
+			var analytic := true
+			for tick in hz:
+				flight_velocity = flight.begin_step(dt, flight_velocity, tick == 0 and not second, Vector3.ZERO, 4, tick == 0)
+				flight_height += flight_velocity.y * dt
+				flight_velocity.y += float(flight.resolve_contacts(false).vertical_correction)
+				var time := (tick + 1) * dt
+				analytic = analytic and absf(flight_height - (impulse * time - 0.5 * Air.GRAVITY * time * time)) < 0.0001
+				analytic = analytic and absf(flight_velocity.y - (impulse - Air.GRAVITY * time)) < 0.0001
+			check(analytic, "jump %d matches analytic position and endpoint velocity at %d Hz" % [2 if second else 1, hz])
+		var stomp := _launched()
+		stomp.begin_step(DT, Vector3.ZERO, false, Vector3.ZERO, 4, true)
+		stomp.resolve_contacts(false)
+		stomp.request_air_attack(false)
+		var stomp_velocity := Vector3.ZERO
+		var stomp_height := 0.0
+		for tick in int(hz / 5):
+			stomp_velocity = stomp.begin_step(dt, stomp_velocity, false, Vector3.RIGHT, 4, false)
+			stomp_height += stomp_velocity.y * dt
+			stomp_velocity.y += float(stomp.resolve_contacts(false).vertical_correction)
+		var fall_time := 0.2 - Air.STOMP_ANTIC_SECONDS
+		var acceleration := Air.GRAVITY * Air.STOMP_GRAVITY_FACTOR
+		check(absf(stomp_height + 0.5 * acceleration * fall_time * fall_time) < 0.0001 and absf(stomp_velocity.y + acceleration * fall_time) < 0.0001, "partial anticipation step preserves analytic stomp displacement and endpoint velocity at %d Hz" % hz)
+	var air := Air.new()
+	air.begin_step(DT, Vector3.ZERO, false, Vector3.ZERO, 4, false)
+	check(is_equal_approx(float(air.resolve_contacts(false).vertical_correction), -0.5 * Air.GRAVITY * DT), "free flight delivers the remaining half gravity once")
+	check(float(air.resolve_contacts(false).vertical_correction) == 0.0, "repeated contact resolution cannot apply gravity twice")
+	air.begin_step(DT, Vector3.ZERO, false, Vector3.ZERO, 4, false)
+	check(float(air.resolve_contacts(true).vertical_correction) == 0.0 and float(air.resolve_contacts(false).vertical_correction) == 0.0, "floor contact consumes and suppresses the pending correction")
+	air.begin_step(DT, Vector3.ZERO, false, Vector3.ZERO, 4, false)
+	check(float(air.resolve_contacts(false, true).vertical_correction) == 0.0 and float(air.resolve_contacts(false).vertical_correction) == 0.0, "ceiling contact consumes and suppresses the pending correction")
+	air.begin_step(DT, Vector3.ZERO, false, Vector3.ZERO, 4, false)
+	air.cancel()
+	check(float(air.resolve_contacts(false).vertical_correction) == 0.0, "cancellation discards a proposed gravity correction")
+	air.begin_step(DT, Vector3.ZERO, false, Vector3.ZERO, 4, false)
+	air.begin_step(DT, Vector3.ZERO, true, Vector3.ZERO, 4, false)
+	check(float(air.resolve_contacts(false).vertical_correction) == 0.0, "an unconsumed correction cannot leak into the next step")

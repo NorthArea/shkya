@@ -1,6 +1,8 @@
 extends RefCounted
 ## CharacterBody3D owns velocity and collisions. This object proposes one motion
 ## step and reports action transitions; it never moves a node or selects a target.
+## begin_step returns mean motion velocity; resolve_contacts supplies the one-shot
+## vertical_correction that restores endpoint velocity after the resolved move.
 
 const GRAVITY := 25.0
 const FIRST_HEIGHT := 1.9
@@ -27,15 +29,17 @@ var _was_airborne := false
 var _awaiting_departure := false
 var _takeoff_pending := false
 var _hit_pending := false
+var _vertical_correction := 0.0
 
 func begin_step(delta: float, velocity: Vector3, grounded: bool, direction: Vector3, speed_limit: float, jump_pressed: bool, controls_allowed: bool = true) -> Vector3:
 	if delta <= 0.0:
 		return velocity
+	_vertical_correction = 0.0
 	if not controls_allowed:
 		cancel()
 		if not grounded:
 			_begin_natural_fall()
-			velocity.y -= GRAVITY * delta
+			return _gravity_step(velocity, GRAVITY, delta)
 		else:
 			velocity.y = 0.0
 		return velocity
@@ -44,6 +48,7 @@ func begin_step(delta: float, velocity: Vector3, grounded: bool, direction: Vect
 		if jump_pressed:
 			_launch(1)
 			velocity.y = sqrt(2.0 * GRAVITY * FIRST_HEIGHT)
+			return _gravity_step(velocity, GRAVITY, delta)
 		else:
 			velocity.y = 0.0
 			var moving_exit := action != &"stomp_land" and direction.length_squared() > 0.0001
@@ -57,11 +62,9 @@ func begin_step(delta: float, velocity: Vector3, grounded: bool, direction: Vect
 		_begin_natural_fall()
 	if phase == &"launch" and _phase_seconds >= LAUNCH_SECONDS:
 		phase = &"air"
-	var launched_again := false
 	if jump_pressed and _can_jump_again(velocity.y):
 		_launch(2)
 		velocity.y = sqrt(2.0 * GRAVITY * SECOND_HEIGHT)
-		launched_again = true
 	if action == &"stomp_antic":
 		_action_seconds += delta
 		if _action_seconds < STOMP_ANTIC_SECONDS:
@@ -69,10 +72,13 @@ func begin_step(delta: float, velocity: Vector3, grounded: bool, direction: Vect
 		var falling_delta := _action_seconds - STOMP_ANTIC_SECONDS
 		action = &"stomp_air"
 		_action_seconds = 0.0
-		return Vector3(0, -GRAVITY * STOMP_GRAVITY_FACTOR * falling_delta, 0)
+		var acceleration := GRAVITY * STOMP_GRAVITY_FACTOR
+		var mean_y := -0.5 * acceleration * falling_delta * falling_delta / delta
+		_vertical_correction = -acceleration * falling_delta - mean_y
+		return Vector3(0, mean_y, 0)
 	if action == &"stomp_air":
 		_action_seconds += delta
-		return Vector3(0, velocity.y - GRAVITY * STOMP_GRAVITY_FACTOR * delta, 0)
+		return _gravity_step(Vector3(0, velocity.y, 0), GRAVITY * STOMP_GRAVITY_FACTOR, delta)
 	if action == &"jump_kick":
 		_action_seconds += delta
 		if not _kick_hit_sent and _action_seconds >= KICK_HIT_SECONDS:
@@ -83,9 +89,7 @@ func begin_step(delta: float, velocity: Vector3, grounded: bool, direction: Vect
 	horizontal = (horizontal + input * input.length() * maxf(0.0, speed_limit) * AIR_STEER_RATE * delta).limit_length(maxf(0.0, speed_limit))
 	velocity.x = horizontal.x
 	velocity.z = horizontal.z
-	if not launched_again:
-		velocity.y -= GRAVITY * delta
-	return velocity
+	return _gravity_step(velocity, GRAVITY, delta)
 
 func request_air_attack(grounded: bool) -> StringName:
 	if grounded or natural_fall or jump_count == 0 or _air_attack_used or phase not in [&"launch", &"air"]:
@@ -98,9 +102,11 @@ func request_air_attack(grounded: bool) -> StringName:
 
 func resolve_contacts(grounded: bool, ceiling: bool = false) -> Dictionary:
 	var events := {"took_off": _takeoff_pending and not grounded, "air_hit": _hit_pending and not grounded,
-		"landed": false, "stomp_landed": false, "ceiling": ceiling}
+		"landed": false, "stomp_landed": false, "ceiling": ceiling,
+		"vertical_correction": 0.0 if grounded or ceiling else _vertical_correction}
 	_takeoff_pending = false
 	_hit_pending = false
+	_vertical_correction = 0.0
 	if grounded:
 		if _was_airborne:
 			var stomp := action in [&"stomp_antic", &"stomp_air"]
@@ -131,6 +137,7 @@ func cancel() -> void:
 	_action_seconds = 0.0
 	_takeoff_pending = false
 	_hit_pending = false
+	_vertical_correction = 0.0
 	_clear_flight()
 
 func snapshot() -> Dictionary:
@@ -146,6 +153,11 @@ func snapshot() -> Dictionary:
 ## A fresh jump is still admitted by begin_step during stomp recovery.
 func blocks_ground_motion() -> bool:
 	return phase == &"land" and action == &"stomp_land" and _phase_seconds < LAND_SECONDS
+
+func _gravity_step(velocity: Vector3, acceleration: float, delta: float) -> Vector3:
+	_vertical_correction = -0.5 * acceleration * delta
+	velocity.y += _vertical_correction
+	return velocity
 
 func _launch(count: int) -> void:
 	phase = &"launch"

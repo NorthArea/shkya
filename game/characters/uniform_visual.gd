@@ -5,6 +5,7 @@ const GuardModel = preload("res://game/characters/models/guard_model.gd")
 const CivilianModel = preload("res://game/characters/models/civilian_model.gd")
 const LocomotionRig = preload("res://game/characters/locomotion_rig.gd")
 const LocomotionPose = preload("res://game/characters/locomotion_pose.gd")
+const ActionPose = preload("res://game/characters/character_action_pose.gd")
 const CIVILIANS_ENABLED_BY_DEFAULT := true
 const ENABLED_BY_DEFAULT := true
 const EMISSION_FLOOR := 0.12
@@ -36,6 +37,11 @@ var gait: LocomotionPose
 var _occupant := false
 var _legacy_distance := 0.0
 var _xrays: Array[MeshInstance3D] = []
+var _action_request: Dictionary = {}
+var _action_roles: Dictionary = {}
+var _palm_anchors: Dictionary = {}
+var last_action_kind: StringName = &"none"
+var last_action_valid := true
 
 static func enabled() -> bool:
 	return ENABLED_BY_DEFAULT or "--uniform3d" in OS.get_cmdline_user_args() or "--uniform3d" in OS.get_cmdline_args()
@@ -60,12 +66,15 @@ func configure(drawing: String, height: float, color: Color) -> void:
 		model = GuardModel.new().build_model()
 	else:
 		model = CivilianModel.new().build_model(drawing)
-	model.scale = Vector3.ONE * height
 	add_child(model)
 	skeleton = model.get_node("Skeleton3D") as Skeleton3D
 	# Non-animated consumers need the authored bind pose before their first frame.
 	skeleton.reset_bone_poses()
 	uniform_mesh = skeleton.get_node("UniformMesh") as MeshInstance3D
+	var bind_bounds := uniform_mesh.mesh.get_aabb()
+	assert(bind_bounds.size.y > 0.0, "Character bind geometry must have positive height")
+	model.scale = Vector3.ONE * (height / bind_bounds.size.y)
+	model.position.y = -bind_bounds.position.y * model.scale.y
 	uniform_mesh.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON
 	var key := drawing + ":" + color.to_html()
 	if not _tinted_meshes.has(key):
@@ -116,13 +125,21 @@ func update_walk(distance: float, walking: bool, delta: float, _stride: float) -
 func update_locomotion(velocity: Vector3, grounded: bool, mode: StringName, delta: float, vertical_speed := 0.0, action_phase := 0.0) -> void:
 	if _occupant:
 		return
+	if mode == &"hidden":
+		reset_pose()
+		return
+	if delta <= 0.0:
+		return
 	prepare_locomotion()
+	# Clear every prior action mask without resetting gait contact/phase state.
+	skeleton.reset_bone_poses()
 	if _walk_speed == 0.0:
 		mode = &"knock"
 	elif _walk_speed > 0.0:
 		# Explicit inspection/capture override; gameplay consumers publish root motion.
 		velocity = -global_basis.z.normalized() * _walk_speed
 	gait.update(velocity, grounded, mode, delta, vertical_speed, action_phase)
+	_apply_action(mode)
 
 func prepare_locomotion() -> void:
 	if rig != null or _occupant:
@@ -130,12 +147,69 @@ func prepare_locomotion() -> void:
 	rig = LocomotionRig.new()
 	rig.build(author_skeleton, author_mesh, _kind not in ["police", "guard", "police_long", "police_round", "guard_alt"])
 	gait = LocomotionPose.new()
-	gait.configure(rig)
+	gait.configure(rig, _kind == "ilyusha")
 	author_mesh.visible = false
 	skeleton = rig.skeleton
 	uniform_mesh = rig.mesh
 	_rebind_xrays()
+	_resolve_action_roles()
 	skeleton.force_update_all_bone_transforms()
+
+## Only stores a snapshot. The gait update owns the single evaluation pass.
+func submit_action(request: Dictionary) -> void:
+	_action_request = request.duplicate(true) if not _occupant and request.get("kind", &"none") != &"none" else {}
+
+func _resolve_action_roles() -> void:
+	_action_roles.clear()
+	for name: String in ["hips", "spine", "head", "upper_arm_l", "lower_arm_l", "hand_l", "upper_arm_r", "lower_arm_r", "hand_r"]:
+		_action_roles[name] = skeleton.find_bone(name)
+	for index in rig.legs.size():
+		var suffix := "_l" if index == 0 else "_r"
+		var leg: Dictionary = rig.legs[index]
+		_action_roles["thigh" + suffix] = int(leg.hip)
+		_action_roles["knee" + suffix] = int(leg.knee)
+		_action_roles["ankle" + suffix] = int(leg.ankle)
+
+func _apply_action(mode: StringName) -> void:
+	last_action_kind = &"none"
+	last_action_valid = true
+	if mode == &"hidden" or _action_request.is_empty(): return
+	var kind := StringName(_action_request.get("kind", &"none"))
+	if mode == &"knock" and kind not in [&"flail", &"down", &"getup"]:
+		_action_request.clear()
+		return
+	var pose: Dictionary = ActionPose.sample(_aimed_action_request(), _action_roles)
+	last_action_valid = bool(pose.valid)
+	if not pose.valid or not pose.active: return
+	last_action_kind = pose.kind
+	for bone: int in pose.bone_offsets:
+		var base := skeleton.get_bone_pose(bone)
+		var composed: Transform3D = base * pose.bone_offsets[bone]
+		skeleton.set_bone_pose_position(bone, composed.origin)
+		skeleton.set_bone_pose_rotation(bone, composed.basis.get_rotation_quaternion())
+	skeleton.force_update_all_bone_transforms()
+	if pose.grips.is_empty(): return
+	for suffix: String in pose.grips:
+		var grip: Dictionary = pose.grips[suffix]
+		var target: Transform3D = grip.target
+		_reach_hand(suffix, skeleton.to_local(target.origin), float(grip.weight), _palm_anchor(suffix), skeleton.global_basis.orthonormalized().inverse() * target.basis.orthonormalized())
+	skeleton.force_update_all_bone_transforms()
+
+## Geometry-derived torso facing, not an AI turn or a new action clock.
+## Resolve in the fresh spine parent's frame before applying this action mask.
+func _aimed_action_request() -> Dictionary:
+	if _action_request.get("kind", &"none") != &"dig": return _action_request
+	var grips: Dictionary = _action_request.get("grips", {})
+	if typeof(grips.get("_l")) != TYPE_TRANSFORM3D or typeof(grips.get("_r")) != TYPE_TRANSFORM3D: return _action_request
+	var left: Transform3D = grips["_l"]
+	var right: Transform3D = grips["_r"]
+	var midpoint := skeleton.to_local((left.origin + right.origin) * 0.5)
+	var spine := skeleton.find_bone("spine")
+	var parent := skeleton.get_bone_global_pose(skeleton.get_bone_parent(spine))
+	var direction := parent.affine_inverse().basis * (midpoint - skeleton.get_bone_global_pose(spine).origin)
+	var request := _action_request.duplicate()
+	request["aim_yaw"] = clampf(atan2(-direction.x, -direction.z), -PI / 3.0, PI / 3.0)
+	return request
 
 func _rotate(bone_name: String, axis: Vector3, angle: float) -> void:
 	skeleton.set_bone_pose_rotation(skeleton.find_bone(bone_name), Quaternion(axis, angle))
@@ -147,6 +221,9 @@ func set_walk_speed(speed: float) -> void:
 		reset_pose()
 
 func reset_pose() -> void:
+	_action_request.clear()
+	last_action_kind = &"none"
+	last_action_valid = true
 	skeleton.reset_bone_poses()
 	if gait != null:
 		gait.reset()
@@ -198,7 +275,7 @@ func set_occupant_pose(profile: StringName) -> void:
 	if profile == &"lada":
 		# The chin tuck clears the roof; Ilyusha sits back from the steering wheel.
 		var head := skeleton.find_bone("head")
-		var head_offset := Vector3(0, -0.055 if _kind == "ilyusha" else -0.018, 0.035 if _kind == "ilyusha" else 0.0)
+		var head_offset := Vector3(0, -0.075 if _kind == "ilyusha" else -0.018, 0.035 if _kind == "ilyusha" else 0.0)
 		skeleton.set_bone_pose_position(head, skeleton.get_bone_rest(head).origin + head_offset)
 	for suffix: String in ["_l", "_r"]:
 		_rotate("leg" + suffix, Vector3.RIGHT, 1.65 if profile == &"lada" else 1.35)
@@ -229,7 +306,7 @@ func occupant_sole_height() -> float:
 				var bind := bones[slot]
 				var bone := uniform_mesh.skin.get_bind_bone(bind)
 				point += (skeleton.get_bone_global_pose(bone) * uniform_mesh.skin.get_bind_pose(bind) * vertices[index]) * weights[slot]
-			lowest = minf(lowest, point.y * visible_height)
+			lowest = minf(lowest, (model.transform * point).y)
 	return lowest
 
 ## Two-bone arm reach in normalized model coordinates. Targets are authored by
@@ -239,31 +316,85 @@ func reach_hands(left_target: Vector3, right_target: Vector3) -> void:
 	_reach_hand("_r", right_target)
 	skeleton.force_update_all_bone_transforms()
 
-func _reach_hand(suffix: String, target: Vector3) -> void:
+func _reach_hand(suffix: String, target: Vector3, weight := 1.0, palm_offset := Vector3(0, -0.034, -0.008), target_basis: Variant = null) -> void:
 	var upper := skeleton.find_bone("upper_arm" + suffix)
 	var lower := skeleton.find_bone("lower_arm" + suffix)
 	var hand := skeleton.find_bone("hand" + suffix)
-	var shoulder := skeleton.get_bone_global_rest(upper).origin
+	var parent := skeleton.get_bone_parent(upper)
+	var parent_pose := skeleton.get_bone_global_pose(parent)
+	var inverse_parent := parent_pose.affine_inverse()
+	var shoulder := inverse_parent * skeleton.get_bone_global_pose(upper).origin
+	var local_target := inverse_parent * target
 	var upper_rest := skeleton.get_bone_rest(lower).origin
 	var lower_rest := skeleton.get_bone_rest(hand).origin
 	var upper_length := upper_rest.length()
 	var lower_length := lower_rest.length()
-	# The authored hand's visible centre is below its joint; solve once more
-	# after rotating that offset so the grip targets the palm, not the wrist.
-	var palm_offset := Vector3(0, -0.034, -0.008)
-	var wrist := target
-	for iteration in 3:
+	var old_upper := skeleton.get_bone_pose_rotation(upper)
+	var old_lower := skeleton.get_bone_pose_rotation(lower)
+	var old_hand := skeleton.get_bone_pose_rotation(hand)
+	var hand_goal: Quaternion = old_hand
+	var upper_rotation := Quaternion.IDENTITY
+	var lower_rotation := Quaternion.IDENTITY
+	var wrist := local_target
+	for iteration in 4:
 		var reach := wrist - shoulder
+		if reach.length_squared() < 0.00000001: reach = Vector3.DOWN * 0.0001
 		var distance := clampf(reach.length(), absf(upper_length - lower_length) + 0.0001, upper_length + lower_length - 0.0001)
 		var toward := reach.normalized()
 		var bend := Vector3.DOWN - toward * Vector3.DOWN.dot(toward)
-		if bend.length_squared() < 0.0001:
-			bend = Vector3.FORWARD
+		if bend.length_squared() < 0.0001: bend = Vector3.FORWARD
 		bend = bend.normalized()
 		var along := (distance * distance + upper_length * upper_length - lower_length * lower_length) / (2.0 * distance)
 		var elbow := shoulder + toward * along + bend * sqrt(maxf(0.0, upper_length * upper_length - along * along))
-		var upper_rotation := Quaternion(upper_rest.normalized(), (elbow - shoulder).normalized())
-		var lower_rotation := Quaternion(lower_rest.normalized(), (shoulder + toward * distance - elbow).normalized())
-		skeleton.set_bone_pose_rotation(upper, upper_rotation)
-		skeleton.set_bone_pose_rotation(lower, upper_rotation.inverse() * lower_rotation)
-		wrist = target - lower_rotation * palm_offset
+		upper_rotation = Quaternion(upper_rest.normalized(), (elbow - shoulder).normalized())
+		lower_rotation = Quaternion(lower_rest.normalized(), (shoulder + toward * distance - elbow).normalized())
+		var palm_rotation := lower_rotation * old_hand
+		if target_basis != null:
+			var desired: Basis = target_basis
+			palm_rotation = (parent_pose.basis.orthonormalized().inverse() * desired.orthonormalized()).get_rotation_quaternion()
+			hand_goal = lower_rotation.inverse() * palm_rotation
+		wrist = local_target - palm_rotation * palm_offset
+	skeleton.set_bone_pose_rotation(upper, old_upper.slerp(upper_rotation, weight))
+	skeleton.set_bone_pose_rotation(lower, old_lower.slerp(upper_rotation.inverse() * lower_rotation, weight))
+	skeleton.set_bone_pose_rotation(hand, old_hand.slerp(hand_goal, weight))
+
+## A stable contact point on actual hand skin, expressed in hand-bone bind space.
+## Skin-only filtering excludes bags/tools that share a hand's animation bone.
+## This is lazy per-instance calibration; ordinary gait performs no mesh scans.
+func _palm_anchor(suffix: String) -> Vector3:
+	if _palm_anchors.has(suffix): return _palm_anchors[suffix]
+	var hand := author_skeleton.find_bone("hand" + suffix)
+	var inverse_hand := author_skeleton.get_bone_global_rest(hand).affine_inverse()
+	var points: Array[Vector3] = []
+	for surface in author_mesh.mesh.get_surface_count():
+		if "skin" not in author_mesh.mesh.surface_get_name(surface): continue
+		var arrays := author_mesh.mesh.surface_get_arrays(surface)
+		var vertices: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
+		var bones: PackedInt32Array = arrays[Mesh.ARRAY_BONES]
+		var weights: PackedFloat32Array = arrays[Mesh.ARRAY_WEIGHTS]
+		for index in vertices.size():
+			for influence in 4:
+				var slot := index * 4 + influence
+				if weights[slot] >= 0.99 and author_mesh.skin.get_bind_bone(bones[slot]) == hand:
+					points.append(inverse_hand * vertices[index])
+					break
+	var result := Vector3(0, -0.034, -0.008)
+	if not points.is_empty():
+		var bounds := AABB(points[0], Vector3.ZERO)
+		for point: Vector3 in points: bounds = bounds.expand(point)
+		var wanted := bounds.get_center()
+		wanted.z = bounds.position.z
+		var nearest := INF
+		for point: Vector3 in points:
+			var distance := point.distance_squared_to(wanted)
+			if distance < nearest:
+				nearest = distance
+				result = point
+	_palm_anchors[suffix] = result
+	return result
+
+## Inspection/attachment consumers receive the active hand skin point in world
+## coordinates; no BoneAttachment remains bound to a hidden author skeleton.
+func hand_contact_transform(suffix: String) -> Transform3D:
+	var hand := skeleton.find_bone("hand" + suffix)
+	return skeleton.global_transform * skeleton.get_bone_global_pose(hand) * Transform3D(Basis.IDENTITY, _palm_anchor(suffix))

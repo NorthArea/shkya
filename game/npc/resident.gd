@@ -73,6 +73,7 @@ const DialogPanelScript = preload("res://game/ui/dialog_panel.gd")
 const LineBagScript = preload("res://game/npc/line_bag.gd")
 const Layout = preload("res://game/world/layout.gd")
 const LifeScript = preload("res://game/world/life.gd")   # PEOPLE-03: константы хоккея
+const PedestrianMotion = preload("res://game/npc/pedestrian_motion.gd")
 
 const SPEEDS: Array[float] = [1.2, 1.45, 1.35, 1.6, 1.3, 1.25, 1.5, 1.4, 1.5, 1.4, 1.3, 1.35, 1.25, 1.45,
 	1.75, 1.4, 1.15, 1.3, 1.45, 1.8,
@@ -342,6 +343,10 @@ var _knock_waiting := false        # первый в паре ждёт сбит�
 var _knock_stars: Node3D
 var _knock_shadow: MeshInstance3D
 static var _solid_rects: Array = []
+var motion: RefCounted
+var _motion_used := false
+var _motion_epoch := 0
+var _motion_transit_origin := Vector3.ZERO
 
 func setup(resident_index: int, points: Array, pauses: Array, start: int) -> void:
 	index = resident_index
@@ -355,6 +360,7 @@ func setup(resident_index: int, points: Array, pauses: Array, start: int) -> voi
 	_idle_at = _idle_interval()
 
 func _ready() -> void:
+	motion = PedestrianMotion.new(index, BODY_RADIUS)
 	solid = false   # своё тело ниже: не StaticBody на слое World, как у npc.gd
 	body_radius = BODY_RADIUS
 	if not route.is_empty():
@@ -385,15 +391,31 @@ func _ready() -> void:
 
 var _locomotion_delta := 0.0
 var _locomotion_position := Vector3.INF
+var _locomotion_sample_epoch := Vector2i(-1, -1)
+var _locomotion_sample_clock := -INF
 
 func _physics_process(delta: float) -> void:
 	var before := _locomotion_position if _locomotion_position != Vector3.INF else global_position
+	var sample_epoch := _locomotion_sample_epoch if _locomotion_position != Vector3.INF else motion_sample_epoch()
+	var sample_clock := _locomotion_sample_clock if _locomotion_position != Vector3.INF else motion_sample_clock()
 	_locomotion_delta = 0.0
 	_tick_resident(delta)
+	if _uses_skeletal_presentation():
+		_update_presentation(delta)
 	if _locomotion_delta <= 0.0:
 		return
-	var movement := (global_position - before) / _locomotion_delta
-	_locomotion_position = global_position
+	var current_epoch := motion_sample_epoch()
+	var current_clock := motion_sample_clock()
+	var elapsed := current_clock - sample_clock
+	var discontinuity := sample_epoch != current_epoch or elapsed < -0.000001
+	var publish_sample := discontinuity or elapsed > 0.000001
+	var movement := Vector3.ZERO
+	if publish_sample:
+		if not discontinuity:
+			movement = (global_position - before) / elapsed
+		_locomotion_position = global_position
+		_locomotion_sample_epoch = current_epoch
+		_locomotion_sample_clock = current_clock
 	var pose_mode := &"locomotion"
 	if hidden:
 		pose_mode = &"hidden"
@@ -403,10 +425,43 @@ func _physics_process(delta: float) -> void:
 		pose_mode = &"activity"
 	var look := _look()
 	if look != null:
-		look.submit_locomotion(movement, true, pose_mode)
+		if discontinuity:
+			look.reset_pose()
+		if publish_sample:
+			look.submit_locomotion(movement, true, pose_mode)
+		look.submit_action(_skeletal_action_request())
+
+func _skeletal_action_request() -> Dictionary:
+	if hidden or not visible or _look() == null or not _look().uses_uniform_3d():
+		return {"kind": &"none"}
+	match knock_phase:
+		&"fly":
+			return {"kind": &"flail", "phase": clampf(_knock_t / maxf(_knock_time, 0.001), 0.0, 1.0)}
+		&"down":
+			return {"kind": &"down", "phase": 0.0}
+		&"getup":
+			return {"kind": &"getup", "phase": clampf(_knock_t / KNOCK_RISE_SECONDS, 0.0, 1.0)}
+	if not _acting or state != &"activity":
+		return {"kind": &"none"}
+	if _act_kind in [&"chat", &"domino"]:
+		var speaker: bool = _social_pose.get("speaker") == self
+		return {"kind": &"chat" if speaker else &"listen",
+			"speaker": speaker, "phase": clampf(float(_social_pose.get("phase", 1.0)), 0.0, 1.0),
+			"reaction": clampf(_flinch, 0.0, 1.0)}
+	if _act_kind == &"dig" and _working_now():
+		var stroke := _work_stroke()
+		# The existing shaft trajectory/contact clock remains the authority.
+		_pose_work_tool(stroke)
+		var upper_grip := lerpf(0.10, 0.35, stroke)
+		var grip_basis := _work_tool.global_basis.orthonormalized()
+		return {"kind": &"dig", "stroke": stroke, "reaction": clampf(_flinch, 0.0, 1.0),
+			"grips": {"_l": Transform3D(grip_basis, _work_tool.to_global(Vector3(0, upper_grip, 0))),
+				"_r": Transform3D(grip_basis, _work_tool.to_global(Vector3(0, upper_grip - 0.34, 0)))}}
+	return {"kind": &"none"}
 
 func _tick_resident(delta: float) -> void:
 	if route.size() < 2 or delta <= 0.0:
+		_suspend_motion()
 		return
 	delta = _lod_delta(delta)
 	if delta <= 0.0:
@@ -415,19 +470,25 @@ func _tick_resident(delta: float) -> void:
 	clock += delta
 	_tick_bubble(delta)
 	if hidden:
+		_suspend_motion()
 		if errand and leader == null:
 			_tick_hidden(delta)
 		return   # в троллейбусе или в магазине: ждёт doors_opened
 	_check_knock(delta)
 	if state == &"knocked":
+		_suspend_motion()
 		_tick_knock(delta)
 		return
 	_react()
 	if leader != null:
+		_suspend_motion()
 		if leader.state == &"knocked":
 			look_at_target(leader)   # первого сбили: стоит и смотрит, пока тот не вернётся
 		return   # второй в паре: его ставит первый (_mirror)
+	_motion_used = false
 	_tick(delta)
+	if not _motion_used:
+		_suspend_motion()
 	if carry != &"":
 		_update_carry()
 	_flinch = maxf(_flinch - delta, 0.0)
@@ -537,10 +598,17 @@ func _walk(delta: float, to_player: float) -> void:
 			_reverse_cooldown = REVERSE_COOLDOWN
 			turnarounds += 1
 		return
-	var step := speed * delta
-	if dist <= step:
+	var previous := target_point - direction
+	previous = clampi(previous, 0, route.size() - 1) if errand else _wrap(previous)
+	var certified_crossing: bool = errand and target_point > 0 and target_point - 1 < route_flags.size() \
+		and route_flags[target_point - 1] != &"" and _cross_ok == target_point
+	var moved := _motion_step(here, _flat(route[previous]), goal, speed, delta, certified_crossing)
+	global_position = here + moved
+	distance_walked += moved.length()
+	if moved.length_squared() > 0.000001:
+		facing_yaw = atan2(-moved.x, -moved.z)
+	if global_position.distance_to(goal) <= 0.0001:
 		global_position = goal
-		distance_walked += dist
 		if errand:
 			_on_errand_point()
 			return
@@ -555,12 +623,91 @@ func _walk(delta: float, to_player: float) -> void:
 		else:
 			target_point = _wrap(target_point + direction)
 		return
-	global_position = here + dir * step
-	distance_walked += step
+
+func _suspend_motion() -> void:
+	if motion != null:
+		motion.suspend()
+
+func _rebase_locomotion_sample() -> void:
+	_locomotion_position = global_position
+	_locomotion_sample_epoch = motion_sample_epoch()
+	_locomotion_sample_clock = motion_sample_clock()
+	_lod_acc = 0.0
+	_lod_n = 0
+	var look := _look()
+	if look == null:
+		return
+	look.reset_pose()
+	var pose_mode := &"locomotion"
+	if hidden:
+		pose_mode = &"hidden"
+	elif state == &"knocked" and knock_phase != &"back":
+		pose_mode = &"knock"
+	elif _acting and state == &"activity":
+		pose_mode = &"activity"
+	look.submit_locomotion(Vector3.ZERO, true, pose_mode)
+
+func motion_unit_id() -> int:
+	return leader.index if is_instance_valid(leader) else index
+
+func motion_search_speed() -> float:
+	return maxf(speed, PedestrianMotion.DODGE_SPEED)
+
+func motion_footprints() -> Array[Vector3]:
+	var points: Array[Vector3] = [Vector3.ZERO]
+	if is_instance_valid(follower) and not follower.hidden and follower.state != &"knocked":
+		points.append(_flat(follower.global_position - global_position))
+	return points
+
+func motion_sample_clock() -> float:
+	if is_instance_valid(leader) and state != &"knocked" and leader.state != &"knocked":
+		return leader.clock
+	return clock
+
+func motion_sample_epoch() -> Vector2i:
+	return Vector2i(_motion_epoch, leader._motion_epoch if is_instance_valid(leader) else _motion_epoch)
+
+func _motion_step(here: Vector3, start: Vector3, goal: Vector3, cruise: float,
+		delta: float, certified_crossing := false, transit := false) -> Vector3:
+	_motion_used = true
+	var obstacles: Array[Dictionary] = []
+	if is_instance_valid(chatter) and chatter.has_method("motion_obstacles"):
+		obstacles = chatter.motion_obstacles(self, PedestrianMotion.HORIZON)
+	var callback: Callable = segment_clear if certified_crossing or transit else _motion_step_clear
+	return motion.step(here, start, goal, cruise, motion_footprints(), obstacles,
+		delta, callback, not certified_crossing and not transit)
+
+func _motion_step_clear(from: Vector3, to: Vector3) -> bool:
+	if not segment_clear(from, to):
+		return false
+	var count := maxi(1, ceili(from.distance_to(to) / (BODY_RADIUS * 0.5)))
+	for index_in_segment in range(count + 1):
+		var point := from.lerp(to, float(index_in_segment) / count)
+		var at := Vector2(point.x, point.z)
+		var allowed := Layout.RESIDENT_ENTRANCE_AREA.has_point(at)
+		for surface: Array in Layout.SURFACES:
+			var size: Vector2 = surface[3]
+			var rect := Rect2(Vector2(surface[2]) - size * 0.5, size)
+			if surface[1] == "road" and rect.grow(BODY_RADIUS).has_point(at):
+				return false
+			if surface[1] in ["sidewalk", "yard_road"] and rect.has_point(at):
+				allowed = true
+		if not allowed:
+			for ground: Rect2 in Layout.LIFE_GROUNDS:
+				if ground.has_point(at):
+					allowed = true
+					break
+		if not allowed:
+			return false
+	return true
 
 ## Поставить на точку маршрута (касание «Лады», перезапуск): без скорости и без интерполяции рывка.
 func place(point: Vector3) -> void:
+	_motion_epoch += 1
+	if motion != null:
+		motion.reset()
 	global_position = _flat(point)
+	_rebase_locomotion_sample()
 	reset_physics_interpolation()
 
 ## Перезапуск: на старт, к следующей точке, счётчики — с нуля.
@@ -669,7 +816,8 @@ func _lada_touches(p: Vector3, margin: float, radius := BODY_RADIUS) -> bool:
 		return false
 	var local := lada.global_transform.affine_inverse() * Vector3(p.x, lada.global_position.y, p.z)
 	var half := Lada.SIZE * 0.5
-	return absf(local.x) < half.x + radius + margin and absf(local.z) < half.z + radius + margin
+	var outside := Vector2(absf(local.x) - half.x, absf(local.z) - half.z)
+	return outside.max(Vector2.ZERO).length() < radius + margin
 
 ## До Илюши; у первого в паре — до ближнего из двоих.
 func _player_distance() -> float:
@@ -1041,6 +1189,9 @@ func _tick_alight() -> void:
 ## yield_leg — отрезок через проезжую часть: перед ним на бордюре ждать, пока машины кольца не дальше CROSS_CLEAR от его
 ## середины; начав переход, не останавливаться (машины тормозят перед телом на слое Car — иначе оба ждали бы друг друга).
 func _start_transit(points: Array, end: StringName, body_from: int, walk_speed: float, yield_leg := -1) -> void:
+	_motion_transit_origin = _flat(global_position)
+	if motion != null:
+		motion.reset()
 	_transit_yield_leg = yield_leg
 	_transit = points
 	_transit_i = 0
@@ -1067,9 +1218,12 @@ func _tick_transit(delta: float) -> void:
 		for vehicle in get_tree().get_nodes_in_group(PathVehicle.GROUP):
 			if _flat(vehicle.global_position).distance_to(middle) < CROSS_CLEAR:
 				return
-	var step := _transit_speed * delta
-	if dist > step:
-		global_position = here + dir * step
+	var start := _flat(_transit[_transit_i - 1]) if _transit_i > 0 else _motion_transit_origin
+	var moved := _motion_step(here, start, goal, _transit_speed, delta, false, true)
+	global_position = here + moved
+	if moved.length_squared() > 0.000001:
+		facing_yaw = atan2(-moved.x, -moved.z)
+	if global_position.distance_to(goal) > 0.0001:
 		return
 	global_position = goal
 	_transit_i += 1
@@ -1095,20 +1249,27 @@ func _tick_transit(delta: float) -> void:
 			target_point = _wrap(1)
 
 func _hide(next_state: StringName) -> void:
+	_motion_epoch += 1
+	_suspend_motion()
 	hidden = true
 	visible = false
 	body.collision_layer = 0
 	stop_looking()
 	state = next_state
+	_rebase_locomotion_sample()
 	_bubble_left = 0.0
 	if _bubble_back:
 		_bubble_back.visible = false
 
 func _show() -> void:
+	_motion_epoch += 1
+	if motion != null:
+		motion.reset()
 	hidden = false
 	visible = true
 	if body:
 		body.collision_layer = BODY_LAYER
+	_rebase_locomotion_sample()
 
 # =====================================================================================
 # KNOCK-01: сбивание «Ладой» без вреда — полёт, кувырок, лежит, встаёт, обратно на маршрут
@@ -1538,10 +1699,18 @@ func _knock_end_pose() -> void:
 	_knock_squash = Vector2.ONE
 
 func _process(delta: float) -> void:
+	if _uses_skeletal_presentation():
+		return
+	_update_presentation(delta)
+
+func _uses_skeletal_presentation() -> bool:
+	return _look() != null and _look().uses_uniform_3d()
+
+func _update_presentation(delta: float) -> void:
 	if knock_phase in KNOCK_PHASES:
 		_pose_knocked()
 		return
-	super(delta)
+	super._process(delta)
 	if errand:
 		_pose_activity()
 
@@ -2220,6 +2389,7 @@ func _mirror_trail(lead: Resident) -> void:
 func _pose_activity() -> void:
 	if visual == null:
 		return
+	var skeletal: bool = _look() != null and _look().uses_uniform_3d()
 	if _work_tool:
 		_work_tool.visible = WORK_PERIODS.has(_act_kind) and _working_now()
 	var offset := Vector3.ZERO
@@ -2231,23 +2401,24 @@ func _pose_activity() -> void:
 			&"domino":
 				var turn: Dictionary = _social_pose
 				var k: float = turn.get("phase", 1.0)
-				if state == &"activity" and turn.get("speaker") == self and k < 0.25:
+				if not skeletal and state == &"activity" and turn.get("speaker") == self and k < 0.25:
 					var s := sin(k / 0.25 * PI)
 					offset.y -= 0.07 * s
 					visual.scale.y *= 1.0 - 0.05 * s
 			&"chat":
 				var turn: Dictionary = _social_pose
 				var k: float = turn.get("phase", 1.0)
-				if state == &"activity" and turn.get("speaker") == self and k < 0.8:
+				if not skeletal and state == &"activity" and turn.get("speaker") == self and k < 0.8:
 					var nod := sin(k / 0.8 * PI)
 					offset.y -= 0.035 * nod
 					visual.scale.y *= 1.0 - 0.025 * nod
 			&"hood", &"dig", &"carpet":
 				if _working_now():
 					var stroke := _work_stroke()
-					visual.scale.y *= 1.0 - 0.14 * stroke
-					offset += _forward(facing_yaw) * 0.08 * stroke
-					offset.y -= 0.06 * stroke
+					if not skeletal or _act_kind != &"dig":
+						visual.scale.y *= 1.0 - 0.14 * stroke
+						offset += _forward(facing_yaw) * 0.08 * stroke
+						offset.y -= 0.06 * stroke
 					_pose_work_tool(stroke)
 			&"sweep":
 				if _broom == null:

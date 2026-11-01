@@ -71,6 +71,9 @@ const RIDER := 2
 const RIDER_WAIT_POINT := 1
 
 const GROUP := &"residents"
+const MOTION_CELL := 4.0
+const MOTION_PLAYER_ID := -1001
+const MOTION_CAR_ID := -1002
 
 signal resident_knocked(resident: Resident)
 signal resident_landed(resident: Resident)
@@ -87,6 +90,13 @@ var life   # LIFE-01: планировщик (game/world/life.gd)
 var trolley: Node3D
 var horn_glances := 0
 var _sound: Node
+var _motion_grid: Dictionary = {}
+var _motion_hazards: Array[Dictionary] = []
+var _motion_history: Dictionary = {}
+var _motion_frame := -1
+var _motion_clock := 0.0
+var _motion_max_peer_speed := 0.0
+var _motion_max_peer_radius := 0.0
 
 func _init() -> void:
 	name = "Residents"
@@ -196,6 +206,7 @@ func knocks() -> int:
 
 ## Для тестов и перезапуска: все на старт (сбитые — тоже: облик, тело и счётчики сбивания — как до удара).
 func reset_positions() -> void:
+	_reset_motion_snapshots()
 	if life:
 		life.reset()
 		_update_life()
@@ -242,8 +253,126 @@ func _physics_process(delta: float) -> void:
 		_connect_breakables()
 	if life:
 		_update_life()
+	_capture_motion_snapshot(delta)
 	if trolley and trolley.has_method("set_riders"):
 		trolley.set_riders(riders())
+
+## One immutable observation cut before Resident children update their roots.
+func _capture_motion_snapshot(delta: float) -> void:
+	var frame := Engine.get_physics_frames()
+	if _motion_frame == frame:
+		return
+	_motion_frame = frame
+	_motion_clock += delta
+	_motion_grid.clear()
+	_motion_hazards.clear()
+	_motion_max_peer_speed = 0.0
+	_motion_max_peer_radius = 0.0
+	var seen: Dictionary = {}
+	for resident: Resident in residents:
+		if not is_instance_valid(resident):
+			continue
+		seen[resident.index] = true
+		var radius := _motion_radius(resident.body, Resident.BODY_RADIUS)
+		var observed := _observe_motion(resident, resident.index, resident.motion_sample_clock(),
+			resident.speed, radius, resident.motion_sample_epoch())
+		if resident.hidden or not resident.is_visible_in_tree() or resident.body == null or resident.body.collision_layer == 0:
+			continue
+		var record := {"id": resident.index, "unit_id": resident.motion_unit_id(), "kind": &"peer",
+			"position": Resident._flat(resident.global_position), "velocity": observed, "radius": radius}
+		var cell := _motion_cell(record.position)
+		if not _motion_grid.has(cell):
+			_motion_grid[cell] = []
+		_motion_grid[cell].append(record)
+		_motion_max_peer_speed = maxf(_motion_max_peer_speed, observed.length())
+		_motion_max_peer_radius = maxf(_motion_max_peer_radius, radius)
+	var world := _world()
+	if world:
+		var player := world.get_node_or_null("Ilyusha") as CharacterBody3D
+		if player and player.is_visible_in_tree():
+			seen[MOTION_PLAYER_ID] = true
+			var radius := _motion_radius(player, Resident.BODY_RADIUS)
+			var observed := _observe_motion(player, MOTION_PLAYER_ID, _motion_clock,
+				Resident._flat(player.velocity).length(), radius, Vector2i.ZERO)
+			_motion_hazards.append({"id": MOTION_PLAYER_ID, "unit_id": MOTION_PLAYER_ID, "kind": &"player",
+				"position": Resident._flat(player.global_position), "velocity": observed, "radius": radius})
+		var car := world.get_node_or_null("Car") as CharacterBody3D
+		if car:
+			seen[MOTION_CAR_ID] = true
+			var half := Vector2(Lada.SIZE.x, Lada.SIZE.z) * 0.5
+			var observed := _observe_motion(car, MOTION_CAR_ID, _motion_clock,
+				Resident._flat(car.velocity).length(), half.length(), Vector2i.ZERO)
+			_motion_hazards.append({"id": MOTION_CAR_ID, "unit_id": MOTION_CAR_ID, "kind": &"car",
+				"position": Resident._flat(car.global_position), "velocity": observed, "radius": half.length(),
+				"basis": car.global_basis.orthonormalized(), "half_extents": half})
+	for id in _motion_history.keys():
+		if not seen.has(id):
+			_motion_history.erase(id)
+
+func _observe_motion(actor: Node3D, id: int, clock: float, expected_speed: float,
+		radius: float, epoch: Vector2i) -> Vector3:
+	var at := Resident._flat(actor.global_position)
+	var previous: Dictionary = _motion_history.get(id, {})
+	var observed := Vector3.ZERO
+	if not previous.is_empty() and int(previous.source_id) == actor.get_instance_id() and previous.epoch == epoch:
+		var elapsed: float = clock - float(previous.clock)
+		var travelled: Vector3 = at - Vector3(previous.position)
+		if elapsed > 0.000001:
+			var reasonable := maxf(1.0, expected_speed * elapsed * 2.0 + radius)
+			if travelled.length() <= reasonable and (expected_speed > 0.01 or travelled.length() < radius * 0.5):
+				observed = travelled / elapsed
+		elif travelled.length_squared() <= 0.000001:
+			observed = previous.velocity
+	_motion_history[id] = {"source_id": actor.get_instance_id(), "position": at,
+		"clock": clock, "epoch": epoch, "velocity": observed}
+	return observed
+
+func motion_obstacles(resident: Resident, horizon: float) -> Array[Dictionary]:
+	var out: Array[Dictionary] = []
+	if _motion_frame != Engine.get_physics_frames():
+		return out
+	var here := Resident._flat(resident.global_position)
+	var extent := Resident.BODY_RADIUS
+	for offset: Vector3 in resident.motion_footprints():
+		extent = maxf(extent, offset.length() + Resident.BODY_RADIUS)
+	var search_speed := resident.motion_search_speed()
+	var reach := (search_speed + _motion_max_peer_speed) * horizon + extent + _motion_max_peer_radius
+	var low := _motion_cell(here - Vector3(reach, 0, reach))
+	var high := _motion_cell(here + Vector3(reach, 0, reach))
+	for x in range(low.x, high.x + 1):
+		for z in range(low.y, high.y + 1):
+			for record: Dictionary in _motion_grid.get(Vector2i(x, z), []):
+				if int(record.unit_id) == resident.motion_unit_id():
+					continue
+				if here.distance_squared_to(Vector3(record.position)) <= reach * reach:
+					out.append(record)
+	for hazard: Dictionary in _motion_hazards:
+		var velocity: Vector3 = hazard.velocity
+		var hazard_reach := (search_speed + velocity.length()) * horizon + extent + float(hazard.radius)
+		if here.distance_squared_to(Vector3(hazard.position)) <= hazard_reach * hazard_reach:
+			out.append(hazard)
+	return out
+
+func motion_snapshot_state() -> Dictionary:
+	return {"frame": _motion_frame, "cells": _motion_grid.size(), "hazards": _motion_hazards.size()}
+
+func _reset_motion_snapshots() -> void:
+	_motion_grid.clear()
+	_motion_hazards.clear()
+	_motion_history.clear()
+	_motion_frame = -1
+
+static func _motion_cell(at: Vector3) -> Vector2i:
+	return Vector2i(floori(at.x / MOTION_CELL), floori(at.z / MOTION_CELL))
+
+static func _motion_radius(body: Node, fallback: float) -> float:
+	if body == null:
+		return fallback
+	for child: Node in body.get_children():
+		if child is CollisionShape3D and child.shape is CapsuleShape3D:
+			var capsule := child.shape as CapsuleShape3D
+			return maxf(capsule.radius, capsule.height * 0.5) if absf(child.basis.y.y) < 0.5 else capsule.radius
+	return fallback
 
 ## TROLLEY-01: жители в поездке — скрыты в троллейбусе (Resident: hidden и state &"ride"); их облики — в салоне.
 func riders() -> Array:

@@ -27,6 +27,7 @@ extends Node3D
 ## второй держит восток-юго-восток столько же, сколько запад, — OFFICER2_HOLD_EAST 10–12 с.
 
 const Layout = preload("res://game/world/layout.gd")
+const Catalog = preload("res://game/characters/character_catalog.gd")
 const NpcScript = preload("res://game/npc/npc.gd")
 const PatrolNpcScript = preload("res://game/npc/patrol_npc.gd")
 const CityVanScript = preload("res://game/vehicles/city_van.gd")
@@ -108,7 +109,7 @@ func _ready() -> void:
 	account_officer.name = "AccountOfficer"
 	account_officer.interaction_id = &"account_officer"
 	account_officer.character = "officer"
-	account_officer.height_m = 2.2   # фигура 0,948 холста = 2,09 м: в 1,18 раза выше полицейского (1,77 м), как на e03 (LOOK-01)
+	account_officer.height_m = Catalog.canvas_height_for("officer", Catalog.RF_ADULT_MALE_REFERENCE_M)
 	account_officer.tint = Color(1.0, 1.0, 1.0)
 	account_officer.body_radius = 0.45
 	account_officer.facing_yaw = Layout.ACCOUNT_OFFICER_YAW

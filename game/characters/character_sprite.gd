@@ -8,6 +8,7 @@ extends Node3D
 const DIR := "res://assets/art/characters/"
 const UniformVisual = preload("res://game/characters/uniform_visual.gd")
 const Catalog = preload("res://game/characters/character_catalog.gd")
+const BonePoseBuffer = preload("res://game/characters/bone_pose_buffer.gd")
 const CANVAS_HEIGHT := 600.0  # условные единицы холста; ноги стоят на 590
 const FEET_Y := 590.0
 const FRONT_DOT := 0.55       # cos ≈ 57°: ближе к оси — лицом или спиной, иначе бок
@@ -26,6 +27,8 @@ const APPEARANCES: Array[String] = ["police_long", "police_round", "guard_alt"]
 @export var tone := 0.72
 ## Тёплый оттенок поверх тона: светлая кожа и платье NPC в холодном свете сцены серели (сверка ART-01, P3).
 @export var tint := Color.WHITE
+## Explicit hero opt-in; seated and NPC consumers retain their own presentation.
+@export var interpolate_bone_pose := false
 
 var sprite: Sprite3D
 var uniform_visual: Node3D
@@ -43,6 +46,16 @@ var _grounded := true
 var _pose_mode := &"locomotion"
 var _vertical_speed := 0.0
 var _action_phase := 0.0
+var _action_request: Dictionary = {}
+var _bone_pose_buffer = BonePoseBuffer.new()
+
+func _notification(what: int) -> void:
+	if _bone_pose_buffer == null:
+		return
+	if what == NOTIFICATION_RESET_PHYSICS_INTERPOLATION:
+		_clear_bone_interpolation()
+	elif what == NOTIFICATION_VISIBILITY_CHANGED and interpolate_bone_pose and _uses_locomotion() and is_inside_tree() and not is_visible_in_tree():
+		reset_pose()
 
 func resolved_character() -> String:
 	return appearance if appearance in APPEARANCES else character
@@ -98,6 +111,11 @@ func _ready() -> void:
 
 func _process(_delta: float) -> void:
 	if uniform_visual != null:
+		if interpolate_bone_pose and _uses_locomotion():
+			if is_visible_in_tree() and _pose_mode != &"hidden":
+				_bone_pose_buffer.apply(uniform_visual.skeleton, Engine.get_physics_interpolation_fraction())
+			else:
+				_bone_pose_buffer.clear()
 		return
 	var camera := get_viewport().get_camera_3d()
 	if not camera or not sprite:
@@ -126,6 +144,9 @@ func _process(_delta: float) -> void:
 ## Путь копится на шаге физики: в _process при physics_interpolation положение между шагами
 ## не меняется, и на 120+ к/с ходьба сбрасывалась бы в стойку (ревью ART-01, P1).
 func _physics_process(delta: float) -> void:
+	# Undo the render sample before gait/action/IK reads any bone transforms.
+	if uniform_visual != null and interpolate_bone_pose and _uses_locomotion():
+		_bone_pose_buffer.restore_current(uniform_visual.skeleton)
 	# Visual offsets (punches, work, breathing) are not travelled ground distance.
 	var at := _actor.global_position if is_instance_valid(_actor) else global_position
 	var moved := 0.0
@@ -134,10 +155,12 @@ func _physics_process(delta: float) -> void:
 	_last = at
 	var teleport := moved > 1.0
 	if teleport:  # телепорт (place, перезапуск) — не шаг
+		_action_request.clear()
 		moved = 0.0
 		_distance = 0.0
 		if uniform_visual != null:
 			uniform_visual.reset_pose()
+		_bone_pose_buffer.clear()
 	var velocity := _velocity if _controlled else Vector3.ZERO
 	if not _controlled and delta > 0.0 and not teleport:
 		velocity = (at - _last_root) / delta if _last_root != Vector3.INF else Vector3.ZERO
@@ -152,9 +175,18 @@ func _physics_process(delta: float) -> void:
 		frame = -1
 	if uniform_visual != null:
 		var pose_mode := _pose_mode if _controlled else &"locomotion"
-		if not is_visible_in_tree():
+		if pose_mode == &"hidden" or not is_visible_in_tree():
 			pose_mode = &"hidden"
+			_action_request.clear()
+		if pose_mode == &"knock" and _action_request.get("kind", &"none") not in [&"flail", &"down", &"getup"]:
+			_action_request.clear()
+		uniform_visual.submit_action(_action_request)
 		uniform_visual.update_locomotion(velocity, _grounded, pose_mode, delta, _vertical_speed, _action_phase)
+		if interpolate_bone_pose and _uses_locomotion():
+			if pose_mode == &"hidden":
+				_bone_pose_buffer.clear()
+			else:
+				_bone_pose_buffer.capture(uniform_visual.skeleton)
 
 var _last_root := Vector3.INF
 
@@ -168,6 +200,24 @@ func submit_locomotion(world_velocity: Vector3, grounded: bool, mode: StringName
 	_vertical_speed = vertical_speed
 	_action_phase = action_phase
 
+## Snapshot only; the owner supplies phase and clears it when its action ends.
+## Evaluation occurs once after this frame's gait, never in this setter.
+func submit_action(request: Dictionary) -> void:
+	_action_request = request.duplicate(true) if request.get("kind", &"none") != &"none" else {}
+	if _action_request.is_empty() and uniform_visual != null:
+		uniform_visual.submit_action({})
+
+## Lifecycle reset clears the producer snapshot as well as active bone poses.
+func reset_pose() -> void:
+	_action_request.clear()
+	_bone_pose_buffer.clear()
+	if uniform_visual != null: uniform_visual.reset_pose()
+
+func _clear_bone_interpolation() -> void:
+	if uniform_visual != null:
+		_bone_pose_buffer.restore_current(uniform_visual.skeleton)
+	_bone_pose_buffer.clear()
+
 func _model_visible_height(drawing: String) -> float:
 	return height_m * Catalog.visible_height_ratio(drawing)
 
@@ -178,6 +228,9 @@ func uses_uniform_3d() -> bool:
 	return uniform_visual != null
 
 func set_walk_speed(speed: float) -> void:
+	if speed == 0.0:
+		_action_request.clear()
+		_bone_pose_buffer.clear()
 	if uniform_visual != null:
 		uniform_visual.set_walk_speed(speed)
 

@@ -13,6 +13,7 @@ extends Node3D
 ## Узел создаёт Patrols (DemoWorld/LevelGeometry/Patrols/RoadClosure).
 
 const Layout = preload("res://game/world/layout.gd")
+const Catalog = preload("res://game/characters/character_catalog.gd")
 const CityVanScript = preload("res://game/vehicles/city_van.gd")
 const NpcScript = preload("res://game/npc/npc.gd")
 const Materials = preload("res://game/world/materials.gd")
@@ -92,7 +93,7 @@ func _build() -> void:
 	guard.name = "ClosureGuard"
 	guard.interaction_id = &"closure_guard"
 	guard.character = "officer"
-	guard.height_m = 2.2
+	guard.height_m = Catalog.canvas_height_for("officer", Catalog.RF_ADULT_MALE_REFERENCE_M)
 	guard.tint = Color(1, 1, 1)
 	guard.body_radius = 0.45
 	guard.facing_yaw = 0.0   # лицом на север, к киоску

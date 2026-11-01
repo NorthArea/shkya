@@ -2,7 +2,7 @@ extends "res://game/characters/character_sprite.gd"
 ## Visual-only occupant shared by Lada and trolley, with explicit consumer poses.
 ## Legacy cropped canvas remains available for the previous visual branch.
 const CUT_Y := 440.0
-const LADA_VISIBLE_HEIGHT := 1.45
+const LADA_VISIBLE_HEIGHT := Catalog.ILYUSHA_VISIBLE_HEIGHT_M
 const LADA_FLOOR := 0.32
 const LADA_GRIPS := [Vector3(-0.18, 1.10, -0.50), Vector3(-0.54, 1.10, -0.50)]
 const TROLLEY_GRIPS := [Vector3(-0.38, 1.97, -5.35), Vector3(-0.82, 1.97, -5.35)]

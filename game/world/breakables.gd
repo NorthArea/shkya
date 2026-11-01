@@ -34,6 +34,7 @@ const VehicleImpact = preload("res://game/vehicles/vehicle_impact.gd")
 const VehicleDamage = preload("res://game/vehicles/vehicle_damage.gd")
 const LadaVisual = preload("res://game/vehicles/lada_visual.gd")
 const Layout = preload("res://game/world/layout.gd")
+const Catalog = preload("res://game/characters/character_catalog.gd")
 const Materials = preload("res://game/world/materials.gd")
 const SNOW_PUFF_SHADER := preload("res://game/vehicles/slush_spray.gdshader")   # пыль — как у сбитого жителя
 const STEAM_SHADER := preload("res://game/world/shaders/steam_puff.gdshader")    # пар раскопки — как у люков
@@ -1177,7 +1178,7 @@ func babka_react(b: Breakable) -> void:
 		_babka_label.position = Vector3(0, Resident.BUBBLE_TAIL * 0.5 * Resident.BUBBLE_PIXEL, 0)
 		_babka_back.add_child(_babka_label)
 	_babka_back.texture = Resident.bubble_texture(text)
-	_babka_back.position = Vector3(0, 2.0 + _babka_back.texture.get_height() * _babka_back.pixel_size * 0.5, 0)
+	_babka_back.position = Vector3(0, Catalog.RF_ADULT_FEMALE_REFERENCE_M + 0.10 + _babka_back.texture.get_height() * _babka_back.pixel_size * 0.5, 0)
 	_babka_label.text = text
 	_babka_back.visible = true
 	_babka_left = maxf(BABKA_BUBBLE_SECONDS, QuestLines.read_seconds(text))   # TEXT-01: успеть прочитать

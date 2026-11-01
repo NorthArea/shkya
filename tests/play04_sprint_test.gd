@@ -1,6 +1,7 @@
 extends SceneTree
 ## PLAY-04: independent run/walk responsiveness through real Input, player and camera.
-## Targets 4/8m/s and response budgets are OUR proposal, not effective original tuning.
+## Ground targets remain 4/8m/s. The first jump follows the selected CHARACTER-02
+## height/gravity; these explicit targets do not infer unavailable authored clips.
 ## Run: tools/godot.sh --headless --path . --script tests/play04_sprint_test.gd
 
 const PlayerScript = preload("res://game/player/ilyusha.gd")
@@ -13,8 +14,9 @@ const SPEED_EPS_MPS := 0.05
 const RUN_RESPONSE_S := 0.35
 const WALK_RETURN_S := 0.3
 const AIR_COAST_S := 0.2
-const JUMP_APEX_M := 1.8877
-const JUMP_FLIGHT_S := 1.25
+const JUMP_APEX_M := 1.9
+const JUMP_GRAVITY_MPS2 := 25.0
+const JUMP_FLIGHT_S := 2.0 * sqrt(2.0 * JUMP_APEX_M / JUMP_GRAVITY_MPS2)
 const HEIGHT_EPS_M := 0.03
 
 class PostPhysics:
@@ -218,9 +220,9 @@ func _reset_and_standing_jump() -> void:
 		flight_ticks += 1
 		apex = maxf(apex, player.global_position.y - origin.y)
 	check(player.is_on_floor(), "ordinary standing jump lands after run reset")
-	check(absf(apex - JUMP_APEX_M) <= HEIGHT_EPS_M, "standing-jump height remains unchanged by running")
+	check(absf(apex - JUMP_APEX_M) <= HEIGHT_EPS_M, "standing jump after run reset reaches the CHARACTER-02 height target")
 	check(absf(flight_ticks * dt - JUMP_FLIGHT_S) <= 2.0 * dt,
-		"standing-jump flight time remains unchanged by running")
+		"standing jump after run reset matches the CHARACTER-02 analytic flight time")
 	check(_flat(player.global_position - origin).length() <= 0.01,
 		"standing jump after reset adds no latent run displacement")
 	print("PLAY04_SPRINT_STANDING ", JSON.stringify({"apex_m": apex, "flight_s": flight_ticks * dt}))

@@ -2,17 +2,19 @@ extends "res://tools/play04_measure.gd"
 ## PLAY-04 independent first-slice properties. Uses real measured runtime, no controller model.
 ## tools/godot.sh --headless --path . --script tests/play04_motion_test.gd -- --skip-intro
 ## C++ pin/principles and configuration are emitted by the measurement provider.
-## Bounds below are OUR preservation/behaviour contract, not unavailable original loaded tuning.
-## Baseline evidence: builds/checks/REVIEW-01/play04_baseline.log, 60 Hz, on flat Layout.SPAWN.
+## Ground/camera bounds remain the PLAY-04 contract. CHARACTER-02 selects H=1.9 m,
+## G=25 m/s² for the first jump; analytic timing replaces the old gravity baseline.
+## Historical baseline: builds/checks/REVIEW-01/play04_baseline.log, 60 Hz, flat Layout.SPAWN.
 ## Only this on-foot slice: existing C7/roof/pad/interaction/visual suites remain mandatory.
 
 const PRESERVED_WALK_MPS := 4.0
-const PRESERVED_APEX_M := 1.8877
-const PRESERVED_FLIGHT_S := 1.25
-const PRESERVED_APEX_SECONDS := 0.616666666666667
+const FIRST_JUMP_HEIGHT_M := 1.9
+const FIRST_JUMP_GRAVITY_MPS2 := 25.0
+const FIRST_JUMP_APEX_SECONDS := sqrt(2.0 * FIRST_JUMP_HEIGHT_M / FIRST_JUMP_GRAVITY_MPS2)
+const FIRST_JUMP_FLIGHT_S := 2.0 * FIRST_JUMP_APEX_SECONDS
 const SPEED_TOLERANCE_MPS := 0.01 # below one original acceleration step; ordinary walk cap remains unchanged; responsiveness is covered by PLAY04_RESPONSE
 const HEIGHT_TOLERANCE_M := 0.02 # 2 cm permits collision safe-margin variation, not roof reach changes
-const TIME_TOLERANCE_TICKS := 2.0 # takeoff/landing discretization, no gravity/jump-tempo retuning
+const TIME_TOLERANCE_TICKS := 2.0 # takeoff/landing sampling around the selected analytic trajectory
 const TURN_SETTLED_SPEED_FLOOR := 0.9 # полезная скорость после короткого разворота
 const RESPONSE_SLOPE_RATIO := 1.5 # чувствительность стика возрастает от малых отклонений к большим
 const AIR_SPEED_TOLERANCE := 0.02 # 2% numerical margin around inertial coast, no release brake
@@ -62,10 +64,10 @@ func _assess() -> int:
 	var standing: Dictionary = measurements["jump_standing"]
 	for name in ["jump_hold", "jump_release", "jump_reverse", "jump_standing"]:
 		var jump: Dictionary = measurements[name]
-		check(absf(jump.apex_m - PRESERVED_APEX_M) <= HEIGHT_TOLERANCE_M,
-			name + ": existing jump height / roof reach is preserved")
-		check(absf(jump.flight_s - PRESERVED_FLIGHT_S) <= TIME_TOLERANCE_TICKS * dt and absf(jump.apex_s - PRESERVED_APEX_SECONDS) <= TIME_TOLERANCE_TICKS * dt,
-			name + ": existing apex and flight timing is preserved")
+		check(absf(jump.apex_m - FIRST_JUMP_HEIGHT_M) <= HEIGHT_TOLERANCE_M,
+			name + ": first jump reaches the selected CHARACTER-02 height")
+		check(absf(jump.flight_s - FIRST_JUMP_FLIGHT_S) <= TIME_TOLERANCE_TICKS * dt and absf(jump.apex_s - FIRST_JUMP_APEX_SECONDS) <= TIME_TOLERANCE_TICKS * dt,
+			name + ": apex and flight timing match the selected CHARACTER-02 trajectory")
 		check(jump.probe_airborne, name + ": air probe precedes real landing")
 		check(jump.max_speed_mps <= PRESERVED_WALK_MPS + SPEED_TOLERANCE_MPS,
 			name + ": air control stays within existing speed limit")

@@ -7,7 +7,10 @@ const FULL_CYCLE_LEG_LENGTHS := 2.2
 const WALK_CYCLE_HZ := 1.7
 const RUN_CYCLE_HZ := 2.2
 const CONTACT_TRAVEL_LEG_LENGTHS := 1.15
+# The hero's short legs need a smaller contact extent at sprint speed.
+const SPRINT_CONTACT_TRAVEL_LEG_LENGTHS := 0.60
 var rig: Rig
+var _short_sprint_contacts := false
 var phase := 0.0
 var motion_weight := 0.0
 var speed := 0.0
@@ -25,8 +28,9 @@ var _pelvis_drop := 0.0
 var cadence := 0.0
 var _sole_corners: Array[PackedVector3Array] = []
 
-func configure(adapter: Rig) -> void:
+func configure(adapter: Rig, short_sprint_contacts := false) -> void:
 	rig = adapter
+	_short_sprint_contacts = short_sprint_contacts
 	for index in 2:
 		_feet.append({"plant": Vector3.ZERO, "basis": Basis.IDENTITY,
 			"support": true, "initialized": false, "release_correction": Vector3.ZERO,
@@ -114,7 +118,10 @@ func update(velocity: Vector3, on_floor: bool, pose_mode: StringName, delta: flo
 	var cadence_ceiling := lerpf(WALK_CYCLE_HZ, RUN_CYCLE_HZ, smoothstep(4.0, 8.0, speed))
 	cadence = minf(measured / maxf(0.01, world_leg_length * FULL_CYCLE_LEG_LENGTHS), cadence_ceiling) if walking else 0.0
 	var stride := measured / (cadence * scale_y) if cadence > 0.0 else leg_length * FULL_CYCLE_LEG_LENGTHS
-	var stance := minf(0.62, leg_length * CONTACT_TRAVEL_LEG_LENGTHS / stride)
+	var contact_travel := CONTACT_TRAVEL_LEG_LENGTHS
+	if _short_sprint_contacts:
+		contact_travel = lerpf(CONTACT_TRAVEL_LEG_LENGTHS, SPRINT_CONTACT_TRAVEL_LEG_LENGTHS, smoothstep(4.0, 8.0, speed))
+	var stance := minf(0.62, leg_length * contact_travel / stride)
 	# A rotating hip socket cannot keep its old world contact for a full
 	# straight stride. Release earlier, rather than crouching to an unreachable foot.
 	stance *= lerpf(1.0, 0.60, smoothstep(0.5, 3.0, absf(yaw_speed)))
