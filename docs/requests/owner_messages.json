@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "source_thread": "01a18dc0-9ae6-7c02-9b5f-70a15a73b205",
-  "snapshot_at_utc": "2026-11-01T11:00:28.430645+00:00",
+  "snapshot_at_utc": "2026-11-01T11:50:28.946342+00:00",
   "scope": "Все записи роли user текущего диалога до снимка. Служебные вставки отмечены отдельно. Исходный текст не исправлялся. Живые статусы только в docs/workflow/backlog.md, решения только в docs/DECISIONS.md.",
   "previous_independent_audit": {
     "record_count": 105,
@@ -1316,6 +1316,17 @@
       "sha256": "1ce47503624a2ba0062e6cb6f99f79d8eec22cc2637414c56858b074f62315fc",
       "task_ids": [
         "IP-01",
+        "BUILD-03"
+      ]
+    },
+    {
+      "id": "MSG-0132",
+      "timestamp_utc": "2026-11-01T11:50:28.946342+00:00",
+      "timestamp_basis": "archive_capture_time; original message timestamp unavailable",
+      "kind": "message",
+      "text": "когда смотреть?",
+      "sha256": "dc7db8f2f809b4345ce562c703d51e1972dd3d3677c83ce9abfcc73200690dea",
+      "task_ids": [
         "BUILD-03"
       ]
     }
