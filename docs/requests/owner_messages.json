@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "source_thread": "01a18dc0-9ae6-7c02-9b5f-70a15a73b205",
-  "snapshot_at_utc": "2026-11-01T07:28:52.691511+00:00",
+  "snapshot_at_utc": "2026-11-01T09:38:56.093300+00:00",
   "scope": "Все записи роли user текущего диалога до снимка. Служебные вставки отмечены отдельно. Исходный текст не исправлялся. Живые статусы только в docs/workflow/backlog.md, решения только в docs/DECISIONS.md.",
   "previous_independent_audit": {
     "record_count": 105,
@@ -1186,6 +1186,51 @@
         "OWNER-ARCHIVE-01",
         "DRIVER-01",
         "OWNER-AUDIT-02"
+      ]
+    },
+    {
+      "id": "MSG-0122",
+      "timestamp_utc": "2026-11-01T09:38:56.093300+00:00",
+      "timestamp_basis": "archive_capture_time; original message timestamp unavailable",
+      "kind": "message",
+      "text": "закрывай оставшиеся таски",
+      "sha256": "7d888b18b005077f2ddd99fadcbc73f2001093770c7593eb9aa15ca303163b4b",
+      "task_ids": [
+        "CAR-02"
+      ]
+    },
+    {
+      "id": "MSG-0123",
+      "timestamp_utc": "2026-11-01T09:38:56.093300+00:00",
+      "timestamp_basis": "archive_capture_time; original message timestamp unavailable",
+      "kind": "message",
+      "text": "В .codex/config.toml (.codex/config.toml) добавь под\n  существующим [agents]: \n \n  max_concurrent_threads_per_session = 8",
+      "sha256": "5ced97b3f584029b04b235e170cb7bdd50f5f95e366735f06364511089b4053a",
+      "task_ids": [
+        "AGENT-01"
+      ]
+    },
+    {
+      "id": "MSG-0124",
+      "timestamp_utc": "2026-11-01T09:38:56.093300+00:00",
+      "timestamp_basis": "archive_capture_time; original message timestamp unavailable",
+      "kind": "message",
+      "text": "ну так добавь",
+      "sha256": "2b38a3e1705274f6ea3271325684f47d67ade482bf262e703bc794127affd0ae",
+      "task_ids": [
+        "AGENT-01"
+      ]
+    },
+    {
+      "id": "MSG-0125",
+      "timestamp_utc": "2026-11-01T09:38:56.093300+00:00",
+      "timestamp_basis": "archive_capture_time; original message timestamp unavailable",
+      "kind": "message",
+      "text": "перезапускаем сессию",
+      "sha256": "1e08174f572a7e6e2f4fe64de64517853ea5e55dd1d745b9c8b5843a036d0951",
+      "task_ids": [
+        "AGENT-01",
+        "CAR-02"
       ]
     }
   ]
