@@ -190,7 +190,7 @@ func _build_solid_look(index: int, spec: Array, body: StaticBody3D) -> void:
 				mesh.material_override = Materials.plain(Color(0.35, 0.25, 0.18))
 		"parked_car":
 			mesh.queue_free()
-			body.add_child(_zhiguli(size, index, xz))
+			body.add_child(_zhiguli(size, index, xz, spec[0]))
 		"kiosk":
 			mesh.queue_free()
 			body.add_child(_kiosk(size))
@@ -481,23 +481,35 @@ func _graffiti(body: Node3D, size: Vector3, count: int, unit: float, side: float
 	EnvDress.kit_emit(k, body, "Graffiti", 60.0)
 
 const LadaVisual = preload("res://game/vehicles/lada_visual.gd")
+const VehicleMesh = preload("res://game/vehicles/vehicle_mesh.gd")
 ## Припаркованные «Жигули» (POLISH-02, п. 7): облик LadaVisual в цветах советских «Жигулей» —
 ## белый, красный, вишнёвый, синий, зелёный, бежевый, морская волна, серебристый, охра.
 const ZHIGULI_COLORS := [Color(0.80, 0.79, 0.74), Color(0.62, 0.12, 0.08), Color(0.40, 0.08, 0.10), Color(0.16, 0.26, 0.48),
 	Color(0.26, 0.40, 0.24), Color(0.74, 0.62, 0.40), Color(0.08, 0.30, 0.34), Color(0.62, 0.66, 0.70), Color(0.55, 0.40, 0.14)]
 const PLATE_LETTERS := "авекмнорстух"
 
-## Облик на земле внутри коробки коллизии (размер коробки не меняется); перед — в случайную сторону. LIFE-02: машина
+## Облик на земле внутри коробки коллизии; перед — в случайную сторону. LIFE-02: машина
 ## «мужика под капотом» (Layout.LIFE_HOOD_CAR) — всегда передом (−z облика) на север, к месту hood: поднятый капот
 ## (Residents._build_life_props) над моторным отсеком, а не над багажником.
-func _zhiguli(size: Vector3, index: int, xz := Vector2.INF) -> Node3D:
+func _zhiguli(size: Vector3, index: int, xz := Vector2.INF, parking_name := "") -> Node3D:
 	var rng := RandomNumberGenerator.new()
 	rng.seed = index * 7919 + 13
 	var color: Color = ZHIGULI_COLORS[index * 4 % ZHIGULI_COLORS.size()]   # шаг 4 из 9: соседние машины разного цвета
 	var plate := "%s%03d%s%s %s" % [PLATE_LETTERS[rng.randi() % PLATE_LETTERS.length()], rng.randi_range(1, 999),
 		PLATE_LETTERS[rng.randi() % PLATE_LETTERS.length()], PLATE_LETTERS[rng.randi() % PLATE_LETTERS.length()],
 		"54" if rng.randf() < 0.5 else "154"]
-	var visual := LadaVisual.build(color, plate, false, rng.randf_range(0.4, 1.0), rng.randf_range(0.12, 0.2))
+	var rust := rng.randf_range(0.4, 1.0)
+	var snow_depth := rng.randf_range(0.12, 0.2)
+	var visual: Node3D
+	if parking_name in ["Zhiguli_A", "Zhiguli_B"]:
+		visual = Layout.NivaVisual.build(color, plate, snow_depth) if parking_name == "Zhiguli_A" else Layout.SamaraVisual.build(color, plate, snow_depth)
+		var body_mesh := visual.get_node("Body/BodyMesh") as MeshInstance3D
+		var amber_slot := (body_mesh.mesh.get_meta("slots", []) as Array).find("lens_amber")
+		var indicators := VehicleMesh.lamp(Color(1.0, 0.55, 0.10), Color(1.0, 0.5, 0.05), 0.0)
+		body_mesh.set_surface_override_material(amber_slot, indicators)
+		visual.set_meta("indicator_material", indicators)
+	else:
+		visual = LadaVisual.build(color, plate, false, rust, snow_depth)
 	visual.position.y = -size.y * 0.5
 	visual.rotation.y = (PI * 0.5 if size.x > size.z else 0.0) + (PI if rng.randf() < 0.5 else 0.0)
 	if xz.distance_to(Layout.LIFE_HOOD_CAR) < 0.1:

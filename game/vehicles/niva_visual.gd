@@ -31,7 +31,7 @@ static func build(paint: Color, plate: String = "", snow_depth: float = 0.08) ->
 	body.name = "Body"
 	visual.add_child(body)
 	var meshes := body_meshes()
-	var paint_material := VehicleMesh.paint(paint, 0.32, 0.8, clampf(snow_depth * 4.0, 0.0, 0.8), 0.58)
+	var paint_material: ShaderMaterial = VehicleMesh.paint(paint, 0.32, 0.8, clampf(snow_depth * 4.0, 0.0, 0.8), 0.58).duplicate()
 	VehicleMesh.instance(body, "BodyMesh", meshes["body"], {"paint": paint_material})
 	var glass := VehicleMesh.instance(body, "Glass", meshes["glass"], {}, false)
 	glass.sorting_offset = -0.5

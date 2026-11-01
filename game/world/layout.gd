@@ -2,6 +2,9 @@ extends RefCounted
 ## C1 — единственный источник координат квартала. Метры; x — восток, z — юг, y — вверх.
 ## Сцены и тесты берут точки только отсюда.
 
+const NivaVisual = preload("res://game/vehicles/niva_visual.gd")
+const SamaraVisual = preload("res://game/vehicles/samara_visual.gd")
+
 const BOUNDS := Rect2(-100.0, -125.0, 200.0, 250.0)  # x, z, ширина по x, длина по z
 
 # CITY-03: редкий вмёрзший мусор у контейнеров, остановок и магазина.
@@ -89,7 +92,7 @@ const SOLIDS := [
 	["Snow_StreetA", "snow", Vector2(-39, 22), Vector3(6, 0.8, 2)],
 	# У северного бордюра: южная обочина — путь автобуса ГСУМ (EXT-01). z 27 → 25,8: прижата к валу, до полосы кольца
 	# z = 29 (C8) — 1,5 м, а не 0,3 (ARENA-01).
-	["Zhiguli_A", "parked_car", Vector2(40, 25.8), Vector3(4.1, 1.4, 1.7)],
+	["Zhiguli_A", "parked_car", Vector2(40, 25.8), Vector3(NivaVisual.SIZE.z, NivaVisual.SIZE.y, NivaVisual.SIZE.x)],
 	# Вдоль улицы B
 	["H6_West", "panel", Vector2(43, -14), Vector3(26, 27, 52)],
 	["Garages_Kiosk", "garage", Vector2(46, -77), Vector3(8, 3, 30)],   # z −92…−62: северный торец — у тротуара улицы C (ARENA-01)
@@ -101,7 +104,7 @@ const SOLIDS := [
 	# «Жигули» улицы B — севернее площадки киоска, у восточного бордюра: на x = 74 южнее z −60 едет микроавтобус ГСУМ
 	# (VAN_PATH, x = 73,5), прежняя точка (74, −30) стояла у него на пути (ARENA-01). x 74 → 75,9 (ARENA-01 fix P2-2):
 	# на x = 73 теперь полоса встречных машин — до неё 2,05 м (половина троллейбуса + 0,8, как GREY01), борт в валу.
-	["Zhiguli_B", "parked_car", Vector2(75.9, -84), Vector3(1.7, 1.4, 4.1)],
+	["Zhiguli_B", "parked_car", Vector2(75.9, -84), SamaraVisual.SIZE],
 	# Столб фонаря во дворе; уличные фонари строит street_lamps()
 	["Lamp_Yard", "lamp", Vector2(-52, 100), Vector3(0.25, 6, 0.25)],
 	# Кольцо арены (ARENA-01): новые коробки — в конце, чтобы номера (и окраска) прежних домов не сдвинулись.

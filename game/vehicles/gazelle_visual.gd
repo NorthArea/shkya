@@ -31,17 +31,24 @@ const CAB_ROOF_HALF_WIDTH := 0.871
 const CARGO := &"2705"
 const PASSENGER := &"32213"
 const AMBULANCE := &"32214"
+const DOOR_INNER_X := 0.95
+const DOOR_BOTTOM := 0.83
+const DOOR_TOP := 2.025
+const DOOR_FRONT := -0.37
+const DOOR_REAR := 1.03
+const DOOR_SLIDE := Vector3(0.08, 0.0, 1.4)
+const OPEN_DOOR_SIGN := Vector3(HALF_WIDTH + DOOR_SLIDE.x + 0.015, 1.65, (DOOR_FRONT + DOOR_REAR) * 0.5 + DOOR_SLIDE.z)
 const SIDE_WINDOWS := [[-0.32, 0.73], [0.84, 1.76], [1.87, 2.43]]
 
 
-static func build(paint: Color, plate: String = "", snow_depth: float = 0.08, model: StringName = CARGO) -> Node3D:
+static func build(paint: Color, plate: String = "", snow_depth: float = 0.08, model: StringName = CARGO, door_open: bool = false) -> Node3D:
 	assert(model in [CARGO, PASSENGER, AMBULANCE], "Unknown GAZelle model")
 	var visual := Node3D.new()
 	visual.name = "Visual"
 	var body := Node3D.new()
 	body.name = "Body"
 	visual.add_child(body)
-	var meshes := body_meshes(model)
+	var meshes := body_meshes(model, door_open)
 	var paint_material: ShaderMaterial = VehicleMesh.paint(paint, 0.20, 0.68,
 		clampf(snow_depth * 3.0, 0.0, 0.7), 0.54).duplicate()
 	VehicleMesh.instance(body, "BodyMesh", meshes["body"], {"paint": paint_material,
@@ -117,7 +124,17 @@ static func wheel_mesh() -> ArrayMesh:
 	return VehicleMesh.store("gazelle2705_wheel", mesh)
 
 
-static func body_meshes(model: StringName = CARGO) -> Dictionary:
+static func body_meshes(model: StringName = CARGO, door_open: bool = false) -> Dictionary:
+	if door_open:
+		assert(model == PASSENGER, "Open side door is supported by the passenger shell")
+		var opened: Variant = VehicleMesh.cached("gazelle32213_open_body")
+		if opened != null:
+			return opened
+		var closed := body_meshes(model)
+		var meshes := closed.duplicate()
+		meshes["body"] = _open_door_mesh(closed["body"])
+		meshes["glass"] = _open_door_mesh(closed["glass"])
+		return VehicleMesh.store("gazelle32213_open_body", meshes)
 	assert(model in [CARGO, PASSENGER, AMBULANCE], "Unknown GAZelle model")
 	# Standard-roof 32214 uses the same production windowed shell, not a department-specific body.
 	if model == AMBULANCE:
@@ -509,3 +526,72 @@ static func snow_mesh(depth: float) -> ArrayMesh:
 	snow.pillow("snow", Vector3(0, 0, -2.26), 1.60, 0.58, d * 0.52, 1.10, 1.34, 92)
 	mesh = VehicleMesh.finish(snow)
 	return VehicleMesh.store(key, mesh)
+
+
+# The sliding door is a state of the shared passenger shell. Split the existing
+# triangles, preserving their normals/UVs; default closed meshes stay untouched.
+static func _open_door_mesh(mesh: ArrayMesh) -> ArrayMesh:
+	var builder := VehicleMesh.Builder.new()
+	var materials := {}
+	var slots: Array = mesh.get_meta("slots", [])
+	for surface in mesh.get_surface_count():
+		var slot: String = slots[surface]
+		materials[slot] = mesh.surface_get_material(surface)
+		var arrays: Array = mesh.surface_get_arrays(surface)
+		var positions: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
+		var normals: PackedVector3Array = arrays[Mesh.ARRAY_NORMAL]
+		var uvs: PackedVector2Array = arrays[Mesh.ARRAY_TEX_UV]
+		var uv2s: PackedVector2Array = arrays[Mesh.ARRAY_TEX_UV2]
+		var indices := PackedInt32Array()
+		if arrays[Mesh.ARRAY_INDEX] != null:
+			indices = arrays[Mesh.ARRAY_INDEX]
+		if indices.is_empty():
+			for index in positions.size():
+				indices.append(index)
+		for index in range(0, indices.size(), 3):
+			var panel: Array = []
+			for corner in 3:
+				var vertex := indices[index + corner]
+				panel.append([positions[vertex], normals[vertex], uvs[vertex], uv2s[vertex]])
+			for plane in [[0, DOOR_INNER_X, true], [1, DOOR_BOTTOM, true],
+				[1, DOOR_TOP, false], [2, DOOR_FRONT, true], [2, DOOR_REAR, false]]:
+				var outside := _door_clip(panel, plane[0], plane[1], not plane[2])
+				_door_polygon(builder, slot, outside, Vector3.ZERO)
+				panel = _door_clip(panel, plane[0], plane[1], plane[2])
+				if panel.size() < 3:
+					break
+			_door_polygon(builder, slot, panel, DOOR_SLIDE)
+	return VehicleMesh.finish(builder, materials)
+
+
+static func _door_clip(polygon: Array, axis: int, boundary: float, positive: bool) -> Array:
+	var result: Array = []
+	if polygon.is_empty():
+		return result
+	var previous: Array = polygon[-1]
+	var previous_d: float = (previous[0][axis] - boundary) * (1.0 if positive else -1.0)
+	var previous_inside := previous_d >= 0.0 if positive else previous_d > 0.0
+	for vertex: Array in polygon:
+		var distance: float = (vertex[0][axis] - boundary) * (1.0 if positive else -1.0)
+		var inside := distance >= 0.0 if positive else distance > 0.0
+		if inside != previous_inside:
+			var weight := previous_d / (previous_d - distance)
+			result.append([previous[0].lerp(vertex[0], weight), previous[1].lerp(vertex[1], weight).normalized(),
+				previous[2].lerp(vertex[2], weight), previous[3].lerp(vertex[3], weight)])
+		if inside:
+			result.append(vertex)
+		previous = vertex
+		previous_d = distance
+		previous_inside = inside
+	return result
+
+
+static func _door_polygon(builder: VehicleMesh.Builder, slot: String, polygon: Array, offset: Vector3) -> void:
+	for index in range(1, polygon.size() - 1):
+		var a: Array = polygon[0]
+		var b: Array = polygon[index]
+		var c: Array = polygon[index + 1]
+		if (b[0] - a[0]).cross(c[0] - a[0]).length_squared() < 1.0e-20:
+			continue
+		builder.tri(slot, a[0] + offset, b[0] + offset, c[0] + offset,
+			a[1], b[1], c[1], a[2], b[2], c[2], a[3])

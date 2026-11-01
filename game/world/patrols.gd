@@ -146,7 +146,7 @@ func _opportunities_sign() -> void:
 		label.pixel_size = 0.0023
 		label.modulate = Color(0.12, 0.17, 0.24)
 		label.outline_size = 0
-		label.position = Vector3(side * 1.065, 1.65, 0.55)
+		label.position = CityVanScript.Gazelle.OPEN_DOOR_SIGN if side > 0.0 else Vector3(-1.065, 1.65, 0.55)
 		label.rotation.y = side * PI * 0.5
 		van.add_child(label)
 

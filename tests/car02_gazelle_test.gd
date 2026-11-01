@@ -211,7 +211,34 @@ func provider_check(model: StringName) -> void:
 	equal_paint.free()
 	snowy.free()
 
+func door_state_check() -> void:
+	var closed := Gazelle.body_meshes(Gazelle.PASSENGER)
+	var opened := Gazelle.body_meshes(Gazelle.PASSENGER, true)
+	check(Gazelle.body_meshes(Gazelle.PASSENGER).body == closed.body,
+		"opening passenger door leaves default closed shared mesh untouched")
+	check(opened.body != closed.body and opened.glass != closed.glass and opened.interior == closed.interior,
+		"door state changes shell/glass, preserves shared cabin")
+	check(Gazelle.body_meshes(Gazelle.PASSENGER, true).body == opened.body,
+		"open passenger door state is cached across vehicles")
+	mesh_check(opened.body, "32213 open door body")
+	mesh_check(opened.glass, "32213 open door glass")
+	for y in [0.92, 1.0, 1.23, 1.35, 1.6, 1.7, 1.9]:
+		for z in [-0.2, 0.1, 0.3, 0.5, 0.65]:
+			var from := Vector3(1.30, y, z)
+			var to := Vector3(Gazelle.HALF_WIDTH - 0.16, y, z)
+			check(not intersects(opened.body, from, to) and not intersects(opened.glass, from, to),
+				"open side door has actual clear shell/glass aperture at %.2f/%.2f" % [y, z])
+			check(intersects(closed.body, from, to) or intersects(closed.glass, from, to),
+				"same ray reaches closed passenger door at %.2f/%.2f" % [y, z])
+	check(intersects(opened.body, Vector3(1.30, 1.23, 1.7), Vector3(1.02, 1.23, 1.7)),
+		"opened metal panel remains present, slid rearward outside right side")
+	check(intersects(opened.glass, Vector3(1.30, 1.6, 1.7), Vector3(1.02, 1.6, 1.7)),
+		"opened glass moves with the actual door")
+	check(intersects(opened.glass, Vector3(-1.30, 1.6, 0.3), Vector3(-0.955, 1.6, 0.3)),
+		"left passenger window remains closed")
+
 func run() -> void:
+	door_state_check()
 	for model in [Gazelle.CARGO, Gazelle.PASSENGER, Gazelle.AMBULANCE]:
 		provider_check(model)
 	mesh_check(Gazelle.wheel_mesh(), "shared six tyres")
