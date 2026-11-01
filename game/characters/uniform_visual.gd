@@ -154,9 +154,10 @@ func set_occupant_pose(profile: StringName) -> void:
 		skeleton.force_update_all_bone_transforms()
 		return
 	if profile == &"lada":
-		# Seated chin tuck keeps the full-sized head inside the roof lining.
+		# The chin tuck clears the roof; Ilyusha sits back from the steering wheel.
 		var head := skeleton.find_bone("head")
-		skeleton.set_bone_pose_position(head, skeleton.get_bone_rest(head).origin - Vector3.UP * 0.018)
+		var head_offset := Vector3(0, -0.038 if _kind == "ilyusha" else -0.018, 0.02 if _kind == "ilyusha" else 0.0)
+		skeleton.set_bone_pose_position(head, skeleton.get_bone_rest(head).origin + head_offset)
 	for suffix: String in ["_l", "_r"]:
 		_rotate("leg" + suffix, Vector3.RIGHT, 1.65 if profile == &"lada" else 1.35)
 		_rotate("foot" + suffix, Vector3.RIGHT, -0.17 if profile == &"lada" else -1.35)

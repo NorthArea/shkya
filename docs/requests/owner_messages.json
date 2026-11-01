@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "source_thread": "01a18dc0-9ae6-7c02-9b5f-70a15a73b205",
-  "snapshot_at_utc": "2026-11-01T09:59:51.267063+00:00",
+  "snapshot_at_utc": "2026-11-01T11:00:28.430645+00:00",
   "scope": "Все записи роли user текущего диалога до снимка. Служебные вставки отмечены отдельно. Исходный текст не исправлялся. Живые статусы только в docs/workflow/backlog.md, решения только в docs/DECISIONS.md.",
   "previous_independent_audit": {
     "record_count": 105,
@@ -1282,6 +1282,41 @@
       "sha256": "35496c6a4c1399bfb6e1d6a302fb2ae23c7cd31955d37b2d6da18065ebb394f0",
       "task_ids": [
         "IP-01"
+      ]
+    },
+    {
+      "id": "MSG-0129",
+      "timestamp_utc": "2026-11-01T10:26:57.747985+00:00",
+      "timestamp_basis": "archive_capture_time; original message timestamp unavailable",
+      "kind": "message",
+      "text": "когда смотреть?",
+      "sha256": "dc7db8f2f809b4345ce562c703d51e1972dd3d3677c83ce9abfcc73200690dea",
+      "task_ids": [
+        "IP-01",
+        "CAR-02"
+      ]
+    },
+    {
+      "id": "MSG-0130",
+      "timestamp_utc": "2026-11-01T10:26:57.747985+00:00",
+      "timestamp_basis": "archive_capture_time; original message timestamp unavailable",
+      "kind": "message",
+      "text": "дай знать как будет готова сборка",
+      "sha256": "9cfdd2b7f55e4b980495892b5fd01e71cd5f26e5bfbb898d1f333c7bbe1f373d",
+      "task_ids": [
+        "BUILD-03"
+      ]
+    },
+    {
+      "id": "MSG-0131",
+      "timestamp_utc": "2026-11-01T11:00:28.430645+00:00",
+      "timestamp_basis": "archive_capture_time; original message timestamp unavailable",
+      "kind": "message",
+      "text": "я хочу илюшу 1 в 1 как на концептах docs/art/concepts",
+      "sha256": "1ce47503624a2ba0062e6cb6f99f79d8eec22cc2637414c56858b074f62315fc",
+      "task_ids": [
+        "IP-01",
+        "BUILD-03"
       ]
     }
   ]

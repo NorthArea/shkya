@@ -1,4 +1,6 @@
 extends SceneTree
+## Previous SVG palette/width guards apply to Babka and Vendor only.
+## MSG-0131 makes PNG concepts the Ilyusha source; its route guard stays here.
 const Models = preload("res://game/characters/models/civilian_model.gd")
 const Residents = preload("res://game/characters/models/legacy_resident_models.gd")
 var checks := 0
@@ -14,7 +16,7 @@ func _run() -> void:
 	for drawing: String in ["ilyusha", "babka", "vendor"]:
 		_check(not Residents.handles(drawing), drawing + " cannot be routed to a similarly named passer-by")
 	_check(Residents.handles("resident_babka"), "walking granny has a separate drawing from the quest grandmother")
-	for spec: Array in [["ilyusha", Color("a2f03a"), Color("f4b3cd"), 0.30], ["babka", Color("b6ba78"), Color("fffde2"), 0.23], ["vendor", Color("4e3b2d"), Color("ebd198"), 0.27]]:
+	for spec: Array in [["babka", Color("b6ba78"), Color("fffde2"), 0.23], ["vendor", Color("4e3b2d"), Color("ebd198"), 0.27]]:
 		var model := Models.new().build_model(spec[0])
 		var mesh := model.get_node("Skeleton3D/UniformMesh").mesh as ArrayMesh
 		var colors := []
@@ -37,5 +39,5 @@ func _run() -> void:
 				if Vector3(c.r - wanted.r, c.g - wanted.g, c.b - wanted.b).length() < 0.015: found = true
 			_check(found, spec[0] + " previous SVG palette " + wanted.to_html(false))
 		model.free()
-	print("IP01_LIKENESS: %d checks, %d failures; subjective likeness requires native review" % [checks, failures])
+	print("IP01_LIKENESS: %d checks, %d failures; Babka/Vendor SVG guards and quest-character routing only; Ilyusha uses PNG concept guards; likeness requires visual review" % [checks, failures])
 	quit(0 if failures == 0 else 1)

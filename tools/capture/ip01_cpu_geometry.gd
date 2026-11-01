@@ -19,7 +19,11 @@ func _run() -> void:
 	var absolute := ProjectSettings.globalize_path(output)
 	DirAccess.make_dir_recursive_absolute(absolute.get_base_dir())
 	for drawing: String in drawings:
-		for view: String in ["front", "side", "back"]:
+		if drawing == "ilyusha":
+			for concept: String in ["01_spawn_courtyard", "02_talk_to_babka", "04_enter_car", "08_bread_in_inventory"]:
+				var path := "res://docs/art/concepts/%s.png" % concept
+				references[path] = FileAccess.get_sha256(path)
+		for view: String in ([] if drawing == "ilyusha" else ["front", "side", "back"]):
 			var path := "res://assets/art/characters/%s_%s_idle.svg" % [drawing, view]
 			if not FileAccess.file_exists(path): continue
 			var reference := Image.new()
