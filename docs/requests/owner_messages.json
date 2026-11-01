@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "source_thread": "01a18dc0-9ae6-7c02-9b5f-70a15a73b205",
-  "snapshot_at_utc": "2026-11-01T11:50:28.946342+00:00",
+  "snapshot_at_utc": "2026-11-01T12:26:29.531698+00:00",
   "scope": "Все записи роли user текущего диалога до снимка. Служебные вставки отмечены отдельно. Исходный текст не исправлялся. Живые статусы только в docs/workflow/backlog.md, решения только в docs/DECISIONS.md.",
   "previous_independent_audit": {
     "record_count": 105,
@@ -1326,6 +1326,17 @@
       "kind": "message",
       "text": "когда смотреть?",
       "sha256": "dc7db8f2f809b4345ce562c703d51e1972dd3d3677c83ce9abfcc73200690dea",
+      "task_ids": [
+        "BUILD-03"
+      ]
+    },
+    {
+      "id": "MSG-0133",
+      "timestamp_utc": "2026-11-01T12:26:29.531698+00:00",
+      "timestamp_basis": "archive_capture_time; original message timestamp unavailable",
+      "kind": "message",
+      "text": "зачем ты куда-то что-то запаковал?",
+      "sha256": "4e8bc6ff31a07693e3f035b6c08b16416e58d4efcd376eed72212280ac806f41",
       "task_ids": [
         "BUILD-03"
       ]
