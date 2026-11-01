@@ -15,13 +15,13 @@
 
 | Тема | Первичный путь под `src/`, строки | Текущая композиция / ограниченный остаток |
 |---|---|---|
-| Ходьба/поворот/смешивание | `game/ai/sequencer/action.cpp`183–296; `libs/choreo/src/locomotion.cpp` | Раздельные speed/velocity уже есть; новый skeleton gait — WIP LOCOMOTION-01, повтор QA открыт. |
-| Прыжок/воздух/приземление | `game/ai/sequencer/action.cpp`1605–2138; `game/worldsim/character/character.cpp`3464 | Сейчас один импульс/gravity; физические фазы, ограниченный second jump, moving landing — CHARACTER-02. |
-| Удар/воздушное действие | `game/ai/state.cpp`634–776; `game/worldsim/character/character.cpp`689–807 | Cooldown/единственный hit и drone/breakable/push уже есть; jumpkick/stomp через этих же потребителей — CHARACTER-02. |
-| NPC prediction/обход | `game/worldsim/character/charactercontroller.cpp`1114–1182,1294–1536; `game/worldsim/ped/pedestrian.cpp`90–200 | Есть stop/reverse перед героем/машиной и реактивный dodge; общего прогноза между жителями нет — CHARACTER-03. |
+| Ходьба/поворот/смешивание | `game/ai/sequencer/action.cpp`183–296; `libs/choreo/src/locomotion.cpp` | Раздельные speed/velocity и собственный skeleton gait подключены через LOCOMOTION-01; пользовательское ощущение движения открыто. |
+| Прыжок/воздух/приземление | `game/ai/sequencer/action.cpp`1605–2138; `game/worldsim/character/character.cpp`3464 | Реальные физические фазы, ограниченный second jump, moving landing подключены в CHARACTER-02; текущая регрессия и полный C7 открыты. |
+| Удар/воздушное действие | `game/ai/state.cpp`634–776; `game/worldsim/character/character.cpp`689–807 | Cooldown/единственный hit и прежние drone/breakable/push потребители соединены с jumpkick/stomp — CHARACTER-02. |
+| NPC prediction/обход | `game/worldsim/character/charactercontroller.cpp`1114–1182,1294–1536; `game/worldsim/ped/pedestrian.cpp`90–200 | В CHARACTER-03 соединены local prediction, peer snapshot/LOD, yield/dodge/return; обрабатываются lifecycle discontinuities одиночки/пары. |
 | Возврат на маршрут | `game/worldsim/character/charactercontroller.cpp`951–1103 | Существующие маршруты/занятия/бронь сохранять; прогноз → bounded yield/dodge → возврат — CHARACTER-03. |
 | Standing/seat/standing | `game/ai/state.cpp`883–1109,1166–1294,1532–1702 | DemoWorld пока мгновенно скрывает/показывает героя и передаёт контроль; последовательный переход/отмена — CHARACTER-04. |
-| Занятия/костные жесты | `game/worldsim/character/charactercontroller.cpp`802–858 | Life уже имеет планы/занятия/очереди; whole-Visual позы заменить своими костными жестами, authority не менять — CHARACTER-05. |
+| Занятия/костные жесты | `game/worldsim/character/charactercontroller.cpp`802–858 | Life сохраняет планы/бронь/очереди; в CHARACTER-05 подключены chat/listen, dig с настоящими хватами и recovery. Остальные занятия с прежними whole-Visual позами остаются открыты. |
 | Сбивание/recovery | `game/ai/state.cpp`1730–1764; `game/ai/sequencer/action.cpp`2297–2435 | Fly/down/getup/back и повторный knock уже есть; костный cartoon getup без потери состояния — CHARACTER-05. |
 | Ограниченная паника | `game/worldsim/character/charactercontroller.cpp`882–923; `game/worldsim/ped/pedestrianmanager.cpp`1268–1299 | Сейчас glance/реплики/cooldown; свой краткий reaction-run по допустимому графу и возврат — CHARACTER-06 после03. |
 
