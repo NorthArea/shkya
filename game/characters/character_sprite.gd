@@ -147,7 +147,7 @@ func build_uniform_xray() -> MeshInstance3D:
 
 func _shadow() -> MeshInstance3D:
 	var gradient := Gradient.new()
-	gradient.set_color(0, Color(0, 0, 0, 0.45))
+	gradient.set_color(0, Color(0, 0, 0, 0.18 if uniform_visual != null else 0.45))
 	gradient.set_color(1, Color(0, 0, 0, 0.0))
 	var texture := GradientTexture2D.new()
 	texture.gradient = gradient

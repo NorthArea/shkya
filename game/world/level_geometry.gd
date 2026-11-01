@@ -554,6 +554,7 @@ func _kiosk(size: Vector3) -> Node3D:
 	inside.light_energy = 1.5
 	inside.omni_range = 4.0
 	inside.position = Vector3(0, hy - 0.5, 0)
+	Lighting.configure_local_shadow(inside)
 	root.add_child(inside)
 	_kiosk_outside(root, size)
 	return root
@@ -635,6 +636,7 @@ func _light_sign(label: Label3D, color: Color) -> void:
 	spill.omni_attenuation = 1.6
 	var facing := Vector3(sin(label.rotation.y), 0.0, cos(label.rotation.y))
 	spill.position = label.position + facing * 1.2 - Vector3(0, 0.6, 0)
+	Lighting.configure_local_shadow(spill)
 	add_child(spill)
 
 ## Вывеска-короб над окном киоска: светлый фон, простые красные буквы без обводки (сверка ART-04, черты 15, 16).
@@ -699,8 +701,8 @@ func _build_kiosk_roof_sign() -> void:
 	spill.light_energy = 1.2
 	spill.omni_range = 5.5
 	spill.omni_attenuation = 1.4
-	spill.shadow_enabled = false
 	spill.position = at + Vector3(0, -0.2, 1.1)
+	Lighting.configure_local_shadow(spill)
 	add_child(spill)
 
 ## Контактная сеть над улицами A и B (сверка ART-04, черта 13): поперечины между парами столбов через 24 м,
@@ -1551,6 +1553,7 @@ func _kiosk_inside(root: Node3D, size: Vector3) -> void:
 	bulb_light.light_energy = 0.9
 	bulb_light.omni_range = 3.0
 	bulb_light.position = bulb_at + Vector3(0.15, -0.1, 0)
+	Lighting.configure_local_shadow(bulb_light)
 	root.add_child(bulb_light)
 	# Ценник «Батон 35» за стеклом, в правом нижнем углу окна (если смотреть с улицы).
 	# Маленький товар на большой подложке: уменьшение видно ещё до разговора с продавщицей.

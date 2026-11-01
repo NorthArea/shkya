@@ -461,7 +461,7 @@ func _build_visual() -> Node3D:
 		label.rotation.y = spec[1]
 		label.visibility_range_end = 30.0
 		root.add_child(label)
-	# Тёплый свет в салоне (слабый, без теней) — виден в проём двери и в окна.
+	# Тёплый свет в салоне (слабый, с локальными тенями) — виден в проём двери и в окна.
 	var lamp := OmniLight3D.new()
 	lamp.name = "CabinLight"
 	lamp.position = Vector3(0.2, 2.1, 0.4)
@@ -469,7 +469,7 @@ func _build_visual() -> Node3D:
 	lamp.light_energy = 1.1
 	lamp.omni_range = 4.5
 	lamp.omni_attenuation = 1.4
-	lamp.shadow_enabled = false
+	preload("res://game/world/lighting.gd").configure_local_shadow(lamp)
 	lamp.light_specular = 0.2
 	root.add_child(lamp)
 	return root

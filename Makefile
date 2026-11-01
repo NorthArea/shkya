@@ -73,6 +73,7 @@ test: map
 	$(call godot_test,demo_acceptance,60,DEMO_ACCEPTANCE)
 	$(call godot_test,stealth_test,60,STEALTH)
 	$(call godot_test,traffic_test,60,TRAFFIC)
+	$(call godot_test,light01_occlusion_test,60,LIGHT01_OCCLUSION_CONFIG)
 	$(call godot_test,car02_family_test,60,CAR02_INDEPENDENT)
 	$(call godot_test,car02_gazelle_test,60,CAR02_GAZELLE)
 	$(call godot_test,car02_gazelle_runtime_test,60,CAR02_GAZELLE_RUNTIME)

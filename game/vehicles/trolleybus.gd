@@ -135,14 +135,14 @@ func _build_visual() -> Node3D:
 	if occupants_enabled:
 		people = CabinScript.new()
 		body.add_child(people)
-	# Тёплый свет в салоне — виден в окна и в открытые двери; без теней.
+	# Тёплый свет в салоне — виден в окна и в открытые двери; с локальными тенями.
 	var light := OmniLight3D.new()
 	light.name = "CabinLight"
 	light.position = Vector3(0, 2.4, 0)
 	light.light_color = Color(1.0, 0.82, 0.55)
 	light.light_energy = 0.8
 	light.omni_range = 5.0
-	light.shadow_enabled = false
+	preload("res://game/world/lighting.gd").configure_local_shadow(light)
 	light.light_specular = 0.1
 	body.add_child(light)
 	for z in AXLES:

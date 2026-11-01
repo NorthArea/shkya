@@ -66,6 +66,9 @@ const VFOG_AMBIENT := 0.9              # доля общего (небесног
 const VFOG_SKY_LIGHT := 0.4            # доля голубого направленного света в тумане
 const STREET_LAMP_ENERGY := 13.0       # CITY-02 F: конус вниз (было шаром 11 на 19 м)
 const STREET_LAMP_RANGE := 14.0        # м
+const LOCAL_SHADOW_DISTANCE := 28.0
+const LOCAL_LIGHT_FADE_BEGIN := 60.0
+const LOCAL_LIGHT_FADE_LENGTH := 12.0
 const STREET_LAMP_ANGLE := 64.0        # градусов от вертикали
 const VFOG_LAMP := 2.0                 # уличные фонари: рассеяние в тумане
 const VFOG_WARM := 0.8                 # подъезд и дворовый фонарь
@@ -326,6 +329,10 @@ func _ready() -> void:
 	sky_light.light_color = Color(0.62, 0.78, 1.0)
 	sky_light.light_energy = 0.2   # голубой направленный свет с оранжевым давал сиреневое (повторная сверка ART-05, Н1)
 	sky_light.shadow_enabled = true
+	sky_light.light_angular_distance = 5.0
+	sky_light.shadow_opacity = 0.7
+	sky_light.directional_shadow_max_distance = 110.0
+	sky_light.directional_shadow_blend_splits = true
 	sky_light.light_volumetric_fog_energy = VFOG_SKY_LIGHT
 	sky_light.rotation = Vector3(deg_to_rad(-55.0), deg_to_rad(30.0), 0.0)
 	add_child(sky_light)
@@ -418,7 +425,18 @@ func _update_weather(delta: float) -> void:
 	# Облака плывут: поворот неба вокруг зенита (кубическая карта общего света от этого не пересчитывается).
 	_env.sky_rotation = Vector3(0.0, fposmod(_time * CLOUD_DRIFT, TAU), 0.0)
 
-## Конус света вниз: видимое пятно на снегу, без теней (дёшево).
+## Локальные тени ограничены ближайшими источниками, чтобы не заполнять атлас всем городом.
+static func configure_local_shadow(light: Light3D) -> void:
+	light.shadow_enabled = true
+	light.light_size = 0.18
+	light.shadow_bias = 0.03
+	light.shadow_normal_bias = 0.2
+	light.distance_fade_enabled = true
+	light.distance_fade_shadow = LOCAL_SHADOW_DISTANCE
+	light.distance_fade_begin = LOCAL_LIGHT_FADE_BEGIN
+	light.distance_fade_length = LOCAL_LIGHT_FADE_LENGTH
+
+## Конус света вниз: пятно на снегу с окклюзией кузова, людей и стен.
 func _pool(at: Vector3, energy: float, angle: float, reach: float, color: Color) -> void:
 	var spot := SpotLight3D.new()
 	spot.name = "WarmPool%d" % get_child_count()
@@ -430,6 +448,7 @@ func _pool(at: Vector3, energy: float, angle: float, reach: float, color: Color)
 	spot.spot_angle = angle
 	spot.spot_angle_attenuation = 0.6
 	spot.light_volumetric_fog_energy = 0.0   # пятно на земле; в тумане светит сама лампа
+	configure_local_shadow(spot)
 	add_child(spot)
 
 func _lamp(at: Vector3, energy: float, index: int, color: Color, reach: float, fog: float) -> void:
@@ -441,6 +460,7 @@ func _lamp(at: Vector3, energy: float, index: int, color: Color, reach: float, f
 	lamp.omni_range = reach
 	lamp.omni_attenuation = 1.4
 	lamp.light_volumetric_fog_energy = fog
+	configure_local_shadow(lamp)
 	add_child(lamp)
 
 ## Уличный фонарь (CITY-02 F): конус вниз вместо шара 19 м — шар заливал фасады жёлтым до 9-го этажа, и фасады
@@ -458,6 +478,7 @@ func _street_lamp(at: Vector3, index: int) -> void:
 	lamp.spot_attenuation = 1.4
 	lamp.spot_angle_attenuation = 0.7
 	lamp.light_volumetric_fog_energy = VFOG_LAMP
+	configure_local_shadow(lamp)
 	add_child(lamp)
 
 ## Мокрый снег: MultiMesh из плоских хлопьев, движение и обёртка вокруг камеры — в шейдере wet_snow.

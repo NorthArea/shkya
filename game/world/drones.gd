@@ -741,7 +741,7 @@ class Drone extends Node3D:
 		spot.light_energy = SPOT_ENERGY
 		spot.spot_range = SPOT_RANGE
 		spot.spot_angle = SPOT_ANGLE
-		spot.shadow_enabled = false
+		preload("res://game/world/lighting.gd").configure_local_shadow(spot)
 		spot.light_specular = 0.25
 		spot.light_volumetric_fog_energy = 0.0   # луч рисует конус-меш; объёмный туман от прожектора — лишняя цена кадра
 		spot.visible = false

@@ -554,7 +554,7 @@ static func _beams(body: Node3D, model: StringName) -> void:
 		beam.spot_angle = 28.0
 		beam.spot_angle_attenuation = 0.8
 		beam.spot_attenuation = 0.6
-		beam.shadow_enabled = false
+		preload("res://game/world/lighting.gd").configure_local_shadow(beam)
 		beam.light_specular = 0.6
 		beam.visible = false
 		body.add_child(beam)

@@ -297,7 +297,7 @@ func _lamp(at: Vector3, color: Color, energy: float, reach: float) -> void:
 	light.light_energy = energy
 	light.omni_range = reach
 	light.omni_attenuation = 1.2
-	light.shadow_enabled = false
+	preload("res://game/world/lighting.gd").configure_local_shadow(light)
 	light.distance_fade_enabled = true
 	light.distance_fade_begin = 70.0
 	light.distance_fade_length = 15.0
