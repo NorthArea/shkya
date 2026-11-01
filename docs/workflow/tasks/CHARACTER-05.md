@@ -11,3 +11,5 @@
 - **Настоящие потребители:** Resident/Life/activity props, CharacterSprite/UniformVisual/Skeleton3D, trolley boarding, breakable anchor availability и KNOCK. Сохранить положение опоры/инструмента и физическую твёрдость упавшего; новые занятия/население не вводятся.
 - **Независимая QA:** activity→reaction→activity, сломанный anchor, повторный knock в getup, reset/LOD, вход/выход из автобуса, руки/prop и соседние экземпляры общего меша. LIFE01/RESIDENTS/KNOCK/ACTIVITY/троллейбус/rig/runtime/seat плюс настоящая Main-композиция.
 - **Ограничения/evidence:** реальные маршруты/64жителя/миссии/камера/сенсоры и канон сохраняются; `builds/checks/CHARACTER-05/`. Headless/Dummy; качество жестов/силуэта в движении, GPU/FPS и владельческая оценка открыты. Это отдельный срез, не приёмка всего CHARACTER-01.
+
+- **Проверенный компонент:** `character_action_pose.gd`; root unit 56/0 и независимый source-review. Caller обязан сбрасывать все bone poses перед gait, затем применять offsets и IK. Настоящие жители, ладони/инструмент и recovery ещё не подключены; evidence `builds/checks/CHARACTER-05/character05_action_unit_test-reviewed.log`.
