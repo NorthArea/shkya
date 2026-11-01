@@ -12,3 +12,5 @@
 - **Согласование:** CHARACTER-05 изменяет activity/recovery и pose submit того же `resident.gd`; интеграцию03/05 выполняет один root последовательно. Независимые новые helpers/tests возможны после согласованной границы; concurrent broad edits Resident запрещены. CHARACTER-06 использует принятый prediction/return03.
 - **Независимая QA:** встреча двух жителей, пересечение путей, неподвижный блокер, встречная/попутная/удаляющаяся машина, завершение ожидания, пара/пассажир, sparse LOD, reset и повторный контакт. Реальные сценарии + RESIDENTS/LIFE01/KNOCK/троллейбус/городская жизнь; критерии не выводить только из helper.
 - **Ограничения/evidence:** действующие64жителя, реальные маршруты/границы, миссии, камера и C7/C8 сохраняются; свои код/ассеты. `builds/checks/CHARACTER-03/`, headless/Dummy; GPU/вид/ощущения/FPS отдельны, runtime пока не принят.
+
+- **Проверенный компонент:** `pedestrian_motion.gd`; root unit 39/0, независимый review подтвердил исправления недоступной цели обхода и округлённых углов кузова. Настоящие Residents/Life/LOD ещё не подключены; evidence `builds/checks/CHARACTER-03/character03_motion_unit_test-run9.log`.
