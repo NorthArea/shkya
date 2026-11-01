@@ -55,8 +55,8 @@ const PHONE_SIDE := 0.31
 const PHONE_SIZE := Vector3(0.10, 0.18, 0.016)
 const PHONE_TILT := 0.6   # экран к лицу: наклон назад ≈31° (подъём нормали на единицу пути к Илюше)
 
-## Плашка телефона на холсте 1920×1080.
-const PHONE_RECT := Rect2(1260, 120, 480, 840)
+## Плашка телефона: x относительно правого края холста, y — верхнего.
+const PHONE_RECT := Rect2(-660, 120, 480, 840)
 const SCREEN_INSET := 22.0
 const LETTERBOX := 90.0
 
@@ -331,7 +331,8 @@ func _update_phone_3d(t: float) -> void:
 func _update_phone_panel(t: float) -> void:
 	var slide_in := _ease((t - PHONE_IN_AT) / PHONE_SLIDE)
 	var slide_out := _smooth((t - phone_out_at()) / PHONE_OUT)
-	phone_panel.position.y = PHONE_RECT.position.y + (1080.0 - PHONE_RECT.position.y) * (1.0 - slide_in + slide_out)
+	var canvas_height := get_viewport().get_visible_rect().size.y
+	phone_panel.position.y = PHONE_RECT.position.y + (canvas_height - PHONE_RECT.position.y) * (1.0 - slide_in + slide_out)
 	phone_panel.visible = slide_in > 0.0 and slide_out < 1.0
 	var page := _page(t)
 	var width := PHONE_RECT.size.x - 2.0 * SCREEN_INSET
@@ -543,8 +544,12 @@ func _build_phone_panel(root: Control) -> void:
 	phone_panel = Panel.new()
 	phone_panel.name = "PhoneScreen"
 	phone_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	phone_panel.position = PHONE_RECT.position
-	phone_panel.size = PHONE_RECT.size
+	phone_panel.anchor_left = 1.0
+	phone_panel.anchor_right = 1.0
+	phone_panel.offset_left = PHONE_RECT.position.x
+	phone_panel.offset_right = PHONE_RECT.end.x
+	phone_panel.offset_top = PHONE_RECT.position.y
+	phone_panel.offset_bottom = PHONE_RECT.end.y
 	var body := StyleBoxFlat.new()
 	body.bg_color = Color(0.13, 0.12, 0.13)
 	body.border_color = INK

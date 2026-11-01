@@ -18,6 +18,8 @@ func _initialize() -> void:
 	call_deferred("_run")
 
 func _run() -> void:
+	# macOS headless starts minimized at 64×64; this suite specifies a 16:9 HUD.
+	root.size = Vector2i(1920, 1080)
 	create_timer(600.0, true, false, true).timeout.connect(func():
 		push_error("FAIL: quest01 exceeded 600 simulated seconds")
 		quit(2)

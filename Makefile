@@ -29,6 +29,9 @@ test-headless: test
 
 test: map
 	$(call godot_test,smoke_runner,60,SMOKE)
+	$(call godot_test,resolution01_test,60,RESOLUTION01)
+	$(call godot_test,resolution01_ui_test,60,RESOLUTION01_UI)
+	$(call godot_test,screen01_test,60,SCREEN01,--windowed --resolution 960x600,render)
 	$(call godot_test,intro_test,60,INTRO)
 	$(call godot_test,mission_director_test,60,MISSION)
 	$(call godot_test,story02_test,60,STORY02)

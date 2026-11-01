@@ -2,7 +2,7 @@ extends CanvasLayer
 ## GameHUD (QUEST-01): бумажная карточка задачи слева сверху, круглая мини-карта слева снизу,
 ## жёлтый ромб к цели, скорость справа внизу в машине, «ХЛЕБ +1», панель финала.
 ## Только читает DemoWorld.get_hud_state() (C6) и положение камеры; состояние миссии не хранит.
-## Координаты — в пространстве 1920x1080 (stretch canvas_items).
+## Координаты — в логическом холсте viewport (stretch canvas_items, aspect expand).
 ## POLISH-02: подсказка E — бумажная плашка с клавишей; тост, финал, «Конец демо» и ромб «выпрыгивают»;
 ## ромб прячется, когда цель в кадре и ближе DIAMOND_HIDE_DISTANCE (над Бабкой уже есть !/?);
 ## спидометр с дугой 0–100 км/ч; после финала — карточка «Конец демо» (её открывает QuestFlow).
@@ -43,7 +43,7 @@ var checkbox: Control
 var strike: ColorRect
 var diamond: Control
 
-## Положение ромба в координатах холста 1920x1080 и признаки; для проверок и кадров.
+## Положение ромба в координатах логического холста и признаки; для проверок и кадров.
 var diamond_position := Vector2.ZERO
 var diamond_visible := false
 var diamond_clamped := false
@@ -207,7 +207,7 @@ func _update_map_and_diamond(world: Node, target: Variant, in_car := false, rout
 		var camera := rig.camera
 		var canvas := _canvas_size()
 		var anchor: Vector3 = diamond_anchor(target, _marker_lift)
-		# Проекция считается здесь по трансформу и fov камеры (fov вертикальный), в координатах холста 1920x1080:
+		# Проекция считается здесь по трансформу и fov камеры (fov вертикальный), в координатах логического холста:
 		# так результат не зависит от размера окна и совпадает в headless.
 		var local := camera.global_transform.affine_inverse() * anchor
 		var behind := local.z >= -0.01
@@ -269,14 +269,15 @@ func _avoid_hud(p: Vector2) -> Vector2:
 	var card_zone := Rect2(20, 12, 830, 230)   # карточка задачи со строкой монет и счётчик монет (COINS-01)
 	if card_zone.grow(24.0).has_point(p):
 		p.x = card_zone.end.x + 40.0
-	for zone in [Rect2(20, 770, 300, 300), Rect2(1630, 790, 270, 270)]:
+	var map_zone := Rect2(minimap.position - Vector2(14, 18), minimap.size + Vector2(32, 32))
+	var speed_zone := Rect2(speed_gauge.position - Vector2(10, 10), speed_gauge.size + Vector2(30, 30))
+	for zone in [map_zone, speed_zone]:
 		if Rect2(zone).grow(24.0).has_point(p):
 			p.y = zone.position.y - 40.0
 	return p
 
 func _canvas_size() -> Vector2:
-	var content := Vector2(get_window().content_scale_size)
-	return content if content != Vector2.ZERO else Vector2(1920, 1080)
+	return get_viewport().get_visible_rect().size
 
 # --- сборка ---
 
@@ -402,7 +403,12 @@ func draw_coin(canvas: Control, center: Vector2, r: float, with_sign: bool) -> v
 
 func _build_minimap() -> void:
 	minimap = MinimapScript.new()
-	minimap.position = Vector2(34, 1080 - 292)
+	minimap.anchor_top = 1.0
+	minimap.anchor_bottom = 1.0
+	minimap.offset_left = 34
+	minimap.offset_right = 302
+	minimap.offset_top = -292
+	minimap.offset_bottom = -24
 	minimap.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(minimap)
 
@@ -441,7 +447,14 @@ func _build_speed() -> void:
 	speed_gauge.name = "SpeedGauge"
 	speed_gauge.custom_minimum_size = Vector2(240, 240)
 	speed_gauge.size = Vector2(240, 240)
-	speed_gauge.position = Vector2(1920 - 240 - 40, 1080 - 280)
+	speed_gauge.anchor_left = 1.0
+	speed_gauge.anchor_right = 1.0
+	speed_gauge.anchor_top = 1.0
+	speed_gauge.anchor_bottom = 1.0
+	speed_gauge.offset_left = -280
+	speed_gauge.offset_right = -40
+	speed_gauge.offset_top = -280
+	speed_gauge.offset_bottom = -40
 	speed_gauge.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	speed_gauge.visible = false
 	speed_gauge.draw.connect(func():

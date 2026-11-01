@@ -3,11 +3,23 @@ set -eu
 repo=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 # Runtime launches need the same texture imports as an editor launch.
 prepare=1
+scripted=0
+explicit_window_mode=0
+game_launch=1
 for argument in "$@"; do
     case "$argument" in
-        --editor|--import|--help|--version) prepare=0 ;;
+        --) break ;;
+        --editor|--import|--help|--version) prepare=0; game_launch=0 ;;
+        --headless) game_launch=0 ;;
+        --script|-s|--script=*) scripted=1 ;;
+        --windowed|-w|--fullscreen|-f|--maximized|-m) explicit_window_mode=1 ;;
     esac
 done
+if [ "$scripted" -eq 1 ] && [ "$explicit_window_mode" -eq 0 ]; then
+    set -- --windowed "$@"
+elif [ "$game_launch" -eq 1 ] && [ "$explicit_window_mode" -eq 0 ]; then
+    set -- --fullscreen "$@"
+fi
 if [ "$prepare" -eq 1 ]; then
     mkdir -p "$repo/builds"
     touch "$repo/builds/.gdignore"

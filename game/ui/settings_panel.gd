@@ -13,7 +13,11 @@ const INK_SOFT := Color(0.12, 0.10, 0.08, 0.6)
 var back_button: Button
 var achievements_button: Button
 var achievements: CanvasLayer
+var resolution_option: OptionButton
 var _box: VBoxContainer
+var _display_settings: Node
+var _resolution_error: Label
+var _refreshing_resolution := false
 
 func _ready() -> void:
 	name = "SettingsCard"
@@ -27,13 +31,14 @@ func _ready() -> void:
 	var box := VBoxContainer.new()
 	_box = box
 	box.custom_minimum_size = Vector2(640, 0)   # ширина как у карточки главного меню
-	box.add_theme_constant_override("separation", 16)
+	box.add_theme_constant_override("separation", 8)
 	add_child(box)
 	box.add_child(_label("НАСТРОЙКИ", 52, INK, HORIZONTAL_ALIGNMENT_CENTER))
 	var rule := ColorRect.new()
 	rule.color = INK
 	rule.custom_minimum_size = Vector2(0, 3)
 	box.add_child(rule)
+	_add_resolution_row(box)
 	box.add_child(_label("УПРАВЛЕНИЕ", 26, INK, HORIZONTAL_ALIGNMENT_LEFT))
 	var grid := GridContainer.new()
 	grid.columns = 3
@@ -76,21 +81,99 @@ func _ready() -> void:
 	achievements = AchievementsPanel.new()
 	add_child(achievements)
 	achievements.back_requested.connect(_close_achievements)
+	_display_settings = get_tree().get_first_node_in_group(&"display_settings")
+	if _display_settings != null:
+		_display_settings.changed.connect(_refresh_resolution)
+	_refresh_resolution()
 	visibility_changed.connect(_on_visibility_changed)
 	hide()
 
 func open() -> void:
 	achievements.hide()
 	_box.show()
+	_refresh_resolution()
 	show()
 	back_button.grab_focus.call_deferred()
 	DialogPanelScript.pop(self, 0.92)
+
+func _add_resolution_row(box: VBoxContainer) -> void:
+	var row := HBoxContainer.new()
+	row.name = "ResolutionRow"
+	row.add_theme_constant_override("separation", 24)
+	row.add_child(_label("Разрешение", 24, INK, HORIZONTAL_ALIGNMENT_LEFT))
+	resolution_option = OptionButton.new()
+	resolution_option.name = "ResolutionOption"
+	resolution_option.custom_minimum_size = Vector2(380, 48)
+	resolution_option.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	resolution_option.fit_to_longest_item = false
+	DialogPanelScript.style_button(resolution_option, false)
+	resolution_option.add_theme_font_size_override("font_size", 22)
+	resolution_option.item_selected.connect(_on_resolution_selected)
+	var popup := resolution_option.get_popup()
+	popup.add_theme_stylebox_override("panel", DialogPanelScript.paper_style())
+	popup.add_theme_font_size_override("font_size", 22)
+	popup.add_theme_color_override("font_color", INK)
+	popup.add_theme_color_override("font_hover_color", INK)
+	popup.add_theme_constant_override("v_separation", 12)
+	var hover := StyleBoxFlat.new()
+	hover.bg_color = DialogPanelScript.PAPER_DARK
+	popup.add_theme_stylebox_override("hover", hover)
+	row.add_child(resolution_option)
+	box.add_child(row)
+	_resolution_error = _label("Не удалось сохранить разрешение.", 20, INK, HORIZONTAL_ALIGNMENT_LEFT)
+	_resolution_error.name = "ResolutionError"
+	_resolution_error.hide()
+	box.add_child(_resolution_error)
+
+func _refresh_resolution() -> void:
+	_refreshing_resolution = true
+	resolution_option.clear()
+	resolution_option.disabled = not is_instance_valid(_display_settings)
+	if resolution_option.disabled:
+		resolution_option.add_item("Недоступно")
+	else:
+		var selected_width: int = _display_settings.selected_option_width()
+		for option: Dictionary in _display_settings.available_resolutions():
+			var index := resolution_option.item_count
+			resolution_option.add_item(option["label"])
+			resolution_option.set_item_metadata(index, int(option["width"]))
+			if int(option["width"]) == selected_width:
+				resolution_option.select(index)
+	_refreshing_resolution = false
+	_update_focus_order()
+
+func _on_resolution_selected(index: int) -> void:
+	if _refreshing_resolution or not is_instance_valid(_display_settings):
+		return
+	var width: int = resolution_option.get_item_metadata(index)
+	var error: Error = _display_settings.set_resolution_width(width)
+	_resolution_error.visible = error != OK
+	if error != OK:
+		push_warning("Не удалось сохранить разрешение: %s" % error_string(error))
+	_refresh_resolution()
+
+func _update_focus_order() -> void:
+	var controls: Array[Control] = [achievements_button, back_button]
+	if not resolution_option.disabled:
+		controls.push_front(resolution_option)
+	for index in controls.size():
+		var control := controls[index]
+		var before := control.get_path_to(controls[posmod(index - 1, controls.size())])
+		var after := control.get_path_to(controls[(index + 1) % controls.size()])
+		control.focus_neighbor_top = before
+		control.focus_previous = before
+		control.focus_neighbor_bottom = after
+		control.focus_next = after
 
 func _unhandled_input(event: InputEvent) -> void:
 	if achievements.visible:
 		return
 	if visible and (event.is_action_pressed(&"ui_cancel") or event.is_action_pressed(&"pause")):
 		get_viewport().set_input_as_handled()
+		if resolution_option.get_popup().visible:
+			resolution_option.get_popup().hide()
+			resolution_option.grab_focus()
+			return
 		back_requested.emit()
 
 func _open_achievements() -> void:
@@ -104,6 +187,7 @@ func _close_achievements() -> void:
 
 func _on_visibility_changed() -> void:
 	if not visible and achievements != null:
+		resolution_option.get_popup().hide()
 		achievements.hide()
 		_box.show()
 

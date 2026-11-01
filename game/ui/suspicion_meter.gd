@@ -104,7 +104,12 @@ func _build_plate() -> void:
 	style.content_margin_top = 10
 	style.content_margin_bottom = 10
 	plate.add_theme_stylebox_override("panel", style)
-	plate.position = Vector2(1920 - 40 - PLATE_SIZE.x, 32)
+	plate.anchor_left = 1.0
+	plate.anchor_right = 1.0
+	plate.offset_left = -40 - PLATE_SIZE.x
+	plate.offset_right = -40
+	plate.offset_top = 32
+	plate.offset_bottom = 32 + PLATE_SIZE.y
 	plate.custom_minimum_size = PLATE_SIZE
 	plate.visible = false
 	plate.modulate.a = 0.0

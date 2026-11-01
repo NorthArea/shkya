@@ -14,10 +14,13 @@ const MusicDirectorScript = preload("res://game/audio/music_director.gd")
 const AchievementsStore = preload("res://game/progression/achievements_store.gd")
 const AchievementsTracker = preload("res://game/progression/achievements_tracker.gd")
 const AchievementToast = preload("res://game/ui/achievement_toast.gd")
+const DisplaySettingsScript = preload("res://game/display_settings.gd")
 const UI_CLICK := preload("res://assets/audio/ui_click.wav")
 
 # Set before _ready in tests/captures; script runs isolate the owner's persistent profile.
 var achievement_path := ""
+var display_settings_path := ""
+var display_settings: Node
 var achievements: Node
 var achievement_toast: CanvasLayer
 var world: DemoWorld
@@ -33,6 +36,15 @@ func _ready() -> void:
 	get_tree().auto_accept_quit = false
 	InputSetup.install()
 	PadInput.ensure(self)  # PAD-01: последнее устройство (геймпад или клавиатура) для подсказок HUD
+	display_settings = DisplaySettingsScript.new()
+	display_settings.name = "DisplaySettings"
+	if not display_settings_path.is_empty():
+		display_settings.config_path = display_settings_path
+	elif get_tree().get_script() != null:
+		# Scripted checks must not read or overwrite the owner's rendering preference.
+		DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path("res://builds/checks/RESOLUTION-01"))
+		display_settings.config_path = "res://builds/checks/RESOLUTION-01/script-%d-%d.cfg" % [OS.get_process_id(), Time.get_ticks_usec()]
+	add_child(display_settings)
 	if achievement_path.is_empty():
 		var args := OS.get_cmdline_args()
 		var scripted := args.has("--script") or args.has("-s")
