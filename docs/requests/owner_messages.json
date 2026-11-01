@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "source_thread": "01a18dc0-9ae6-7c02-9b5f-70a15a73b205",
-  "snapshot_at_utc": "2026-11-01T07:19:37.561609+00:00",
+  "snapshot_at_utc": "2026-11-01T07:28:52.691511+00:00",
   "scope": "Все записи роли user текущего диалога до снимка. Служебные вставки отмечены отдельно. Исходный текст не исправлялся. Живые статусы только в docs/workflow/backlog.md, решения только в docs/DECISIONS.md.",
   "previous_independent_audit": {
     "record_count": 105,
@@ -1164,6 +1164,27 @@
       "sha256": "e6a2b79511b20f8d2d54f2e12d9c3256eea6e4ba6952d42673d351f45dab5857",
       "task_ids": [
         "CHECK-01"
+      ]
+    },
+    {
+      "id": "MSG-0120",
+      "timestamp_utc": "2026-11-01T07:28:52.691511+00:00",
+      "timestamp_basis": "archive_capture_time; original message timestamp unavailable",
+      "kind": "message",
+      "text": "отчет",
+      "sha256": "e043a3d0ede0064e05d92936adccbae62a0daca451699f3ba0831e15461f8933",
+      "task_ids": []
+    },
+    {
+      "id": "MSG-0121",
+      "timestamp_utc": "2026-11-01T07:28:52.691511+00:00",
+      "timestamp_basis": "archive_capture_time; original message timestamp unavailable",
+      "kind": "message",
+      "text": "найди файл с моими указаниями и перепроверь все ли они превратились в таски и все ли ты таски из возмодныз взял в паралельную работу или можно еще что-то взять прям сейчас",
+      "sha256": "8cf585202428d0028b5dd4966a0c4ef4f4867ce789218135a323da514936535a",
+      "task_ids": [
+        "OWNER-ARCHIVE-01",
+        "DRIVER-01"
       ]
     }
   ]

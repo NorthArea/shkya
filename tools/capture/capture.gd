@@ -23,6 +23,10 @@ func _initialize() -> void:
 	call_deferred("_capture")
 
 func _capture() -> void:
+	if DisplayServer.get_name() == "headless":
+		print("NOT_RUN: native renderer required; visible checks need explicit owner authorization")
+		quit(2)
+		return
 	var main: Node = load("res://game/main.tscn").instantiate()
 	root.add_child(main)
 	await process_frame
