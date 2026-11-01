@@ -54,6 +54,8 @@ test: map
 	$(call godot_test,vehicle_impact_acceptance,60,VEHICLE_INDEPENDENT)
 	$(call godot_test,driver_ai_test,60,DRIVER_AI)
 	$(call godot_test,driver_ai_acceptance,60,DRIVER_ACCEPTANCE)
+	$(call godot_test,driver01_recovery_test,60,DRIVER01_RECOVERY)
+	$(call godot_test,driver01_impact_composition_test,60,DRIVER_IMPACT_COMPOSITION)
 	$(call godot_test,quest01_acceptance,60,QUEST01)
 	$(call godot_test,polish01_audio,60,AUDIO)
 	$(call godot_test,radio_music_test,60,RADIO01,--max-fps 60 --resolution 1920x1080,,realtime)

@@ -322,7 +322,9 @@ func _scan(speed: float, steering: float) -> void:
 	# Check the actual near-term turn as well as the road ahead: a displaced car cannot see through its own deviation.
 	var position := _vehicle.global_position
 	var forward := -_vehicle.global_basis.z
-	for step in 5:
+	# Sample future footprints: the current inflated rear margin can overlap a
+	# roadside object that the displaced chassis is already moving away from.
+	for step in range(1, 6):
 		var distance := step * 0.6
 		var yaw := -tan(steering * MAX_STEER) / _wheelbase * distance
 		var direction := forward.rotated(Vector3.UP, yaw)
