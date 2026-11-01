@@ -1,12 +1,15 @@
 extends RefCounted
-## Original City N visual models. Bind space: soles=0, top=1, forward=-Z.
-## These drawing IDs preserve callers' gameplay roles, not the old borrowed designs.
+## Solid 3D translations of the approved character drawings. Soles=0, top=1, forward=-Z.
+## Clothing, face silhouettes and expressions follow the previous authored SVGs.
 const Builder = preload("res://game/characters/models/uniform_mesh_builder.gd")
 const Police = preload("res://game/characters/models/police_model.gd")
 const Guard = preload("res://game/characters/models/guard_model.gd")
+const Residents = preload("res://game/characters/models/legacy_resident_models.gd")
 # Historical foot_* names now identify civilian knee/lower-leg joints.
 # Uniform models/variants retain their authored ankle rigs.
 const CIVILIAN_KNEE_Y := 0.22
+const GRANNY_DRESS_YOKE := Vector3(0, 0.615, 0.03)
+const GRANNY_DRESS_YOKE_RADII := Vector3(0.20, 0.10, 0.13)
 const DRAWINGS: Array[String] = ["ilyusha", "babka", "vendor", "officer", "resident_babka", "resident_man", "resident_woman", "resident_boy", "resident_shuba", "resident_beret", "resident_violet", "resident_ushanka", "resident_ushanka_walk", "resident_tourist", "resident_kid", "resident_kid2", "resident_dog", "resident_kolpak", "resident_bow", "resident_turban", "police_long", "police_round", "guard_alt"]
 static var _models: Dictionary = {}
 static var _materials: Dictionary = {}
@@ -26,24 +29,22 @@ func build_model(drawing: String = "ilyusha") -> Node3D:
 	if drawing in ["police_long", "police_round", "guard_alt"]:
 		model = _uniform_variant(drawing)
 	else:
-		var design := _design(drawing)
 		var b := Builder.new()
 		b.palette = _palette()
-		for key: String in ["cloth", "accent", "skin", "trim"]:
-			b.vertex_tints[key] = design[key]
-		_bones(b, design)
-		_body(b, design)
-		_weight_coat_skirt(b, design)
-		_limbs(b, design)
-		_weight_lower_legs(b)
-		_head(b, design)
-		_accessories(b, design)
+		if Residents.handles(drawing):
+			Residents.append_to(b, drawing)
+		else:
+			var design := _design(drawing)
+			_bones(b, design)
+			_approved_hero(b, drawing)
+			_weight_coat_skirt(b, design)
+			_weight_lower_legs(b)
 		_quantize_skin_weights(b)
 		model = b.build_node("Citizen_" + drawing)
 	_initialize_rest(model)
 	model.set_meta("drawing", drawing)
 	model.set_meta("forward_axis", "-Z")
-	model.set_meta("design_status", "original authored geometry; visual and runtime acceptance required")
+	model.set_meta("design_status", "previous approved drawings translated to solid 3D; visual acceptance required")
 	_own(model, model)
 	var packed := PackedScene.new()
 	if packed.pack(model) == OK:
@@ -88,7 +89,7 @@ func _palette() -> Dictionary:
 		for key: String in ["cloth", "accent", "ink", "skin", "eye", "trim"]:
 			var mat := StandardMaterial3D.new()
 			mat.resource_name = "City N " + key
-			mat.albedo_color = Color("eee6d6") if key == "eye" else Color("211f27") if key == "ink" else Color.WHITE
+			mat.albedo_color = Color.WHITE if key == "eye" else Color("211f27") if key == "ink" else Color.WHITE
 			mat.vertex_color_use_as_albedo = true
 			mat.vertex_color_is_srgb = true
 			mat.roughness = 1.0
@@ -99,37 +100,12 @@ func _palette() -> Dictionary:
 	return _materials
 
 func _design(drawing: String) -> Dictionary:
-	var d := {"cloth": Color("445f75"), "accent": Color("a18d62"), "skin": Color("c69e80"), "trim": Color("ddd2b6"), "width": 0.19, "hem": 0.37, "shoulder": 0.72, "head_y": 0.84, "head_w": 0.098, "jaw": 0.079, "nose": 0.033, "hat": "knit", "face": "long", "glasses": false, "old": false, "apron": false, "bag": false, "backpack": false, "dog": false}
 	match drawing:
-		"ilyusha":
-			d.merge({"width": 0.173, "hem": 0.35, "shoulder": 0.73, "head_w": 0.087, "jaw": 0.067, "nose": 0.042, "cloth": Color("3e5d73"), "accent": Color("bd834a"), "face": "angular"}, true)
-		"babka":
-			d.merge({"width": 0.235, "hem": 0.21, "shoulder": 0.69, "head_y": 0.835, "head_w": 0.1, "jaw": 0.084, "cloth": Color("675267"), "accent": Color("ba8c65"), "hat": "scarf", "old": true, "glasses": true, "face": "square"}, true)
-		"vendor":
-			d.merge({"width": 0.225, "hem": 0.28, "head_w": 0.108, "jaw": 0.101, "nose": 0.026, "cloth": Color("376864"), "accent": Color("b8a17c"), "hat": "hair", "apron": true, "face": "square"}, true)
-		"officer":
-			d.merge({"width": 0.185, "hem": 0.20, "head_w": 0.083, "jaw": 0.072, "hat": "cap", "old": true, "cloth": Color("716958"), "accent": Color("805458"), "bag": true}, true)
-		_:
-			var role := drawing.trim_prefix("resident_")
-			match role:
-				"babka": d.merge({"width": 0.218, "hem": 0.24, "old": true, "hat": "scarf", "cloth": Color("697971"), "accent": Color("bfaa78"), "bag": true}, true)
-				"man": d.merge({"width": 0.23, "head_w": 0.11, "jaw": 0.105, "hat": "cap", "face": "square", "cloth": Color("766557"), "accent": Color("71918d")}, true)
-				"woman": d.merge({"width": 0.195, "hem": 0.26, "hat": "scarf", "cloth": Color("7c684f"), "accent": Color("709295"), "glasses": true}, true)
-				"boy": d.merge({"head_w": 0.112, "jaw": 0.095, "width": 0.19, "hem": 0.38, "cloth": Color("7a855d"), "accent": Color("a96c51"), "hat": "pom", "face": "round"}, true)
-				"shuba": d.merge({"width": 0.265, "hem": 0.18, "shoulder": 0.68, "hat": "fur", "cloth": Color("7b6655"), "accent": Color("cfb184"), "old": true, "bag": true}, true)
-				"beret": d.merge({"width": 0.205, "hem": 0.25, "hat": "beret", "cloth": Color("43676c"), "accent": Color("b28e71"), "old": true, "glasses": true}, true)
-				"violet": d.merge({"width": 0.225, "hem": 0.2, "hat": "knit", "cloth": Color("65576e"), "accent": Color("a5b8aa"), "old": true, "face": "square"}, true)
-				"ushanka", "ushanka_walk": d.merge({"width": 0.235, "hat": "fur", "head_w": 0.109, "jaw": 0.101, "cloth": Color("66797c"), "accent": Color("98715b"), "face": "square"}, true)
-				"tourist": d.merge({"width": 0.2, "hat": "pom", "cloth": Color("a47c43"), "accent": Color("49746b"), "old": true, "backpack": true, "glasses": true}, true)
-				"kid": d.merge({"head_w": 0.113, "jaw": 0.096, "width": 0.191, "cloth": Color("a15e51"), "accent": Color("c7b179"), "hat": "pom", "face": "round"}, true)
-				"kid2": d.merge({"head_w": 0.106, "jaw": 0.083, "width": 0.176, "cloth": Color("5e798b"), "accent": Color("bfa15c"), "hat": "ear", "face": "angular"}, true)
-				"dog": d.merge({"width": 0.214, "hem": 0.23, "cloth": Color("806c61"), "accent": Color("a7b5a1"), "hat": "beret", "old": true, "dog": true}, true)
-				"kolpak": d.merge({"width": 0.194, "hem": 0.22, "cloth": Color("607c7b"), "accent": Color("c7a77c"), "hat": "pom", "old": true}, true)
-				"bow": d.merge({"width": 0.24, "hem": 0.22, "cloth": Color("987856"), "accent": Color("638b90"), "hat": "scarf", "old": true, "bag": true, "face": "square"}, true)
-				"turban": d.merge({"width": 0.208, "hem": 0.23, "cloth": Color("5d6d7e"), "accent": Color("af8765"), "hat": "wrap", "old": true, "glasses": true}, true)
-	var is_child := drawing in ["resident_boy", "resident_kid", "resident_kid2"]
-	d["morph"] = "young" if drawing == "ilyusha" else "elder" if d.old else "soft" if drawing in ["vendor", "resident_woman"] else "child" if is_child else "broad"
-	return d
+		"ilyusha": return {"drawing": drawing, "hem": 0.27, "shoulder": 0.55, "width": 0.20, "head_y": 0.63}
+		"babka": return {"drawing": drawing, "hem": 0.045, "shoulder": 0.615, "width": 0.265, "head_y": 0.74}
+		"vendor": return {"drawing": drawing, "hem": 0.04, "shoulder": 0.59, "width": 0.23, "head_y": 0.72}
+	assert(false, "No approved hero drawing: " + drawing)
+	return {}
 
 func _bones(b: Builder, d: Dictionary) -> void:
 	var shoulder: float = d.shoulder
@@ -140,9 +116,13 @@ func _bones(b: Builder, d: Dictionary) -> void:
 	b.add_bone("head", 2, Vector3(0, d.head_y - 0.10, -0.005))
 	for side: float in [1.0, -1.0]:
 		var suffix := "_l" if side > 0 else "_r"
-		var upper := b.add_bone("upper_arm" + suffix, 2, Vector3(side * x, shoulder, 0))
-		var lower := b.add_bone("lower_arm" + suffix, upper, Vector3(side * (x + 0.022), 0.54, -0.005))
-		b.add_bone("hand" + suffix, lower, Vector3(side * (x + 0.027), 0.385, -0.015))
+		var vendor: bool = d.drawing == "vendor"
+		var upper_at := Vector3(side * 0.17, 0.55, 0) if vendor else Vector3(side * x, shoulder, 0)
+		var elbow_at := Vector3(side * 0.245, 0.45, -0.035) if vendor else Vector3(side * (x + 0.022), shoulder - 0.17, -0.005)
+		var hand_at := Vector3(side * 0.114, 0.394, -0.20) if vendor else Vector3(side * (x + 0.027), shoulder - 0.285, -0.015)
+		var upper := b.add_bone("upper_arm" + suffix, 2, upper_at)
+		var lower := b.add_bone("lower_arm" + suffix, upper, elbow_at)
+		b.add_bone("hand" + suffix, lower, hand_at)
 	for side: float in [1.0, -1.0]:
 		var suffix := "_l" if side > 0 else "_r"
 		var leg := b.add_bone("leg" + suffix, 1, Vector3(side * 0.092, 0.355, 0))
@@ -160,78 +140,17 @@ func _weight_lower_legs(b: Builder) -> void:
 				bones[index * 4] = bone + 1
 		part["bones"] = bones
 
-func _body(b: Builder, d: Dictionary) -> void:
-	var w: float = d.width
-	var hem: float = d.hem
-	var shoulder: float = d.shoulder
-	b.body_profile([Vector3(w * 0.85, hem, 0.105), Vector3(w * 1.02, hem + 0.04, 0.13), Vector3(w, 0.46, 0.142), Vector3(w * 0.99, shoulder - 0.10, 0.133), Vector3(w * 1.05, shoulder - 0.052, 0.126), Vector3(w * 0.98, shoulder - 0.016, 0.112), Vector3(w * 0.68, shoulder + 0.014, 0.086)], "cloth", 2, 20)
-	b.ellipsoid(Vector3(0, 0.35, 0), Vector3(0.15, 0.08, 0.104), "ink", 1, 14, 8)
-	b.ellipsoid(Vector3(0, shoulder + 0.008, -0.006), Vector3(w * 0.64, 0.035, 0.097), "accent", 2, 16, 8)
-	b.box(Vector3(0.045, shoulder - 0.065, -0.127), Vector3(0.045, 0.18, 0.016), "accent", 2, Basis(Vector3.FORWARD, -0.13))
-	b.tube(PackedVector3Array([Vector3(0, hem + 0.018, -0.133), Vector3(0, 0.47, -0.146), Vector3(0, shoulder - 0.03, -0.129)]), 0.002, "ink", 2)
-	if not d.apron:
-		for side: float in [-1.0, 1.0]:
-			b.box(Vector3(side * w * 0.62, maxf(hem + 0.09, 0.44), -0.113), Vector3(w * 0.46, 0.014, 0.018), "accent", 2, Basis(Vector3.UP, -side * 0.35))
-	else:
-		_apron_patch(b, [Vector2(0.115, 0.23), Vector2(0.122, 0.28), Vector2(0.125, 0.32), Vector2(0.125, 0.36), Vector2(0.122, 0.40), Vector2(0.12, 0.44), Vector2(0.118, 0.48), Vector2(0.115, 0.54), Vector2(0.11, 0.60), Vector2(0.107, 0.655)], "accent", 0.0)
-		for side: float in [-1.0, 1.0]:
-			_apron_patch(b, [Vector2(0.012, 0.645), Vector2(0.012, 0.68), Vector2(0.012, 0.73)], "accent", 0.0, side * 0.095)
-		_apron_patch(b, [Vector2(0.073, 0.375), Vector2(0.075, 0.40), Vector2(0.075, 0.425), Vector2(0.073, 0.445)], "trim", 0.006)
-
-func _apron_z(y: float) -> float:
-	var profile: Array[Vector2] = [Vector2(0.23, -0.13), Vector2(0.28, -0.144), Vector2(0.34, -0.152), Vector2(0.46, -0.158), Vector2(0.52, -0.157), Vector2(0.60, -0.148), Vector2(0.655, -0.132), Vector2(0.68, -0.117), Vector2(0.73, -0.091)]
-	for index in range(profile.size() - 1):
-		if y <= profile[index + 1].x:
-			return lerpf(profile[index].y, profile[index + 1].y, clampf((y - profile[index].x) / (profile[index + 1].x - profile[index].x), 0, 1))
-	return profile[-1].y
-
-func _apron_patch(b: Builder, rows: Array[Vector2], material: String, offset: float, center_x: float = 0.0) -> void:
-	# Both bib and lap are one subdivided solid cloth panel, including the waist.
-	# The pocket uses the same surface/weight profile, so it follows the folds.
-	const THICKNESS := 0.008
-	for index in range(rows.size() - 1):
-		var low := rows[index]
-		var high := rows[index + 1]
-		var low_z := _apron_z(low.y) - offset
-		var high_z := _apron_z(high.y) - offset
-		var a := Vector3(center_x - low.x, low.y, low_z)
-		var c := Vector3(center_x + low.x, low.y, low_z)
-		var d := Vector3(center_x + high.x, high.y, high_z)
-		var e := Vector3(center_x - high.x, high.y, high_z)
-		var normal := Vector3(0, (high_z - low_z) / (high.y - low.y), -1).normalized()
-		b._triangle(a, c, d, normal, normal, normal, material, 2)
-		b._triangle(a, d, e, normal, normal, normal, material, 2)
-		var back := Vector3(0, 0, THICKNESS)
-		b._triangle(a + back, d + back, c + back, -normal, -normal, -normal, material, 2)
-		b._triangle(a + back, e + back, d + back, -normal, -normal, -normal, material, 2)
-		var slope := (high.x - low.x) / (high.y - low.y)
-		for side: float in [-1.0, 1.0]:
-			var bottom := a if side < 0 else c
-			var top := e if side < 0 else d
-			var side_normal := Vector3(side, -slope, 0).normalized()
-			b._triangle(bottom, top, top + back, side_normal, side_normal, side_normal, material, 2)
-			b._triangle(bottom, top + back, bottom + back, side_normal, side_normal, side_normal, material, 2)
-	for index in [0, rows.size() - 1]:
-		var row := rows[index]
-		var z := _apron_z(row.y) - offset
-		var a := Vector3(center_x - row.x, row.y, z)
-		var c := Vector3(center_x + row.x, row.y, z)
-		var normal := Vector3.DOWN if index == 0 else Vector3.UP
-		var back := Vector3(0, 0, THICKNESS)
-		b._triangle(a, c, c + back, normal, normal, normal, material, 2)
-		b._triangle(a, c + back, a + back, normal, normal, normal, material, 2)
-
 func _weight_coat_skirt(b: Builder, d: Dictionary) -> void:
-	if d.hem >= 0.30: return
-	# Only the front skirts follow the thighs. Rear cloth remains on the torso
-	# around the pelvis; rotating it forward would uncover the back of the hips.
+	if d.drawing == "ilyusha" or d.hem >= 0.30: return
+	# Long hems follow the complete thigh envelope below the seat. The upper
+	# rear coat stays with the torso so seated hips remain covered.
 	for part: Dictionary in b._parts.values():
 		var vertices: PackedVector3Array = part["positions"]
 		var bones: PackedInt32Array = part["bones"]
 		var weights: PackedFloat32Array = part["weights"]
 		for index in vertices.size():
 			if bones[index * 4] != 2 or vertices[index].y >= 0.44: continue
-			var front_weight := 1.0 - smoothstep(-0.08, 0.025, vertices[index].z)
+			var front_weight := 1.0 if d.hem < 0.15 and vertices[index].y < 0.355 else 1.0 - smoothstep(-0.08, 0.025, vertices[index].z)
 			var thigh_weight := clampf((0.44 - vertices[index].y) / 0.12, 0, 1) * front_weight
 			var left_weight := smoothstep(-0.045, 0.045, vertices[index].x)
 			bones[index * 4 + 1] = 10
@@ -242,31 +161,14 @@ func _weight_coat_skirt(b: Builder, d: Dictionary) -> void:
 		part["bones"] = bones
 		part["weights"] = weights
 
-func _limbs(b: Builder, d: Dictionary) -> void:
-	var x: float = d.width + 0.022
-	var shoulder: float = d.shoulder
-	for side: float in [1.0, -1.0]:
-		var upper := 4 if side > 0 else 7
-		var lower := upper + 1
-		var hand := upper + 2
-		var leg := 10 if side > 0 else 12
-		var foot := leg + 1
-		_sleeve(b, d, side, upper, lower)
-		b.ellipsoid(Vector3(side * (x + 0.025), 0.391, -0.014), Vector3(0.047, 0.012, 0.053), "accent", lower, 12, 6)
-		b.ellipsoid(Vector3(side * (x + 0.027), 0.351, -0.023), Vector3(0.045, 0.05, 0.041), "skin", hand, 12, 8)
-		b.ellipsoid(Vector3(side * (x - 0.008), 0.366, -0.045), Vector3(0.019, 0.027, 0.021), "skin", hand, 10, 6)
-		b.ellipsoid(Vector3(side * 0.092, 0.224, 0.008), Vector3(0.064, 0.151, 0.075), "ink", leg, 12, 8)
-		b.ellipsoid(Vector3(side * 0.092, 0.077, 0), Vector3(0.058, 0.069, 0.064), "ink", foot, 12, 8)
-		b.ellipsoid(Vector3(side * 0.092, 0.035, -0.044), Vector3(0.065, 0.033, 0.091), "ink", foot, 12, 8)
-		b.box(Vector3(side * 0.092, 0.009, -0.036), Vector3(0.128, 0.018, 0.166), "ink", foot)
-		b.box(Vector3(side * 0.092, 0.019, -0.039), Vector3(0.13, 0.009, 0.17), "trim", foot)
-
 func _sleeve(b: Builder, d: Dictionary, side: float, upper: int, lower: int) -> void:
 	var x: float = d.width + 0.022
 	var shoulder: float = d.shoulder
 	# A single cloth envelope runs from the shoulder inside the coat to the cuff.
 	# There is no separate shoulder ball or oval forearm to expose a toy joint.
-	var levels: Array[Vector4] = [Vector4(x + 0.025, 0.385, 0.045, 0.051), Vector4(x + 0.025, 0.432, 0.050, 0.059), Vector4(x + 0.02, 0.535, 0.054, 0.064), Vector4(x + 0.006, 0.615, 0.061, 0.072), Vector4(x - 0.02, shoulder - 0.032, 0.068, 0.076), Vector4(x - 0.045, shoulder - 0.005, 0.045, 0.057)]
+	var levels: Array[Vector4] = [Vector4(x + 0.025, 0.0, 0.045, 0.051), Vector4(x + 0.025, 0.14, 0.050, 0.059), Vector4(x + 0.02, 0.44, 0.054, 0.064), Vector4(x + 0.006, 0.68, 0.061, 0.072), Vector4(x - 0.02, 0.90, 0.068, 0.076), Vector4(x - 0.045, 1.0, 0.045, 0.057)]
+	for j in levels.size():
+		levels[j].y = lerpf(d.cuff_y, shoulder - 0.005, levels[j].y)
 	var points: Array[Vector3] = []
 	var normals: Array[Vector3] = []
 	const SIDES := 16
@@ -298,27 +200,72 @@ func _sleeve(b: Builder, d: Dictionary, side: float, upper: int, lower: int) -> 
 		var weights: PackedFloat32Array = part["weights"]
 		for index in vertices.size():
 			if bones[index * 4] != upper: continue
-			var elbow_weight := clampf((0.575 - vertices[index].y) / 0.08, 0, 1)
+			var elbow_y: float = shoulder - 0.14
+			var elbow_weight := clampf((elbow_y - vertices[index].y) / 0.08, 0, 1)
 			bones[index * 4 + 1] = lower
 			weights[index * 4] = 1.0 - elbow_weight
 			weights[index * 4 + 1] = elbow_weight
 		part["bones"] = bones
 		part["weights"] = weights
 
-func _morph_levels(d: Dictionary) -> Array[Vector3]:
-	var y: float = d.head_y
-	var w: float = d.head_w
-	match d.morph:
-		"young":
-			return [Vector3(w * 0.39, y - 0.109, 0.031), Vector3(w * 0.64, y - 0.088, 0.050), Vector3(w * 0.84, y - 0.048, 0.066), Vector3(w, y - 0.005, 0.076), Vector3(w * 0.92, y + 0.035, 0.073), Vector3(w * 0.86, y + 0.076, 0.065), Vector3(w * 0.46, y + 0.095, 0.037)]
-		"elder":
-			return [Vector3(w * 0.39, y - 0.126, 0.039), Vector3(w * 0.82, y - 0.114, 0.065), Vector3(w * 1.10, y - 0.087, 0.085), Vector3(w * 1.15, y - 0.047, 0.091), Vector3(w * 1.04, y - 0.009, 0.089), Vector3(w * 0.86, y + 0.034, 0.073), Vector3(w * 0.83, y + 0.074, 0.065), Vector3(w * 0.50, y + 0.095, 0.04)]
-		"soft":
-			return [Vector3(w * 0.32, y - 0.109, 0.031), Vector3(w * 0.61, y - 0.091, 0.051), Vector3(w * 0.88, y - 0.057, 0.073), Vector3(w * 1.07, y - 0.018, 0.086), Vector3(w * 1.04, y + 0.018, 0.084), Vector3(w * 0.91, y + 0.064, 0.069), Vector3(w * 0.55, y + 0.093, 0.04)]
-		"child":
-			return [Vector3(w * 0.46, y - 0.101, 0.036), Vector3(w * 0.80, y - 0.078, 0.063), Vector3(w * 1.02, y - 0.025, 0.084), Vector3(w, y + 0.034, 0.082), Vector3(w * 0.85, y + 0.078, 0.062), Vector3(w * 0.46, y + 0.095, 0.035)]
-		_:
-			return [Vector3(d.jaw * 0.55, y - 0.105, 0.044), Vector3(d.jaw, y - 0.087, 0.066), Vector3(w, y - 0.04, 0.077), Vector3(w, y + 0.025, 0.077), Vector3(w * 0.86, y + 0.075, 0.065), Vector3(w * 0.52, y + 0.092, 0.04)]
+func _vendor_sleeve(b: Builder, side: float, upper: int, lower: int) -> void:
+	var start: int = (b._parts["cloth"]["positions"] as PackedVector3Array).size()
+	b.tube(PackedVector3Array([Vector3(side * 0.15, 0.54, 0), Vector3(side * 0.23, 0.50, -0.01), Vector3(side * 0.252, 0.455, -0.04), Vector3(side * 0.213, 0.419, -0.12), Vector3(side * 0.15, 0.397, -0.18)]), 0.047, "cloth", upper, 16)
+	var part: Dictionary = b._parts["cloth"]
+	var vertices: PackedVector3Array = part["positions"]
+	var bones: PackedInt32Array = part["bones"]
+	var weights: PackedFloat32Array = part["weights"]
+	for index in range(start, vertices.size()):
+		var elbow_weight := clampf((0.51 - vertices[index].y) / 0.075, 0, 1)
+		bones[index * 4 + 1] = lower
+		weights[index * 4] = 1.0 - elbow_weight
+		weights[index * 4 + 1] = elbow_weight
+	part["bones"] = bones
+	part["weights"] = weights
+
+func _front_jabot(b: Builder, dress: Array[Vector3]) -> void:
+	var inner := PackedVector3Array()
+	var outer := PackedVector3Array()
+	const SEGMENTS := 52
+	const THICKNESS := Vector3(0, 0, 0.004)
+	for index in range(SEGMENTS + 1):
+		var t := float(index) / SEGMENTS
+		var angle := PI - PI * t
+		var curve := sin(angle)
+		var x := cos(angle) * 0.145 * (0.8 + 0.2 * curve)
+		var inner_point := Vector3(x * 0.98, 0.704 - 0.085 * curve, 0)
+		var outer_point := Vector3(x, 0.69 - 0.105 * curve - pow(sin(t * PI * 13.0), 2) * 0.006, 0)
+		inner_point.z = _jabot_depth(inner_point, dress)
+		outer_point.z = _jabot_depth(outer_point, dress)
+		inner.append(inner_point)
+		outer.append(outer_point)
+	for index in SEGMENTS:
+		var a := inner[index]
+		var c := outer[index]
+		var d := outer[index + 1]
+		var e := inner[index + 1]
+		_jabot_quad(b, a, c, d, e, Vector3.FORWARD)
+		_jabot_quad(b, a + THICKNESS, e + THICKNESS, d + THICKNESS, c + THICKNESS, Vector3.BACK)
+		_jabot_quad(b, a, e, e + THICKNESS, a + THICKNESS, Vector3.UP)
+		_jabot_quad(b, c, c + THICKNESS, d + THICKNESS, d, Vector3.DOWN)
+	for index in [0, SEGMENTS]:
+		_jabot_quad(b, inner[index], inner[index] + THICKNESS, outer[index] + THICKNESS, outer[index], Vector3.LEFT if index == 0 else Vector3.RIGHT)
+
+func _jabot_depth(point: Vector3, dress: Array[Vector3]) -> float:
+	var front := INF
+	var shoulder_cross_section := 1.0 - pow((point.x - GRANNY_DRESS_YOKE.x) / GRANNY_DRESS_YOKE_RADII.x, 2) - pow((point.y - GRANNY_DRESS_YOKE.y) / GRANNY_DRESS_YOKE_RADII.y, 2)
+	if shoulder_cross_section >= 0:
+		front = GRANNY_DRESS_YOKE.z - GRANNY_DRESS_YOKE_RADII.z * sqrt(shoulder_cross_section)
+	if point.y >= dress[0].y and point.y <= dress[-1].y:
+		front = minf(front, _face_z(dress, 1.0, point.x, point.y) + 0.006)
+	# The tips disappear behind the cheeks; the rest lies on the dress surface.
+	return -0.035 if is_inf(front) else front - 0.004
+
+func _jabot_quad(b: Builder, a: Vector3, c: Vector3, d: Vector3, e: Vector3, outward: Vector3) -> void:
+	var normal := (c - a).cross(d - a).normalized()
+	if normal.dot(outward) < 0: normal = -normal
+	b._triangle(a, c, d, normal, normal, normal, "trim", 2)
+	b._triangle(a, d, e, normal, normal, normal, "trim", 2)
 
 func _face_z(levels: Array[Vector3], exponent: float, x: float, y: float) -> float:
 	var level := levels[0] if y <= levels[0].y else levels[-1]
@@ -333,65 +280,6 @@ func _face_line(b: Builder, levels: Array[Vector3], exponent: float, points: Pac
 	for index in points.size():
 		points[index].z = _face_z(levels, exponent, points[index].x, points[index].y) - offset
 	b.tube(points, radius, material, 3, 6)
-
-func _head(b: Builder, d: Dictionary) -> void:
-	var y: float = d.head_y
-	var w: float = d.head_w
-	var young: bool = d.morph == "young"
-	var elder: bool = d.morph == "elder"
-	var soft: bool = d.morph == "soft"
-	var child: bool = d.morph == "child"
-	var exponent := 0.78 if young else 0.9 if elder else 1.0 if soft or child else 0.65
-	var levels := _morph_levels(d)
-	b.ellipsoid(Vector3(0, y - 0.107, 0), Vector3(0.051, 0.036, 0.05), "skin", 3, 12, 6)
-	_head_cage(b, levels, exponent)
-	for side: float in [-1.0, 1.0]:
-		b.ellipsoid(Vector3(side * (w + 0.005), y + 0.005, 0.0), Vector3(0.015, 0.025 if not elder else 0.030, 0.016), "skin", 3, 10, 6)
-		var eye_x: float = side * w * (0.43 if not soft else 0.45)
-		var eye_y: float = y + (0.019 if not elder else 0.022) + (0.003 if young and side < 0 else 0.0)
-		var eye_w := 0.019 if young else 0.018 if elder else 0.023 if soft else 0.021
-		var eye_h := 0.008 if young else 0.0055 if elder else 0.0115 if soft or child else 0.008
-		var eye_z := _face_z(levels, exponent, eye_x, eye_y) - 0.0035
-		b.ellipsoid(Vector3(eye_x, eye_y, eye_z), Vector3(eye_w, eye_h, 0.006), "eye", 3, 12, 6)
-		b.ellipsoid(Vector3(eye_x + (0.002 if young else -0.001), eye_y, eye_z - 0.006), Vector3(0.0034 if elder else 0.004, eye_h * 0.70, 0.0025), "ink", 3, 8, 4)
-		var brow_y := eye_y + (0.017 if young else 0.014 if soft else 0.011)
-		var brow_peak := 0.010 if young and side < 0 else 0.002 if young else 0.004 if soft else 0.001
-		_face_line(b, levels, exponent, PackedVector3Array([Vector3(eye_x - eye_w, brow_y, 0), Vector3(eye_x, brow_y + brow_peak, 0), Vector3(eye_x + eye_w, brow_y - (0.004 if young and side > 0 else 0.0), 0)]), 0.0017 if soft or elder else 0.0026)
-		# Upper and lower lids belong to the face volume, not floating eye decals.
-		_face_line(b, levels, exponent, PackedVector3Array([Vector3(eye_x - eye_w, eye_y + eye_h * 0.7, 0), Vector3(eye_x, eye_y + eye_h * 0.75, 0), Vector3(eye_x + eye_w, eye_y + eye_h * 0.5, 0)]), 0.0027 if elder else 0.0016, "skin", 0.008)
-		if elder:
-			_face_line(b, levels, exponent, PackedVector3Array([Vector3(eye_x - 0.019, eye_y - 0.009, 0), Vector3(eye_x + 0.003, eye_y - 0.015, 0), Vector3(eye_x + 0.020, eye_y - 0.008, 0)]), 0.0013)
-			for crease in 2:
-				_face_line(b, levels, exponent, PackedVector3Array([Vector3(eye_x + side * 0.021, eye_y - 0.002 - crease * 0.005, 0), Vector3(eye_x + side * 0.034, eye_y - 0.006 - crease * 0.009, 0)]), 0.0010)
-		if d.glasses:
-			var ring := PackedVector3Array()
-			for i in 13:
-				var angle := TAU * float(i) / 12.0
-				ring.append(Vector3(eye_x + cos(angle) * 0.027, eye_y + sin(angle) * 0.018, eye_z - 0.012))
-			b.tube(ring, 0.0020, "ink", 3, 5)
-			b.tube(PackedVector3Array([Vector3(eye_x + side * 0.026, eye_y, eye_z - 0.012), Vector3(side * w, y + 0.01, -0.01)]), 0.0020, "ink", 3, 5)
-	var bridge_x := -0.004 if young else 0.0
-	var nose_y := y - (0.008 if young else 0.011 if elder else 0.004)
-	var nose_z := _face_z(levels, exponent, bridge_x, nose_y) - 0.004
-	b.ellipsoid(Vector3(bridge_x, nose_y, nose_z), Vector3(0.009 if young else 0.013 if elder else 0.011, 0.025 if young or elder else 0.017, 0.024 if young else 0.022 if elder else 0.018), "skin", 3, 12, 8)
-	b.ellipsoid(Vector3(bridge_x + (0.003 if young else 0), nose_y - 0.018, nose_z - (0.014 if young else 0.011)), Vector3(0.010 if young else 0.018 if elder else 0.015, 0.008 if young else 0.012, 0.012), "skin", 3, 12, 6)
-	if elder:
-		for side: float in [-1.0, 1.0]:
-			_face_line(b, levels, exponent, PackedVector3Array([Vector3(side * 0.022, y - 0.020, 0), Vector3(side * 0.036, y - 0.042, 0), Vector3(side * 0.041, y - 0.074, 0)]), 0.0016)
-		_face_line(b, levels, exponent, PackedVector3Array([Vector3(-0.031, y - 0.079, 0), Vector3(-0.014, y - 0.069, 0), Vector3(0.009, y - 0.070, 0), Vector3(0.029, y - 0.081, 0)]), 0.0020)
-		_face_line(b, levels, exponent, PackedVector3Array([Vector3(-0.027, y - 0.097, 0), Vector3(0, y - 0.103, 0), Vector3(0.029, y - 0.096, 0)]), 0.0012)
-		for forehead_y in [y + 0.061, y + 0.075]:
-			_face_line(b, levels, exponent, PackedVector3Array([Vector3(-0.037, forehead_y, 0), Vector3(0, forehead_y + 0.003, 0), Vector3(0.034, forehead_y - 0.001, 0)]), 0.0009)
-	else:
-		var mouth_y := y - (0.061 if young else 0.059 if soft else 0.054)
-		var mouth_w := 0.024 if young else 0.033 if soft else 0.026
-		_face_line(b, levels, exponent, PackedVector3Array([Vector3(-mouth_w, mouth_y + (0.002 if young else 0.006 if soft else 0), 0), Vector3(-0.002, mouth_y, 0), Vector3(mouth_w, mouth_y + (0.008 if young else 0.003 if soft else -0.002), 0)]), 0.0017)
-		if soft:
-			_face_line(b, levels, exponent, PackedVector3Array([Vector3(-0.014, mouth_y - 0.006, 0), Vector3(0.004, mouth_y - 0.008, 0), Vector3(0.017, mouth_y - 0.005, 0)]), 0.0014, "skin", 0.0025)
-	if d.glasses:
-		var bridge_z := _face_z(levels, exponent, 0, y + 0.022) - 0.017
-		b.tube(PackedVector3Array([Vector3(-w * 0.43 + 0.025, y + 0.022, bridge_z), Vector3(0, y + 0.026, bridge_z - 0.002), Vector3(w * 0.43 - 0.025, y + 0.022, bridge_z)]), 0.0018, "ink", 3, 5)
-	_hat(b, d)
 
 func _head_cage(b: Builder, levels: Array[Vector3], exponent: float) -> void:
 	var points: Array[Vector3] = []
@@ -417,55 +305,159 @@ func _head_cage(b: Builder, levels: Array[Vector3], exponent: float) -> void:
 		for i in SIDES:
 			b._triangle(center, points[j * SIDES + i], points[j * SIDES + (i + 1) % SIDES], n, n, n, "skin", 3)
 
-func _hat(b: Builder, d: Dictionary) -> void:
-	var w: float = d.head_w
-	var y: float = d.head_y
-	var hat: String = d.hat
-	if hat == "hair":
-		b.ellipsoid(Vector3(0, 0.942, 0.002), Vector3(w * 1.06, 0.058, 0.079), "ink", 3, 16, 8)
-		b.ellipsoid(Vector3(0, y + 0.032, 0.049), Vector3(w * 1.05, 0.077, 0.045), "ink", 3, 16, 8)
+func _approved_hero(b: Builder, drawing: String) -> void:
+	var hero := drawing == "ilyusha"
+	var granny := drawing == "babka"
+	b.vertex_tints["cloth"] = Color("a2f03a") if hero else Color("b6ba78") if granny else Color("4e3b2d")
+	b.vertex_tints["skin"] = Color("f4b3cd") if hero else Color("fffde2") if granny else Color("ebd198")
+	b.vertex_tints["accent"] = Color("ebc458") if hero else Color("a9ad6e") if granny else Color("8c3b3b")
+	b.vertex_tints["trim"] = Color("f6f3ea") if hero else Color.WHITE if granny else Color("b9b2a0")
+	var hem := 0.27 if hero else 0.045 if granny else 0.04
+	var shoulder := 0.55 if hero else 0.615 if granny else 0.59
+	var width := 0.20 if hero else 0.265 if granny else 0.23
+	var levels: Array[Vector3] = [Vector3(width * 0.83, hem, 0.11), Vector3(width, hem + 0.06, 0.14), Vector3(width * 1.06, (hem + shoulder) * 0.5, 0.15), Vector3(width, shoulder - 0.045, 0.14), Vector3(width * 0.70, shoulder, 0.095)]
+	b.body_profile(levels, "cloth", 2, 24)
+	if drawing == "vendor":
+		# The apron shares the coat envelope and skin triangles, so opposing steps
+		# cannot send a separate flat panel through the garment underneath.
+		var part: Dictionary = b._parts["cloth"]
+		var vertices: PackedVector3Array = part["positions"]
+		var colors: PackedColorArray = part["colors"]
+		for index in range(0, vertices.size(), 3):
+			var center := (vertices[index] + vertices[index + 1] + vertices[index + 2]) / 3.0
+			if center.z < -0.08 and absf(center.x) < 0.105 and center.y < 0.545:
+				for corner in 3: colors[index + corner] = Color("b9b2a0")
+		part["colors"] = colors
+	# Hips and legs remain separate solids with the existing animation skeleton.
+	for side: float in [-1.0, 1.0]:
+		var leg := 10 if side > 0 else 12
+		var foot := leg + 1
+		var upper := 4 if side > 0 else 7
+		var lower := upper + 1
+		var hand := upper + 2
+		b.vertex_tints["cloth"] = Color("2f8a36") if hero else Color("68635b")
+		b.ellipsoid(Vector3(side * 0.087, 0.166, 0.012), Vector3(0.079 if hero else 0.045, 0.14, 0.077), "cloth", leg, 12, 8)
+		b.vertex_tints["cloth"] = Color("a2f03a") if hero else Color("b6ba78") if granny else Color("4e3b2d")
+		b.ellipsoid(Vector3(side * 0.087, 0.038, -0.025), Vector3(0.082 if hero else 0.045, 0.038, 0.093), "ink", foot, 14, 8)
+		b.box(Vector3(side * 0.087, 0.008, -0.027), Vector3(0.15 if hero else 0.08, 0.016, 0.15), "ink", foot)
+		var x := side * (width + 0.018)
+		if drawing == "vendor":
+			_vendor_sleeve(b, side, upper, lower)
+			b.ellipsoid(Vector3(side * 0.114, 0.394, -0.20), Vector3(0.058, 0.033, 0.037), "skin", hand, 14, 8)
+			for finger in 4:
+				var finger_x := side * 0.114 + (finger - 1.5) * 0.021
+				b.tube(PackedVector3Array([Vector3(finger_x, 0.39, -0.232), Vector3(finger_x, 0.376, -0.234)]), 0.0018, "ink", hand, 5)
+		else:
+			_sleeve(b, {"width": width - 0.004, "shoulder": shoulder, "cuff_y": shoulder - 0.24}, side, upper, lower)
+			b.ellipsoid(Vector3(x, shoulder - 0.285, -0.016), Vector3(0.040, 0.047, 0.044), "skin", hand, 14, 8)
+		if granny:
+			b.ellipsoid(Vector3(x, shoulder - 0.24, -0.012), Vector3(0.05, 0.016, 0.053), "trim", lower, 12, 6)
+			for finger in 4:
+				b.ellipsoid(Vector3(x + (finger - 1.5) * 0.015, shoulder - 0.325, -0.022), Vector3(0.009, 0.036, 0.013), "skin", hand, 8, 6)
+	if hero:
+		# Quilted bands wrap around the full jacket rather than lying on a card.
+		for y: float in [0.36, 0.45]:
+			var seam := PackedVector3Array()
+			for i in 33:
+				var a := TAU * i / 32.0
+				seam.append(Vector3(cos(a) * 0.213, y, sin(a) * 0.151))
+			b.tube(seam, 0.0022, "ink", 2, 5)
+		b.tube(PackedVector3Array([Vector3(0, 0.28, -0.143), Vector3(0, 0.41, -0.153), Vector3(0, 0.55, -0.113)]), 0.0022, "ink", 2, 5)
+		for i in 20:
+			var a := TAU * i / 20.0
+			b.ellipsoid(Vector3(cos(a) * 0.153, 0.553 + sin(a) * 0.012, sin(a) * 0.108), Vector3(0.036, 0.035, 0.032), "trim", 2, 10, 6)
+	elif granny:
+		for i in 10:
+			var y := 0.12 + i * 0.046
+			b.ellipsoid(Vector3(0, y, -0.153), Vector3(0.0034, 0.004, 0.003), "ink", 2, 8, 4)
+		# The back of the loose dress rises behind the cheeks, as in the back SVG.
+		b.ellipsoid(GRANNY_DRESS_YOKE, GRANNY_DRESS_YOKE_RADII, "cloth", 2, 20, 10)
+		_front_jabot(b, levels)
+	else:
 		for side: float in [-1.0, 1.0]:
-			b.ellipsoid(Vector3(side * w * 0.95, y + 0.032, 0.018), Vector3(0.025, 0.075, 0.057), "ink", 3, 12, 8)
-		b.tube(PackedVector3Array([Vector3(-w * 0.70, y + 0.088, -0.054), Vector3(-w * 0.28, y + 0.085, -0.071), Vector3(w * 0.25, y + 0.068, -0.078), Vector3(w * 0.68, y + 0.040, -0.061)]), 0.012, "ink", 3, 8)
-		return
-	var hat_color := "accent"
-	b.ellipsoid(Vector3(-0.008 if hat == "beret" else 0.0, 0.95, 0.003), Vector3(w * (1.3 if hat == "beret" else 1.11), 0.05, 0.088), hat_color, 3, 16, 8)
-	b.ellipsoid(Vector3(0, 0.923, -0.003), Vector3(w * 1.12, 0.019, 0.088), "trim", 3, 16, 6)
-	if hat in ["scarf", "wrap"]:
+			b.tube(PackedVector3Array([Vector3(side * 0.11, 0.54, -0.149), Vector3(side * 0.14, 0.61, -0.10)]), 0.008, "trim", 2, 6)
+		b.vertex_tints["cloth"] = Color("c9433a")
 		for side: float in [-1.0, 1.0]:
-			b.ellipsoid(Vector3(side * w * 0.85, y - 0.007, 0.026), Vector3(0.035, 0.08, 0.054), "accent", 3, 12, 8)
-		b.ellipsoid(Vector3(0.018, y - 0.096, -0.057), Vector3(0.034, 0.024, 0.029), "accent", 3, 12, 6)
-	if hat in ["fur", "ear"]:
-		for side: float in [-1.0, 1.0]:
-			b.ellipsoid(Vector3(side * w * 1.03, y + 0.022, 0.006), Vector3(0.026, 0.063, 0.062), "trim", 3, 12, 8)
-	if hat == "cap":
-		b.box(Vector3(0, 0.932, -0.075), Vector3(w * 1.95, 0.015, 0.1), "ink", 3, Basis(Vector3.RIGHT, -0.12))
-	if hat == "pom":
-		# The crown itself reaches 1.0; the pom stays inside that normalized cap.
-		b.ellipsoid(Vector3(0.024, 0.981, 0), Vector3(0.023, 0.019, 0.024), "trim", 3, 10, 6)
-	if hat in ["knit", "pom", "ear", "wrap"]:
-		for i in range(-3, 4):
-			var x := float(i) * w * 0.23
-			b.tube(PackedVector3Array([Vector3(x, 0.928, -0.087), Vector3(x * 0.84, 0.956, -0.083), Vector3(x * 0.60, 0.976, -0.065)]), 0.0014, "trim", 3, 5)
-
-func _accessories(b: Builder, d: Dictionary) -> void:
-	if d.bag:
-		var x: float = d.width + 0.035
-		b.box(Vector3(x, 0.22, -0.022), Vector3(0.11, 0.14, 0.074), "accent", 6, Basis(Vector3.FORWARD, -0.09))
-		b.tube(PackedVector3Array([Vector3(x - 0.03, 0.29, -0.022), Vector3(x - 0.02, 0.346, -0.022), Vector3(x + 0.023, 0.346, -0.022), Vector3(x + 0.033, 0.29, -0.022)]), 0.004, "ink", 6)
-	if d.backpack:
-		b.ellipsoid(Vector3(0, 0.57, 0.18), Vector3(0.139, 0.15, 0.062), "accent", 2, 16, 8)
-		for side: float in [-1.0, 1.0]:
-			b.tube(PackedVector3Array([Vector3(side * 0.12, 0.45, 0.11), Vector3(side * 0.15, 0.65, -0.088), Vector3(side * 0.13, 0.745, 0.02), Vector3(side * 0.11, 0.66, 0.20)]), 0.014, "accent", 2, 6)
-	if d.dog:
-		# A wool tote carries the small companion: no fixed-ground geometry follows gait.
-		var x: float = d.width + 0.04
-		b.ellipsoid(Vector3(x, 0.25, -0.024), Vector3(0.09, 0.082, 0.054), "accent", 6, 12, 8)
-		b.ellipsoid(Vector3(x + 0.006, 0.33, -0.043), Vector3(0.044, 0.04, 0.037), "trim", 6, 12, 8)
-		for side: float in [-1.0, 1.0]:
-			b.ellipsoid(Vector3(x + side * 0.039, 0.34, -0.031), Vector3(0.017, 0.034, 0.019), "ink", 6, 10, 6)
-			b.ellipsoid(Vector3(x + side * 0.017, 0.337, -0.078), Vector3(0.004, 0.005, 0.003), "ink", 6, 8, 4)
-		b.ellipsoid(Vector3(x, 0.318, -0.084), Vector3(0.009, 0.006, 0.007), "ink", 6, 8, 4)
+			b.ellipsoid(Vector3(side * 0.035, 0.594, -0.124), Vector3(0.042, 0.019, 0.012), "cloth", 2, 12, 6)
+			b.tube(PackedVector3Array([Vector3(side * 0.009, 0.582, -0.13), Vector3(side * 0.028, 0.52, -0.151)]), 0.011, "cloth", 2, 6)
+		b.ellipsoid(Vector3(0, 0.59, -0.14), Vector3(0.018, 0.018, 0.011), "cloth", 2, 12, 6)
+		b.vertex_tints["cloth"] = Color("4e3b2d")
+	var face: Array[Vector3]
+	if hero:
+		face = [Vector3(0.025, 0.53, 0.04), Vector3(0.105, 0.55, 0.08), Vector3(0.16, 0.60, 0.106), Vector3(0.177, 0.69, 0.117), Vector3(0.16, 0.78, 0.112), Vector3(0.118, 0.87, 0.086), Vector3(0.06, 0.918, 0.05), Vector3(0.015, 0.925, 0.015)]
+	elif granny:
+		face = [Vector3(0.02, 0.64, 0.035), Vector3(0.08, 0.65, 0.073), Vector3(0.123, 0.68, 0.099), Vector3(0.129, 0.73, 0.109), Vector3(0.106, 0.80, 0.103), Vector3(0.096, 0.87, 0.09), Vector3(0.082, 0.901, 0.071), Vector3(0.02, 0.91, 0.025)]
+	else:
+		face = [Vector3(0.025, 0.62, 0.035), Vector3(0.105, 0.635, 0.076), Vector3(0.15, 0.67, 0.098), Vector3(0.159, 0.72, 0.11), Vector3(0.14, 0.79, 0.103), Vector3(0.12, 0.86, 0.086), Vector3(0.09, 0.902, 0.068), Vector3(0.02, 0.909, 0.022)]
+	if not hero:
+		# Closed cap/back of headscarf with hanging side panels; face stays exposed.
+		if granny:
+			b.body_profile([Vector3(0.095, 0.78, 0.065), Vector3(0.11, 0.86, 0.09), Vector3(0.11, 0.97, 0.09), Vector3(0.10, 0.993, 0.08), Vector3(0.07, 1.0, 0.04)], "accent", 3, 20)
+			var cap: Dictionary = b._parts["accent"]
+			var cap_vertices: PackedVector3Array = cap["positions"]
+			for index in cap_vertices.size(): cap_vertices[index].z += 0.03
+			cap["positions"] = cap_vertices
+		else:
+			b.ellipsoid(Vector3(0, 0.931, 0.022), Vector3(0.154, 0.069, 0.10), "accent", 3, 20, 10)
+		if not granny:
+			b.ellipsoid(Vector3(0, 0.765, 0.065), Vector3(0.168, 0.18, 0.095), "accent", 3, 20, 12)
+			for side: float in [-1.0, 1.0]:
+				b.ellipsoid(Vector3(side * 0.143, 0.727, 0.006), Vector3(0.028, 0.112, 0.07), "accent", 3, 12, 8)
+	if not hero:
+		b.ellipsoid(Vector3(0, 0.642 if granny else 0.621, 0), Vector3(0.058, 0.035, 0.068), "skin", 3, 12, 8)
+	_head_cage(b, face, 1.0)
+	var eye_y := 0.703 if hero else 0.822 if granny else 0.797
+	var eye_x := 0.069 if hero else 0.044
+	for side: float in [-1.0, 1.0]:
+		var ex := eye_x * side
+		var ez := _face_z(face, 1.0, ex, eye_y)
+		b.ellipsoid(Vector3(ex, eye_y, ez - 0.004), Vector3(0.019 if hero else 0.016, 0.009 if hero else 0.006, 0.006), "ink", 3, 12, 6)
+		b.ellipsoid(Vector3(ex, eye_y, ez - 0.009), Vector3(0.015 if hero else 0.012, 0.006 if hero else 0.003, 0.003), "eye", 3, 12, 6)
+		b.ellipsoid(Vector3(ex + side * 0.003, eye_y, ez - 0.012), Vector3(0.005, 0.005 if hero else 0.003, 0.002), "ink", 3, 8, 4)
+		if hero:
+			_face_line(b, face, 1.0, PackedVector3Array([Vector3(ex - 0.033, eye_y + 0.056, 0), Vector3(ex, eye_y + 0.067, 0), Vector3(ex + 0.033, eye_y + 0.054, 0)]), 0.0026)
+			b.vertex_tints["trim"] = Color("ee8da8")
+			var cx := side * 0.112
+			var cy := 0.648
+			b.ellipsoid(Vector3(cx, cy, _face_z(face, 1.0, cx, cy) - 0.002), Vector3(0.026, 0.020, 0.004), "trim", 3, 12, 6)
+			b.vertex_tints["trim"] = Color("f6f3ea")
+		else:
+			_face_line(b, face, 1.0, PackedVector3Array([Vector3(ex - 0.017, eye_y - 0.014, 0), Vector3(ex, eye_y - 0.018, 0), Vector3(ex + 0.017, eye_y - 0.014, 0)]), 0.0017)
+			_face_line(b, face, 1.0, PackedVector3Array([Vector3(side * 0.025, eye_y - 0.012, 0), Vector3(side * 0.035, eye_y - 0.051, 0), Vector3(side * 0.042, eye_y - 0.091, 0)]), 0.0020)
+		var ear_y := 0.71 if hero else 0.82
+		var ear_x := (0.179 if hero else 0.123 if granny else 0.152) * side
+		b.ellipsoid(Vector3(ear_x, ear_y, 0.008), Vector3(0.017, 0.035, 0.027), "skin", 3, 12, 8)
+	if hero:
+		# The curled trunk is a real curved volume, visible in profile too.
+		var trunk := PackedVector3Array([Vector3(0, 0.737, -0.12), Vector3(-0.006, 0.708, -0.14), Vector3(-0.006, 0.674, -0.151), Vector3(0.002, 0.654, -0.16), Vector3(0.021, 0.649, -0.169), Vector3(0.043, 0.66, -0.167), Vector3(0.049, 0.68, -0.16)])
+		b.tube(trunk, 0.022, "skin", 3, 12)
+		b.ellipsoid(Vector3(0.049, 0.68, -0.178), Vector3(0.0045, 0.0045, 0.003), "ink", 3, 8, 4)
+		var mouth_y := 0.607
+		var mouth_z := _face_z(face, 1.0, 0, mouth_y)
+		b.ellipsoid(Vector3(0, mouth_y, mouth_z - 0.005), Vector3(0.062, 0.013, 0.009), "ink", 3, 16, 6)
+		b.ellipsoid(Vector3(0, mouth_y, mouth_z - 0.013), Vector3(0.056, 0.008, 0.004), "eye", 3, 16, 6)
+		for x: float in [-0.036, -0.018, 0.0, 0.018, 0.036]:
+			b.tube(PackedVector3Array([Vector3(x, mouth_y - 0.007, mouth_z - 0.016), Vector3(x, mouth_y + 0.007, mouth_z - 0.016)]), 0.0012, "ink", 3, 5)
+		_face_line(b, face, 1.0, PackedVector3Array([Vector3(-0.039, 0.577, 0), Vector3(0, 0.563, 0), Vector3(0.039, 0.577, 0)]), 0.0022)
+		# A small yellow tuft, with no invented wool hat or dark hairstyle.
+		for item: Vector4 in [Vector4(-0.045, 0.938, 0.041, 0.040), Vector4(0.0, 0.958, 0.046, 0.042), Vector4(0.045, 0.944, 0.042, 0.034)]:
+			b.ellipsoid(Vector3(item.x, item.y, 0.0), Vector3(item.z, item.w, 0.061), "accent", 3, 14, 8)
+	else:
+		var nose_top := eye_y + 0.011
+		var nose := PackedVector3Array([Vector3(-0.011, nose_top, -0.112), Vector3(-0.012, eye_y - 0.023, -0.135), Vector3(0, eye_y - 0.028, -0.144), Vector3(0.011, eye_y - 0.023, -0.135), Vector3(0.011, nose_top, -0.112)])
+		b.tube(nose, 0.008, "skin", 3, 10)
+		var mouth_y := eye_y - 0.052
+		var mz := _face_z(face, 1.0, 0, mouth_y)
+		b.ellipsoid(Vector3(0, mouth_y, mz - 0.005), Vector3(0.024 if granny else 0.032, 0.008 if granny else 0.012, 0.006), "ink", 3, 12, 6)
+		if not granny:
+			b.box(Vector3(0, mouth_y + 0.005, mz - 0.011), Vector3(0.038, 0.004, 0.003), "eye", 3)
+		for x: float in [-0.07, 0.0, 0.07]:
+			_face_line(b, face, 1.0, PackedVector3Array([Vector3(x - 0.027, 0.69 if granny else 0.677, 0), Vector3(x, 0.681 if granny else 0.667, 0), Vector3(x + 0.027, 0.69 if granny else 0.677, 0)]), 0.0021)
+		if granny:
+			for i in 9:
+				var x := (i - 4) * 0.017
+				var y := 0.91 + sqrt(maxf(0.0, 1.0 - pow(x / 0.095, 2))) * 0.017
+				b.ellipsoid(Vector3(x, y, -0.083), Vector3(0.011, 0.012, 0.01), "trim", 3, 10, 6)
 
 func _uniform_variant(drawing: String) -> Node3D:
 	# The body is the existing approved uniform mesh; faces/hat/props are distinct

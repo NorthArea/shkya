@@ -20,8 +20,10 @@ const CANVAS_M := 2.0              # высота холста облика жи
 const SEAT_FEET := 0.95            # ноги сидящего: голова взрослого ≈ 2,6 м, ниже верха окон 2,92
 const STAND_FEET := 1.0            # стоящий у поручня — чуть выше сидящих, макушка ниже верха окон
 const DRIVER_AT := Vector3(-0.62, 0.8, -4.95)   # голова ≈ 2,5 м: в лобовом и в первом боковом окне
+const DRIVER_AT_3D := DRIVER_AT + Vector3(0, 0, 0.05)
 const DRIVER_LOOK: StringName = &"ushanka_walk"
 const DRIVER_TURN := -0.9          # рад: голова к дверям (+X) на стоянке
+const DRIVER_TURN_3D := -0.30      # объёмная голова поворачивается в свободном пространстве над рулём
 const DRIVER_TURN_SPEED := 3.0     # 1/с
 const LOD_RANGE := 60.0
 const MAX_SHOWN := 8
@@ -57,15 +59,21 @@ func _init() -> void:
 func _ready() -> void:
 	driver = _occupant(character_for(DRIVER_LOOK), CANVAS_M, &"trolley_driver")
 	driver.name = "Driver"
-	driver.position = DRIVER_AT
+	driver.position = DRIVER_AT_3D if uses_3d() else DRIVER_AT
 	add_child(driver)
 	_refill()
 
 ## Голова водителя: на стоянке (двери открыты) — к дверям, в пути — вперёд.
 func tick(delta: float, doors_open: bool) -> void:
-	var wanted := DRIVER_TURN if doors_open else 0.0
+	var wanted := (DRIVER_TURN_3D if uses_3d() else DRIVER_TURN) if doors_open else 0.0
 	_turn = lerpf(_turn, wanted, 1.0 - exp(-DRIVER_TURN_SPEED * delta))
-	driver.rotation.y = _turn
+	if driver.uniform_visual != null:
+		var skeleton: Skeleton3D = driver.uniform_visual.skeleton
+		var head := skeleton.find_bone("head")
+		skeleton.set_bone_pose_rotation(head, Quaternion(Vector3.UP, _turn))
+		skeleton.force_update_all_bone_transforms()
+	else:
+		driver.rotation.y = _turn
 
 ## Жители в поездке (Residents, каждый шаг физики). Порядок не важен; меняется состав — меняются места.
 func set_riders(list: Array) -> void:

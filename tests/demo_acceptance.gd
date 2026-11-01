@@ -52,6 +52,7 @@ var textures_seen := {}
 var toast_frames := 0
 var sim_frames := 0
 var _outfit_heights := Vector2.ZERO
+var _seated_leg_poses: Array[Quaternion] = []
 var _player_capsule := Vector2.ZERO
 var _player_collider_transform := Transform3D.IDENTITY
 var _ram_trace_active := false
@@ -83,9 +84,18 @@ func _run() -> void:
 	_report()
 	drv.release_all()
 	drv.on_frame = Callable()
+	for kind: String in ["AudioStreamPlayer", "AudioStreamPlayer3D"]:
+		for player: Node in main.find_children("*", kind, true, false):
+			player.stop()
 	main.queue_free()
+	main = null
+	_world = null
+	drv = null
 	for i in 10:
 		await process_frame
+	# The mixer releases stopped playbacks on its wall clock.
+	OS.delay_msec(100)
+	await process_frame
 	quit(0 if failures.is_empty() else 1)
 
 # =====================================================================================
@@ -580,6 +590,14 @@ func _bind(w: DemoWorld) -> void:
 	_kiosk_goods = _bread_props(w)
 	var look: Node = w.player.get_node("Visual/Look")
 	_outfit_heights = Vector2(look.height_m * Catalog.visible_height_ratio("ilyusha"), SeatedVisual.LADA_VISIBLE_HEIGHT)
+	_seated_leg_poses.clear()
+	if Uniform.civilians_enabled():
+		var seated: Node = w.car.visual.get_node("Body/Driver")
+		var seated_rig: Skeleton3D = seated.uniform_visual.skeleton
+		for bone_name: String in ["leg_l", "leg_r"]:
+			var bone := seated_rig.find_bone(bone_name)
+			if bone >= 0:
+				_seated_leg_poses.append(seated_rig.get_bone_pose_rotation(bone))
 	var collider: CollisionShape3D = w.player.get_node("CollisionShape3D")
 	var capsule := collider.shape as CapsuleShape3D
 	_player_capsule = Vector2(capsule.radius, capsule.height)
@@ -595,7 +613,12 @@ func _monitor_3d_outfit(w: DemoWorld) -> void:
 		matches = on_foot.resolved_character() == "ilyusha" and seated.resolved_character() == "ilyusha" and a.model.get_meta("drawing", "") == "ilyusha" and b.model.get_meta("drawing", "") == "ilyusha" and a.uniform_mesh.mesh == b.uniform_mesh.mesh and a.skeleton != b.skeleton
 		matches = matches and is_equal_approx(a.visible_height, _outfit_heights.x) and is_equal_approx(b.visible_height, _outfit_heights.y) and a.model.scale.is_equal_approx(Vector3.ONE * _outfit_heights.x) and b.model.scale.is_equal_approx(Vector3.ONE * _outfit_heights.y)
 		var legs: Skeleton3D = b.skeleton
-		matches = matches and is_equal_approx(legs.get_bone_pose_rotation(legs.find_bone("leg_l")).angle_to(Quaternion.IDENTITY), 1.35)
+		matches = matches and _seated_leg_poses.size() == 2
+		for index in _seated_leg_poses.size():
+			var bone := legs.find_bone("leg_l" if index == 0 else "leg_r")
+			matches = matches and bone >= 0 and _seated_leg_poses[index].angle_to(Quaternion.IDENTITY) > 0.01
+			if bone >= 0:
+				matches = matches and legs.get_bone_pose_rotation(bone).angle_to(_seated_leg_poses[index]) < 0.0001
 	var collider: CollisionShape3D = w.player.get_node("CollisionShape3D")
 	var capsule := collider.shape as CapsuleShape3D
 	matches = matches and capsule != null and Vector2(capsule.radius, capsule.height).is_equal_approx(_player_capsule) and collider.transform.is_equal_approx(_player_collider_transform)

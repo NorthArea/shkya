@@ -360,15 +360,14 @@ const PORTRAIT_FILE := {&"officer": "police", &"account_officer": "officer"}
 static var _portrait_textures_3d: Dictionary = {}
 
 static func portrait_source_path(kind: StringName) -> String:
-	if UniformPortrait.civilians_enabled():
-		return PortraitCatalog.portrait_path(kind)
+	# Approved drawings stay current until the revised 3D faces have GPU portraits.
 	return "res://assets/art/characters/%s_front_idle.svg" % PORTRAIT_FILE.get(kind, kind)
 
 func _draw_portrait() -> void:
 	var rect := Rect2(Vector2.ZERO, portrait.size)
 	portrait.draw_rect(rect, PAPER_DARK)
 	var path := portrait_source_path(_portrait_kind)
-	if UniformPortrait.civilians_enabled():
+	if path.ends_with(".png"):
 		if not _portrait_textures_3d.has(path) and not path.is_empty() and ResourceLoader.exists(path):
 			_portrait_textures_3d[path] = load(path)
 		var texture_3d: Texture2D = _portrait_textures_3d.get(path)

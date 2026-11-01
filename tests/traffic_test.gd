@@ -17,6 +17,7 @@ extends SceneTree
 const Layout = preload("res://game/world/layout.gd")
 const Driver = preload("res://tests/playthrough_driver.gd")
 const TrafficScript = preload("res://game/world/traffic.gd")
+const Clearance = preload("res://tests/skinned_clearance.gd")
 const Uniform = preload("res://game/characters/uniform_visual.gd")
 
 var failures: Array[String] = []
@@ -124,10 +125,10 @@ func _part_people() -> void:
 	# Стенка за водителем и руль не на голове.
 	if driver.uses_uniform_3d():
 		var head_box := _occupant_model_bounds(driver, true)
-		# Actual wheel ring: radius .24, tilted Y axis (0,.87,-.5), tube .018.
-		# Check volume separation; the old guessed SVG face-centre Y is not a 3D bound.
-		var wheel_box := AABB(Vector3(-0.858, Trolleybus.SILL + 0.25 - 0.227, -5.488), Vector3(0.516, 0.454, 0.276))
-		check(head_box.end.z < -4.6 and not head_box.intersects(wheel_box), "driver's actual skinned head clears partition and original steering wheel")
+		# AABB includes empty space around the tilted ring. Compare all actual
+		# head triangles with the original 12 segments, .018 tube plus .005 gap.
+		var wheel_clearance := Clearance.mesh_wheel_clearance(driver, people)
+		check(head_box.end.z < -4.6 and wheel_clearance.minimum_centreline_distance >= 0.023, "driver's actual skinned head clears partition and original steering wheel")
 	else:
 		check(head.z < -4.6 and head.y > Trolleybus.SILL + 0.25 + 0.3, "driver's head clear of the partition (z −4.55) and the wheel (y %.2f)" % (Trolleybus.SILL + 0.25))
 	var shown: Array = people.shown()
@@ -199,6 +200,25 @@ func _occupant_model_bounds(p: Node3D, head_only := false) -> AABB:
 			maximum = maximum.max(point)
 	check(minimum != Vector3.INF, p.name + " exposes real skinned " + ("head" if head_only else "body") + " geometry")
 	return AABB(minimum, maximum - minimum)
+
+func _occupant_head_yaw(actor: Node3D) -> float:
+	if not actor.uses_uniform_3d():
+		return actor.rotation.y
+	var visual: Node = actor.uniform_visual
+	var head: int = visual.skeleton.find_bone("head")
+	var facing: Vector3 = actor.get_parent().global_basis.inverse() * visual.model.global_basis * visual.skeleton.get_bone_global_pose(head).basis * Vector3.FORWARD
+	return atan2(-facing.x, -facing.z)
+
+func _occupant_grip_error(actor: Node3D) -> float:
+	var visual: Node = actor.uniform_visual
+	var error := 0.0
+	for suffix: String in ["_l", "_r"]:
+		var hand: int = visual.skeleton.find_bone("hand" + suffix)
+		var point: Vector3 = visual.skeleton.get_bone_global_pose(hand) * Vector3(0, -0.034, -0.008)
+		point = actor.get_parent().to_local(visual.model.to_global(point))
+		var target := Vector3(-0.38 if suffix == "_l" else -0.82, 1.97, -5.35)
+		error = maxf(error, point.distance_to(target))
+	return error
 
 # =====================================================================================
 # 1. Путь: правая полоса, по часовой стрелке, скругление 6 м
@@ -359,14 +379,18 @@ func _part_laps() -> void:
 	var turn_at_stop := 0.0      # TROLLEY-01: голова водителя к дверям на стоянке
 	var turn_driving := 0.0      # и прямо в пути (через 3 с после отправления)
 	var since_dwell := 0.0
+	var worst_grip_error := 0.0
 	for frame in max_frames:
 		await physics_frame
 		var bus: Trolleybus = traffic.trolleybus
 		since_dwell = 0.0 if bus.doors_open else since_dwell + 1.0 / 60.0
+		var head_yaw := _occupant_head_yaw(bus.people.driver)
 		if bus.doors_open:
-			turn_at_stop = minf(turn_at_stop, bus.people.driver.rotation.y)
+			turn_at_stop = minf(turn_at_stop, head_yaw)
 		elif since_dwell > 3.0:
-			turn_driving = maxf(turn_driving, absf(bus.people.driver.rotation.y))
+			turn_driving = maxf(turn_driving, absf(head_yaw))
+		if bus.people.driver.uses_uniform_3d():
+			worst_grip_error = maxf(worst_grip_error, _occupant_grip_error(bus.people.driver))
 		for v in traffic.vehicles:
 			var front: float = v.s + v.wheelbase * 0.5
 			var rear: float = v.s - v.wheelbase * 0.5
@@ -414,7 +438,9 @@ func _part_laps() -> void:
 		check(absf(dwell - Trolleybus.DWELL) <= 0.1 and off < 0.3 and still < 0.01 and c[1] == "close", "trolley stop %d %s: stood %.2f s (≈6), %.2f m from the stop point, moved %.3f m while doors open" % [e[2], stop, dwell, off, still])
 		served[e[2]] = true
 	check(served.size() == Layout.TROLLEY_STOPS.size(), "trolleybus served both TROLLEY_STOPS (%s)" % [served.keys()])
-	check(turn_at_stop < -0.6 and turn_driving < 0.05, "driver turns his head to the doors at stops (%.2f rad) and looks ahead while driving (%.2f)" % [turn_at_stop, turn_driving])
+	check(turn_at_stop < (-0.25 if Uniform.civilians_enabled() else -0.6) and turn_driving < 0.05, "driver turns his head to the doors at stops (%.2f rad) and looks ahead while driving (%.2f)" % [turn_at_stop, turn_driving])
+	if Uniform.civilians_enabled():
+		check(worst_grip_error <= 0.04, "driver keeps both actual palms at the original wheel while looking to the doors and ahead (%.4f m)" % worst_grip_error)
 	var sound: Node = world.get_node_or_null("SoundDirector")
 	if sound:
 		check(sound.played.get("trolley_doors", 0) >= 4, "door sound played at the stops (%d times)" % sound.played.get("trolley_doors", 0))

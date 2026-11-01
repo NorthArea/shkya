@@ -181,9 +181,9 @@ func _seated_geometry(instance: MeshInstance3D, skeleton: Skeleton3D, drawing: S
 		_check(absf(posed.y - sole) < 0.0001, drawing + " posed sole matches two-segment solver")
 	var posed_bounds := _cpu_bounds(instance, skeleton)
 	_check(absf(posed_bounds.position.y - sole) < 0.0001, drawing + " entire posed geometry rests on solved sole")
-	var lada_bottom := 0.05 + (posed_bounds.position.y - sole) * 1.45
-	var lada_top := 0.05 + (posed_bounds.end.y - sole) * 1.45
-	_check(absf(lada_bottom - 0.05) < 0.0001 and lada_top <= 1.355, drawing + " actual seated geometry fits Lada floor and head margin")
+	# This is the upright-shin trolley pose. Lada uses its actual pedal pose and
+	# cabin floor in car01_cabin_clearance_test.gd; it cannot inherit this solver.
+	_check(posed_bounds.size.y < 1.0 and posed_bounds.size.z < 1.0, drawing + " seated body stays within its normalized envelope")
 	for height: float in [1.5583, 1.91]:
 		var trolley_bottom := 0.8 + (posed_bounds.position.y - sole) * height
 		var trolley_top := 0.8 + (posed_bounds.end.y - sole) * height
@@ -192,7 +192,7 @@ func _seated_geometry(instance: MeshInstance3D, skeleton: Skeleton3D, drawing: S
 	skeleton.force_update_all_bone_transforms()
 	await process_frame
 	_rest_geometry(instance, skeleton, drawing + " seated reset")
-	print("IP01_CIVILIAN_SEATED: %s sole=%.6f posed=%s lada_top=%.6f" % [drawing, sole, posed_bounds, lada_top])
+	print("IP01_CIVILIAN_SEATED: %s sole=%.6f posed=%s" % [drawing, sole, posed_bounds])
 
 func _cpu_bounds(instance: MeshInstance3D, skeleton: Skeleton3D) -> AABB:
 	var lower := Vector3(INF, INF, INF)

@@ -22,13 +22,13 @@ const BEAM_RANGE := 22.0
 const BEAM_ENERGY := 6.0
 const BEAM_COLOR := Color(1.0, 0.91, 0.76)   # тёплый белый лампы накаливания
 
-## Водитель на переднем левом месте ВАЗ-2106: z=−0,20 перед стойкой B (z=0,19), за рулём (z≈−0,53).
+## Водитель на переднем левом месте ВАЗ-2106: z=−0,19 перед стойкой B (z=0,19), за рулём (z≈−0,53).
 ## y — линия «ног» холста, не макушка.
 ## По формуле LadaDriver y = DRIVER_AT.y + (FEET_Y − canvas_y) * DRIVER_HEIGHT / CANVAS_HEIGHT:
 ## волосы (canvas_y≈42) на 1,301 м, воротник (270–330) на 0,966–0,878 м: плечи уходят под линию окон.
 ## Холст крупнее на 17%; опущен, чтобы даже его прозрачный верх (1,362 м) остался ниже крыши (1,385 м).
 ## Сдвиг к центру на 1,5 см оставляет полный billboard внутри ширины крыши при любом повороте к камере.
-const DRIVER_AT := Vector3(-0.345, 0.497, -0.2)
+const DRIVER_AT := Vector3(-0.345, 0.497, -0.19) # 1 см за прежним местом: подбородок не касается нижнего обода
 const DRIVER_HEIGHT := 0.88
 
 ## Линии стёкол (y, z) «пятёрки»: лобовое и заднее — как в ART-03/POLISH-02 (по ним вписан водитель).
@@ -213,8 +213,12 @@ static func sedan_meshes(model: StringName) -> Dictionary:
 	var top: Array = spec["top"]
 	var bottom: Array = spec["bottom"]
 	# Нижний кузов: лофт сечений со скруглёнными рёбрами, завалом бортов и вырезами арок.
-	b.loft("paint", VehicleMesh.hull_stations(length, w, top, bottom, axles, r, arch, spec["round"], spec["round"],
-		0.018, 0.04, spec["edge"]))
+	var stations := VehicleMesh.hull_stations(length, w, top, bottom, axles, r, arch, spec["round"], spec["round"],
+		0.018, 0.04, spec["edge"])
+	if LadaDriver.uses_3d():
+		_open_cabin_hull(b, stations, spec)
+	else:
+		b.loft("paint", stations)
 	_greenhouse(b, glass, spec)
 	_cabin(cabin, spec)
 	_details(b, spec, hl, w, belt, r, arch, axles, bottom)
@@ -224,6 +228,34 @@ static func sedan_meshes(model: StringName) -> Dictionary:
 		"interior": VehicleMesh.finish(cabin),
 	}
 	return VehicleMesh.store(key, meshes)
+
+## Keep the door walls and underbody, with an actual opening between the screens.
+## The closed hull's flat upper strip used to slice through the seated driver.
+static func _open_cabin_hull(b: VehicleMesh.Builder, stations: Array, spec: Dictionary) -> void:
+	var rows: Array = []
+	var upper_rows: Array = []
+	var refs := PackedVector3Array()
+	for station: Array in stations:
+		var ring := b.section(station[0], station[1], station[2], station[3], station[4], station[5], station[6])
+		var top := (ring.size() + 2) / 2 - 1
+		var shell := PackedVector3Array()
+		for index in range(top + 1, ring.size()):
+			shell.append(ring[index])
+		for index in range(0, top):
+			shell.append(ring[index])
+		rows.append(shell)
+		upper_rows.append(PackedVector3Array([ring[top - 1], ring[top], ring[top + 1]]))
+		refs.append(Vector3(0, (station[1] + station[2]) * 0.5, station[0]))
+	b.grid("paint", rows, false, refs)
+	for index in stations.size() - 1:
+		var middle_z: float = (stations[index][0] + stations[index + 1][0]) * 0.5
+		if middle_z > spec["ws"][0].y + 0.10 and middle_z < spec["rear"][0].y - 0.10:
+			continue
+		b.grid("paint", [upper_rows[index], upper_rows[index + 1]], false, PackedVector3Array([refs[index], refs[index + 1]]))
+	var first: Array = stations[0]
+	var last: Array = stations[-1]
+	b.cap("paint", b.section(first[0], first[1], first[2], first[3], first[4], first[5], first[6]), Vector3.FORWARD)
+	b.cap("paint", b.section(last[0], last[1], last[2], last[3], last[4], last[5], last[6]), Vector3.BACK)
 
 ## Крыша, стойки и стёкла: лобовое и заднее по линиям ws/rear, боковые окна передней и задней двери, глухая
 ## треугольная «парусная» панель у задней стойки.
@@ -321,7 +353,11 @@ static func _cabin(b: VehicleMesh.Builder, spec: Dictionary) -> void:
 	var y := LadaDriver.LADA_FLOOR - 0.002 if occupants_3d else belt + 0.007
 	b.box("dark", Vector3(gw * 2.0 - 0.04, 0.004, rb.y - wsb.y - 0.02), Vector3(0, y, (wsb.y + rb.y) * 0.5))
 	if occupants_3d:
-		b.rbox("cloth", Vector3(0.50, 0.12, 0.50), Vector3(-0.345, 0.34, -0.10), 0.04)
+		for side: float in [-1.0, 1.0]:
+			b.box("dark", Vector3(0.024, belt - LadaDriver.LADA_FLOOR, rb.y - wsb.y - 0.18), Vector3(side * (gw - 0.035), (belt + LadaDriver.LADA_FLOOR) * 0.5, (wsb.y + rb.y) * 0.5))
+		b.box("dark", Vector3(gw * 2.0 - 0.08, belt - LadaDriver.LADA_FLOOR, 0.024), Vector3(0, (belt + LadaDriver.LADA_FLOOR) * 0.5, wsb.y + 0.10))
+		b.box("dark", Vector3(gw * 2.0 - 0.08, belt - LadaDriver.LADA_FLOOR, 0.024), Vector3(0, (belt + LadaDriver.LADA_FLOOR) * 0.5, rb.y - 0.10))
+		b.rbox("cloth", Vector3(0.50, 0.12, 0.50), Vector3(-0.345, 0.37, -0.10), 0.04)
 		b.rbox("cloth", Vector3(0.48, 0.42, 0.08), Vector3(-0.345, 0.60, 0.12), 0.03, Basis(Vector3.RIGHT, -0.10))
 	b.rbox("dark", Vector3(gw * 2.0 - 0.1, 0.12, 0.3), Vector3(0, belt + 0.06, wsb.y + 0.13), 0.04)
 	# Руль: обод трубками, наклон к водителю, колонка к торпедо.

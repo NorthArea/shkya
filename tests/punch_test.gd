@@ -589,7 +589,14 @@ func check(condition: bool, label: String) -> bool:
 func _finish(code := -1) -> void:
 	print("PUNCH: %d checks, %d failures" % [checks, failures.size()])
 	if is_instance_valid(main):
+		for kind: String in ["AudioStreamPlayer", "AudioStreamPlayer3D"]:
+			for player: Node in main.find_children("*", kind, true, false):
+				player.stop()
 		main.queue_free()
-	for i in 3:
+		main = null
+	for i in 4:
 		await process_frame
+	# Stopped WAV playbacks are released by the wall-clock mixer thread.
+	OS.delay_msec(100)
+	await process_frame
 	quit(code if code >= 0 else (0 if failures.is_empty() else 1))

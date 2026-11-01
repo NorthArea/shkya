@@ -1184,7 +1184,8 @@
       "sha256": "8cf585202428d0028b5dd4966a0c4ef4f4867ce789218135a323da514936535a",
       "task_ids": [
         "OWNER-ARCHIVE-01",
-        "DRIVER-01"
+        "DRIVER-01",
+        "OWNER-AUDIT-02"
       ]
     }
   ]

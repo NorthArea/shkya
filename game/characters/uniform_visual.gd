@@ -153,9 +153,13 @@ func set_occupant_pose(profile: StringName) -> void:
 		_rotate("lower_arm_r", Vector3.RIGHT, 0.40)
 		skeleton.force_update_all_bone_transforms()
 		return
+	if profile == &"lada":
+		# Seated chin tuck keeps the full-sized head inside the roof lining.
+		var head := skeleton.find_bone("head")
+		skeleton.set_bone_pose_position(head, skeleton.get_bone_rest(head).origin - Vector3.UP * 0.018)
 	for suffix: String in ["_l", "_r"]:
-		_rotate("leg" + suffix, Vector3.RIGHT, 1.35)
-		_rotate("foot" + suffix, Vector3.RIGHT, -1.35)
+		_rotate("leg" + suffix, Vector3.RIGHT, 1.65 if profile == &"lada" else 1.35)
+		_rotate("foot" + suffix, Vector3.RIGHT, -0.17 if profile == &"lada" else -1.35)
 		_rotate("upper_arm" + suffix, Vector3.RIGHT, 0.95 if profile in [&"lada", &"trolley_driver"] else 0.30)
 		_rotate("lower_arm" + suffix, Vector3.RIGHT, 0.55)
 	skeleton.force_update_all_bone_transforms()
@@ -164,16 +168,25 @@ func set_lod(distance: float, margin: float = 4.0) -> void:
 	uniform_mesh.visibility_range_end = distance
 	uniform_mesh.visibility_range_end_margin = margin
 
-## Height of the posed sole above this visual's origin. The two-segment occupant
-## rig uses leg + foot as thigh/shin, and opposing bends keep soles horizontal.
+## A tilted boot rests on its heel, not its bind-space ankle projection.
+## Use the real weighted mesh so raised pedals cannot push shoes below the floor.
 func occupant_sole_height() -> float:
 	var lowest := INF
-	for suffix: String in ["_l", "_r"]:
-		var bone := skeleton.find_bone("foot" + suffix)
-		var authored_rest := skeleton.get_bone_global_rest(bone)
-		var point := Vector3(authored_rest.origin.x, 0.0, authored_rest.origin.z)
-		var posed := skeleton.get_bone_global_pose(bone) * authored_rest.affine_inverse() * point
-		lowest = minf(lowest, posed.y * visible_height)
+	for surface in uniform_mesh.mesh.get_surface_count():
+		var arrays := uniform_mesh.mesh.surface_get_arrays(surface)
+		var vertices: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
+		var bones: PackedInt32Array = arrays[Mesh.ARRAY_BONES]
+		var weights: PackedFloat32Array = arrays[Mesh.ARRAY_WEIGHTS]
+		for index in vertices.size():
+			var point := Vector3.ZERO
+			for influence in 4:
+				var slot := index * 4 + influence
+				if weights[slot] <= 0.0:
+					continue
+				var bind := bones[slot]
+				var bone := uniform_mesh.skin.get_bind_bone(bind)
+				point += (skeleton.get_bone_global_pose(bone) * uniform_mesh.skin.get_bind_pose(bind) * vertices[index]) * weights[slot]
+			lowest = minf(lowest, point.y * visible_height)
 	return lowest
 
 ## Two-bone arm reach in normalized model coordinates. Targets are authored by

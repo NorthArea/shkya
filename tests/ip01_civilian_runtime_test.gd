@@ -181,7 +181,7 @@ func _run() -> void:
 	if driver.uses_uniform_3d():
 		var box := bounds(driver.uniform_visual, driver.get_parent())
 		check(box.end.y <= 1.355 and box.end.y >= 1.20, "actual seated Lada head has at least 3cm roof clearance with adult proportions")
-		check(box.position.y >= 0.04, "actual seated Lada geometry stays above the car floor")
+		check(box.position.y >= 0.31, "actual seated Lada geometry stays above its exterior underbody")
 		check(not rest(driver.uniform_visual.skeleton), "actual Lada driver uses a seated arm/leg pose")
 		for suffix: String in ["_l", "_r"]:
 			var palm := palm_in_parent(driver, suffix)
@@ -236,13 +236,14 @@ func _run() -> void:
 	var dialog: Node = world.quest_flow.dialog
 	for kind: StringName in [&"babka", &"vendor", &"ilyusha", &"officer", &"account_officer"]:
 		var source := Dialog.portrait_source_path(kind)
-		check(source == "res://assets/art/portraits3d/%s.png" % kind, String(kind) + " actual dialog consumer chooses same-model 3D portrait path")
+		var drawing: String = {&"officer": "police", &"account_officer": "officer"}.get(kind, String(kind))
+		check(source == "res://assets/art/characters/%s_front_idle.svg" % drawing, String(kind) + " dialog retains the approved drawing while revised GPU portraits are pending")
 		if ResourceLoader.exists(source):
 			var texture: Texture2D = load(source)
-			check(texture.get_size() == Vector2(512, 512), String(kind) + " native portrait has expected resolution")
+			check(texture.get_width() >= 400 and texture.get_height() >= 600, String(kind) + " approved portrait source has full drawing resolution")
 		dialog.open("QA", "QA", [], kind)
 		await frames(1)
-		check(dialog.is_open() and dialog._portrait_kind == kind, String(kind) + " actual panel opens with 3D portrait or explicit neutral placeholder")
+		check(dialog.is_open() and dialog._portrait_kind == kind, String(kind) + " actual panel opens with the approved face")
 		dialog.close()
 	# Match the qualified Main-test teardown: queued UI children and audio commands
 	# must drain before SceneTree shutdown, including the final dialog voice.
