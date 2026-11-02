@@ -1,0 +1,20 @@
+{
+  "candidate": 1,
+  "date": "2026-11-02",
+  "generation_tool": "built-in image_gen.imagegen",
+  "mode": "generate",
+  "input_images": [],
+  "prompt_file": "01.prompt.txt",
+  "image_file": "01.png",
+  "original_image": "/Users/a.iuskasov/.codex/generated_images/01a19b10-a714-7fd1-8733-1f91e9f31f1d/exec-efd8f217-f18a-4e37-9273-58cca84a9d0a.png",
+  "artifact_type": "generated 3D-look concept image, not an exported mesh",
+  "design": "Thin elongated slightly slouched young adult, angular dark-haired head, short cold-blue pea coat and warm orange scarf.",
+  "inspection": {
+    "four_full_body_views": true,
+    "front_profile_rear_three_quarter": true,
+    "obvious_3d_volume": true,
+    "consistent_character": true,
+    "large_digit": "1",
+    "note": "Inspected the generated image directly; all four views retain matching face, clothes and proportions."
+  }
+}

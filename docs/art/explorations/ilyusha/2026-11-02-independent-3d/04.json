@@ -1,0 +1,19 @@
+{
+  "candidate": 4,
+  "character": "Ilyusha",
+  "tool": "built-in image_gen.imagegen",
+  "generation_tool": "image_gen__imagegen",
+  "prompt_file": "04.prompt.txt",
+  "image_file": "04.png",
+  "source_image": "/Users/a.iuskasov/.codex/generated_images/01a19b11-efb3-7183-887d-5d0a44c2baca/exec-33829414-6c22-4131-99fe-b6940bc5fe01.png",
+  "asset_type": "generated 3D-look concept image; not an exported 3D mesh",
+  "actual_mesh": false,
+  "design": "Squat square broad-shouldered adult, bevelled rectangular head, short dark hair, heavy eyebrows, graphite jacket with tiny ochre-lime zip pull.",
+  "inspection": {
+    "four_full_body_views": true,
+    "consistent_character": true,
+    "obvious_3d_volume": true,
+    "large_assigned_digit": true
+  },
+  "independent_art_session": true
+}

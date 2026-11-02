@@ -1,0 +1,24 @@
+{
+  "candidate": 2,
+  "generated_at": "2026-11-02",
+  "generation_tool": "built-in image_gen.imagegen",
+  "prompt_file": "02.prompt.txt",
+  "image_file": "02.png",
+  "source_image": "/Users/a.iuskasov/.codex/generated_images/01a19b11-130d-7383-ac88-4af639405349/exec-d233c833-1dce-4c2a-9268-b6bc87150140.png",
+  "asset_type": "generated 3D-look concept image; not an exported 3D mesh",
+  "design": "Very round, stout short adult in a terracotta puffer with enormous oatmeal mittens, cropped dark hair and short sturdy legs.",
+  "inspection": {
+    "views": [
+      "front",
+      "right-facing side",
+      "back",
+      "larger front three-quarter"
+    ],
+    "consistent_character": true,
+    "obvious_dimensional_volume": true,
+    "full_body_all_views": true,
+    "number_visible": 2
+  },
+  "references": [],
+  "generation_count": 1
+}

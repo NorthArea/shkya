@@ -1,0 +1,23 @@
+{
+  "candidate": 3,
+  "created": "2026-11-02",
+  "generation_tool": "built-in image_gen.imagegen",
+  "prompt_file": "03.prompt.txt",
+  "image_file": "03.png",
+  "source_image": "/Users/a.iuskasov/.codex/generated_images/01a19b11-78e7-78b3-b687-62163fa91465/exec-691a9edb-8c11-4fc5-bbe7-cb3f500aae3c.png",
+  "artifact_type": "generated 3D-look concept image; not an exported 3D mesh",
+  "design": "Huge upright pear-shaped bald head, asymmetrical shy smile, hooked nose, small body in lilac quilted winter coat, dusty rose skin and thin mildly bowed legs.",
+  "inspection": {
+    "four_views": true,
+    "views": [
+      "front",
+      "side",
+      "back",
+      "three-quarter"
+    ],
+    "consistent_identity_and_costume": true,
+    "obvious_3d_volume": true,
+    "full_body_visible": true
+  },
+  "notes": "Original preserved. No game code, Godot, canon, Git or other candidates touched."
+}

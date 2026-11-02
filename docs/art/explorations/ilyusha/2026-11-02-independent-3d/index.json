@@ -1,0 +1,53 @@
+{
+  "request": "MSG-0154",
+  "method": "Five fresh independent artist sessions; built-in image_gen",
+  "asset_type": "3D-look concept turnaround images, not exported game meshes",
+  "views": [
+    "front",
+    "side",
+    "back",
+    "three-quarter"
+  ],
+  "variants": [
+    {
+      "number": 1,
+      "direction": "Узкий, голубой бушлат",
+      "image": "01.png",
+      "prompt": "01.prompt.txt",
+      "metadata": "01.json",
+      "sha256": "c92d5f8c36ed2aa6b521067f756442730d19bc5e6e54d757519503f630f00147"
+    },
+    {
+      "number": 2,
+      "direction": "Круглый, терракотовый пуховик",
+      "image": "02.png",
+      "prompt": "02.prompt.txt",
+      "metadata": "02.json",
+      "sha256": "ebc44bc4328c4d783db0d3fb154a673c005a31be95cccc498c62dd6e2adff60b"
+    },
+    {
+      "number": 3,
+      "direction": "Гротескная груша, лиловая куртка",
+      "image": "03.png",
+      "prompt": "03.prompt.txt",
+      "metadata": "03.json",
+      "sha256": "c72b0461544ecf326a366acd8f33a93c4231c7c6077f0fa9e8c06166e544be5c"
+    },
+    {
+      "number": 4,
+      "direction": "Квадратный, графитовая куртка",
+      "image": "04.png",
+      "prompt": "04.prompt.txt",
+      "metadata": "04.json",
+      "sha256": "1b38098f1c1093c1f9be5517f3d4e3fb2a936b05a7a598470ebc7d907824115d"
+    },
+    {
+      "number": 5,
+      "direction": "А-силуэт, длинная парка и очки",
+      "image": "05.png",
+      "prompt": "05.prompt.txt",
+      "metadata": "05.json",
+      "sha256": "b3cc98fc2cc9372baca390d5b0c5556f51121887c70d8c2c84f608668afa9a33"
+    }
+  ]
+}

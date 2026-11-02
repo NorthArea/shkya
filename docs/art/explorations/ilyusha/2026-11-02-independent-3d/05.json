@@ -1,0 +1,25 @@
+{
+  "candidate": 5,
+  "title": "Ilyusha — triangular long parka silhouette",
+  "date": "2026-11-02",
+  "generation_tool": "built-in image_gen.imagegen",
+  "prompt_file": "05.prompt.txt",
+  "image_file": "05.png",
+  "source_image": "/Users/a.iuskasov/.codex/generated_images/01a19b12-d9d8-7e80-bfc2-90db1d67ce8e/exec-6a1cd811-7a57-4961-befb-5f1211032c1e.png",
+  "artifact_type": "Generated 3D-look concept image; not an exported 3D mesh",
+  "references": [],
+  "generation_count": 1,
+  "inspection": {
+    "views": [
+      "front",
+      "left profile",
+      "back",
+      "larger three-quarter"
+    ],
+    "consistent_character": true,
+    "unmistakable_3d_volume": true,
+    "full_body_views": true,
+    "assigned_digit_visible": true,
+    "notes": "Coherent forest-green long A-line parka, tiny round-trapezoid face with round glasses, cream cap, rust scarf, narrow trouser legs and broad boots; sculpted fabric volumes and floor contact shadows."
+  }
+}
