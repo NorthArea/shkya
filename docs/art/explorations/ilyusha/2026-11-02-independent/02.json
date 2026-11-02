@@ -1,0 +1,13 @@
+{
+  "artist": 2,
+  "date": "2026-11-02",
+  "character": "Илюша",
+  "mode": "built-in image_gen",
+  "use_case": "stylized-concept",
+  "image": "02.png",
+  "prompt": "02.prompt.txt",
+  "source": "/Users/a.iuskasov/.codex/generated_images/01a19ade-34fa-7200-8de0-b28a918e6bc8/exec-2f1ad5fc-69a9-4d96-833c-e80120896d83.png",
+  "idea": "Угловатый архитектурный коротыш: асимметричное взрослое лицо, компактная голова, трапециевидная куртка, читаемые ноги и тёплая скептическая мимика.",
+  "reference_images": [],
+  "status": "independent exploration; not canon"
+}

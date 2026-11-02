@@ -1,0 +1,14 @@
+{
+  "concept": 3,
+  "date": "2026-11-02",
+  "character": "Илюша",
+  "mode": "built-in image_gen",
+  "use_case": "stylized-concept",
+  "image": "03.png",
+  "prompt": "03.prompt.txt",
+  "source": "/Users/a.iuskasov/.codex/generated_images/01a19ade-9798-7163-a892-a259b714c60e/exec-1fdeedf7-0d30-4bc6-988a-e0c612055137.png",
+  "reference_images": [],
+  "idea": "Широкий взрослый ситкомный герой: короткий нос, тяжёлые асимметричные брови, низкая посадка глаз и плотный округлый силуэт.",
+  "status": "exploration",
+  "visual_check": "Полный рост и профиль, цифра 3; зелёная зимняя одежда со светлым воротником, розоватая кожа, светлый хохолок; нос короткий, силуэт широкий; без логотипов."
+}

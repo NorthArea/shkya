@@ -1,0 +1,12 @@
+{
+  "number": 4,
+  "tool": "built-in image_gen",
+  "use_case": "stylized-concept",
+  "idea": "Angular asymmetrical flat urban graphics; tired intelligent Siberian adult with readable legs.",
+  "reference": "builds/screenshots/IP-01/original-2d/reference_ilyusha_front.png",
+  "reference_role": "viewed for palette and winter identity anchors only",
+  "source": "/Users/a.iuskasov/.codex/generated_images/01a19adf-0293-7e12-b749-0f02706682bc/exec-17242f07-9f17-4e3b-a523-b6e95b7ccf20.png",
+  "asset": "04.png",
+  "prompt": "04.prompt.txt",
+  "status": "independent concept exploration; not canon"
+}

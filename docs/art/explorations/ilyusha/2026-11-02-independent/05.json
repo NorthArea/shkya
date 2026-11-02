@@ -1,0 +1,12 @@
+{
+  "concept": 5,
+  "character": "Илюша",
+  "date": "2026-11-02",
+  "mode": "built-in image_gen",
+  "image": "05.png",
+  "prompt": "05.prompt.txt",
+  "source": "/Users/a.iuskasov/.codex/generated_images/01a19adf-e650-7f21-8169-72f2a31f346f/exec-7bfb9e70-1c60-4f44-839b-204477ec997f.png",
+  "idea": "Компактный добродушный картофелеобразный взрослый с асимметричной улыбкой, маленьким кривым носом и приподнятым плечом.",
+  "reference_images": [],
+  "status": "independent exploration; not canon"
+}

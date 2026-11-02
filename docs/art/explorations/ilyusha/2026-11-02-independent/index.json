@@ -1,0 +1,41 @@
+{
+  "request": "MSG-0152",
+  "method": "Five independent artist agents; built-in image_gen; original project concepts, not selected game replacements",
+  "variants": [
+    {
+      "number": 1,
+      "image": "01.png",
+      "prompt": "01.prompt.txt",
+      "metadata": "01.json",
+      "sha256": "b4f9057583651d7298af5ddf9aad625e4de53b7740cf181eef2f1933cc304b10"
+    },
+    {
+      "number": 2,
+      "image": "02.png",
+      "prompt": "02.prompt.txt",
+      "metadata": "02.json",
+      "sha256": "9e0c96dddda29b008766b3c3919141266f9cb3648f37ce7ec4aeed4e6bdc126a"
+    },
+    {
+      "number": 3,
+      "image": "03.png",
+      "prompt": "03.prompt.txt",
+      "metadata": "03.json",
+      "sha256": "ef75b52a15b6ee7a9f04d8bfb9b703ff85ebfaab9afb5749453098c05a6d1278"
+    },
+    {
+      "number": 4,
+      "image": "04.png",
+      "prompt": "04.prompt.txt",
+      "metadata": "04.json",
+      "sha256": "d68c5bed15e8df6be5f3056499d4997aa55ede122313a700e2dd2436774abbc0"
+    },
+    {
+      "number": 5,
+      "image": "05.png",
+      "prompt": "05.prompt.txt",
+      "metadata": "05.json",
+      "sha256": "903a32f7e55b486c5e97a63305bf03554874d8156f78d608ea6e7cd2df02a4bc"
+    }
+  ]
+}

@@ -44,3 +44,5 @@
 Игровые ассеты и их источники — [assets/README.md](../../assets/README.md).
 
 - [Пять вариантов собственной рисовки Илюши,02.11](explorations/ilyusha/2026-11-02-five-styles.png) — отдельный лист поиска; [промпт](explorations/ilyusha/2026-11-02-five-styles.prompt.txt) и JSON происхождения лежат рядом.
+
+- [Пять независимых концептов Илюши](explorations/ilyusha/2026-11-02-independent/index.json) — отдельные листы01–05 с промптами, подготовленные пятью художниками по MSG-0152.

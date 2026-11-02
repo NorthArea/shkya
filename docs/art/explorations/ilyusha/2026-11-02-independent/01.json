@@ -1,0 +1,11 @@
+{
+  "concept": 1,
+  "character": "Илюша",
+  "mode": "built-in image_gen",
+  "use_case": "stylized-concept",
+  "image": "01.png",
+  "prompt": "01.prompt.txt",
+  "source": "/Users/a.iuskasov/.codex/generated_images/01a19add-d2d2-7c32-8c19-ab81046df281/exec-a8f6c3d3-3b1a-4245-9cd3-6357cc52bff4.png",
+  "direction": "Абсурдный гротеск: грушевидная голова, короткое тело, выразительный нос, неровная линия.",
+  "canon": false
+}
