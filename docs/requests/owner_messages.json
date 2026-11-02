@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "source_thread": "01a18dc0-9ae6-7c02-9b5f-70a15a73b205",
-  "snapshot_at_utc": "2026-11-02T15:17:04.340775+00:00",
+  "snapshot_at_utc": "2026-11-02T15:26:54.712642+00:00",
   "scope": "Все записи роли user текущего диалога до снимка. Служебные вставки отмечены отдельно. Исходный текст не исправлялся. Живые статусы только в docs/workflow/backlog.md, решения только в docs/DECISIONS.md.",
   "previous_independent_audit": {
     "record_count": 105,
@@ -1958,6 +1958,17 @@
       "kind": "message",
       "text": "на ветку мастер переключи меня и удали лишние вотки из репозтория - в общем почисти от лишнего гит",
       "sha256": "392b4a587da930cec19f7f6a82bebb7e4b26c35effe6569f1db7b935ccfb1698",
+      "task_ids": [
+        "GIT-CLEAN-01"
+      ]
+    },
+    {
+      "id": "MSG-0186",
+      "timestamp_utc": "2026-11-02T15:26:54.712642+00:00",
+      "timestamp_basis": "archive_capture_time; original message timestamp unavailable",
+      "kind": "message",
+      "text": "я перепутал. переключись на main и master удали. а в main слей все, что можно слить и удали ненужные ветки",
+      "sha256": "a314493bc773b17b91793da957ace8be49af12534b04c62b7681c2907f1f9e9b",
       "task_ids": [
         "GIT-CLEAN-01"
       ]
