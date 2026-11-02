@@ -1,11 +1,15 @@
 extends SceneTree
 ## Independent temporal acceptance on actual Ilyusha/Look/skin, not a pose helper.
-## Run at real clock without --fixed-fps: physics60/render cap120, four-second run.
+## Run at real clock without --fixed-fps: physics60/render cap120, both 4/8m/s.
 const PlayerScript = preload("res://game/player/ilyusha.gd")
 const DriverScript = preload("res://game/vehicles/lada_driver.gd")
 const InputSetup = preload("res://game/input_setup.gd")
 const EPS := 0.000001
 const HIP_STEP_LIMIT_M := 0.035
+const BODY_P2P_LIMIT_M := 0.03
+const SOLE_LIFT_LIMIT_M := 0.07
+const AIR_GAP_LIMIT_SECONDS := 0.10
+const FLOOR_PENETRATION_LIMIT_M := 0.012
 
 class AfterConsumers:
 	extends Node
@@ -16,8 +20,8 @@ class AfterConsumers:
 	func _physics_process(delta: float) -> void:
 		if inspect_physics.is_valid(): inspect_physics.call(delta)
 		physics_done.emit()
-	func _process(_delta: float) -> void:
-		if inspect_render.is_valid(): inspect_render.call()
+	func _process(delta: float) -> void:
+		if inspect_render.is_valid(): inspect_render.call(delta)
 		render_done.emit()
 
 var checks := 0
@@ -47,6 +51,10 @@ var max_fraction := -INF
 var hip_previous_y := NAN
 var hip_samples := 0
 var hip_peak_step := 0.0
+var contact_vertices: Array = []
+var sampling_body := false
+var body_physics: Array[Dictionary] = []
+var body_render: Array[Dictionary] = []
 
 func _initialize() -> void:
 	_run.call_deferred()
@@ -80,6 +88,7 @@ func _run() -> void:
 	visual = look.uniform_visual
 	check(look.uses_uniform_3d() and visual.rig != null, "real Ilyusha factory selects the live articulated 3D consumer")
 	vertices = _sole_vertices()
+	contact_vertices = _contact_vertices()
 	check(vertices.size() == 2, "independent mesh scan finds actual skinned sole vertices on both active ankles")
 	observer = AfterConsumers.new()
 	observer.process_physics_priority = 1000
@@ -96,8 +105,10 @@ func _run() -> void:
 	physics_previous = player.global_position
 	phase_first = visual.gait.phase
 	measuring = true
-	await create_timer(2.0).timeout
+	sampling_body = true
+	await create_timer(2.05).timeout
 	measuring = false
+	sampling_body = false
 	check(physics_samples >= 100 and render_samples > physics_samples + 30 and between_physics >= 30,
 		"real-clock measurement contains changing interpolation fractions between physical updates")
 	check(held_bones == 0, "moving leg bones advance on every sampled render-only interpolation interval")
@@ -116,6 +127,18 @@ func _run() -> void:
 		"fraction_range": [min_fraction, max_fraction], "phase_advance": phase_last - phase_first,
 		"physical_hip_samples": hip_samples, "peak_physical_hip_y_step_m": hip_peak_step,
 		"sha256": FileAccess.get_sha256(get_script().resource_path)}))
+	_body_limits("sprint8", 8.0)
+	Input.action_release(&"sprint")
+	await create_timer(2.0).timeout
+	body_physics.clear()
+	body_render.clear()
+	sampling_body = true
+	await create_timer(2.05).timeout
+	sampling_body = false
+	_body_limits("walk4", 4.0)
+	# Keep the original lifecycle witness entering place from an active sprint.
+	Input.action_press(&"sprint")
+	await create_timer(0.5).timeout
 	Input.action_release(&"move_forward")
 	Input.action_release(&"sprint")
 	player.input_enabled = false
@@ -163,6 +186,7 @@ func _run() -> void:
 	quit(0 if failures.is_empty() else 1)
 
 func _inspect_physics(delta: float) -> void:
+	if sampling_body: body_physics.append(_body_sample(false, delta))
 	if not measuring: return
 	physics_samples += 1
 	physical_distance += Vector2(player.global_position.x - physics_previous.x, player.global_position.z - physics_previous.z).length()
@@ -180,7 +204,8 @@ func _inspect_physics(delta: float) -> void:
 	else:
 		hip_previous_y = NAN
 
-func _inspect_render() -> void:
+func _inspect_render(delta: float) -> void:
+	if sampling_body: body_render.append(_body_sample(true, delta))
 	if not measuring: return
 	render_samples += 1
 	var fraction := Engine.get_physics_interpolation_fraction()
@@ -242,12 +267,12 @@ func _sole_vertices() -> Array[Dictionary]:
 		if not best.is_empty(): found.append(best)
 	return found
 
-func _skin_points() -> Array[Vector3]:
+func _skin_points(samples: Array = []) -> Array[Vector3]:
 	var result: Array[Vector3] = []
 	var mesh: MeshInstance3D = visual.uniform_mesh
 	var skeleton: Skeleton3D = visual.skeleton
 	skeleton.force_update_all_bone_transforms()
-	for sample: Dictionary in vertices:
+	for sample: Dictionary in (vertices if samples.is_empty() else samples):
 		var point := Vector3.ZERO
 		for influence in 4:
 			if sample.weights[influence] <= 0.0: continue
@@ -256,6 +281,100 @@ func _skin_points() -> Array[Vector3]:
 			point += (skeleton.get_bone_global_pose(bone) * mesh.skin.get_bind_pose(bind) * Vector3(sample.vertex)) * float(sample.weights[influence])
 		result.append(point)
 	return result
+
+func _contact_vertices() -> Array:
+	var sides := [[], []]
+	var mesh: Mesh = visual.uniform_mesh.mesh
+	for surface in mesh.get_surface_count():
+		var arrays := mesh.surface_get_arrays(surface)
+		var points: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
+		var bones: PackedInt32Array = arrays[Mesh.ARRAY_BONES]
+		var weights: PackedFloat32Array = arrays[Mesh.ARRAY_WEIGHTS]
+		for index in points.size():
+			if points[index].y > 0.012 or absf(points[index].x) < 0.01: continue
+			var side := 0 if points[index].x < 0.0 else 1
+			sides[side].append({"vertex": points[index], "bones": bones.slice(index * 4, index * 4 + 4),
+				"weights": weights.slice(index * 4, index * 4 + 4)})
+	for side in 2:
+		var all: Array = sides[side]
+		var reduced: Array = []
+		for index in mini(48, all.size()): reduced.append(all[index * all.size() / mini(48, all.size())])
+		sides[side] = reduced
+	return sides
+
+func _body_sample(interpolated: bool, delta: float) -> Dictionary:
+	var skeleton: Skeleton3D = visual.skeleton
+	var mesh: MeshInstance3D = visual.uniform_mesh
+	var root_frame := player.get_global_transform_interpolated() if interpolated else player.global_transform
+	var bone_frame := skeleton.get_global_transform_interpolated() if interpolated else skeleton.global_transform
+	var skin_frame := mesh.get_global_transform_interpolated() if interpolated else mesh.global_transform
+	skeleton.force_update_all_bone_transforms()
+	var hips: Vector3 = bone_frame * skeleton.get_bone_global_pose(skeleton.find_bone("hips")).origin
+	var head: Vector3 = bone_frame * skeleton.get_bone_global_pose(skeleton.find_bone("head")).origin
+	var lows: Array[float] = []
+	for side in 2:
+		var low := INF
+		if not contact_vertices[side].is_empty():
+			for point: Vector3 in _skin_points(contact_vertices[side]): low = minf(low, (skin_frame * point).y)
+		lows.append(low)
+	return {"delta": delta, "hips": hips.y - root_frame.origin.y, "head": head.y - root_frame.origin.y,
+		"speed": Vector2(player.velocity.x, player.velocity.z).length(), "grounded": player.is_on_floor(),
+		"left": lows[0], "right": lows[1]}
+
+func _body_metrics(samples: Array[Dictionary]) -> Dictionary:
+	var hip_min := INF
+	var hip_max := -INF
+	var head_min := INF
+	var head_max := -INF
+	var lift := 0.0
+	var penetration := 0.0
+	var gap := 0.0
+	var longest_gap := 0.0
+	var seconds := 0.0
+	var contacts := 0
+	var grounded := 0
+	var speed_min := INF
+	var speed_max := 0.0
+	for sample: Dictionary in samples:
+		hip_min = minf(hip_min, sample.hips)
+		hip_max = maxf(hip_max, sample.hips)
+		head_min = minf(head_min, sample.head)
+		head_max = maxf(head_max, sample.head)
+		lift = maxf(lift, maxf(sample.left, sample.right))
+		penetration = maxf(penetration, -minf(sample.left, sample.right))
+		seconds += float(sample.delta)
+		speed_min = minf(speed_min, sample.speed)
+		speed_max = maxf(speed_max, sample.speed)
+		if sample.grounded: grounded += 1
+		if minf(sample.left, sample.right) <= 0.01: contacts += 1
+		if minf(sample.left, sample.right) > 0.025:
+			gap += float(sample.delta)
+			longest_gap = maxf(longest_gap, gap)
+		else:
+			gap = 0.0
+	return {"samples": samples.size(), "seconds": seconds, "hips_p2p": hip_max - hip_min,
+		"head_p2p": head_max - head_min, "sole_lift": lift, "penetration": penetration,
+		"longest_air_gap": longest_gap, "contact_samples": contacts, "grounded_samples": grounded,
+		"speed_min": speed_min, "speed_max": speed_max}
+
+func _body_limits(label: String, speed: float) -> void:
+	var physical := _body_metrics(body_physics)
+	var presented := _body_metrics(body_render)
+	check(not contact_vertices[0].is_empty() and not contact_vertices[1].is_empty() \
+		and int(physical.samples) >= 115 and float(physical.seconds) >= 2.0 \
+		and int(physical.grounded_samples) == int(physical.samples) and int(physical.contact_samples) >= 10 \
+		and absf(float(physical.speed_min) - speed) < 0.1 and absf(float(physical.speed_max) - speed) < 0.1,
+		label + " real grounded root maintains actual speed and enough observed sole contacts for two seconds")
+	check(maxf(physical.hips_p2p, presented.hips_p2p) <= BODY_P2P_LIMIT_M \
+		and maxf(physical.head_p2p, presented.head_p2p) <= BODY_P2P_LIMIT_M,
+		label + " actual physics/render hips and head remain within 3cm peak-to-peak above the actor root")
+	check(maxf(physical.sole_lift, presented.sole_lift) <= SOLE_LIFT_LIMIT_M,
+		label + " actual skinned sole clearance stays within the 7cm low-step limit")
+	check(maxf(physical.longest_air_gap, presented.longest_air_gap) <= AIR_GAP_LIMIT_SECONDS,
+		label + " both actual soles never remain over 2.5cm clear for more than 0.10 seconds")
+	check(maxf(physical.penetration, presented.penetration) <= FLOOR_PENETRATION_LIMIT_M,
+		label + " actual physics/render sole penetration stays within 1.2cm of the real floor")
+	print("MOTION01_BODY_CONTINUITY ", JSON.stringify({"case": label, "physics": physical, "render": presented}))
 
 func _poses(skeleton: Skeleton3D) -> Array[Transform3D]:
 	var result: Array[Transform3D] = []

@@ -1,16 +1,17 @@
 extends RefCounted
 ## Distance-paced contact/swing controller. It never writes an actor transform.
 const Rig = preload("res://game/characters/locomotion_rig.gd")
-# One cycle contains two steps. Short cartoon legs must not turn root speed into
-# arbitrarily fast cycles: faster motion adds flight between reachable contacts.
+# Default NPC cycle; the hero retains the original distance-paced short step.
 const FULL_CYCLE_LEG_LENGTHS := 2.2
 const WALK_CYCLE_HZ := 1.7
 const RUN_CYCLE_HZ := 2.2
 const CONTACT_TRAVEL_LEG_LENGTHS := 1.15
-# The hero's short legs need a smaller contact extent at sprint speed.
 const SPRINT_CONTACT_TRAVEL_LEG_LENGTHS := 0.60
+const HERO_CYCLE_TRAVEL_M := 1.28
+const HERO_SWING_CLEARANCE_LEG_LENGTHS := 0.12
 var rig: Rig
 var _short_sprint_contacts := false
+var _short_step_weight := 0.0
 var phase := 0.0
 var motion_weight := 0.0
 var speed := 0.0
@@ -68,6 +69,7 @@ func reset() -> void:
 	motion_weight = 0.0
 	speed = 0.0
 	_air_weight = 0.0
+	_short_step_weight = 0.0
 	_land = 0.0
 	_pelvis_drop = 0.0
 	cadence = 0.0
@@ -103,6 +105,8 @@ func update(velocity: Vector3, on_floor: bool, pose_mode: StringName, delta: flo
 	speed = lerpf(speed, measured if walking else 0.0, 1.0 - exp(-delta * 14.0))
 	motion_weight = move_toward(motion_weight, 1.0 if walking else 0.0, delta * (7.5 if walking else 5.0))
 	_air_weight = move_toward(_air_weight, 0.0 if grounded else 1.0, delta * 12.0)
+	# Reuse the physical motion/air blend for starts, stops, takeoff and landing.
+	_short_step_weight = smoothstep(1.2, 4.0, speed) * motion_weight * (1.0 - _air_weight) if _short_sprint_contacts else 0.0
 	if local_velocity.length_squared() > 0.0001:
 		_travel_direction = local_velocity.normalized()
 		var from_yaw := atan2(-_direction.x, -_direction.z)
@@ -116,11 +120,13 @@ func update(velocity: Vector3, on_floor: bool, pose_mode: StringName, delta: flo
 	var run := smoothstep(2.2, 5.5, speed)
 	var world_leg_length := leg_length * scale_y
 	var cadence_ceiling := lerpf(WALK_CYCLE_HZ, RUN_CYCLE_HZ, smoothstep(4.0, 8.0, speed))
+	if _short_step_weight > 0.0:
+		cadence_ceiling = lerpf(cadence_ceiling, measured / HERO_CYCLE_TRAVEL_M, _short_step_weight)
 	cadence = minf(measured / maxf(0.01, world_leg_length * FULL_CYCLE_LEG_LENGTHS), cadence_ceiling) if walking else 0.0
 	var stride := measured / (cadence * scale_y) if cadence > 0.0 else leg_length * FULL_CYCLE_LEG_LENGTHS
 	var contact_travel := CONTACT_TRAVEL_LEG_LENGTHS
-	if _short_sprint_contacts:
-		contact_travel = lerpf(CONTACT_TRAVEL_LEG_LENGTHS, SPRINT_CONTACT_TRAVEL_LEG_LENGTHS, smoothstep(4.0, 8.0, speed))
+	if _short_step_weight > 0.0:
+		contact_travel = lerpf(CONTACT_TRAVEL_LEG_LENGTHS, SPRINT_CONTACT_TRAVEL_LEG_LENGTHS, _short_step_weight)
 	var stance := minf(0.62, leg_length * contact_travel / stride)
 	# A rotating hip socket cannot keep its old world contact for a full
 	# straight stride. Release earlier, rather than crouching to an unreachable foot.
@@ -171,7 +177,11 @@ func _required_pelvis_drop(shift: float) -> float:
 	var drop := 0.0
 	for index in 2:
 		var foot: Dictionary = _feet[index]
-		if float(foot.pose_weight) <= 0.0:
+		var weight := float(foot.pose_weight)
+		# A free recovery leg cannot force the loaded body down to its target.
+		if not bool(foot.support):
+			weight *= 1.0 - _short_step_weight
+		if weight <= 0.0:
 			continue
 		var leg: Dictionary = rig.legs[index]
 		var ankle: Vector3 = foot.target - foot.target_basis * (leg.rest_sole - leg.ankle_rest)
@@ -179,7 +189,7 @@ func _required_pelvis_drop(shift: float) -> float:
 		var horizontal := Vector2(ankle.x - hip.x, ankle.z - hip.z).length()
 		var length: float = (float(leg.upper_length) + float(leg.lower_length)) * 0.985
 		var height := sqrt(maxf(0.0, length * length - horizontal * horizontal))
-		drop = maxf(drop, (hip.y - ankle.y - height) * float(foot.pose_weight))
+		drop = maxf(drop, (hip.y - ankle.y - height) * weight)
 	return drop
 
 func _plan_foot(index: int, frame: Transform3D, cycle: float, stride: float, stance: float, leg_length: float, run: float) -> void:
@@ -232,6 +242,8 @@ func _plan_foot(index: int, frame: Transform3D, cycle: float, stride: float, sta
 		var offset := lerpf(-half_contact, half_contact, blend) + tangent
 		sole = rest + _direction * offset
 		var clearance := maxf(leg_length * lerpf(0.24, 0.40, run), float(leg.ankle_rest.y) * 0.70)
+		if _short_step_weight > 0.0:
+			clearance = lerpf(clearance, leg_length * HERO_SWING_CLEARANCE_LEG_LENGTHS, _short_step_weight)
 		# Clear the ground during the release/landing windows, before fast foot
 		# recovery. A long low sine-squared tail would drag the boot at root speed.
 		var lift_window := minf(0.30, stance / (1.0 - stance) * 0.40)
