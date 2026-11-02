@@ -1,0 +1,16 @@
+{
+  "purpose": "Five exploratory Ilyusha art directions for owner selection; not an approved replacement.",
+  "request": "MSG-0149",
+  "tool": "built-in image_gen.imagegen",
+  "image": "2026-11-02-five-styles.png",
+  "prompt_file": "2026-11-02-five-styles.prompt.txt",
+  "identity_reference_inspected": "assets/art/characters/ilyusha_front_idle.svg (raster preview)",
+  "variants": {
+    "1": "ShKYa-inspired grotesque",
+    "2": "Gravity Falls-inspired geometric cartoon",
+    "3": "The Simpsons-inspired flat sitcom cartoon",
+    "4": "Original urban-comedy hybrid",
+    "5": "Original textured pencil-and-ink hybrid"
+  },
+  "sha256": "7a23a7777c8af539b0910779071af1894f0ab65d70ef804c9a7ec69bc490d8da"
+}
