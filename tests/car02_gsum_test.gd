@@ -36,8 +36,8 @@ func run() -> void:
 	var opened := Gazelle.body_meshes(Gazelle.PASSENGER, true)
 	for actual: CityVan in [van, closure.van]:
 		var collider: CollisionShape3D = actual.get_node("CollisionShape3D")
-		check(actual.SIZE == Gazelle.SIZE and collider.shape.size == Gazelle.SIZE
-			and is_equal_approx(collider.position.y, Gazelle.SIZE.y * 0.5),
+		check(actual.SIZE == Vector3(2.075, 2.255, 5.500) and collider.shape.size == Vector3(2.075, 2.255, 5.500)
+			and is_equal_approx(collider.position.y, 2.255 * 0.5),
 			"both real mission consumers use passenger Gazelle dimensions and grounded collider")
 		check(actual.collision_layer == (1 if actual.visible else 0) and actual.collision_mask == 0,
 			"C2 visible mission transport is World; hidden closure consumer has no collision layer")

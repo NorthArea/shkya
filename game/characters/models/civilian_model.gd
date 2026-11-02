@@ -1,6 +1,6 @@
 extends RefCounted
 ## Solid 3D translations of the approved character drawings. Soles=0, top=1, forward=-Z.
-## Ilyusha and the other civilians follow the project's approved original 2D drawings.
+## Selected04 defines the sculpted style; residents keep their individual designs.
 const Builder = preload("res://game/characters/models/uniform_mesh_builder.gd")
 const Police = preload("res://game/characters/models/police_model.gd")
 const Guard = preload("res://game/characters/models/guard_model.gd")
@@ -11,12 +11,14 @@ const CIVILIAN_KNEE_Y := 0.22
 const DRAWINGS: Array[String] = ["ilyusha", "babka", "vendor", "officer", "resident_babka", "resident_man", "resident_woman", "resident_boy", "resident_shuba", "resident_beret", "resident_violet", "resident_ushanka", "resident_ushanka_walk", "resident_tourist", "resident_kid", "resident_kid2", "resident_dog", "resident_kolpak", "resident_bow", "resident_turban", "police_long", "police_round", "guard_alt"]
 static var _models: Dictionary = {}
 static var _materials: Dictionary = {}
-static var _hero_materials: Dictionary = {}
 
 static func supports(drawing: String) -> bool:
 	return drawing in DRAWINGS
 
 func build_model(drawing: String = "ilyusha") -> Node3D:
+	if drawing == "ilyusha":
+		push_error("Ilyusha is imported through UniformVisual; the procedural hero route is retired")
+		return null
 	if not supports(drawing):
 		push_error("Unknown City N character drawing: " + drawing)
 		return null
@@ -44,7 +46,7 @@ func build_model(drawing: String = "ilyusha") -> Node3D:
 	_initialize_rest(model)
 	model.set_meta("drawing", drawing)
 	model.set_meta("forward_axis", "-Z")
-	model.set_meta("design_status", "approved original 2D drawings translated to solid 3D; visual acceptance required")
+	model.set_meta("design_status", "selected independent concept04 translated to solid 3D; visual acceptance required" if drawing == "ilyusha" else "approved original 2D drawings translated to solid 3D; visual acceptance required")
 	_own(model, model)
 	var packed := PackedScene.new()
 	if packed.pack(model) == OK:
@@ -95,25 +97,12 @@ func _palette() -> Dictionary:
 			mat.roughness = 1.0
 			mat.metallic = 0.0
 			mat.specular_mode = BaseMaterial3D.SPECULAR_DISABLED
-			mat.diffuse_mode = BaseMaterial3D.DIFFUSE_TOON
+			mat.diffuse_mode = BaseMaterial3D.DIFFUSE_BURLEY
 			_materials[key] = mat
 	return _materials
 
 func _hero_palette() -> Dictionary:
-	if _hero_materials.is_empty():
-		var contour := StandardMaterial3D.new()
-		contour.resource_name = "Drawn character silhouette"
-		contour.albedo_color = Color("282426")
-		contour.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-		contour.cull_mode = BaseMaterial3D.CULL_FRONT
-		contour.grow = true
-		contour.grow_amount = 0.0025
-		for key: String in _palette():
-			var material: StandardMaterial3D = _materials[key].duplicate()
-			if key not in ["ink", "eye"]:
-				material.next_pass = contour
-			_hero_materials[key] = material
-	return _hero_materials
+	return _palette()
 
 func _design(drawing: String) -> Dictionary:
 	match drawing:
@@ -695,7 +684,9 @@ func _approved_hero(b: Builder, drawing: String) -> void:
 		if hero:
 			_face_line(b, face, 0.72, _curve(Vector3(ex - 13.0 / 541.0, 389.0 / 541.0, 0), Vector3(ex, 394.0 / 541.0, 0), Vector3(ex + 13.0 / 541.0, 389.0 / 541.0, 0)), 0.0029, "ink", 0.005)
 		else:
-			_face_line(b, face, 0.72, _curve(Vector3(ex - eye_w - 0.003, lid_y, 0), Vector3(ex, lid_y + 0.007, 0), Vector3(ex + eye_w + 0.003, lid_y, 0)), 0.0028 if not granny else 0.0020, "ink", 0.005)
+			var lid_front := _face_z(face, 0.72, ex, lid_y)
+			b.ellipsoid(Vector3(ex, lid_y + 0.0035, lid_front - 0.004), Vector3(eye_w + 0.004, 0.005, 0.006), "skin", 3, 12, 6)
+			b.ellipsoid(Vector3(ex, eye_y + 0.016, lid_front - 0.005), Vector3(eye_w + 0.005, 0.0035, 0.005), "ink", 3, 10, 6)
 		if hero:
 			_face_line(b, face, 0.72, _curve(Vector3(ex - 18.0 / 541.0, 414.0 / 541.0, 0), Vector3(ex, 424.0 / 541.0, 0), Vector3(ex + 18.0 / 541.0, 412.0 / 541.0, 0)), 0.0029)
 			b.vertex_tints["trim"] = Color("ee8da8")
@@ -704,8 +695,8 @@ func _approved_hero(b: Builder, drawing: String) -> void:
 			_face_oval(b, face, cx, cy, 15.0 / 541.0, 12.0 / 541.0, "trim", 0.0013)
 			b.vertex_tints["trim"] = Color("f6f3ea")
 		else:
-			_face_line(b, face, 0.72, _curve(Vector3(ex - 0.017, eye_y - 0.015, 0), Vector3(ex, eye_y - 0.024, 0), Vector3(ex + 0.017, eye_y - 0.015, 0)), 0.0019)
-			_face_line(b, face, 0.72, _curve(Vector3(side * 0.020, eye_y - 0.010, 0), Vector3(side * 0.035, eye_y - 0.045, 0), Vector3(side * 0.042, eye_y - 0.091, 0)), 0.0023)
+			var cheek_y := eye_y - 0.021
+			b.ellipsoid(Vector3(ex, cheek_y, _face_z(face, 0.72, ex, cheek_y) + 0.003), Vector3(0.024 if granny else 0.029, 0.012, 0.010), "skin", 3, 12, 6)
 		var ear_y := 378.0 / 541.0 if hero else 0.82
 		var ear_x := (96.0 / 541.0 if hero else 0.123 if granny else 0.152) * side
 		if hero:
@@ -734,10 +725,10 @@ func _approved_hero(b: Builder, drawing: String) -> void:
 		_face_line(b, face, 0.72, _curve(Vector3(-22.0 / 541.0, 314.0 / 541.0, 0), Vector3(0, 300.0 / 541.0, 0), Vector3(22.0 / 541.0, 314.0 / 541.0, 0)), 0.0028)
 		_tuft(b)
 	else:
-		var nose_top := eye_y + 0.011
-		var nose := PackedVector3Array([Vector3(-0.011, nose_top, -0.112), Vector3(-0.012, eye_y - 0.023, -0.135), Vector3(0, eye_y - 0.028, -0.144), Vector3(0.011, eye_y - 0.023, -0.135), Vector3(0.011, nose_top, -0.112)])
-		b.tube(nose, 0.008, "skin", 3, 10)
-		_face_line(b, face, 0.72, _curve(Vector3(-0.011, nose_top, 0), Vector3(-0.018, eye_y - 0.045, 0), Vector3(0.011, eye_y - 0.023, 0)), 0.0022)
+		var bridge_y := eye_y - 0.007
+		var tip_y := eye_y - 0.025
+		b.ellipsoid(Vector3(0, bridge_y, _face_z(face, 0.72, 0, bridge_y) - 0.006), Vector3(0.010, 0.026, 0.016), "skin", 3, 10, 6)
+		b.ellipsoid(Vector3(0, tip_y, _face_z(face, 0.72, 0, tip_y) - 0.015), Vector3(0.017 if granny else 0.020, 0.012, 0.021), "skin", 3, 10, 6)
 		var mouth_y := eye_y - 0.052
 		var mz := _face_z(face, 0.72, 0, mouth_y)
 		_face_oval(b, face, 0, mouth_y, 0.024 if granny else 0.032, 0.005 if granny else 0.012, "ink", 0.003)

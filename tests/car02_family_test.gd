@@ -218,7 +218,7 @@ func traffic_assembly_check() -> void:
 
 func run() -> void:
 	DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path(OUT.get_base_dir()))
-	provider_check(GAZ, "gaz3110", Vector3(1.8, 1.422, 4.87), 2.8, 1.5, 1.444, 0.31725)
+	provider_check(GAZ, "gaz3110", Vector3(1.8, 1.455, 4.88), 2.8, 1.5, 1.444, 0.31725)
 	provider_check(SAMARA, "samara", Vector3(1.65, 1.402, 4.006), 2.46, 1.4, 1.37, 0.2876)
 	traffic_assembly_check()
 	report["engine"] = Engine.get_version_info()

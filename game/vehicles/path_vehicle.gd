@@ -52,6 +52,9 @@ const GROUP := &"traffic_vehicles"
 ## Габарит корпуса (ширина, высота, длина), перед — −Z. Задаётся до добавления в дерево.
 var size := Vector3(1.7, 1.45, 4.1)
 var wheelbase := 2.4
+# Координаты осей относительно середины полного кузова; старые callers сохраняют симметричный профиль.
+var front_axle_z := NAN
+var rear_axle_z := NAN
 var wheel_radius := 0.32
 var cruise_speed := 9.0
 var corner_speed := 5.0
@@ -342,10 +345,13 @@ func _apply_transform() -> void:
 	global_transform = _transform_at(s)
 
 func _transform_at(at: float, at_side := NAN) -> Transform3D:
-	var front := path.position_at(at + wheelbase * 0.5)
-	var rear := path.position_at(at - wheelbase * 0.5)
+	var front_z: float = -wheelbase * 0.5 if is_nan(front_axle_z) else front_axle_z
+	var rear_z: float = wheelbase * 0.5 if is_nan(rear_axle_z) else rear_axle_z
+	var front := path.position_at(at - front_z)
+	var rear := path.position_at(at - rear_z)
 	var dir := front - rear
-	var center := (front + rear) * 0.5
+	# Интерполяция к локальному z=0 сохраняет начало кузова при разных свесах.
+	var center := (front * rear_z - rear * front_z) / (rear_z - front_z)
 	var offset := side if is_nan(at_side) else at_side
 	if offset != 0.0:
 		center += LanePath.right_of(dir.normalized()) * offset

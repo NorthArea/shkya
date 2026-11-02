@@ -12,17 +12,22 @@ extends RefCounted
 ## SIZE без зеркал/снега; разрешённые руководством шины 185/75 R16C дают радиус 0.34195 м.
 
 const VehicleMesh = preload("res://game/vehicles/vehicle_mesh.gd")
-const SIZE := Vector3(2.075, 2.2, 5.47)
-const WHEELBASE := 2.9
+const Dimensions = preload("res://game/vehicles/vehicle_dimensions.gd")
+const CARGO_SPEC: Dictionary = Dimensions.SPECS[&"gaz2705"]
+const PASSENGER_SPEC: Dictionary = Dimensions.SPECS[&"gaz32213"]
+const SIZE := Vector3(CARGO_SPEC["width_m"], CARGO_SPEC["height_m"], CARGO_SPEC["length_m"])
+const PASSENGER_SIZE := Vector3(PASSENGER_SPEC["width_m"], PASSENGER_SPEC["height_m"], PASSENGER_SPEC["length_m"])
+const WHEELBASE: float = CARGO_SPEC["wheelbase_m"]
 const WHEEL_RADIUS := 0.34195
 const WHEEL_WIDTH := 0.185
 const AXLES := [-1.705, 1.195]
-const TRACK_HALF := [0.85, 0.78]
+const TRACK_HALF := [CARGO_SPEC["front_track_m"] * 0.5, CARGO_SPEC["rear_track_m"] * 0.5]
 const REAR_TWIN_OFFSET := 0.102
-const HALF_WIDTH := 1.0375
+const HALF_WIDTH: float = SIZE.x * 0.5
 const ARCH_RADIUS := 0.41
 const HULL_LENGTH := 5.24
-const ROOF_Y := 2.2
+const ROOF_Y: float = SIZE.y
+const PASSENGER_ROOF_Y: float = PASSENGER_SIZE.y
 const TOP := [[-2.62, 1.075], [-2.48, 1.13], [-1.95, 1.345], [-1.86, 1.18],
 	[-0.45, 1.18], [2.54, 1.18], [2.62, 1.15]]
 const BOTTOM := [[-2.62, 0.45], [-2.30, 0.34], [-1.0, 0.305], [2.48, 0.31], [2.62, 0.38]]
@@ -60,7 +65,7 @@ static func build(paint: Color, plate: String = "", snow_depth: float = 0.08, mo
 	var interior := VehicleMesh.instance(body, "Interior", meshes["interior"], {}, false)
 	interior.visibility_range_end = 45.0
 	if snow_depth > 0.0:
-		VehicleMesh.instance(body, "Snow", snow_mesh(snow_depth))
+		VehicleMesh.instance(body, "Snow", snow_mesh(snow_depth, model))
 	var spots := wheel_spots()
 	for index in spots.size():
 		var pivot := Node3D.new()
@@ -71,7 +76,7 @@ static func build(paint: Color, plate: String = "", snow_depth: float = 0.08, mo
 		wheel.rotation.z = PI * 0.5
 		wheel.visibility_range_end = 120.0
 	if not plate.is_empty():
-		_plate_label(body, Vector3(0, 0.655, -2.748), PI, plate)
+		_plate_label(body, Vector3(0, 0.655, -SIZE.z * 0.5 - 0.011), PI, plate)
 		_plate_label(body, Vector3(-0.435, 0.805, 2.663), 0.0, plate)
 	return visual
 
@@ -149,7 +154,7 @@ static func body_meshes(model: StringName = CARGO, door_open: bool = false) -> D
 	var glass := VehicleMesh.Builder.new()
 	var interior := VehicleMesh.Builder.new()
 	_lower_shell(body)
-	_cab(body, glass)
+	_cab(body, glass, ROOF_Y if model == CARGO else PASSENGER_ROOF_Y)
 	if model == CARGO:
 		_cargo_shell(body)
 	else:
@@ -207,11 +212,11 @@ static func _lower_shell(body: VehicleMesh.Builder) -> void:
 static func _passenger_shell(body: VehicleMesh.Builder, glass: VehicleMesh.Builder) -> void:
 	# The roof and belt stop at the window edges: no painted wall behind the glass.
 	body.loft("paint", [
-		[-0.44, 2.02, 2.19, 0.995, 0.995, 0.018, 0.18],
-		[0.0, 2.02, ROOF_Y, 0.995, 0.995, 0.018, 0.18],
-		[1.30, 2.02, ROOF_Y, 0.995, 0.995, 0.018, 0.18],
-		[2.47, 2.02, 2.19, 0.995, 0.995, 0.018, 0.18],
-		[2.61, 2.02, 2.135, 0.966, 0.966, 0.018, 0.15],
+		[-0.44, 2.02, PASSENGER_ROOF_Y - 0.01, 0.995, 0.995, 0.018, 0.18],
+		[0.0, 2.02, PASSENGER_ROOF_Y, 0.995, 0.995, 0.018, 0.18],
+		[1.30, 2.02, PASSENGER_ROOF_Y, 0.995, 0.995, 0.018, 0.18],
+		[2.47, 2.02, PASSENGER_ROOF_Y - 0.01, 0.995, 0.995, 0.018, 0.18],
+		[2.61, 2.02, PASSENGER_ROOF_Y - 0.065, 0.966, 0.966, 0.018, 0.15],
 	], true, 5)
 	for side in [-1.0, 1.0]:
 		var s: float = side
@@ -248,11 +253,11 @@ static func _side_sheet(body: VehicleMesh.Builder, side: float, z0: float, z1: f
 static func _cargo_shell(body: VehicleMesh.Builder) -> void:
 	# Единая штампованная оболочка, крыша продолжается над кабиной; нет отдельного грузового ящика.
 	body.loft("paint", [
-		[-0.44, 1.145, 2.19, HALF_WIDTH, 0.995, 0.018, 0.18],
+		[-0.44, 1.145, ROOF_Y - 0.01, HALF_WIDTH, 0.995, 0.018, 0.18],
 		[0.00, 1.145, ROOF_Y, HALF_WIDTH, 0.995, 0.018, 0.18],
 		[1.30, 1.145, ROOF_Y, HALF_WIDTH, 0.995, 0.018, 0.18],
-		[2.47, 1.145, 2.19, HALF_WIDTH, 0.995, 0.018, 0.18],
-		[2.61, 1.145, 2.135, 1.015, 0.966, 0.018, 0.15],
+		[2.47, 1.145, ROOF_Y - 0.01, HALF_WIDTH, 0.995, 0.018, 0.18],
+		[2.61, 1.145, ROOF_Y - 0.065, 1.015, 0.966, 0.018, 0.15],
 	], true, 5)
 	for side in [-1.0, 1.0]:
 		var s: float = side
@@ -297,11 +302,11 @@ static func _side_panel(body: VehicleMesh.Builder, side: float, z0: float, z1: f
 			Vector3(side, 0.05, 0).normalized())
 
 
-static func _cab(body: VehicleMesh.Builder, glass: VehicleMesh.Builder) -> void:
+static func _cab(body: VehicleMesh.Builder, glass: VehicleMesh.Builder, roof_y: float) -> void:
 	body.loft("paint", [
-		[-1.27, 2.01, 2.10, 0.858, 0.84, 0.015, 0.035],
-		[-1.11, 2.01, 2.175, 0.908, 0.884, 0.018, 0.095],
-		[-0.44, 2.01, 2.19, 0.995, 0.975, 0.018, 0.13],
+		[-1.27, 2.01, roof_y - 0.10, 0.858, 0.84, 0.015, 0.035],
+		[-1.11, 2.01, roof_y - 0.025, 0.908, 0.884, 0.018, 0.095],
+		[-0.44, 2.01, roof_y - 0.01, 0.995, 0.975, 0.018, 0.13],
 	], true, 4)
 	for side in [-1.0, 1.0]:
 		var s: float = side
@@ -357,10 +362,10 @@ static func _front(body: VehicleMesh.Builder) -> void:
 		body.rbox("lens_amber", Vector3(0.089, 0.218, 0.025), Vector3(s * 0.924, 0.939, -2.628), 0.013)
 		for k in 7:
 			body.box("chrome", Vector3(0.003, 0.188, 0.002), Vector3(s * 0.704 + (k - 3.0) * 0.037, 0.939, -2.646))
-	body.rbox("trim", Vector3(2.035, 0.225, 0.18), Vector3(0, 0.643, -2.645), 0.032)
+	body.rbox("trim", Vector3(2.035, 0.225, 0.18), Vector3(0, 0.643, -SIZE.z * 0.5 + 0.09), 0.032)
 	for side in [-1.0, 1.0]:
 		body.rbox("trim", Vector3(0.155, 0.225, 0.30), Vector3(side * 0.94, 0.643, -2.48), 0.026)
-	_plate(body, Vector3(0, 0.655, -2.731))
+	_plate(body, Vector3(0, 0.655, -SIZE.z * 0.5 + 0.019))
 	for x in [-0.64, -0.25, 0.25, 0.64]:
 		body.rbox("dark", Vector3(0.27, 0.062, 0.014), Vector3(x, 0.438, -2.620), 0.012)
 	for side in [-1.0, 1.0]:
@@ -397,8 +402,8 @@ static func _rear(body: VehicleMesh.Builder, glass: VehicleMesh.Builder, windowe
 		body.rbox("trim", Vector3(0.059, 0.022, 0.033), Vector3(x, 0.881, 2.66), 0.005)
 	body.rbox("trim", Vector3(0.040, 0.137, 0.026), Vector3(0.073, 1.15, 2.645), 0.007)
 	body.rbox("trim", Vector3(0.018, 0.025, 0.019), Vector3(0.073, 1.045, 2.648), 0.006)
-	body.rbox("steel", Vector3(1.45, 0.065, 0.16), Vector3(0, 0.448, 2.655), 0.01)
-	body.rbox("dark", Vector3(0.42, 0.087, 0.045), Vector3(0, 0.45, 2.70), 0.008)
+	body.rbox("steel", Vector3(1.45, 0.065, 0.16), Vector3(0, 0.448, SIZE.z * 0.5 - 0.08), 0.01)
+	body.rbox("dark", Vector3(0.42, 0.087, 0.045), Vector3(0, 0.45, SIZE.z * 0.5 - 0.0225), 0.008)
 	for x in [-0.15, -0.05, 0.05, 0.15]:
 		body.box("steel", Vector3(0.012, 0.006, 0.105), Vector3(x, 0.487, 2.663))
 
@@ -416,25 +421,25 @@ static func _sides(body: VehicleMesh.Builder) -> void:
 		body.tube("trim", Vector3(s * 0.945, 1.65, -1.35), mirror + Vector3(0, 0.10, 0), 0.015, 6)
 		body.rbox("trim", Vector3(0.12, 0.285, 0.18), mirror, 0.028)
 		body.rbox("lens_white", Vector3(0.094, 0.252, 0.009), mirror + Vector3(0, 0, 0.092), 0.018)
-		body.tube("paint", Vector3(s * 1.035, 1.135, -1.84), Vector3(s * 1.035, 1.135, 2.55), 0.009, 5)
+		body.tube("paint", Vector3(s * (HALF_WIDTH - 0.009), 1.135, -1.84), Vector3(s * (HALF_WIDTH - 0.009), 1.135, 2.55), 0.009, 5)
 		for span in [[-1.23, 0.72], [1.64, 2.48]]:
-			body.tube("paint", Vector3(s * 1.037, 0.65, span[0]), Vector3(s * 1.037, 0.65, span[1]), 0.010, 5)
+			body.tube("paint", Vector3(s * (HALF_WIDTH - 0.010), 0.65, span[0]), Vector3(s * (HALF_WIDTH - 0.010), 0.65, span[1]), 0.010, 5)
 		for axle in AXLES:
 			body.box("dark", Vector3(0.01, 0.36, 0.78), Vector3(s * 0.58, 0.48, axle))
 			body.box("rubber", Vector3(0.34, 0.23, 0.012), Vector3(s * 0.80, 0.25, axle + ARCH_RADIUS + 0.018))
-			var previous := Vector3(s * 1.034, WHEEL_RADIUS, axle - ARCH_RADIUS)
+			var previous := Vector3(s * (HALF_WIDTH - 0.011), WHEEL_RADIUS, axle - ARCH_RADIUS)
 			for k in range(1, 25):
 				var angle := PI - PI * k / 24.0
-				var at := Vector3(s * 1.034, WHEEL_RADIUS + sin(angle) * ARCH_RADIUS, axle + cos(angle) * ARCH_RADIUS)
+				var at := Vector3(s * (HALF_WIDTH - 0.011), WHEEL_RADIUS + sin(angle) * ARCH_RADIUS, axle + cos(angle) * ARCH_RADIUS)
 				body.tube("paint", previous, at, 0.011, 5)
 				previous = at
 	# Сдвижная дверь только справа, без симметричной выдуманной двери слева.
 	for z in [-0.37, 1.03]:
-		body.tube("trim", Vector3(1.040, _bottom_at(z) + 0.02, z), Vector3(0.996, 2.025, z), 0.003, 4)
+		body.tube("trim", Vector3(HALF_WIDTH - 0.003, _bottom_at(z) + 0.02, z), Vector3(0.996, 2.025, z), 0.003, 4)
 	body.tube("trim", Vector3(1.035, 0.34, -0.36), Vector3(1.035, 0.34, 0.78), 0.003, 4)
 	body.rbox("trim", Vector3(0.022, 0.154, 0.042), Vector3(1.027, 1.285, 0.89), 0.006)
-	body.rbox("steel", Vector3(0.021, 0.025, 1.48), Vector3(1.040, 1.197, 1.77), 0.005)
-	body.rbox("trim", Vector3(0.022, 0.012, 1.44), Vector3(1.053, 1.199, 1.77), 0.003)
+	body.rbox("steel", Vector3(0.021, 0.025, 1.48), Vector3(HALF_WIDTH - 0.0105, 1.197, 1.77), 0.005)
+	body.rbox("trim", Vector3(0.022, 0.012, 1.44), Vector3(HALF_WIDTH - 0.011, 1.199, 1.77), 0.003)
 	# Бензобак в нижней левой панели за кабиной.
 	var fuel := Vector3(-1.039, 0.85, -0.18)
 	for dy in [-0.078, 0.078]:
@@ -515,14 +520,15 @@ static func _plate_label(parent: Node3D, at: Vector3, yaw: float, text: String) 
 	parent.add_child(label)
 
 
-static func snow_mesh(depth: float) -> ArrayMesh:
+static func snow_mesh(depth: float, model: StringName = CARGO) -> ArrayMesh:
 	var d := maxf(0.02, snappedf(depth, 0.02))
-	var key := "gazelle2705_snow_" + VehicleMesh.snf(d)
+	var roof_y: float = ROOF_Y if model == CARGO else PASSENGER_ROOF_Y
+	var key := "gazelle_%s_snow_%s" % [model, VehicleMesh.snf(d)]
 	var mesh: ArrayMesh = VehicleMesh.cached(key)
 	if mesh != null:
 		return mesh
 	var snow := VehicleMesh.Builder.new()
-	snow.pillow("snow", Vector3(0, 0, 0.71), 1.62, 3.49, d, 2.17, 2.18, 91, 11, 13)
+	snow.pillow("snow", Vector3(0, 0, 0.71), 1.62, 3.49, d, roof_y - 0.03, roof_y - 0.02, 91, 11, 13)
 	snow.pillow("snow", Vector3(0, 0, -2.26), 1.60, 0.58, d * 0.52, 1.10, 1.34, 92)
 	mesh = VehicleMesh.finish(snow)
 	return VehicleMesh.store(key, mesh)

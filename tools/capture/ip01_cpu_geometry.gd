@@ -11,6 +11,9 @@ func _initialize() -> void:
 
 func _run() -> void:
 	var args := OS.get_cmdline_user_args()
+	var rest_only := "--rest-only" in args
+	if rest_only:
+		args.remove_at(args.find("--rest-only"))
 	var output := "res://builds/screenshots/IP-01/legacy-cpu/geometry.json" if args.is_empty() else args[0]
 	var drawings: Array[String] = Models.DRAWINGS.duplicate()
 	if args.size() > 1:
@@ -32,7 +35,7 @@ func _run() -> void:
 		var visual := Uniform.new()
 		visual.configure(drawing, 1.0, Color.WHITE)
 		root.add_child(visual)
-		for pose: String in ["rest", "walk_left", "walk_right", "lada"]:
+		for pose: String in (["rest"] if rest_only else ["rest", "walk_left", "walk_right", "lada"]):
 			visual.reset_pose()
 			if pose == "lada": visual.set_occupant_pose(&"lada")
 			elif pose.begins_with("walk"):

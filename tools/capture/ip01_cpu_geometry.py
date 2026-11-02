@@ -80,16 +80,18 @@ def main():
     parser.add_argument("source")
     parser.add_argument("output")
     parser.add_argument("drawings", nargs="*", default=["ilyusha", "babka", "vendor"])
+    parser.add_argument("--angles", nargs="+", type=float, default=[0, 60, 180])
     parser.add_argument(
         "--pose", choices=["rest", "walk_left", "walk_right", "lada"], default="rest"
     )
     args = parser.parse_args()
     with open(args.source) as source:
         export = json.load(source)
-    sheet = Image.new("RGB", (WIDTH * 3, HEIGHT * len(args.drawings)), BACKGROUND)
+    sheet = Image.new("RGB", (WIDTH * len(args.angles), HEIGHT * len(args.drawings)), BACKGROUND)
     for row, name in enumerate(args.drawings):
         triangles = np.array(export["models"][name + "/" + args.pose], dtype=np.float64)
-        for column, angle in enumerate([0, math.pi / 3, math.pi]):
+        for column, degrees in enumerate(args.angles):
+            angle = math.radians(degrees)
             view = raster_view(triangles, angle)
             ImageDraw.Draw(view).text(
                 (8, 6), f"{name} / {args.pose} / CPU / {round(math.degrees(angle))}", fill="black"

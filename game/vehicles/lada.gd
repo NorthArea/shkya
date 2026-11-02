@@ -18,7 +18,7 @@ const VehicleDamage = preload("res://game/vehicles/vehicle_damage.gd")
 const IMPACT_MASS := 1045.0
 const IMPACT_YAW_DAMP := 3.0
 
-const SIZE := Vector3(1.7, 1.4, 4.1)
+const SIZE := LadaVisual.SIZE
 ## Темп по замеру эталона PLAY-01 (G02, G03): потолок 28 м/с ≈ 100 км/ч, разгон спадает к максимуму
 ## (0→20 м/с ≈ 2,8 с, как у G02), радиусы поворота в метрах — как у G02 (PLAY-02).
 const MAX_SPEED := 28.0         # м/с ≈ 100 км/ч
@@ -55,9 +55,12 @@ var _impact_yaw := 0.0
 ## кренится облик Visual: высота над землёй snow_lift по SnowField, крен/тангаж — по высотам четырёх колёс.
 ## Перенос веса (DRIVE-03, вариант A): нос клюёт при торможении, корма приседает при разгоне, крен наружу в повороте —
 ## пружина с затуханием поверх наклона по снегу, тоже поворотом Visual. Константы PLAY-02 выше не меняются.
-const WHEEL_TRACK := 0.69       # м: половина колеи (LadaVisual.PLAYER_MODEL, ВАЗ-2106)
-const WHEEL_AXLE := 1.21        # м: от центра до оси
-const WHEELS: Array[Vector2] = [Vector2(-0.69, -1.21), Vector2(0.69, -1.21), Vector2(-0.69, 1.21), Vector2(0.69, 1.21)]   # (x, z) ЛП, ПП, ЛЗ, ПЗ; перед — −Z
+const WHEEL_TRACK: float = (LadaVisual.FRONT_TRACK + LadaVisual.REAR_TRACK) * 0.5
+const WHEEL_AXLE: float = LadaVisual.PLAYER_SPEC["wheelbase_m"] * 0.5
+const WHEELS: Array[Vector2] = [
+	Vector2(-LadaVisual.FRONT_TRACK, LadaVisual.FRONT_AXLE), Vector2(LadaVisual.FRONT_TRACK, LadaVisual.FRONT_AXLE),
+	Vector2(-LadaVisual.REAR_TRACK, LadaVisual.REAR_AXLE), Vector2(LadaVisual.REAR_TRACK, LadaVisual.REAR_AXLE),
+] # (x,z): ЛП,ПП,ЛЗ,ПЗ; реальные свесы дают разные плечи относительно середины кузова.
 const SNOW_DRAG := 4.0          # 1/(м·с): замедление SNOW_DRAG · глубина · max(|v|, SNOW_DRAG_MIN_SPEED)
 const SNOW_DRAG_MIN_SPEED := 1.0
 const MAX_CLIMB := 0.6109       # рад (35°): склон круче под ведущими колёсами — газ не тянет, буксует
@@ -297,10 +300,15 @@ func wheel_contact(i: int) -> Vector3:
 func wheel_heights() -> Array[float]:
 	return _wheel_h.duplicate()
 
-## Высота облика над землёй по снегу: средняя по четырём колёсам, на узком гребне — «на брюхе» (центр − BELLY).
+## Опора в начале кузова z=0: оси имеют разные плечи из-за паспортных свесов.
+func _wheel_height_at_origin() -> float:
+	var front := (_wheel_h[0] + _wheel_h[1]) * 0.5
+	var rear := (_wheel_h[2] + _wheel_h[3]) * 0.5
+	return (front * LadaVisual.REAR_AXLE - rear * LadaVisual.FRONT_AXLE) / (LadaVisual.REAR_AXLE - LadaVisual.FRONT_AXLE)
+
+## Высота облика над землёй по опорам; на узком гребне — «на брюхе» (центр − BELLY).
 func snow_ride_target() -> float:
-	var mean := (_wheel_h[0] + _wheel_h[1] + _wheel_h[2] + _wheel_h[3]) * 0.25
-	return maxf(maxf(mean, _center_h - BELLY), 0.0)
+	return maxf(maxf(_wheel_height_at_origin(), _center_h - BELLY), 0.0)
 
 func _sample_snow() -> void:
 	for i in 4:
@@ -339,8 +347,8 @@ func _snow_speed(forward_speed: float, speed_in: float, forward: Vector3, thrott
 	# на узком гребне «на брюхе» — под центром.
 	var along := Vector2(forward.x, forward.z)
 	var grade := 0.0
-	var mean := (_wheel_h[0] + _wheel_h[1] + _wheel_h[2] + _wheel_h[3]) * 0.25
-	if _center_h - BELLY > mean:
+	var support_height := _wheel_height_at_origin()
+	if _center_h - BELLY > support_height:
 		grade = SnowField.slope_along(global_position.x, global_position.z, along)
 	else:
 		for i in 4:

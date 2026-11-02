@@ -2,6 +2,9 @@ extends RefCounted
 ## C1 — единственный источник координат квартала. Метры; x — восток, z — юг, y — вверх.
 ## Сцены и тесты берут точки только отсюда.
 
+const Dimensions = preload("res://game/vehicles/vehicle_dimensions.gd")
+const LADA_SPEC: Dictionary = Dimensions.SPECS[&"vaz2106"]
+const LADA_SIZE := Vector3(LADA_SPEC["width_m"], LADA_SPEC["height_m"], LADA_SPEC["length_m"])
 const NivaVisual = preload("res://game/vehicles/niva_visual.gd")
 const SamaraVisual = preload("res://game/vehicles/samara_visual.gd")
 
@@ -527,7 +530,7 @@ static func decor_solids() -> Array:
 	for p in POPLARS:
 		solids.append(["Poplar", "poplar", p, POPLAR_TRUNK])
 	for car in PARKED:
-		solids.append(["ParkedCar", "parked_car", car[0], Vector3(4.1, 1.4, 1.7) if car[1] else Vector3(1.7, 1.4, 4.1)])
+		solids.append(["ParkedCar", "parked_car", car[0], Vector3(LADA_SIZE.z, LADA_SIZE.y, LADA_SIZE.x) if car[1] else LADA_SIZE])
 	for p in CARPET_BAR:
 		solids.append(["CarpetBar", "carpet_bar", p, CARPET_POST])
 	solids.append(["TrashBins", "bins", BINS[0], BINS[1]])
@@ -683,7 +686,7 @@ static func perimeter_solids() -> Array:
 			var q := a.lerp(b, float(j + 1) / count)
 			out.append(["PerimeterWall%d_%d" % [i, j], "perimeter_wall", (p + q) * 0.5, Vector3(absf(p.x - q.x) + wall[2], wall[3], absf(p.y - q.y) + wall[2])])
 	out.append(["LeninEastShutter", "perimeter_shutter", Vector2(99, 32), Vector3(0.55, 4.2, 28.2)])
-	out.append(["LeninPoliceCar", "perimeter_police", Vector2(91, 32), Vector3(1.62, 1.45, 4.13)])
+	out.append(["LeninPoliceCar", "perimeter_police", Vector2(91, 32), LADA_SIZE])
 	for z in [25.5, 38.5]:
 		out.append(["PoliceBarrier%d" % int(z), "perimeter_barrier", Vector2(91, z), Vector3(0.8, 1.1, 6.0)])
 	for z in [24.0, 40.0]:

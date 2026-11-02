@@ -6,6 +6,16 @@ extends RefCounted
 ## Меши общие (VehicleMesh.cached): «Лада» игрока, ≈ 16 припаркованных «Жигулей» и машины кольца делят меши своих моделей;
 ## на машину — свои материалы краски, стёкол и фар (перекрытия поверхностей).
 
+const Dimensions = preload("res://game/vehicles/vehicle_dimensions.gd")
+const PLAYER_SPEC: Dictionary = Dimensions.SPECS[&"vaz2106"]
+const SIZE := Vector3(PLAYER_SPEC["width_m"], PLAYER_SPEC["height_m"], PLAYER_SPEC["length_m"])
+const FRONT_AXLE: float = -SIZE.z * 0.5 + PLAYER_SPEC["front_overhang_m"]
+const REAR_AXLE: float = FRONT_AXLE + PLAYER_SPEC["wheelbase_m"]
+const FRONT_TRACK: float = PLAYER_SPEC["front_track_m"] * 0.5
+const REAR_TRACK: float = PLAYER_SPEC["rear_track_m"] * 0.5
+# Номинальные ненагруженные165/80R13; статический радиус под нагрузкой — иная величина.
+const WHEEL_RADIUS := 0.165 * 0.80 + 13.0 * 0.0254 * 0.5
+
 const VehicleMesh = preload("res://game/vehicles/vehicle_mesh.gd")
 const LadaDriver = preload("res://game/vehicles/lada_driver.gd")
 
@@ -22,13 +32,9 @@ const BEAM_RANGE := 22.0
 const BEAM_ENERGY := 6.0
 const BEAM_COLOR := Color(1.0, 0.91, 0.76)   # тёплый белый лампы накаливания
 
-## Водитель на переднем левом месте ВАЗ-2106: z=−0,19 перед стойкой B (z=0,19), за рулём (z≈−0,53).
-## y — линия «ног» холста, не макушка.
-## По формуле LadaDriver y = DRIVER_AT.y + (FEET_Y − canvas_y) * DRIVER_HEIGHT / CANVAS_HEIGHT:
-## волосы (canvas_y≈42) на 1,301 м, воротник (270–330) на 0,966–0,878 м: плечи уходят под линию окон.
-## Холст крупнее на 17%; опущен, чтобы даже его прозрачный верх (1,362 м) остался ниже крыши (1,385 м).
-## Сдвиг к центру на 1,5 см оставляет полный billboard внутри ширины крыши при любом повороте к камере.
-const DRIVER_AT := Vector3(-0.345, 0.497, -0.19) # 1 см за прежним местом: подбородок не касается нижнего обода
+## Переднее левое место: X общий с креслом и рулём; рост/поза 3D задаются LadaDriver/Catalog.
+## DRIVER_HEIGHT остаётся параметром прежнего холста для совместимого 2D режима.
+const DRIVER_AT := Vector3(LadaDriver.LADA_SEAT_X, 0.497, LadaDriver.LADA_HIP_Z)
 const DRIVER_HEIGHT := 0.88
 
 ## Линии стёкол (y, z) «пятёрки»: лобовое и заднее — как в ART-03/POLISH-02 (по ним вписан водитель).
@@ -38,7 +44,8 @@ const REAR_TOP := Vector2(1.45, 0.89)
 const REAR_BOTTOM := Vector2(0.99, 1.16)
 
 ## Седаны: размеры, профили верха и низа нижнего кузова [[z, y]], линии стёкол, оси, колёса, стиль передка.
-## Размеры — по ВАЗ-2105 (4130 × 1620 × 1446, база 2424), ВАЗ-2106 (4166 × 1611), ГАЗ-24 (4735 × 1800 × 1490, база 2800).
+## Паспорт2106 — Dimensions; length здесь относится к панелям без выступающих бамперов.
+## Прежние2105/ГАЗ24 остаются совместимыми визуальными API, в игровом мире не создаются.
 const SEDANS := {
 	&"vaz2105": {
 		"length": 4.13, "half_w": 0.81, "belt": 0.99,
@@ -50,13 +57,14 @@ const SEDANS := {
 		"front": "rect", "wheel_style": "steel", "aerial_y": 1.767,
 	},
 	&"vaz2106": {
-		"length": 4.07, "half_w": 0.80, "belt": 0.98,
-		"top": [[-2.035, 0.89], [-2.0, 0.925], [-1.86, 0.945], [-0.83, 0.975], [1.14, 0.98], [1.82, 0.962], [2.0, 0.95], [2.035, 0.92]],
-		"bottom": [[-2.035, 0.40], [-1.88, 0.28], [1.88, 0.29], [2.035, 0.42]],
-		"ws": [Vector2(0.98, -0.83), Vector2(1.42, -0.50)], "rear": [Vector2(0.98, 1.14), Vector2(1.42, 0.88)],
-		"glass_w": 0.76, "roof_w": 0.645, "b_z": 0.19, "c_z": [0.83, 0.71], "roof_y": 1.455,
-		"axles": [-1.21, 1.21], "wheel_r": 0.32, "wheel_w": 0.17, "track": 0.69, "round": 0.065, "edge": 0.04,
-		"front": "round4", "wheel_style": "classic", "aerial_y": 1.761,
+		# Полная длина включает по120мм бамперов; панели задаются отдельно от них.
+		"length": SIZE.z - 0.240, "half_w": SIZE.x * 0.5, "belt": 0.98,
+		"top": [[-1.963, 0.89], [-1.928, 0.925], [-1.788, 0.945], [-0.83, 0.975], [1.14, 0.98], [1.748, 0.962], [1.928, 0.95], [1.963, 0.92]],
+		"bottom": [[-1.963, 0.40], [-1.808, 0.28], [1.808, 0.29], [1.963, 0.42]],
+		"ws": [Vector2(0.98, -0.83), Vector2(1.397, -0.50)], "rear": [Vector2(0.98, 1.14), Vector2(1.397, 0.88)],
+		"glass_w": 0.76, "roof_w": 0.645, "b_z": 0.19, "c_z": [0.83, 0.71], "roof_y": SIZE.y - 0.008,
+		"axles": [FRONT_AXLE, REAR_AXLE], "wheel_r": WHEEL_RADIUS, "wheel_w": 0.165, "track": FRONT_TRACK, "rear_track": REAR_TRACK, "round": 0.065, "edge": 0.04,
+		"front": "round4", "wheel_style": "classic", "aerial_y": 1.738,
 	},
 	&"volga": {
 		"length": 4.74, "half_w": 0.90, "belt": 0.95,
@@ -186,9 +194,10 @@ static func wheel_spots(model: StringName) -> Array[Vector3]:
 	var out: Array[Vector3] = []
 	var track: float = spec["track"]
 	var r: float = spec["wheel_r"]
-	for axle in spec["axles"]:
-		for x in [-track, track]:
-			out.append(Vector3(x, r, axle))
+	for index in spec["axles"].size():
+		var half_track: float = track if index == 0 else spec.get("rear_track", track)
+		for x in [-half_track, half_track]:
+			out.append(Vector3(x, r, spec["axles"][index]))
 	return out
 
 ## Общие меши седана: body (кузов и детали по слотам), glass, interior.
@@ -355,13 +364,44 @@ static func _cabin(b: VehicleMesh.Builder, spec: Dictionary) -> void:
 	if occupants_3d:
 		for side: float in [-1.0, 1.0]:
 			b.box("dark", Vector3(0.024, belt - LadaDriver.LADA_FLOOR, rb.y - wsb.y - 0.18), Vector3(side * (gw - 0.035), (belt + LadaDriver.LADA_FLOOR) * 0.5, (wsb.y + rb.y) * 0.5))
-		b.box("dark", Vector3(gw * 2.0 - 0.08, belt - LadaDriver.LADA_FLOOR, 0.024), Vector3(0, (belt + LadaDriver.LADA_FLOOR) * 0.5, wsb.y + 0.10))
+		# Приближение toe-board за передней осью: нижняя часть наклонена под педальный узел.
+		# Это внутренняя панель, а не выведенный из наружных габаритов паспортный размер.
+		var toe_half_width := gw - 0.04
+		var toe_sections := [[-toe_half_width, toe_half_width, -1.09]]
+		if spec["front"] == "round4":
+			# Углубление внутри шин; наружные края сохраняют место под колёсные ниши.
+			toe_sections = [[-toe_half_width, -0.58, -1.09], [-0.58, 0.58, -1.16], [0.58, toe_half_width, -1.09]]
+		for section: Array in toe_sections:
+			var centre_x: float = (section[0] + section[1]) * 0.5
+			var toe_bottom := Vector3(centre_x, LadaDriver.LADA_FLOOR, section[2])
+			var toe_top := Vector3(centre_x, 0.85, wsb.y + 0.10)
+			var toe_delta := toe_top - toe_bottom
+			b.box("dark", Vector3(section[1] - section[0], toe_delta.length(), 0.024), (toe_bottom + toe_top) * 0.5,
+				Basis(Vector3.RIGHT, atan2(toe_delta.z, toe_delta.y)))
+		var toe_top := Vector3(0, 0.85, wsb.y + 0.10)
+		if spec["front"] == "round4":
+			for side: float in [-1.0, 1.0]:
+				var x := side * 0.58
+				b.poly("dark", PackedVector3Array([Vector3(x, LadaDriver.LADA_FLOOR, -1.09),
+					Vector3(x, LadaDriver.LADA_FLOOR, -1.16), Vector3(x, toe_top.y, toe_top.z)]), Vector3(side, 0, 0), true)
+		b.box("dark", Vector3(gw * 2.0 - 0.08, belt - toe_top.y, 0.024), Vector3(0, (belt + toe_top.y) * 0.5, toe_top.z))
 		b.box("dark", Vector3(gw * 2.0 - 0.08, belt - LadaDriver.LADA_FLOOR, 0.024), Vector3(0, (belt + LadaDriver.LADA_FLOOR) * 0.5, rb.y - 0.10))
-		b.rbox("cloth", Vector3(0.50, 0.12, 0.50), Vector3(-0.345, 0.37, -0.10), 0.04)
-		b.rbox("cloth", Vector3(0.48, 0.42, 0.08), Vector3(-0.345, 0.60, 0.12), 0.03, Basis(Vector3.RIGHT, -0.10))
+		# Тот же габарит подушки; передняя и центральная зоны промяты нагрузкой на 30мм.
+		var cushion_transform := b.xf
+		b.xf = Transform3D(Basis.IDENTITY, Vector3(LadaDriver.LADA_SEAT_X, 0, 0))
+		b.loft("cloth", [
+			[-0.35, 0.33, 0.39, 0.21, 0.20, 0.01, 0.025],
+			[-0.31, 0.31, 0.40, 0.25, 0.23, 0.025, 0.025],
+			[-0.10, 0.31, 0.40, 0.25, 0.23, 0.025, 0.025],
+			[0.06, 0.31, 0.41, 0.25, 0.23, 0.025, 0.025],
+			[0.11, 0.31, 0.43, 0.25, 0.23, 0.025, 0.025],
+			[0.15, 0.33, 0.42, 0.21, 0.20, 0.01, 0.025],
+		], true, 4)
+		b.xf = cushion_transform
+		b.rbox("cloth", Vector3(0.48, 0.42, 0.08), Vector3(LadaDriver.LADA_SEAT_X, 0.60, 0.14), 0.03, Basis(Vector3.RIGHT, deg_to_rad(35.0)))
 	b.rbox("dark", Vector3(gw * 2.0 - 0.1, 0.12, 0.3), Vector3(0, belt + 0.06, wsb.y + 0.13), 0.04)
 	# Руль: обод трубками, наклон к водителю, колонка к торпедо.
-	var center := Vector3(-0.36, belt + 0.13, wsb.y + 0.3)
+	var center := Vector3(LadaDriver.LADA_STEERING_X, belt + 0.13, wsb.y + 0.3)
 	var ax := Vector3.RIGHT
 	var ay := Vector3(0.0, 0.87, -0.5)
 	var ring := PackedVector3Array()

@@ -146,39 +146,84 @@ func _geometry_hash(mesh: ArrayMesh) -> String:
 	return hash.finish().hex_encode()
 
 func _seated_geometry(instance: MeshInstance3D, skeleton: Skeleton3D, drawing: String) -> void:
-	const HIP_Y := 0.355
-	const KNEE_Y := 0.22
 	const ANGLE := 1.35
+	var legs: Array[Dictionary] = []
+	var rotation := Basis(Vector3.RIGHT, ANGLE)
+	var sole := INF
+	for suffix: String in ["_l", "_r"]:
+		var leg := skeleton.find_bone("leg" + suffix)
+		var foot := skeleton.find_bone("foot" + suffix)
+		var hip_at := skeleton.get_bone_global_rest(leg).origin
+		var knee_at := skeleton.get_bone_global_rest(foot).origin
+		# Civilian foot_* is the authored knee. Its location is allowed to change
+		# with the selected body; hierarchy, segment order and geometry are not.
+		_check(skeleton.get_bone_parent(foot) == leg and hip_at.y > knee_at.y and knee_at.y > 0.0 and Vector2(hip_at.x - knee_at.x, hip_at.z - knee_at.z).length() < 0.0001, drawing + " lower-leg pivot is a real knee below hip and above sole")
+		var displacement := hip_at + rotation * (knee_at - hip_at) - knee_at
+		legs.append({"leg": leg, "foot": foot, "hip": hip_at, "knee": knee_at, "displacement": displacement})
+		sole = minf(sole, displacement.y)
 	var lower_vertices := 0
 	var bad_lower_weights := 0
 	for surface in instance.mesh.get_surface_count():
 		var arrays := instance.mesh.surface_get_arrays(surface)
 		var vertices: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
 		var bones: PackedInt32Array = arrays[Mesh.ARRAY_BONES]
+		var weights: PackedFloat32Array = arrays[Mesh.ARRAY_WEIGHTS]
 		for index in vertices.size():
-			var bone := bones[index * 4]
-			if bone in [10, 12] and vertices[index].y < KNEE_Y:
-				bad_lower_weights += 1
-			if bone in [11, 13] and vertices[index].y > 0.12:
-				lower_vertices += 1
-	_check(bad_lower_weights == 0 and lower_vertices > 50, drawing + " actual lower trousers follow knee joint")
-	for leg in [10, 12]:
-		var foot: int = leg + 1
-		_check(absf(skeleton.get_bone_global_rest(foot).origin.y - KNEE_Y) < 0.0001, drawing + " lower-leg pivot is the knee")
-		skeleton.set_bone_pose_rotation(leg, Quaternion(Vector3.RIGHT, ANGLE))
-		skeleton.set_bone_pose_rotation(foot, Quaternion(Vector3.RIGHT, -ANGLE))
+			for segment: Dictionary in legs:
+				# A long coat/hem may have secondary thigh weights below a knee;
+				# it is not the authored leg/trouser region checked here.
+				if instance.skin.get_bind_bone(bones[index * 4]) not in [segment.leg, segment.foot]: continue
+				var thigh_weight := 0.0
+				var shin_weight := 0.0
+				for influence in 4:
+					var slot := index * 4 + influence
+					var bone := instance.skin.get_bind_bone(bones[slot])
+					if bone == segment.leg: thigh_weight += weights[slot]
+					if bone == segment.foot: shin_weight += weights[slot]
+				if vertices[index].y < segment.knee.y:
+					# The knee's continuous blend may retain a proximal influence;
+					# the distal segment must dominate below the actual knee plane.
+					if thigh_weight > shin_weight + 0.00005: bad_lower_weights += 1
+					if shin_weight > 0.5 and vertices[index].y > segment.knee.y * 0.5: lower_vertices += 1
+	_check(bad_lower_weights == 0 and lower_vertices > 50, drawing + " actual lower trousers are controlled by the lower segment, including blended knees")
+	for segment: Dictionary in legs:
+		skeleton.set_bone_pose_rotation(segment.leg, Quaternion(Vector3.RIGHT, ANGLE))
+		skeleton.set_bone_pose_rotation(segment.foot, Quaternion(Vector3.RIGHT, -ANGLE))
 	skeleton.force_update_all_bone_transforms()
 	await process_frame
-	var sole := (HIP_Y - KNEE_Y) * (1.0 - cos(ANGLE))
-	for leg in [10, 12]:
-		var foot: int = leg + 1
+	for segment: Dictionary in legs:
+		var leg: int = segment.leg
+		var foot: int = segment.foot
 		var thigh := skeleton.get_bone_global_pose(foot).origin - skeleton.get_bone_global_pose(leg).origin
 		_check(thigh.normalized().z < -0.9 and thigh.y < 0, drawing + " seated thigh points forward")
 		var shin := skeleton.get_bone_global_pose(foot).basis * Vector3.DOWN
 		_check(shin.is_equal_approx(Vector3.DOWN), drawing + " seated shin points down")
 		var rest := skeleton.get_bone_global_rest(foot).origin
 		var posed := skeleton.get_bone_global_pose(foot) * instance.skin.get_bind_pose(foot) * Vector3(rest.x, 0, rest.z)
-		_check(absf(posed.y - sole) < 0.0001, drawing + " posed sole matches two-segment solver")
+		_check(absf(posed.y - segment.displacement.y) < 0.0001, drawing + " posed sole matches rest-vector two-segment solver")
+	# Independent forward kinematics, not a second call to the posed skeleton:
+	# thigh P'=H+R(P-H); counter-rotated shin P'=H+R(K-H)+(P-K).
+	var maximum_solver_delta := 0.0
+	for surface in instance.mesh.get_surface_count():
+		var arrays := instance.mesh.surface_get_arrays(surface)
+		var vertices: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
+		var bones: PackedInt32Array = arrays[Mesh.ARRAY_BONES]
+		var weights: PackedFloat32Array = arrays[Mesh.ARRAY_WEIGHTS]
+		for index in vertices.size():
+			var expected := Vector3.ZERO
+			var actual := Vector3.ZERO
+			for influence in 4:
+				var slot := index * 4 + influence
+				if weights[slot] <= 0.0: continue
+				var bone := instance.skin.get_bind_bone(bones[slot])
+				var independent := vertices[index]
+				for segment: Dictionary in legs:
+					if bone == segment.leg: independent = segment.hip + rotation * (vertices[index] - segment.hip)
+					if bone == segment.foot: independent = vertices[index] + segment.displacement
+				expected += independent * weights[slot]
+				actual += (skeleton.get_bone_global_pose(bone) * instance.skin.get_bind_pose(bones[slot]) * vertices[index]) * weights[slot]
+			maximum_solver_delta = maxf(maximum_solver_delta, actual.distance_to(expected))
+	_check(maximum_solver_delta < 0.0001, drawing + " every actual weighted vertex matches the independent two-segment rest-vector solver")
 	var posed_bounds := _cpu_bounds(instance, skeleton)
 	_check(absf(posed_bounds.position.y - sole) < 0.0001, drawing + " entire posed geometry rests on solved sole")
 	# This is the upright-shin trolley pose. Lada uses its actual pedal pose and

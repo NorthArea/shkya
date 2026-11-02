@@ -1,0 +1,15 @@
+{
+  "retrieved": "2026-11-02",
+  "source": "https://quaternius.com/packs/universalanimationlibrary.html",
+  "official_distribution": "https://quaternius.itch.io/universal-animation-library",
+  "distribution_upload_id": 17958403,
+  "package": "Universal Animation Library[Standard].zip",
+  "license": "CC0 1.0 Universal",
+  "license_url": "https://creativecommons.org/publicdomain/zero/1.0/",
+  "files": {
+    "Universal_Animation_Library_Standard.zip": "cc73fc4e495b82958207316596317a3f40b9fa38065bde1027937452da537724",
+    "quaternius/Universal Animation Library[Standard]/Unreal-Godot/UAL1_Standard.glb": "69591853d817488edaa8fd9bf8fc1d821eaeaf789f8627b3cd23b41c4ed67997",
+    "quaternius/Universal Animation Library[Standard]/Unreal-Godot/UAL1_Standard_RM.glb": "be684571ed655a1b892c2c07e6e2aeca053b606c442d34004adaf1d944090d01",
+    "quaternius/Universal Animation Library[Standard]/License.txt": "6d01f55c6e4c49a2c9963e147e561945ae2c83958c8ca667d90a6bffdbfac061"
+  }
+}

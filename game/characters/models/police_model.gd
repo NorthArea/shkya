@@ -10,7 +10,7 @@ func _material(color: String) -> StandardMaterial3D:
 	result.roughness = 1.0
 	result.metallic = 0.0
 	result.specular_mode = BaseMaterial3D.SPECULAR_DISABLED
-	result.diffuse_mode = BaseMaterial3D.DIFFUSE_TOON
+	result.diffuse_mode = BaseMaterial3D.DIFFUSE_BURLEY
 	result.vertex_color_use_as_albedo = true
 	result.vertex_color_is_srgb = true
 	return result
@@ -74,28 +74,28 @@ func _coat(b: Builder) -> void:
 		Vector3(0.267, 0.585, 0.18), Vector3(0.252, 0.663, 0.153),
 		Vector3(0.208, 0.704, 0.118), Vector3(0.144, 0.712, 0.088),
 	]
-	b.body_profile(levels, "navy", 2, 24)
+	_soft_volume(b, levels, "navy", 2, Vector3.ZERO, 2.55)
 	# Padded standing collar around the neck; lapels read as separate folded cloth.
 	b.ellipsoid(Vector3(0, 0.684, 0.015), Vector3(0.155, 0.038, 0.115), "fur_leather_ink", 2, 20, 8)
 	b.vertex_tints["navy"] = Color("#53515A")
 	_triangle_panel(b, PackedVector3Array([Vector3(-0.065, 0.694, -0.151), Vector3(0.065, 0.694, -0.151), Vector3(0, 0.574, -0.196)]), "navy", 2)
 	b.vertex_tints["navy"] = Color("#283044")
-	b.box(Vector3(0, 0.633, -0.184), Vector3(0.018, 0.099, 0.012), "fur_leather_ink", 2, Basis(Vector3.FORWARD, -0.04))
+	_bevel_box(b, Vector3(0, 0.633, -0.184), Vector3(0.018, 0.099, 0.012), "fur_leather_ink", 2, Basis(Vector3.FORWARD, -0.04))
 	for side: float in [-1.0, 1.0]:
 		b.vertex_tints["navy"] = Color("#303A52")
 		var lapel := PackedVector3Array([Vector3(side * 0.15, 0.7, -0.113), Vector3(side * 0.065, 0.69, -0.158), Vector3(side * 0.009, 0.576, -0.196), Vector3(side * 0.037, 0.559, -0.2), Vector3(side * 0.084, 0.615, -0.184), Vector3(side * 0.061, 0.635, -0.177), Vector3(side * 0.119, 0.672, -0.142)])
 		_triangle_panel(b, lapel, "navy", 2)
-		b.tube(lapel, 0.002, "fur_leather_ink", 2, 5)
+		b.tube(lapel, 0.0015, "navy", 2, 5)
 		b.vertex_tints["navy"] = Color("#283044")
 		# A broad raised shoulder plate, muted red piping and a plain brass button.
 		var shoulder_basis := Basis(Vector3.FORWARD, side * 0.28)
 		b.vertex_tints["navy"] = Color("#626879")
-		b.box(Vector3(side * 0.235, 0.681, -0.024), Vector3(0.117, 0.022, 0.088), "navy", 2, shoulder_basis)
+		_bevel_box(b, Vector3(side * 0.235, 0.681, -0.024), Vector3(0.117, 0.022, 0.088), "navy", 2, shoulder_basis)
 		b.vertex_tints["navy"] = Color("#283044")
 		b.tube(PackedVector3Array([Vector3(side * 0.18, 0.697, -0.069), Vector3(side * 0.282, 0.668, -0.069)]), 0.0034, "piping", 2, 6)
 		b.ellipsoid(Vector3(side * 0.185, 0.701, -0.045), Vector3(0.006, 0.004, 0.006), "brass_pencil", 2, 8, 5)
 		# Pocket flaps sit on the actual coat surface at each side.
-		b.box(Vector3(side * 0.182, 0.354, -0.146), Vector3(0.112, 0.042, 0.024), "navy", 2, Basis(Vector3.UP, side * -0.48))
+		_bevel_box(b, Vector3(side * 0.182, 0.354, -0.146), Vector3(0.112, 0.042, 0.024), "navy", 2, Basis(Vector3.UP, side * -0.48))
 		b.tube(PackedVector3Array([Vector3(side * 0.133, 0.337, -0.174), Vector3(side * 0.215, 0.337, -0.12)]), 0.002, "fur_leather_ink", 2)
 		b.ellipsoid(Vector3(side * 0.175, 0.349, -0.164), Vector3(0.006, 0.006, 0.004), "brass_pencil", 2, 8, 5)
 	for p: Vector3 in [Vector3(-0.043, 0.417, -0.19), Vector3(-0.046, 0.344, -0.187), Vector3(0.069, 0.344, -0.183), Vector3(0.071, 0.265, -0.176)]:
@@ -103,7 +103,7 @@ func _coat(b: Builder) -> void:
 	b.tube(PackedVector3Array([Vector3(-0.024, 0.575, -0.182), Vector3(-0.034, 0.46, -0.189), Vector3(-0.043, 0.325, -0.183), Vector3(-0.049, 0.193, -0.166)]), 0.0017, "fur_leather_ink", 2)
 	# Rear vent and waist tab are visible from the gameplay approach camera.
 	b.tube(PackedVector3Array([Vector3(0, 0.65, 0.16), Vector3(0, 0.44, 0.19), Vector3(0, 0.19, 0.171)]), 0.0018, "fur_leather_ink", 2)
-	b.box(Vector3(0, 0.414, 0.187), Vector3(0.19, 0.025, 0.012), "navy", 2)
+	_bevel_box(b, Vector3(0, 0.414, 0.187), Vector3(0.19, 0.025, 0.012), "navy", 2)
 	for side: float in [-1.0, 1.0]:
 		b.ellipsoid(Vector3(side * 0.073, 0.415, 0.196), Vector3(0.006, 0.006, 0.003), "brass_pencil", 2, 8, 5)
 
@@ -111,11 +111,11 @@ func _legs_and_boots(b: Builder) -> void:
 	for side: float in [-1.0, 1.0]:
 		var leg := 10 if side > 0.0 else 12
 		var foot := leg + 1
-		b.ellipsoid(Vector3(side * 0.126, 0.153, 0.008), Vector3(0.083, 0.089, 0.085), "navy", leg, 14, 8)
+		_cloth_mass(b, Vector3(side * 0.126, 0.153, 0.008), Vector3(0.083, 0.089, 0.085), "navy", leg, 14, 8)
 		# Short boot shafts and broad outturned toes, with soles exactly at y=0.
-		b.ellipsoid(Vector3(side * 0.126, 0.071, 0.003), Vector3(0.062, 0.067, 0.065), "fur_leather_ink", foot, 14, 8)
-		b.ellipsoid(Vector3(side * 0.15, 0.03, -0.041), Vector3(0.089, 0.029, 0.098), "fur_leather_ink", foot, 16, 8)
-		b.box(Vector3(side * 0.145, 0.008, -0.033), Vector3(0.157, 0.016, 0.171), "fur_leather_ink", foot, Basis(Vector3.UP, side * -0.22))
+		_cloth_mass(b, Vector3(side * 0.126, 0.071, 0.003), Vector3(0.062, 0.067, 0.065), "fur_leather_ink", foot, 14, 8)
+		_cloth_mass(b, Vector3(side * 0.15, 0.03, -0.041), Vector3(0.089, 0.029, 0.098), "fur_leather_ink", foot, 16, 8)
+		_bevel_box(b, Vector3(side * 0.145, 0.008, -0.033), Vector3(0.157, 0.016, 0.171), "fur_leather_ink", foot, Basis(Vector3.UP, side * -0.22))
 		for k in range(3):
 			var y := 0.048 + float(k) * 0.011
 			b.tube(PackedVector3Array([Vector3(side * 0.126 - 0.024, y, -0.059), Vector3(side * 0.126 + 0.024, y - 0.005, -0.06)]), 0.002, "navy", foot, 5)
@@ -124,17 +124,17 @@ func _arms_and_tools(b: Builder) -> void:
 	for side: float in [-1.0, 1.0]:
 		var upper := 4 if side < 0.0 else 7
 		var lower := upper + 1
-		b.ellipsoid(Vector3(side * 0.275, 0.552, -0.005), Vector3(0.08, 0.129, 0.116), "navy", upper, 16, 10)
+		_cloth_mass(b, Vector3(side * 0.275, 0.552, -0.005), Vector3(0.08, 0.129, 0.116), "navy", upper, 16, 10)
 		var y := 0.478 if side < 0.0 else 0.535
-		b.ellipsoid(Vector3(side * 0.204, y, -0.16), Vector3(0.132, 0.074, 0.098), "navy", lower, 16, 10)
+		_cloth_mass(b, Vector3(side * 0.204, y, -0.16), Vector3(0.132, 0.074, 0.098), "navy", lower, 16, 10)
 		b.ellipsoid(Vector3(side * 0.115, y + 0.008, -0.237), Vector3(0.058, 0.064, 0.042), "fur_leather_ink", lower, 12, 8)
-		b.ellipsoid(Vector3(side * 0.127, y + 0.008, -0.224), Vector3(0.055, 0.063, 0.047), "navy", lower, 12, 8)
+		_cloth_mass(b, Vector3(side * 0.127, y + 0.008, -0.224), Vector3(0.055, 0.063, 0.047), "navy", lower, 12, 8)
 	_hand(b, Vector3(-0.062, 0.468, -0.284), 6, 1.0)
 	_hand(b, Vector3(0.14, 0.567, -0.296), 9, -1.0)
 	# Left hand supports the page; the viewer sees the writing hand on the left.
 	var note_basis := Basis(Vector3.FORWARD, 0.13)
-	b.box(Vector3(0.027, 0.501, -0.276), Vector3(0.119, 0.14, 0.015), "fur_leather_ink", 6, note_basis)
-	b.box(Vector3(0.027, 0.501, -0.286), Vector3(0.11, 0.13, 0.008), "paper_eye", 6, note_basis)
+	_bevel_box(b, Vector3(0.027, 0.501, -0.276), Vector3(0.119, 0.14, 0.015), "fur_leather_ink", 6, note_basis)
+	_bevel_box(b, Vector3(0.027, 0.501, -0.286), Vector3(0.11, 0.13, 0.008), "paper_eye", 6, note_basis)
 	for i in range(6):
 		var x := 0.071 - float(i) * 0.017
 		var y := 0.569 - (x - 0.027) * 0.13
@@ -158,6 +158,7 @@ func _hand(b: Builder, center: Vector3, bone: int, curl: float) -> void:
 			b.tube(PackedVector3Array([center + offset + Vector3(-0.011, -0.006, -0.014), center + offset + Vector3(0.014, -0.006, -0.014)]), 0.0012, "brass_pencil", bone, 4)
 	b.ellipsoid(center + Vector3(-curl * 0.018, 0.026, -0.008), Vector3(0.021, 0.014, 0.019), "ochre_skin", bone, 10, 6)
 
+
 func _face(b: Builder) -> void:
 	# One continuous broad jowled head. Its cheek mass is part of the face cage,
 	# and the lower jaw sits in front of the coat rather than disappearing into it.
@@ -174,11 +175,12 @@ func _face(b: Builder) -> void:
 		b.ellipsoid(Vector3(x, 0.833, -0.16900), Vector3(0.018, 0.006, 0.009), "paper_eye", 3, 12, 6)
 		b.ellipsoid(Vector3(x - 0.003, 0.831, -0.17700), Vector3(0.0036, 0.004, 0.002), "fur_leather_ink", 3, 8, 5)
 		# Heavy lids leave only a narrow white eye visible below them.
-		b.ellipsoid(Vector3(x, 0.841, -0.17100), Vector3(0.021, 0.008, 0.009), "ochre_skin", 3, 12, 6)
-		b.tube(PackedVector3Array([Vector3(x - 0.019, 0.839 + side * 0.001, -0.17800), Vector3(x, 0.838, -0.18200), Vector3(x + 0.018, 0.837, -0.17800)]), 0.0034, "fur_leather_ink", 3, 6)
-		b.tube(PackedVector3Array([Vector3(x - 0.012, 0.82, -0.17500), Vector3(x, 0.818, -0.18000), Vector3(x + 0.011, 0.82, -0.17600)]), 0.0013, "fur_leather_ink", 3, 5)
+		_bevel_box(b, Vector3(x, 0.841, -0.171), Vector3(0.042, 0.016, 0.018), "ochre_skin", 3)
+		_bevel_box(b, Vector3(x, 0.852, -0.170), Vector3(0.041, 0.007, 0.014), "fur_leather_ink", 3)
+		_skin_crease(b, PackedVector3Array([Vector3(x - 0.019, 0.839 + side * 0.001, -0.17800), Vector3(x, 0.838, -0.18200), Vector3(x + 0.018, 0.837, -0.17800)]), 0.0034)
+		_skin_crease(b, PackedVector3Array([Vector3(x - 0.012, 0.82, -0.17500), Vector3(x, 0.818, -0.18000), Vector3(x + 0.011, 0.82, -0.17600)]), 0.0013)
 	# A narrow bridge, small bulb and two nostrils, not a pasted facial mark.
-	b.ellipsoid(Vector3(-0.009, 0.816, -0.17900), Vector3(0.009, 0.025, 0.016), "ochre_skin", 3, 14, 8)
+	_bevel_box(b, Vector3(-0.009, 0.816, -0.179), Vector3(0.018, 0.050, 0.032), "ochre_skin", 3)
 	b.ellipsoid(Vector3(-0.009, 0.803, -0.19500), Vector3(0.013, 0.009, 0.015), "ochre_skin", 3, 14, 8)
 	for x: float in [-0.018, 0.0]:
 		b.ellipsoid(Vector3(x, 0.798, -0.20200), Vector3(0.0038, 0.002, 0.0027), "fur_leather_ink", 3, 8, 5)
@@ -187,12 +189,12 @@ func _face(b: Builder) -> void:
 	for i in range(8):
 		var x := -0.038 + float(i) * 0.0085
 		b.tube(PackedVector3Array([Vector3(x, 0.787, -0.19200), Vector3(x + 0.0005, 0.777 + float(i % 3) * 0.001, -0.19200)]), 0.0014, "fur_leather_ink", 3, 4)
-	b.tube(PackedVector3Array([Vector3(-0.031, 0.761, -0.18400), Vector3(-0.023, 0.766, -0.18900), Vector3(-0.008, 0.768, -0.19000), Vector3(0.008, 0.766, -0.18800), Vector3(0.018, 0.761, -0.18400)]), 0.0018, "fur_leather_ink", 3, 6)
-	b.tube(PackedVector3Array([Vector3(-0.019, 0.753, -0.18600), Vector3(-0.008, 0.75, -0.19000), Vector3(0.002, 0.753, -0.18600)]), 0.0011, "fur_leather_ink", 3, 5)
+	_skin_crease(b, PackedVector3Array([Vector3(-0.031, 0.761, -0.18400), Vector3(-0.023, 0.766, -0.18900), Vector3(-0.008, 0.768, -0.19000), Vector3(0.008, 0.766, -0.18800), Vector3(0.018, 0.761, -0.18400)]), 0.0018)
+	_skin_crease(b, PackedVector3Array([Vector3(-0.019, 0.753, -0.18600), Vector3(-0.008, 0.75, -0.19000), Vector3(0.002, 0.753, -0.18600)]), 0.0011)
 	for side: float in [-1.0, 1.0]:
-		b.tube(PackedVector3Array([Vector3(side * 0.024 - 0.008, 0.801, -0.18200), Vector3(side * 0.038 - 0.008, 0.78, -0.18100), Vector3(side * 0.047 - 0.008, 0.751, -0.17800)]), 0.0016, "fur_leather_ink", 3, 6)
+		_skin_crease(b, PackedVector3Array([Vector3(side * 0.024 - 0.008, 0.801, -0.18200), Vector3(side * 0.038 - 0.008, 0.78, -0.18100), Vector3(side * 0.047 - 0.008, 0.751, -0.17800)]), 0.0016)
 	for x: float in [-0.078, 0.0, 0.078]:
-		b.tube(PackedVector3Array([Vector3(x - 0.019, 0.716, -0.17800), Vector3(x, 0.711, -0.18300), Vector3(x + 0.019, 0.716, -0.17800)]), 0.0014, "fur_leather_ink", 3, 5)
+		_skin_crease(b, PackedVector3Array([Vector3(x - 0.019, 0.716, -0.17800), Vector3(x, 0.711, -0.18300), Vector3(x + 0.019, 0.716, -0.17800)]), 0.0014)
 
 
 func _ushanka(b: Builder) -> void:
@@ -277,25 +279,115 @@ func _soft_volume(b: Builder, levels: Array[Vector3], material: String, bone: in
 
 func _triangle_panel(b: Builder, points: PackedVector3Array, material: String, bone: int) -> void:
 	var projected := PackedVector2Array()
+	var center := Vector3.ZERO
 	for point: Vector3 in points:
 		projected.append(Vector2(point.x, point.y))
-	var signed_area := 0.0
-	for i in range(projected.size()):
-		var next := projected[(i + 1) % projected.size()]
-		signed_area += projected[i].cross(next)
-	var orientation := 1.0 if signed_area > 0.0 else -1.0
+		center += point
+	center /= points.size()
+	var inset := PackedVector3Array()
+	for point: Vector3 in points:
+		var inward := Vector3(center.x - point.x, center.y - point.y, 0).normalized()
+		inset.append(point + inward * 0.002)
 	var indices := Geometry2D.triangulate_polygon(projected)
 	for i in range(0, indices.size(), 3):
-		var a := points[indices[i]]
-		var c := points[indices[i + 1]]
-		var d := points[indices[i + 2]]
-		b._triangle(a, c, d, Vector3.FORWARD, Vector3.FORWARD, Vector3.FORWARD, material, bone)
-		b._triangle(a + Vector3(0, 0, 0.008), c + Vector3(0, 0, 0.008), d + Vector3(0, 0, 0.008), Vector3.BACK, Vector3.BACK, Vector3.BACK, material, bone)
-	for i in range(points.size()):
-		var a := points[i]
-		var c := points[(i + 1) % points.size()]
-		var d := c + Vector3(0, 0, 0.008)
-		var e := a + Vector3(0, 0, 0.008)
-		var normal := Vector3(c.y - a.y, a.x - c.x, 0).normalized() * orientation
+		var a := inset[indices[i]]
+		var c := inset[indices[i + 1]]
+		var d := inset[indices[i + 2]]
+		var normal := (c - a).cross(d - a).normalized()
+		if normal.z > 0:
+			normal = -normal
 		b._triangle(a, c, d, normal, normal, normal, material, bone)
-		b._triangle(a, d, e, normal, normal, normal, material, bone)
+		a = points[indices[i]] + Vector3(0, 0, 0.008)
+		c = points[indices[i + 1]] + Vector3(0, 0, 0.008)
+		d = points[indices[i + 2]] + Vector3(0, 0, 0.008)
+		b._triangle(a, c, d, -normal, -normal, -normal, material, bone)
+	for i in range(points.size()):
+		var next := (i + 1) % points.size()
+		var ring: Array[Vector3] = [inset[i], points[i] + Vector3(0, 0, 0.002), points[i] + Vector3(0, 0, 0.008)]
+		var next_ring: Array[Vector3] = [inset[next], points[next] + Vector3(0, 0, 0.002), points[next] + Vector3(0, 0, 0.008)]
+		for j in range(2):
+			var normal := (next_ring[j] - ring[j]).cross(next_ring[j + 1] - ring[j]).normalized()
+			var outward := (ring[j] + next_ring[j]) * 0.5 - center
+			if normal.dot(Vector3(outward.x, outward.y, -0.001 if j == 0 else 0.0)) < 0:
+				normal = -normal
+			b._triangle(ring[j], next_ring[j], next_ring[j + 1], normal, normal, normal, material, bone)
+			b._triangle(ring[j], next_ring[j + 1], ring[j + 1], normal, normal, normal, material, bone)
+
+
+func _bevel_box(b: Builder, center: Vector3, size: Vector3, material: String, bone: int = 0, rotation: Basis = Basis.IDENTITY) -> void:
+	var half := size * 0.5
+	var radius := minf(half.x, minf(half.y, half.z)) * 0.42
+	var inner := half - Vector3.ONE * radius
+	# Six quiet face planes, twelve chamfers and eight clipped corners (44 triangles).
+	for axis in range(3):
+		var across := (axis + 1) % 3
+		var vertical := (axis + 2) % 3
+		for side: float in [-1.0, 1.0]:
+			var positions: Array[Vector3] = []
+			var normal := Vector3.ZERO
+			normal[axis] = side
+			for pair: Vector2 in [Vector2(-1, -1), Vector2(1, -1), Vector2(1, 1), Vector2(-1, 1)]:
+				var point := normal * half
+				point[across] = pair.x * inner[across]
+				point[vertical] = pair.y * inner[vertical]
+				positions.append(center + rotation * point)
+			normal = rotation * normal
+			b._triangle(positions[0], positions[1], positions[2], normal, normal, normal, material, bone)
+			b._triangle(positions[0], positions[2], positions[3], normal, normal, normal, material, bone)
+		# This axis is the length direction of four distinct chamfer strips.
+		for u: float in [-1.0, 1.0]:
+			for v: float in [-1.0, 1.0]:
+				var positions: Array[Vector3] = []
+				var na := Vector3.ZERO
+				var nb := Vector3.ZERO
+				na[across] = u
+				nb[vertical] = v
+				for pair: Vector2 in [Vector2(-1, 0), Vector2(1, 0), Vector2(1, 1), Vector2(-1, 1)]:
+					var point := inner * (na + nb)
+					point[axis] = pair.x * inner[axis]
+					point += (na if pair.y == 0 else nb) * radius
+					positions.append(center + rotation * point)
+				na = rotation * na
+				nb = rotation * nb
+				b._triangle(positions[0], positions[1], positions[2], na, na, nb, material, bone)
+				b._triangle(positions[0], positions[2], positions[3], na, nb, nb, material, bone)
+	for x: float in [-1.0, 1.0]:
+		for y: float in [-1.0, 1.0]:
+			for z: float in [-1.0, 1.0]:
+				var corner := Vector3(x, y, z) * inner
+				var na := Vector3(x, 0, 0)
+				var nb := Vector3(0, y, 0)
+				var nc := Vector3(0, 0, z)
+				b._triangle(center + rotation * (corner + na * radius), center + rotation * (corner + nb * radius), center + rotation * (corner + nc * radius), rotation * na, rotation * nb, rotation * nc, material, bone)
+
+
+func _cloth_mass(b: Builder, center: Vector3, radii: Vector3, material: String, bone: int, segments: int = 16, rings: int = 10) -> void:
+	# The superellipsoid keeps the source cardinal extents and soft joint overlaps.
+	const POWER := 2.55
+	segments = mini(segments, 12)
+	rings = mini(rings, 8)
+	for j in range(rings):
+		for i in range(segments):
+			var positions: Array[Vector3] = []
+			var normals: Array[Vector3] = []
+			for pair: Vector2i in [Vector2i(i, j), Vector2i(i, j + 1), Vector2i(i + 1, j + 1), Vector2i(i + 1, j)]:
+				var u := TAU * float(pair.x) / segments
+				var v := PI * float(pair.y) / rings
+				var direction := Vector3(sin(v) * cos(u), cos(v), sin(v) * sin(u))
+				var shaped := Vector3.ZERO
+				var normal := Vector3.ZERO
+				for axis in range(3):
+					shaped[axis] = signf(direction[axis]) * pow(absf(direction[axis]), 2.0 / POWER)
+					normal[axis] = signf(shaped[axis]) * pow(absf(shaped[axis]), POWER - 1.0) / radii[axis]
+				positions.append(center + shaped * radii)
+				normals.append(normal.normalized())
+			if j > 0:
+				b._triangle(positions[0], positions[1], positions[3], normals[0], normals[1], normals[3], material, bone)
+			if j < rings - 1:
+				b._triangle(positions[1], positions[2], positions[3], normals[1], normals[2], normals[3], material, bone)
+
+
+func _skin_crease(b: Builder, points: PackedVector3Array, radius: float) -> void:
+	b.vertex_tints["ochre_skin"] = Color("aa947b")
+	b.tube(points, radius * 0.72, "ochre_skin", 3, 6)
+	b.vertex_tints["ochre_skin"] = Color.WHITE

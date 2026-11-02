@@ -90,9 +90,7 @@ const WAKE_SPEED := 6.0         # м/с
 const KICK_MIN_SPEED := 0.35    # м/с: стоящий Илюша пакет не пинает
 const KICK_RADIUS := 0.9        # м от Илюши
 const KICK_UP := 2.2            # м/с
-const LADA_HALF := Vector2(0.9, 2.1)     # полугабарит «Лады» x/z
-const CAR_HALF := Vector2(0.95, 2.4)     # машины кольца
-const TROLLEY_HALF := Vector2(1.3, 6.0)  # ЗиУ-9
+const LADA_HALF := Vector2(Layout.LADA_SIZE.x, Layout.LADA_SIZE.z) * 0.5
 
 # --- границы и возврат ---
 const OUT_RESPAWN := 1.5        # с вне BOUNDS (или выше OUT_HEIGHT) — возврат
@@ -608,7 +606,7 @@ func _movers() -> Array:
 	if _player and is_instance_valid(_player) and _player.visible and on_foot:
 		out.append([_player, &"player", Vector2.ZERO, _vel.get(_player, Vector3.ZERO)])
 	for v in get_tree().get_nodes_in_group(&"traffic_vehicles"):
-		out.append([v, &"traffic", TROLLEY_HALF if v is Trolleybus else CAR_HALF, _vel.get(v, Vector3.ZERO)])
+		out.append([v, &"traffic", Vector2(v.size.x, v.size.z) * 0.5, _vel.get(v, Vector3.ZERO)])
 	return out
 
 func _react(bag: Bag, movers: Array) -> void:
@@ -634,7 +632,7 @@ func _react(bag: Bag, movers: Array) -> void:
 		if speed < CAR_MIN_SPEED:
 			continue
 		var local := node.global_transform.affine_inverse() * p
-		var top := 3.6 if half == TROLLEY_HALF else 1.9
+		var top: float = node.size.y if node is PathVehicle else Layout.LADA_SIZE.y
 		if absf(local.x) < half.x + CAR_PAD and absf(local.z) < half.y + CAR_PAD and p.y < top:
 			var side := node.global_basis.x * signf(local.x if absf(local.x) > 0.01 else 1.0)
 			_hit(bag, Vector3(v.x, 0, v.z) * HIT_CARRY + side * (HIT_SIDE.x + HIT_SIDE.y * speed) + Vector3.UP * (HIT_UP.x + HIT_UP.y * speed), m[1])

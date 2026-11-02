@@ -29,13 +29,13 @@ const VISIBLE_HEIGHT_RATIOS := {
 	"police": 1054.0 / 1200.0,
 	"guard": 1050.0 / 1200.0,
 }
-const ILYUSHA_VISIBLE_HEIGHT_M := 1.50
 ## NCD-RisC: estimated height at age 18 for Russia's 1996 birth cohort,
 ## rounded to metres. An art reference, not a current all-age population mean.
 ## https://ncdrisc.org/downloads/height/NCD_RisC_eLife_2016_height_age18_countries.csv
 ## https://elifesciences.org/articles/13410
 const RF_ADULT_MALE_REFERENCE_M := 1.765
 const RF_ADULT_FEMALE_REFERENCE_M := 1.653
+const ILYUSHA_VISIBLE_HEIGHT_M := RF_ADULT_MALE_REFERENCE_M
 const PORTRAIT_DIR := "res://assets/art/portraits3d/"
 const PORTRAIT_KEYS: Array[StringName] = [&"babka", &"vendor", &"ilyusha", &"officer", &"account_officer"]
 

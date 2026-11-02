@@ -128,9 +128,9 @@ func _police_post() -> void:
 	for side: float in [-1.0, 1.0]:
 		_box(Vector3(0.035, 0.25, 3.3), Vector3(p.x + side * (car_size.x * 0.5 + 0.01), 0.82, p.y + 0.15), BLUE)
 		_label("ПОЛИЦИЯ", Vector3(p.x + side * (car_size.x * 0.5 + 0.034), 0.89, p.y), side * PI * 0.5, 32, WHITE)
-	_box(Vector3(1.05, 0.09, 0.32), Vector3(p.x, 1.52, p.y), STEEL)
-	_box(Vector3(0.32, 0.22, 0.3), Vector3(p.x - 0.35, 1.65, p.y), BLUE)
-	_box(Vector3(0.32, 0.22, 0.3), Vector3(p.x + 0.35, 1.65, p.y), BLUE)
+	_box(Vector3(1.05, 0.09, 0.32), Vector3(p.x, car_size.y + 0.057, p.y), STEEL)
+	_box(Vector3(0.32, 0.22, 0.3), Vector3(p.x - 0.35, car_size.y + 0.187, p.y), BLUE)
+	_box(Vector3(0.32, 0.22, 0.3), Vector3(p.x + 0.35, car_size.y + 0.187, p.y), BLUE)
 	# Continuous ribbed steel shutter and posts are the permanent final barrier.
 	var shutter: Array = _solids["LeninEastShutter"]
 	p = shutter[2]

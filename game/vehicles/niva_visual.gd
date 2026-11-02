@@ -6,17 +6,20 @@ extends RefCounted
 
 const VehicleMesh = preload("res://game/vehicles/vehicle_mesh.gd")
 
-const SIZE := Vector3(1.68, 1.64, 3.74)
-const WHEEL_RADIUS := 0.347
-const WHEELBASE := 2.20
+const Dimensions = preload("res://game/vehicles/vehicle_dimensions.gd")
+const SPEC: Dictionary = Dimensions.SPECS[&"niva2121"]
+const SIZE := Vector3(SPEC["width_m"], SPEC["height_m"], SPEC["length_m"])
+const WHEEL_RADIUS := 0.175 * 0.80 + 16.0 * 0.0254 * 0.5
+const WHEELBASE: float = SPEC["wheelbase_m"]
 const WHEEL_WIDTH := 0.175
-const AXLES := [-1.165, 1.035]
-const TRACK_HALF := [0.715, 0.70]
+const FRONT_AXLE: float = -SIZE.z * 0.5 + SPEC["front_overhang_m"]
+const AXLES := [FRONT_AXLE, FRONT_AXLE + WHEELBASE]
+const TRACK_HALF := [SPEC["front_track_m"] * 0.5, SPEC["rear_track_m"] * 0.5]
 const HULL_LENGTH := 3.54
-const HALF_WIDTH := 0.84
+const HALF_WIDTH: float = SIZE.x * 0.5
 const ARCH_RADIUS := 0.412
 const BELT := 1.07
-const ROOF_Y := 1.64
+const ROOF_Y: float = SIZE.y
 const GLASS_HALF_WIDTH := 0.795
 const ROOF_HALF_WIDTH := 0.705
 const TOP := [[-1.77, 1.025], [-1.71, 1.065], [-1.50, 1.085], [-0.75, 1.095],

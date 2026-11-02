@@ -14,7 +14,14 @@ const CabinScript = preload("res://game/vehicles/trolley_cabin.gd")
 signal doors_opened(stop_index: int)
 signal doors_closed(stop_index: int)
 
-const BODY := Vector3(11.9, 3.35, 2.5)   # ЗиУ-9: 11 888 × 3347 × 2500 мм — вдоль, высота, поперёк (как в Layout)
+const Dimensions = preload("res://game/vehicles/vehicle_dimensions.gd")
+const SPEC: Dictionary = Dimensions.SPECS[&"ziu9"]
+const INTERIOR_SPEC: Dictionary = Dimensions.INTERIOR_SPECS[&"ziu9"]
+# BODY — кузовная крыша; транспортная высота со сложенными штангами указана отдельно.
+const BODY := Vector3(SPEC["length_m"], SPEC["height_m"], SPEC["width_m"])
+const WHEEL_RADIUS: float = SPEC["static_tyre_radius_m"]
+const WHEEL_WIDTH := 0.320 # размер320-508 (12.00-20)
+const TWIN_OFFSET := WHEEL_WIDTH * 0.5 + 0.01 # технологический зазор20мм, не отдельная паспортная величина
 const DWELL := 6.0
 const STOP_DECEL := 1.2
 const CONTACT_Y := 7.0                   # высота контактного провода (как в level_geometry.gd)
@@ -34,8 +41,10 @@ var people: Node3D
 func _init() -> void:
 	super._init()
 	size = Vector3(BODY.z, BODY.y, BODY.x)
-	wheelbase = 6.2
-	wheel_radius = 0.5
+	wheelbase = SPEC["wheelbase_m"]
+	front_axle_z = AXLES[0]
+	rear_axle_z = AXLES[1]
+	wheel_radius = WHEEL_RADIUS # статический527±5мм; круглая шина — жёсткое приближение её контакта
 	cruise_speed = 7.0
 	corner_speed = 4.0
 
@@ -99,11 +108,13 @@ func _set_doors(open: bool) -> void:
 # Кузов — лофт сечений со скруглёнными углами в плане и скруглённой крышей; оконный пояс открыт: окна в чёрных
 # резинках (шейдер стекла), за ними салон — сиденья, жёлтые поручни, плафоны. Двери — двустворчатые остеклённые.
 
-const HALF_LEN := 5.95
-const HALF_W := 1.25
+const HALF_LEN: float = (BODY.x - 0.22) * 0.5 # выступающие бамперы по110мм с каждой стороны
+const HALF_W: float = BODY.z * 0.5
 const SILL := 1.72                 # низ окон
-const EAVE := 2.92                 # верх окон, низ крыши
-const AXLES: Array[float] = [-3.3, 2.9]   # передняя ось в 2,65 м от передка, база 6,2 м
+const EAVE: float = INTERIOR_SPEC["floor_height_m"] + INTERIOR_SPEC["clear_interior_height_m"] + 0.02                 # верх окон, низ крыши
+const FRONT_AXLE: float = -BODY.x * 0.5 + 2.282 + 0.067 # схема: до передка2282мм +нижний выступ67мм
+const AXLES: Array[float] = [FRONT_AXLE, FRONT_AXLE + SPEC["wheelbase_m"]]
+const TRACK_HALF := [SPEC["front_track_m"] * 0.5, SPEC["rear_track_m"] * 0.5]
 ## Двери к тротуару (+X): [центр по z, ширина] — узкая передняя, широкие средняя и задняя (ART-06).
 const DOORS := [[-4.1, 0.9], [-0.2, 1.4], [4.05, 1.4]]
 const GREEN := Color(0.02, 0.56, 0.25)
@@ -138,16 +149,19 @@ func _build_visual() -> Node3D:
 	# Тёплый свет в салоне — виден в окна и в открытые двери; с локальными тенями.
 	var light := OmniLight3D.new()
 	light.name = "CabinLight"
-	light.position = Vector3(0, 2.4, 0)
+	light.position = Vector3(0, EAVE - 0.52, 0)
 	light.light_color = Color(1.0, 0.82, 0.55)
 	light.light_energy = 0.8
 	light.omni_range = 5.0
 	preload("res://game/world/lighting.gd").configure_local_shadow(light)
 	light.light_specular = 0.1
 	body.add_child(light)
-	for z in AXLES:
-		for x in [-1.1, 1.1]:
-			_wheels.append(VehicleMesh.add_wheel(root, Vector3(x, wheel_radius, z), wheel_radius, 0.3, "bus"))
+	for x in [-TRACK_HALF[0], TRACK_HALF[0]]:
+		_wheels.append(VehicleMesh.add_wheel(root, Vector3(x, wheel_radius, AXLES[0]), wheel_radius, WHEEL_WIDTH, "bus"))
+	# Колея задней оси — между серединами сдвоенных пар; зазор между шинами приближён.
+	for side in [-1.0, 1.0]:
+		for offset in [-TWIN_OFFSET, TWIN_OFFSET]:
+			_wheels.append(VehicleMesh.add_wheel(root, Vector3(side * (TRACK_HALF[1] + offset), wheel_radius, AXLES[1]), wheel_radius, WHEEL_WIDTH, "bus"))
 	return root
 
 ## TROLLEY-01: жители в поездке (Residents) — в салон тем же обликом; вышедшие пропадают из салона.
@@ -159,10 +173,10 @@ func set_riders(list: Array) -> void:
 ## 3271 (первые цифры жёлтые, последние белые) спереди и на бортах.
 func _labels(body: Node3D) -> void:
 	var labels := [
-		["13", 115, Color(0.05, 0.05, 0.05), Vector3(0, 3.04, -HALF_LEN - 0.035), PI],
-		["Учительская", 22, Color(0.75, 0.1, 0.08), Vector3(0.62, 3.1, -HALF_LEN - 0.035), PI],
-		["Речной вокзал", 22, Color(0.75, 0.1, 0.08), Vector3(-0.62, 3.1, -HALF_LEN - 0.035), PI],
-		["13", 140, Color(0.05, 0.05, 0.05), Vector3(0, 3.06, HALF_LEN + 0.035), 0.0],
+		["13", 115, Color(0.05, 0.05, 0.05), Vector3(0, BODY.y - 0.18, -HALF_LEN - 0.035), PI],
+		["Учительская", 22, Color(0.75, 0.1, 0.08), Vector3(0.62, BODY.y - 0.12, -HALF_LEN - 0.035), PI],
+		["Речной вокзал", 22, Color(0.75, 0.1, 0.08), Vector3(-0.62, BODY.y - 0.12, -HALF_LEN - 0.035), PI],
+		["13", 140, Color(0.05, 0.05, 0.05), Vector3(0, BODY.y - 0.18, HALF_LEN + 0.035), 0.0],
 		["13", 60, Color(0.05, 0.05, 0.05), Vector3(HALF_W + 0.04, 1.6, -2.95), PI * 0.5],
 		["13", 60, Color(0.05, 0.05, 0.05), Vector3(-HALF_W - 0.04, 1.6, -2.95), -PI * 0.5],
 	]
@@ -238,7 +252,7 @@ func _meshes() -> Dictionary:
 	var snow := VehicleMesh.Builder.new()
 	var hl := HALF_LEN
 	var hw := HALF_W
-	var r := 0.5
+	var r := WHEEL_RADIUS
 	var arch := r + 0.1
 	# Низ кузова до окон: углы в плане скруглены, арки колёс; крыша — скруглённые рёбра, светлая.
 	var lower_stations := VehicleMesh.hull_stations(hl * 2.0, hw, [[-hl, SILL], [hl, SILL]], [[-hl, 0.42], [-hl + 0.25, 0.36], [hl - 0.25, 0.36], [hl, 0.42]],
@@ -247,15 +261,15 @@ func _meshes() -> Dictionary:
 		_lower_hull_shell(b, cabin, lower_stations)
 	else:
 		b.loft("paint", lower_stations)
-	b.loft("paint", VehicleMesh.hull_stations(hl * 2.0, hw, [[-hl, 3.18], [-hl + 0.12, 3.33], [hl - 0.12, 3.33], [hl, 3.2]], [[-hl, EAVE], [hl, EAVE]],
+	b.loft("paint", VehicleMesh.hull_stations(hl * 2.0, hw, [[-hl, BODY.y - 0.15], [-hl + 0.12, BODY.y], [hl - 0.12, BODY.y], [hl, BODY.y - 0.13]], [[-hl, EAVE], [hl, EAVE]],
 		[], 0.0, 0.0, 0.3, 0.3, 0.03, 0.01, 0.24, 0.3))
 	# Оконный пояс: угловые стойки, простенки между окнами, стёкла в резинках.
 	for sx in [-1.0, 1.0]:
 		for sz in [-1.0, 1.0]:
-			b.rbox("paint", Vector3(0.3, EAVE - SILL, 0.42), Vector3(sx * (hw - 0.15), (SILL + EAVE) * 0.5, sz * (hl - 0.21)), 0.13)
+			b.rbox("paint", Vector3(0.3, EAVE - SILL, 0.42), Vector3(sx * (hw - 0.155), (SILL + EAVE) * 0.5, sz * (hl - 0.21)), 0.13)
 	for side in [-1.0, 1.0]:
 		var s: float = side
-		var x := s * (hw - 0.025)
+		var x := s * (hw - 0.03)
 		for span in _free_spans(s > 0.0):
 			var a: float = span[0]
 			var e: float = span[1]
@@ -273,7 +287,7 @@ func _meshes() -> Dictionary:
 						Vector3(x + s * 0.006, EAVE - 0.06, (z0 + z1) * 0.5), Vector3(x + s * 0.006, EAVE - 0.06, z0 + 0.04), Vector3(s, 0, 0), 0.0, 1, 1)   # форточка
 		# Юбка понизу между арками, водосток по краю крыши.
 		for span in [[-hl + 0.4, AXLES[0] - arch - 0.05], [AXLES[0] + arch + 0.05, AXLES[1] - arch - 0.05], [AXLES[1] + arch + 0.05, hl - 0.4]]:
-			b.rbox("bumper_dark", Vector3(0.03, 0.14, float(span[1]) - float(span[0])), Vector3(s * (hw + 0.01), 0.45, (float(span[0]) + float(span[1])) * 0.5), 0.01)
+			b.rbox("bumper_dark", Vector3(0.03, 0.14, float(span[1]) - float(span[0])), Vector3(s * (hw - 0.015), 0.45, (float(span[0]) + float(span[1])) * 0.5), 0.01)
 		b.tube("trim", Vector3(s * (hw + 0.005), EAVE + 0.02, -hl + 0.35), Vector3(s * (hw + 0.005), EAVE + 0.02, hl - 0.35), 0.015, 4)
 		for axle in AXLES:
 			b.box("dark", Vector3(0.01, arch * 1.1, arch * 1.9), Vector3(s * 0.85, r + arch * 0.3, axle))
@@ -295,42 +309,42 @@ func _meshes() -> Dictionary:
 		b.rbox("tail", Vector3(0.18, 0.3, 0.03), Vector3(s * 0.93, 0.95, hl + 0.015), 0.02)
 		b.rbox("lens_amber", Vector3(0.18, 0.12, 0.03), Vector3(s * 0.93, 1.18, hl + 0.015), 0.02)
 	b.rbox("trim", Vector3(0.08, EAVE - SILL, 0.06), Vector3(0, (SILL + EAVE) * 0.5, fz + 0.02), 0.02)
-	b.rbox("plate", Vector3(1.9, 0.34, 0.03), Vector3(0, 3.04, fz - 0.01), 0.02)
+	b.rbox("plate", Vector3(1.9, 0.34, 0.03), Vector3(0, BODY.y - 0.18, fz - 0.01), 0.02)
 	b.rbox("grille_light", Vector3(1.2, 0.14, 0.04), Vector3(0, 1.2, fz - 0.01), 0.02)
 	for y in [1.17, 1.23]:
 		b.box("trim", Vector3(1.14, 0.012, 0.01), Vector3(0, y, fz - 0.032))
 	for e in [-1.0, 1.0]:
-		b.rbox("bumper_dark", Vector3(hw * 2.0 + 0.04, 0.3, 0.14), Vector3(0, 0.5, e * (hl + 0.04)), 0.05)
+		b.rbox("bumper_dark", Vector3(hw * 2.0, 0.3, 0.14), Vector3(0, 0.5, e * (hl + 0.04)), 0.05)
 	# Зад: стена с окном, табло «13».
 	b.box("dark", Vector3(1.8, 0.86, 0.02), Vector3(0, 2.45, hl - 0.01))
 	b.box("paint", Vector3(2.0, EAVE - SILL, 0.02), Vector3(0, (SILL + EAVE) * 0.5, hl - 0.03))
-	glass.pane("glass", Vector3(0.88, 2.04, hl + 0.004), Vector3(-0.88, 2.04, hl + 0.004), Vector3(-0.88, 2.86, hl + 0.004), Vector3(0.88, 2.86, hl + 0.004),
+	glass.pane("glass", Vector3(0.88, 2.04, hl + 0.004), Vector3(-0.88, 2.04, hl + 0.004), Vector3(-0.88, EAVE - 0.06, hl + 0.004), Vector3(0.88, EAVE - 0.06, hl + 0.004),
 		Vector3(0, 0, 1), 0.0, 1, 1)
-	b.rbox("plate", Vector3(1.4, 0.34, 0.03), Vector3(0, 3.06, hl + 0.01), 0.02)
+	b.rbox("plate", Vector3(1.4, 0.34, 0.03), Vector3(0, BODY.y - 0.18, hl + 0.01), 0.02)
 	for s in [-1.0, 1.0]:
 		b.rbox("plate", Vector3(0.03, 0.32, 0.9), Vector3(s * (hw + 0.015), 1.6, -2.95), 0.01)
 	# Крыша: короб оборудования, основания штанг, штанги к проводам, ловители.
-	b.rbox("grey_roof", Vector3(1.6, 0.32, 3.6), Vector3(0, 3.49, 0.8), 0.06)
+	b.rbox("grey_roof", Vector3(1.6, 0.32, 3.6), Vector3(0, BODY.y + 0.16, 0.8), 0.06)
 	for k in 8:
 		for s in [-1.0, 1.0]:
-			b.box("trim", Vector3(0.01, 0.16, 0.18), Vector3(s * 0.805, 3.49, -0.6 + k * 0.4))
+			b.box("trim", Vector3(0.01, 0.16, 0.18), Vector3(s * 0.805, BODY.y + 0.16, -0.6 + k * 0.4))
 	for left in WIRE_LEFT:
-		var from := Vector3(-left * 0.12, 3.7, 1.6)
+		var from := Vector3(-left * 0.12, BODY.y + 0.286, 1.6)
 		var to := Vector3(-left, CONTACT_Y - 0.05, 7.4)
-		b.rbox("dark", Vector3(0.3, 0.12, 0.5), Vector3(from.x, 3.68, 1.75), 0.04)
+		b.rbox("dark", Vector3(0.3, 0.12, 0.5), Vector3(from.x, BODY.y + 0.266, 1.75), 0.04)
 		b.tube("trim", from, to, 0.035, 6, true)
 		b.rbox("trim", Vector3(0.08, 0.06, 0.3), to, 0.02)
-		b.tube("dark", to + Vector3(0, -0.03, 0), Vector3(from.x * 2.0, 3.2, hl + 0.02), 0.006, 3)   # канат ловителя
+		b.tube("dark", to + Vector3(0, -0.03, 0), Vector3(from.x * 2.0, BODY.y - 0.13, hl + 0.02), 0.006, 3)   # канат ловителя
 	# Салон: пол, потолок с плафонами, сиденья вдоль бортов, поручни, кабина водителя.
 	var cabin_floor := CabinScript.INTERIOR_FLOOR_3D if occupants_3d else SILL + 0.006
 	cabin.box("dark", Vector3(hw * 2.0 - 0.1, 0.01, hl * 2.0 - 0.4), Vector3(0, cabin_floor - (0.005 if occupants_3d else 0.0), 0))
-	cabin.box("ceiling", Vector3(hw * 2.0 - 0.1, 0.01, hl * 2.0 - 0.4), Vector3(0, EAVE - 0.006, 0))
+	cabin.box("ceiling", Vector3(hw * 2.0 - 0.1, 0.01, hl * 2.0 - 0.4), Vector3(0, INTERIOR_SPEC["floor_height_m"] + INTERIOR_SPEC["clear_interior_height_m"] + 0.005, 0))
 	if occupants_3d:
 		for side: float in [-1.0, 1.0]:
 			cabin.box("dark", Vector3(0.035, SILL - cabin_floor, hl * 2.0 - 0.5), Vector3(side * (hw - 0.05), (cabin_floor + SILL) * 0.5, 0))
 	for s in [-1.0, 1.0]:
 		cabin.box("glow", Vector3(0.12, 0.02, hl * 2.0 - 1.4), Vector3(s * 0.55, EAVE - 0.02, 0.2))
-		cabin.tube("pole", Vector3(s * 0.55, 2.72, -4.5), Vector3(s * 0.55, 2.72, hl - 0.4), 0.02, 6)
+		cabin.tube("pole", Vector3(s * 0.55, EAVE - 0.20, -4.5), Vector3(s * 0.55, EAVE - 0.20, hl - 0.4), 0.02, 6)
 	var z := -3.5
 	while z < hl - 0.6:
 		for s in [-1.0, 1.0]:
@@ -340,10 +354,10 @@ func _meshes() -> Dictionary:
 					if absf(z - float(door[0])) < float(door[1]) * 0.5 + 0.45:
 						blocked = true
 			if not blocked:
-				var back_y := 1.45 if occupants_3d else SILL + 0.16
+				var back_y := cabin_floor + 0.65 if occupants_3d else SILL + 0.16
 				cabin.rbox("seat_red", Vector3(0.86, 0.42, 0.07), Vector3(s * 0.72, back_y, z + 0.2), 0.03, Basis(Vector3.RIGHT, -0.12))
 				if occupants_3d:
-					cabin.rbox("seat_red", Vector3(0.78, 0.10, 0.42), Vector3(s * 0.72, 1.18, z - 0.01), 0.03)
+					cabin.rbox("seat_red", Vector3(0.78, 0.10, 0.42), Vector3(s * 0.72, cabin_floor + 0.38, z - 0.01), 0.03)
 		z += 0.85
 	for door in DOORS:
 		for dz in [-0.5, 0.5]:
@@ -351,16 +365,16 @@ func _meshes() -> Dictionary:
 	for zp in [-2.4, 1.6, 3.0]:
 		cabin.tube("pole", Vector3(-0.2, SILL, zp), Vector3(-0.2, EAVE, zp), 0.02, 6)
 	cabin.box("dark", Vector3(1.0, 0.9, 0.04), Vector3(-0.7, SILL + 0.45, -4.55))
-	var wheel_at := Vector3(-0.6, SILL + 0.25, -5.35)
+	var wheel_at: Vector3 = CabinScript.OccupantScript.TROLLEY_STEERING_AT
 	for k in 12:
 		var t0 := TAU * k / 12.0
 		var t1 := TAU * (k + 1) / 12.0
 		var ay := Vector3(0, 0.35, -0.94)
 		cabin.tube("dark", wheel_at + (Vector3.RIGHT * cos(t0) + ay * sin(t0)) * 0.24, wheel_at + (Vector3.RIGHT * cos(t1) + ay * sin(t1)) * 0.24, 0.018, 4)
 	# Снег на крыше перед и за коробом, на коробе.
-	snow.pillow("snow", Vector3(0, 0, -3.3), hw * 2.0 - 0.4, 4.4, 0.1, 3.33, 3.33, 8, 9, 9)
-	snow.pillow("snow", Vector3(0, 0, 4.3), hw * 2.0 - 0.4, 2.5, 0.09, 3.33, 3.33, 9)
-	snow.pillow("snow", Vector3(0, 0, 0.8), 1.45, 3.4, 0.06, 3.65, 3.65, 10)
+	snow.pillow("snow", Vector3(0, 0, -3.3), hw * 2.0 - 0.4, 4.4, 0.1, BODY.y, BODY.y, 8, 9, 9)
+	snow.pillow("snow", Vector3(0, 0, 4.3), hw * 2.0 - 0.4, 2.5, 0.09, BODY.y, BODY.y, 9)
+	snow.pillow("snow", Vector3(0, 0, 0.8), 1.45, 3.4, 0.06, BODY.y + 0.32, BODY.y + 0.32, 10)
 	var meshes := {
 		"body": VehicleMesh.finish(b, {"paint": VehicleMesh.paint(GREEN, 0.15, 0.9, 0.3, 0.5), "head": VehicleMesh.mat("lens_white"), "tail": VehicleMesh.mat("lens_red")}),
 		"glass": VehicleMesh.finish(glass, {"glass": VehicleMesh.glass(0.05, Color(0.06, 0.08, 0.10, 0.62))}),
@@ -376,16 +390,16 @@ func _door_mesh(width: float) -> ArrayMesh:
 	if mesh != null:
 		return mesh
 	var b := VehicleMesh.Builder.new()
-	b.box("dark", Vector3(0.004, 2.4, width), Vector3(-0.004, 1.65, 0))
+	b.box("dark", Vector3(0.004, EAVE - 0.45, width), Vector3(-0.004, (EAVE + 0.45) * 0.5, 0))
 	var leaf := width * 0.5
 	for k in 2:
 		var zc := (k - 0.5) * leaf
 		for dz in [-0.5, 0.5]:
-			b.rbox("trim", Vector3(0.035, 2.38, 0.05), Vector3(0.01, 1.65, zc + dz * (leaf - 0.05)), 0.012)
-		for y in [0.47, 1.25, 2.83]:
+			b.rbox("trim", Vector3(0.035, EAVE - 0.47, 0.05), Vector3(0.01, (EAVE + 0.45) * 0.5, zc + dz * (leaf - 0.05)), 0.012)
+		for y in [0.47, 1.25, EAVE - 0.02]:
 			b.rbox("trim", Vector3(0.035, 0.05, leaf - 0.04), Vector3(0.01, y, zc), 0.012)
 		b.pane("glass", Vector3(0.012, 1.27, zc - leaf * 0.5 + 0.07), Vector3(0.012, 1.27, zc + leaf * 0.5 - 0.07),
-			Vector3(0.012, 2.81, zc + leaf * 0.5 - 0.07), Vector3(0.012, 2.81, zc - leaf * 0.5 + 0.07), Vector3(1, 0, 0), 0.0, 1, 1)
+			Vector3(0.012, EAVE - 0.04, zc + leaf * 0.5 - 0.07), Vector3(0.012, EAVE - 0.04, zc - leaf * 0.5 + 0.07), Vector3(1, 0, 0), 0.0, 1, 1)
 		b.pane("glass", Vector3(0.012, 0.5, zc - leaf * 0.5 + 0.07), Vector3(0.012, 0.5, zc + leaf * 0.5 - 0.07),
 			Vector3(0.012, 1.23, zc + leaf * 0.5 - 0.07), Vector3(0.012, 1.23, zc - leaf * 0.5 + 0.07), Vector3(1, 0, 0), 0.0, 1, 1)
 	mesh = VehicleMesh.finish(b, {"glass": VehicleMesh.glass(0.04, Color(0.06, 0.08, 0.10, 0.62))})
@@ -399,19 +413,19 @@ func _open_door_mesh(width: float) -> ArrayMesh:
 	if mesh != null:
 		return mesh
 	var b := VehicleMesh.Builder.new()
-	b.box("void", Vector3(0.004, 2.5, width), Vector3(-0.004, 1.6, 0))
-	b.box("glow", Vector3(0.01, 0.05, width - 0.3), Vector3(0.0, 2.78, 0))
+	b.box("void", Vector3(0.004, EAVE - 0.35, width), Vector3(-0.004, (EAVE + 0.35) * 0.5, 0))
+	b.box("glow", Vector3(0.01, 0.05, width - 0.3), Vector3(0.0, EAVE - 0.07, 0))
 	for k in 2:
-		var y := 0.38 + 0.36 * k
+		var y: float = 0.38 if k == 0 else INTERIOR_SPEC["floor_height_m"] - 0.02
 		b.box("steel", Vector3(0.05 + 0.1 * (1 - k), 0.04, width - 0.12), Vector3(0.0, y, 0))
 		b.box("pole", Vector3(0.012, 0.03, width - 0.12), Vector3(0.03 + 0.05 * (1 - k), y + 0.02, 0))
-	b.tube("pole", Vector3(0.06, 0.45, 0.0), Vector3(0.06, 2.85, 0.0), 0.02, 6)
+	b.tube("pole", Vector3(0.06, 0.45, 0.0), Vector3(0.06, EAVE, 0.0), 0.02, 6)
 	b.tube("pole", Vector3(0.05, 1.05, -width * 0.5 + 0.12), Vector3(0.05, 1.85, -width * 0.5 + 0.12), 0.018, 6)
 	b.tube("pole", Vector3(0.05, 1.05, width * 0.5 - 0.12), Vector3(0.05, 1.85, width * 0.5 - 0.12), 0.018, 6)
 	for e: float in [-1.0, 1.0]:
 		var z := e * (width * 0.5 - 0.1)
-		b.rbox("trim", Vector3(0.05, 2.38, 0.2), Vector3(0.01, 1.65, z), 0.012)
-		b.pane("glass", Vector3(0.04, 1.3, z - 0.07), Vector3(0.04, 1.3, z + 0.07), Vector3(0.04, 2.75, z + 0.07), Vector3(0.04, 2.75, z - 0.07), Vector3(1, 0, 0), 0.0, 1, 1)
+		b.rbox("trim", Vector3(0.05, EAVE - 0.47, 0.2), Vector3(0.01, (EAVE + 0.45) * 0.5, z), 0.012)
+		b.pane("glass", Vector3(0.04, 1.3, z - 0.07), Vector3(0.04, 1.3, z + 0.07), Vector3(0.04, EAVE - 0.10, z + 0.07), Vector3(0.04, EAVE - 0.10, z - 0.07), Vector3(1, 0, 0), 0.0, 1, 1)
 	mesh = VehicleMesh.finish(b, {"void": Materials.plain(Color(0.015, 0.014, 0.013), 0.95), "glow": VehicleMesh.cabin_glow(1.6),
 		"glass": VehicleMesh.glass(0.04, Color(0.06, 0.08, 0.10, 0.62))})
 	return VehicleMesh.store(key, mesh)

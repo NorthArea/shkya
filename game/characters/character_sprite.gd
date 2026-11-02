@@ -55,7 +55,7 @@ func _notification(what: int) -> void:
 		return
 	if what == NOTIFICATION_RESET_PHYSICS_INTERPOLATION:
 		_clear_bone_interpolation()
-	elif what == NOTIFICATION_VISIBILITY_CHANGED and interpolate_bone_pose and _uses_locomotion() and is_inside_tree() and not is_visible_in_tree():
+	elif what == NOTIFICATION_VISIBILITY_CHANGED and _uses_locomotion() and is_inside_tree() and not is_visible_in_tree():
 		reset_pose()
 
 func resolved_character() -> String:
@@ -112,7 +112,7 @@ func _ready() -> void:
 
 func _process(_delta: float) -> void:
 	if uniform_visual != null:
-		if interpolate_bone_pose and _uses_locomotion():
+		if _uses_manual_bone_interpolation():
 			if is_visible_in_tree() and _pose_mode != &"hidden":
 				_bone_pose_buffer.apply(uniform_visual.skeleton, Engine.get_physics_interpolation_fraction())
 			else:
@@ -145,7 +145,7 @@ func _process(_delta: float) -> void:
 ## Путь копится на шаге физики: в _process при physics_interpolation положение между шагами
 ## не меняется, и на 120+ к/с ходьба сбрасывалась бы в стойку (ревью ART-01, P1).
 func _physics_process(delta: float) -> void:
-	if uniform_visual != null and interpolate_bone_pose and _uses_locomotion():
+	if _uses_manual_bone_interpolation():
 		_bone_pose_buffer.restore_current(uniform_visual.skeleton)
 	# Visual offsets (punches, work, breathing) are not travelled ground distance.
 	var at := _actor.global_position if is_instance_valid(_actor) else global_position
@@ -177,7 +177,7 @@ func _physics_process(delta: float) -> void:
 		if not is_visible_in_tree():
 			pose_mode = &"hidden"
 		uniform_visual.update_locomotion(velocity, _grounded, pose_mode, delta, _vertical_speed, _action_phase)
-		if interpolate_bone_pose and _uses_locomotion():
+		if _uses_manual_bone_interpolation():
 			if pose_mode == &"hidden":
 				_bone_pose_buffer.clear()
 			else:
@@ -201,9 +201,12 @@ func reset_pose() -> void:
 		uniform_visual.reset_pose()
 
 func _clear_bone_interpolation() -> void:
-	if uniform_visual != null:
+	if uniform_visual != null and uniform_visual.supports_manual_bone_interpolation():
 		_bone_pose_buffer.restore_current(uniform_visual.skeleton)
 	_bone_pose_buffer.clear()
+
+func _uses_manual_bone_interpolation() -> bool:
+	return uniform_visual != null and interpolate_bone_pose and _uses_locomotion() and uniform_visual.supports_manual_bone_interpolation()
 
 func _model_visible_height(drawing: String) -> float:
 	return height_m * Catalog.visible_height_ratio(drawing)

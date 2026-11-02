@@ -206,9 +206,16 @@ func _finale() -> void:
 	if not _require(flow.dialog.buttons.has(&"turn_in"), "return dialog offers the actual quest turn-in"):
 		return
 	flow.dialog.buttons[&"turn_in"].pressed.emit()
-	await _frames(80)
-	await _photo("13-finale")
 	var hud: Node = world.get_node("GameHUD")
+	var protocol_visible := false
+	# STORY-02: обе реплики читаются до протокола; снимать и закрывать только реально показанную панель.
+	for i in 600:
+		await _frames(1)
+		protocol_visible = flow.protocol_ready() and hud.completion_panel.visible and hud.completion_panel.scale.is_equal_approx(Vector2.ONE)
+		if protocol_visible: break
+	if not _require(protocol_visible, "both finale replies finish before the actual protocol is shown"):
+		return
+	await _photo("13-finale")
 	hud.completion_close.pressed.emit()
 	for i in 600:
 		await _frames(1)

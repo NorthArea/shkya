@@ -113,7 +113,7 @@ func _tube(points: Array, radius: float, material: String, color: String, bone: 
 	_tint(material, color)
 	b.tube(path, radius * unit, material, bone, sides)
 
-func _loft(rows: Array, material: String, color: String, bone: int, x: float = 0.0, z: float = 0.0, sides: int = 20) -> void:
+func _loft(rows: Array, material: String, color: String, bone: int, x: float = 0.0, z: float = 0.0, sides: int = 20, samples: int = 3) -> void:
 	var levels: Array[Vector3] = []
 	var source: Array = rows.duplicate()
 	source.sort_custom(func(a: Array, c: Array) -> bool: return a[0] < c[0])
@@ -122,8 +122,8 @@ func _loft(rows: Array, material: String, color: String, bone: int, x: float = 0
 		var a: Array = source[index]
 		var c: Array = source[index + 1]
 		var next: Array = source[mini(source.size() - 1, index + 2)]
-		for step in 3:
-			var f := float(step) / 3.0
+		for step in samples:
+			var f := float(step) / samples
 			var dims := Vector2.ZERO
 			for axis in [1, 2]:
 				var slope_a := (float(c[axis]) - float(previous[axis])) / maxf(1.0, float(c[0]) - float(previous[0]))
@@ -138,9 +138,50 @@ func _loft(rows: Array, material: String, color: String, bone: int, x: float = 0
 	_tint(material, color)
 	var starts: Dictionary = {}
 	for key: String in b._parts: starts[key] = b._parts[key].positions.size()
-	b.body_profile(levels, material, bone, sides)
+	_sculpt_profile(levels, material, bone, sides)
 	var part: Dictionary = b._parts[material]
 	for i in range(int(starts.get(material, 0)), part.positions.size()): part.positions[i] += Vector3(x * unit, 0, z * unit)
+
+func _sculpt_profile(levels: Array[Vector3], material: String, bone: int, sides: int) -> void:
+	# Broad surfaces and short corner transitions, rather than circular tubes.
+	# The four cardinal points retain every authored width/depth and sole/top.
+	sides = clampi(ceili(float(sides) / 4.0) * 4, 8, 16)
+	var exponent := .86 if material == "skin" else .78 if material == "cloth" else .90
+	var section: Array[Vector2] = []
+	for index in sides:
+		var angle := TAU * float(index) / sides
+		section.append(Vector2(signf(cos(angle)) * pow(absf(cos(angle)), exponent), signf(sin(angle)) * pow(absf(sin(angle)), exponent)))
+	for row in range(levels.size() - 1):
+		var low := levels[row]
+		var high := levels[row + 1]
+		for index in sides:
+			var next := (index + 1) % sides
+			var points: Array[Vector3] = [Vector3(section[index].x * low.x, low.y, section[index].y * low.z), Vector3(section[index].x * high.x, high.y, section[index].y * high.z), Vector3(section[next].x * high.x, high.y, section[next].y * high.z), Vector3(section[next].x * low.x, low.y, section[next].y * low.z)]
+			var normals: Array[Vector3] = []
+			for corner in 4:
+				var level := row if corner in [0, 3] else row + 1
+				var edge := index if corner in [0, 1] else next
+				var before := levels[maxi(0, level - 1)]
+				var after := levels[mini(levels.size() - 1, level + 1)]
+				var vertical := Vector3(section[edge].x * (after.x - before.x), after.y - before.y, section[edge].y * (after.z - before.z))
+				var dims := levels[level]
+				var panel := Vector3((section[next].x - section[index].x) * dims.x, 0, (section[next].y - section[index].y) * dims.z)
+				var tangent := section[(edge + 1) % sides] - section[(edge + sides - 1) % sides]
+				var smooth := vertical.cross(Vector3(tangent.x * dims.x, 0, tangent.y * dims.z)).normalized()
+				var flat := vertical.cross(panel).normalized()
+				normals.append(flat.lerp(smooth, .38).normalized())
+			b._triangle(points[0], points[1], points[2], normals[0], normals[1], normals[2], material, bone)
+			b._triangle(points[0], points[2], points[3], normals[0], normals[2], normals[3], material, bone)
+	for row in [0, levels.size() - 1]:
+		var level := levels[row]
+		var center := Vector3(0, level.y, 0)
+		var normal := Vector3.DOWN if row == 0 else Vector3.UP
+		for index in sides:
+			var next := (index + 1) % sides
+			b._triangle(center, Vector3(section[index].x * level.x, level.y, section[index].y * level.z), Vector3(section[next].x * level.x, level.y, section[next].y * level.z), normal, normal, normal, material, bone)
+
+func _beveled(x: float, y: float, z: float, rx: float, ry: float, rz: float, material: String, color: String, bone: int = 3) -> void:
+	_loft([[y - ry, rx * .64, rz * .64], [y - ry * .70, rx * .94, rz * .94], [y - ry * .34, rx, rz], [y + ry * .34, rx, rz], [y + ry * .70, rx * .94, rz * .94], [y + ry, rx * .64, rz * .64]], material, color, bone, x, z, 12, 1)
 
 func _bones() -> void:
 	b.add_bone("root", -1, Vector3.ZERO)
@@ -217,11 +258,11 @@ func _arms() -> void:
 			if hand_front != null: hz = minf(hz, float(hand_front) - 10.0)
 			var elbow_front: Variant = _body_front(ex, ey)
 			if elbow_front != null: ez = minf(ez, float(elbow_front) - radius * .35)
-		_tube([Vector3(sx, sy, 0), Vector3(ex, ey, ez)], radius, "cloth", d.cloth, upper, 8)
-		_e(ex, ey, ez, radius, radius, radius, "cloth", d.cloth, upper, 10, 6)
-		_tube([Vector3(ex, ey, ez), Vector3(hx, hy - 10, hz)], radius * .9, "cloth", d.cloth, lower, 8)
+		_sleeve(Vector3(sx, sy, 0), Vector3(ex, ey, ez), radius, radius * .94, upper)
+		_beveled(ex, ey, ez, radius * .97, radius, radius * .97, "cloth", d.cloth, upper)
+		_sleeve(Vector3(ex, ey, ez), Vector3(hx, hy - 10, hz), radius * .90, radius * .78, lower)
 		if role != "man":
-			_e(hx, hy, hz, 12 if role != "officer" else 9, 14, 10, "skin", d.skin, hand, 10, 6)
+			_beveled(hx, hy, hz, 12 if role != "officer" else 9, 14, 10, "skin", d.skin, hand)
 			_e(hx - s * 8, hy - 3, hz - 6, 5, 9, 5, "skin", d.skin, hand, 8, 4)
 			if role in ["violet", "kolpak", "officer"]:
 				for finger in 4:
@@ -230,6 +271,40 @@ func _arms() -> void:
 		else:
 			_e(hx, hy - 2, hz + 3, 9, 10, 7, "skin", d.skin, hand, 10, 6)
 			_box(hx, hy, hz - 5, 38, 7, 7, "ink", "181a21", lower, Basis(Vector3.FORWARD, s * .5))
+
+func _sleeve(start: Vector3, finish: Vector3, shoulder_radius: float, cuff_radius: float, bone: int) -> void:
+	var first := _p(start.x, start.y, start.z)
+	var last := _p(finish.x, finish.y, finish.z)
+	var axis := (last - first).normalized()
+	var reference := Vector3.UP if absf(axis.y) < .9 else Vector3.RIGHT
+	var u := axis.cross(reference).normalized()
+	var v := axis.cross(u).normalized()
+	var rows: Array[Vector2] = [Vector2(0, shoulder_radius * .86), Vector2(.12, shoulder_radius), Vector2(.80, lerpf(shoulder_radius, cuff_radius, .80)), Vector2(1, cuff_radius)]
+	_tint("cloth", d.cloth)
+	const SIDES := 12
+	for row in range(rows.size() - 1):
+		for side in SIDES:
+			var angles := [TAU * float(side) / SIDES, TAU * float(side + 1) / SIDES]
+			var points: Array[Vector3] = []
+			var normals: Array[Vector3] = []
+			for corner in [Vector2i(0, 0), Vector2i(1, 0), Vector2i(1, 1), Vector2i(0, 1)]:
+				var level := rows[row + corner.x]
+				var angle: float = angles[corner.y]
+				var radial := u * (signf(cos(angle)) * pow(absf(cos(angle)), .84)) + v * (signf(sin(angle)) * pow(absf(sin(angle)), .84))
+				points.append(first.lerp(last, level.x) + radial * level.y * unit)
+				var panel := u * cos((angles[0] + angles[1]) * .5) + v * sin((angles[0] + angles[1]) * .5)
+				var taper := (rows[row + 1].y - rows[row].y) * unit / maxf(.00001, first.distance_to(last) * (rows[row + 1].x - rows[row].x))
+				normals.append((panel.lerp(radial.normalized(), .36) - axis * taper).normalized())
+			b._triangle(points[0], points[1], points[2], normals[0], normals[1], normals[2], "cloth", bone)
+			b._triangle(points[0], points[2], points[3], normals[0], normals[2], normals[3], "cloth", bone)
+	for row in [0, rows.size() - 1]:
+		var level := rows[row]
+		var center := first.lerp(last, level.x)
+		var normal := -axis if row == 0 else axis
+		for side in SIDES:
+			var a := TAU * float(side) / SIDES
+			var c := TAU * float(side + 1) / SIDES
+			b._triangle(center, center + (u * signf(cos(a)) * pow(absf(cos(a)), .84) + v * signf(sin(a)) * pow(absf(sin(a)), .84)) * level.y * unit, center + (u * signf(cos(c)) * pow(absf(cos(c)), .84) + v * signf(sin(c)) * pow(absf(sin(c)), .84)) * level.y * unit, normal, normal, normal, "cloth", bone)
 
 func _row_at(rows: Array, y: float) -> Vector2:
 	var result := Vector2(float(rows[0][1]), float(rows[0][2]))
@@ -243,14 +318,21 @@ func _row_at(rows: Array, y: float) -> Vector2:
 	return result
 
 func _front(x: float, y: float) -> float:
+	# Features sit on the emitted sculpt, including its broad panels and bevels.
+	var point := Vector2(x * unit, (590.0 - y) * unit)
+	var front: Variant = null
+	for index in range(0, head_vertices.size(), 3):
+		var depth: Variant = _triangle_depth(point, head_vertices[index], head_vertices[index + 1], head_vertices[index + 2])
+		if depth != null and (front == null or float(depth) < float(front)): front = depth
+	if front != null: return float(front) / unit
 	var dims := _row_at(head_rows, y)
 	return head_z - dims.y * sqrt(maxf(.01, 1.0 - pow(x / dims.x, 2)))
 
-func _face_line(points: Array, radius: float = 1.35, color: String = "292229") -> void:
+func _face_line(points: Array, radius: float = 1.35, color: String = "") -> void:
 	var path: Array = []
 	for point: Vector2 in points:
-		path.append(Vector3(point.x, point.y, _front(point.x, point.y) - 1.8))
-	_tube(path, radius, "ink", color, 3, 5)
+		path.append(Vector3(point.x, point.y, _front(point.x, point.y) - 1.2))
+	_tube(path, radius * .70, "skin", Color(d.skin).darkened(.43).to_html(false) if color.is_empty() else color, 3, 5)
 
 func _head() -> void:
 	var head_start: int = b._parts.get("skin", {}).get("positions", PackedVector3Array()).size()
@@ -265,23 +347,32 @@ func _head() -> void:
 		else:
 			var w := 5.2 if role not in ["boy", "woman", "babka"] else 6.5
 			var closed := role in ["shuba", "beret", "dog", "bow", "ushanka", "ushanka_walk", "tourist"]
-			_e(x, ey, z - 1, w + 1.2, 3 if closed else 5, .85, "ink", "211f27", 3, 12, 6)
+			_e(x, ey, z - .8, w + 1.2, 3 if closed else 5, 2.2, "skin", Color(d.skin).darkened(.30).to_html(false), 3, 12, 6)
 			if role not in ["kid", "kid2"]:
-				_e(x, ey + .6, z - 1.8, w, 1.5 if closed else 3.4, .7, "eye", "fffdf7", 3, 12, 6)
-				_e(x + .5, ey + .6, z - 2.5, 1.6, 1.6 if closed else 2.1, .55, "ink", "211f27", 3, 8, 4)
+				_e(x, ey + .6, z - 2.0, w, 1.5 if closed else 3.4, 1.3, "eye", "fffdf7", 3, 12, 6)
+				_e(x + .5, ey + .6, z - 3.1, 1.6, 1.6 if closed else 2.1, .75, "ink", "211f27", 3, 8, 4)
+			else:
+				_e(x, ey + .6, z - 2.4, 1.8, 2.2, 1.0, "ink", "211f27", 3, 8, 4)
+			var lid_y := ey - (1.1 if closed else 2.5)
+			_tube([Vector3(x - w, lid_y + 1, z - 1.9), Vector3(x, lid_y - .8, z - 3.0), Vector3(x + w, lid_y + 1, z - 1.9)], 1.8 if d.old else 1.45, "skin", d.skin, 3, 6)
 			var brow_y := ey - (7 if role == "beret" else 8)
-			_face_line([Vector2(x - 8, brow_y + (side if role == "beret" else 0)), Vector2(x, brow_y - (2 if role != "beret" else side * 2)), Vector2(x + 8, brow_y - (side * 2 if role == "beret" else 0))], 1.65 if role in ["beret", "ushanka", "ushanka_walk"] else 1.2)
+			_beveled(x, brow_y, _front(x, brow_y) - .9, 8.5, 2.6, 3.0, "skin", d.skin)
+			var brow_path: Array = []
+			for point: Vector2 in [Vector2(x - 8, brow_y + (side if role == "beret" else 0)), Vector2(x, brow_y - (2 if role != "beret" else side * 2)), Vector2(x + 8, brow_y - (side * 2 if role == "beret" else 0))]:
+				brow_path.append(Vector3(point.x, point.y, _front(point.x, point.y) - 3.1))
+			_tube(brow_path, 1.65 if role in ["beret", "ushanka", "ushanka_walk"] else 1.2, "accent", Color(d.skin).darkened(.65).to_html(false), 3, 6)
 			if d.old:
-				_face_line([Vector2(x - 7, ey + 7), Vector2(x, ey + 10), Vector2(x + 7, ey + 7)], 1.0)
+				_tube([Vector3(x - 6, ey + 6, _front(x - 6, ey + 6) - .9), Vector3(x, ey + 9, _front(x, ey + 9) - 1.7), Vector3(x + 6, ey + 6, _front(x + 6, ey + 6) - .9)], 1.5, "skin", d.skin, 3, 6)
 		if role in ["kid", "kid2", "boy"]:
 			_e(side * float(d.eye_x) * 1.28, ey + 13, _front(side * float(d.eye_x) * 1.28, ey + 13) - .4, 11, 7, .8, "skin", "df9d9e", 3, 12, 6)
 	var nose: float = d.nose
 	var ny := ey + (20 if role not in ["officer", "man"] else 24)
 	var nz := _front(0, ny)
-	_e(-1.2, ey + 10, _front(-1.2, ey + 10) - 1, nose * .30, 11, nose * .32, "skin", d.skin)
-	_e(0, ny, nz - nose * .35, nose * .62, nose * .50, nose * .70, "skin", d.skin)
+	_beveled(-1.2, ey + 10, _front(-1.2, ey + 10) - 1, nose * .30, 11, nose * .32, "skin", d.skin)
+	_beveled(0, ny, nz - nose * .35, nose * .62, nose * .50, nose * .70, "skin", d.skin)
 	var nose_z := nz - nose * .94
-	_tube([Vector3(-nose * .18, ey + 9, _front(-nose * .18, ey + 9) - 2), Vector3(-nose * .55, ny - 4, nose_z + 1), Vector3(-nose * .40, ny + 4, nose_z), Vector3(nose * .20, ny + 5, nose_z), Vector3(nose * .37, ny + 2, nose_z + 1)], 1.35, "ink", "403039", 3, 5)
+	for side: float in [-1.0, 1.0]:
+		_e(side * nose * .34, ny + nose * .28, nose_z + nose * .20, nose * .12, nose * .075, nose * .10, "skin", Color(d.skin).darkened(.35).to_html(false), 3, 8, 4)
 	var my: float = d.mouth_y
 	var mz := _front(0, my)
 	if d.mouth in ["open", "open_lips", "teeth", "bow"]:
@@ -293,11 +384,19 @@ func _head() -> void:
 			_e(0, my - 3, mz - 3, mouth_width * .8, 1.7, .65, "eye", "fff9dc", 3, 10, 4)
 	else:
 		var middle := my - 4 if d.mouth == "frown" else my + 4
+		_e(0, middle + 4, _front(0, middle + 4) - .7, 10, 2.7, 2.3, "skin", d.skin, 3, 12, 6)
 		_face_line([Vector2(-14, my), Vector2(-7, lerpf(my, middle, .8)), Vector2(0, middle), Vector2(7, lerpf(my, middle, .8)), Vector2(14, my)], 1.55)
 	if d.old:
 		for side: float in [-1.0, 1.0]:
 			var x := side * (nose + 10)
-			_face_line([Vector2(x, ey + 15), Vector2(x + side * 4, ny + 5), Vector2(x + side * 2, my - 2), Vector2(x - side * 3, my + 8)], 1.15)
+			var crease := Color(d.skin).darkened(.24).to_html(false)
+			_face_line([Vector2(x, ey + 15), Vector2(x + side * 4, ny + 5), Vector2(x + side * 2, my - 2), Vector2(x - side * 3, my + 8)], 1.0, crease)
+	if role not in ["babka", "woman", "violet", "dog", "turban"]:
+		var ear_y := ey + 9
+		var ear_width := _row_at(head_rows, ear_y).x
+		for side: float in [-1.0, 1.0]:
+			_beveled(side * (ear_width - 1), ear_y, head_z + 2, 5.5 if role != "officer" else 4.0, 9, 7, "skin", d.skin)
+			_e(side * (ear_width + 1), ear_y + .5, head_z - 3, 2.3, 5.4, 2, "skin", Color(d.skin).darkened(.22).to_html(false), 3, 8, 6)
 	if role == "officer":
 		for side: float in [-1.0, 1.0]:
 			_tube([Vector3(side * 3, 115, _front(side * 3, 115) - 2), Vector3(side * 12, 120, _front(side * 12, 120) - 2), Vector3(side * 17, 131, _front(side * 17, 131) - 1)], 3, "accent", "bfbec2", 3)
@@ -306,9 +405,7 @@ func _head() -> void:
 		var young := role == "boy"
 		var hair_y := 322.0 if young else 170.0
 		var hair_color := "6a4a34" if young else "4b3f37"
-		_e(0, hair_y, head_z + 28, 61 if young else 66, 22 if young else 41, 30, "accent", hair_color)
-		for side: float in [-1.0, 1.0]:
-			_e(side * (69 if young else 72), 316 if young else 164, head_z + 4, 7 if young else 8, 15 if young else 18, 10, "skin", d.skin)
+		_beveled(0, hair_y, head_z + 28, 61 if young else 66, 22 if young else 41, 30, "accent", hair_color)
 	if role == "man":
 		for index in 12:
 			var x := -36 + (index % 6) * 14
@@ -652,7 +749,13 @@ func _details() -> void:
 		"man":
 			for y: float in [292.0, 342.0, 392.0, 442.0]:
 				var dims := _row_at(d.body, y)
-				_tube([Vector3(-dims.x * .8, y, -dims.y * .6), Vector3(0, y + 7, -dims.y - 1), Vector3(dims.x * .8, y, -dims.y * .6)], 1.3, "ink", "171a22", 2, 5)
+				var seam: Array = []
+				for index in 13:
+					var x := lerpf(-dims.x * .8, dims.x * .8, float(index) / 12.0)
+					var curve_y := y + 7 * (1.0 - pow(x / (dims.x * .8), 2))
+					var front: Variant = _body_front(x, curve_y)
+					if front != null: seam.append(Vector3(x, curve_y, float(front) - .8))
+				_tube(seam, .9, "cloth", Color(d.cloth).darkened(.25).to_html(false), 2, 5)
 		"woman":
 			var sled_start: Dictionary = {}
 			for key: String in b._parts: sled_start[key] = b._parts[key].positions.size()
@@ -762,15 +865,19 @@ func _drawn_seams() -> void:
 		var path: Array = []
 		for i in 9:
 			var y := lerpf(first, hem - 6, float(i) / 8)
-			path.append(Vector3(1.5, y, -_row_at(d.body, y).y - 1.3))
-		_tube(path, 1.2, "ink", "4d3b48", 2, 5)
+			var front: Variant = _body_front(1.5, y)
+			if front != null: path.append(Vector3(1.5, y, float(front) - .9))
+		_tube(path, .9, "cloth", Color(d.cloth).darkened(.30).to_html(false), 2, 5)
 	if role in ["man", "boy", "ushanka", "ushanka_walk", "tourist", "kid", "kid2", "violet", "kolpak"]:
 		var y := lerpf(float(d.shoulder), hem, .69)
 		var dims := _row_at(d.body, y)
 		for side: float in [-1.0, 1.0]:
 			var x := side * dims.x * .55
-			var depth := dims.y * sqrt(1.0 - pow(x / dims.x, 2))
-			_tube([Vector3(x - 13, y - 2, -depth - 1), Vector3(x, y + 2, -depth - 3), Vector3(x + 13, y - 2, -depth - 1)], 1.25, "ink", "49373f", 2, 5)
+			var seam: Array = []
+			for point: Vector2 in [Vector2(x - 13, y - 2), Vector2(x, y + 2), Vector2(x + 13, y - 2)]:
+				var front: Variant = _body_front(point.x, point.y)
+				if front != null: seam.append(Vector3(point.x, point.y, float(front) - .9))
+			_tube(seam, 1.0, "cloth", Color(d.cloth).darkened(.35).to_html(false), 2, 5)
 	if role == "beret":
 		for side: float in [-1.0, 1.0]:
 			var line: Array = []

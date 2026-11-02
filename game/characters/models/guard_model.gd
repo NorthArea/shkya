@@ -80,7 +80,7 @@ func _material(label: String, color: Color) -> StandardMaterial3D:
 	material.albedo_color = color
 	material.vertex_color_use_as_albedo = true
 	material.roughness = 1.0
-	material.diffuse_mode = BaseMaterial3D.DIFFUSE_TOON
+	material.diffuse_mode = BaseMaterial3D.DIFFUSE_BURLEY
 	material.specular_mode = BaseMaterial3D.SPECULAR_DISABLED
 	return material
 
@@ -148,15 +148,15 @@ func _add_legs(mesh) -> void:
 		var leg: int = 10 if sign_value > 0 else 12
 		var foot: int = leg + 1
 		var x: float = sign_value * 0.126
-		mesh.ellipsoid(Vector3(x, 0.233, 0.007), Vector3(0.121, 0.146, 0.142), "suit", leg, 16, 10)
-		mesh.ellipsoid(Vector3(x, 0.123, 0), Vector3(0.075, 0.031, 0.087), "suit", leg, 12, 6)
+		_cloth_mass(mesh, Vector3(x, 0.233, 0.007), Vector3(0.121, 0.146, 0.142), "suit", leg, 16, 10)
+		_cloth_mass(mesh, Vector3(x, 0.123, 0), Vector3(0.075, 0.031, 0.087), "suit", leg, 12, 6)
 		# Small cargo pockets sit on the outside-front of the baggy thighs.
-		mesh.box(Vector3(x + sign_value * 0.069, 0.246, -0.100), Vector3(0.072, 0.078, 0.030), "armour", leg,
+		_bevel_box(mesh, Vector3(x + sign_value * 0.069, 0.246, -0.100), Vector3(0.072, 0.078, 0.030), "armour", leg,
 			Basis(Vector3.FORWARD, -sign_value * 0.10))
-		mesh.box(Vector3(x + sign_value * 0.069, 0.277, -0.119), Vector3(0.072, 0.012, 0.012), "suit", leg)
-		mesh.ellipsoid(Vector3(x, 0.064, 0.006), Vector3(0.052, 0.055, 0.060), "ink", foot, 12, 8)
-		mesh.ellipsoid(Vector3(x, 0.035, -0.038), Vector3(0.060, 0.035, 0.086), "ink", foot, 14, 8)
-		mesh.box(Vector3(x, 0.009, -0.032), Vector3(0.116, 0.018, 0.165), "ink", foot)
+		_bevel_box(mesh, Vector3(x + sign_value * 0.069, 0.277, -0.119), Vector3(0.072, 0.012, 0.012), "suit", leg)
+		_cloth_mass(mesh, Vector3(x, 0.064, 0.006), Vector3(0.052, 0.055, 0.060), "ink", foot, 12, 8)
+		_cloth_mass(mesh, Vector3(x, 0.035, -0.038), Vector3(0.060, 0.035, 0.086), "ink", foot, 14, 8)
+		_bevel_box(mesh, Vector3(x, 0.009, -0.032), Vector3(0.116, 0.018, 0.165), "ink", foot)
 		for y in [0.058, 0.070, 0.082]:
 			mesh.tube(PackedVector3Array([
 				Vector3(x - 0.022, y, -0.052), Vector3(x + 0.022, y + 0.002, -0.052),
@@ -171,14 +171,14 @@ func _add_arms(mesh) -> void:
 		var upper: int = 4 if sign_value > 0 else 7
 		var lower: int = upper + 1
 		var hand: int = upper + 2
-		mesh.ellipsoid(Vector3(sign_value * 0.215, 0.744, 0.005), Vector3(0.119, 0.118, 0.119), "suit", upper, 16, 10)
-		mesh.ellipsoid(Vector3(sign_value * 0.276, 0.644, -0.003), Vector3(0.103, 0.166, 0.116), "suit", upper, 16, 10)
-		mesh.ellipsoid(Vector3(sign_value * 0.326, 0.472, -0.006), Vector3(0.083, 0.139, 0.102), "suit", lower, 16, 10)
-		mesh.ellipsoid(Vector3(sign_value * 0.326, 0.365, -0.009), Vector3(0.067, 0.029, 0.077), "armour", lower, 12, 6)
+		_cloth_mass(mesh, Vector3(sign_value * 0.215, 0.744, 0.005), Vector3(0.119, 0.118, 0.119), "suit", upper, 16, 10)
+		_cloth_mass(mesh, Vector3(sign_value * 0.276, 0.644, -0.003), Vector3(0.103, 0.166, 0.116), "suit", upper, 16, 10)
+		_cloth_mass(mesh, Vector3(sign_value * 0.326, 0.472, -0.006), Vector3(0.083, 0.139, 0.102), "suit", lower, 16, 10)
+		_cloth_mass(mesh, Vector3(sign_value * 0.326, 0.365, -0.009), Vector3(0.067, 0.029, 0.077), "armour", lower, 12, 6)
 		mesh.ellipsoid(Vector3(sign_value * 0.326, 0.312, -0.014), Vector3(0.057, 0.063, 0.061), "ink", hand, 14, 8)
 		mesh.ellipsoid(Vector3(sign_value * 0.284, 0.322, -0.043), Vector3(0.019, 0.033, 0.025), "ink", hand, 10, 6)
 		mesh.vertex_tints["suit"] = Color("b9bcc6")
-		mesh.box(Vector3(sign_value * 0.328, 0.679, -0.093), Vector3(0.054, 0.054, 0.024), "suit", upper,
+		_bevel_box(mesh, Vector3(sign_value * 0.328, 0.679, -0.093), Vector3(0.054, 0.054, 0.024), "suit", upper,
 			Basis(Vector3.FORWARD, -sign_value * 0.25))
 		mesh.vertex_tints["suit"] = Color.WHITE
 		# Cloth folds and mitten fingers are solid strokes, never image planes.
@@ -198,13 +198,13 @@ func _add_arms(mesh) -> void:
 
 func _add_armour(mesh) -> void:
 	# Soft side rolls round the carrier into the torso rather than exposing box sides.
-	mesh.box(Vector3(0, 0.560, -0.182), Vector3(0.340, 0.262, 0.058), "armour", 2)
-	mesh.box(Vector3(0, 0.579, 0.163), Vector3(0.355, 0.277, 0.061), "armour", 2)
+	_bevel_box(mesh, Vector3(0, 0.560, -0.182), Vector3(0.340, 0.262, 0.058), "armour", 2)
+	_bevel_box(mesh, Vector3(0, 0.579, 0.163), Vector3(0.355, 0.277, 0.061), "armour", 2)
 	for sign_value in [-1.0, 1.0]:
 		mesh.ellipsoid(Vector3(sign_value * 0.170, 0.560, -0.182), Vector3(0.022, 0.140, 0.033), "armour", 2, 12, 8)
 	for y in [0.468, 0.548, 0.628]:
 		mesh.vertex_tints["armour"] = Color("dadada")
-		mesh.box(Vector3(0, y, -0.222), Vector3(0.305, 0.073, 0.026), "armour", 2)
+		_bevel_box(mesh, Vector3(0, y, -0.222), Vector3(0.305, 0.073, 0.026), "armour", 2)
 		for x in [-0.151, 0.151]:
 			mesh.ellipsoid(Vector3(x, y, -0.222), Vector3(0.013, 0.0365, 0.014), "armour", 2, 10, 6)
 		mesh.vertex_tints["armour"] = Color("999999")
@@ -213,11 +213,11 @@ func _add_armour(mesh) -> void:
 				Vector3(x, y - 0.032, -0.236), Vector3(x, y + 0.032, -0.236),
 			]), 0.0012, "armour", 2, 5)
 		mesh.vertex_tints["armour"] = Color("dadada")
-		mesh.box(Vector3(0, y, 0.204), Vector3(0.324, 0.072, 0.024), "armour", 2)
+		_bevel_box(mesh, Vector3(0, y, 0.204), Vector3(0.324, 0.072, 0.024), "armour", 2)
 		mesh.vertex_tints["armour"] = Color("999999")
 	for sign_value in [-1.0, 1.0]:
 		mesh.ellipsoid(Vector3(sign_value * 0.202, 0.492, -0.148), Vector3(0.037, 0.070, 0.036), "armour", 2, 12, 8)
-		mesh.box(Vector3(sign_value * 0.202, 0.526, -0.179), Vector3(0.060, 0.024, 0.012), "armour", 2)
+		_bevel_box(mesh, Vector3(sign_value * 0.202, 0.526, -0.179), Vector3(0.060, 0.024, 0.012), "armour", 2)
 		mesh.ellipsoid(Vector3(sign_value * 0.202, 0.512, -0.186), Vector3(0.004, 0.004, 0.002), "ink", 2, 8, 6)
 		# Flat padded webbing wraps over the shoulder and meets both carrier faces.
 		var strap := PackedVector3Array([
@@ -227,6 +227,7 @@ func _add_armour(mesh) -> void:
 			Vector3(sign_value * 0.159, 0.690, -0.190),
 		])
 		_padded_ribbon(mesh, strap, 0.063, 0.018, "armour")
+
 
 
 func _add_head(mesh) -> void:
@@ -240,13 +241,19 @@ func _add_head(mesh) -> void:
 	_head_volume(mesh, head_levels)
 	for sign_value in [-1.0, 1.0]:
 		mesh.ellipsoid(Vector3(sign_value * 0.111, 0.895, -0.005), Vector3(0.014, 0.020, 0.020), "skin", 3, 12, 8)
+		mesh.vertex_tints["skin"] = Color("b99576")
+		mesh.ellipsoid(Vector3(sign_value * 0.122, 0.895, -0.007), Vector3(0.003, 0.011, 0.010), "skin", 3, 10, 6)
+		mesh.vertex_tints["skin"] = Color.WHITE
 		mesh.tube(PackedVector3Array([
 			Vector3(sign_value * 0.122, 0.904, -0.018), Vector3(sign_value * 0.128, 0.895, -0.018),
 			Vector3(sign_value * 0.122, 0.886, -0.018),
-		]), 0.0017, "armour", 3, 5)
+		]), 0.0017, "skin", 3, 6)
 	for sign_value in [-1.0, 1.0]:
 		var x: float = sign_value * 0.023
+		_bevel_box(mesh, Vector3(sign_value * 0.024, 0.900, -0.150), Vector3(0.026, 0.006, 0.008), "ink", 3, Basis(Vector3.FORWARD, sign_value * 0.25))
 		mesh.ellipsoid(Vector3(x, 0.888, -0.150), Vector3(0.011, 0.0042, 0.0045), "eye", 3, 12, 6)
+		_bevel_box(mesh, Vector3(x, 0.894, -0.149), Vector3(0.025, 0.008, 0.012), "skin", 3)
+		mesh.ellipsoid(Vector3(x, 0.882, -0.148), Vector3(0.013, 0.003, 0.006), "skin", 3, 10, 6)
 		mesh.ellipsoid(Vector3(x - sign_value * 0.002, 0.888, -0.154), Vector3(0.0023, 0.0024, 0.0017), "ink", 3, 8, 4)
 		mesh.tube(PackedVector3Array([
 			Vector3(x - 0.012, 0.891, -0.152), Vector3(x, 0.890, -0.155), Vector3(x + 0.012, 0.891, -0.152),
@@ -259,7 +266,8 @@ func _add_head(mesh) -> void:
 		mesh.tube(PackedVector3Array([
 			Vector3(sign_value * 0.016, 0.879, -0.153), Vector3(sign_value * 0.025, 0.877, -0.152),
 			Vector3(sign_value * 0.032, 0.879, -0.150),
-		]), 0.0011, "armour", 3, 5)
+		]), 0.0011, "skin", 3, 6)
+	_bevel_box(mesh, Vector3(0, 0.879, -0.151), Vector3(0.019, 0.024, 0.023), "skin", 3)
 	mesh.ellipsoid(Vector3(0, 0.870, -0.153), Vector3(0.014, 0.014, 0.020), "skin", 3, 16, 10)
 	for x in [-0.008, 0.008]:
 		mesh.ellipsoid(Vector3(x, 0.861, -0.165), Vector3(0.0024, 0.0016, 0.002), "armour", 3, 8, 6)
@@ -355,4 +363,79 @@ func _head_stroke(mesh, levels: Array[Vector3], points: PackedVector3Array, radi
 				p.z = -0.025 - level.z * pow(maxf(0.0, 1.0 - pow(absf(p.x) / level.x, 3.0)), 1.0 / 3.0) - 0.001
 				break
 		points[index] = p
-	mesh.tube(points, radius, "armour", 3, 5)
+	mesh.vertex_tints["skin"] = Color("b99576")
+	mesh.tube(points, radius * 0.78, "skin", 3, 6)
+	mesh.vertex_tints["skin"] = Color.WHITE
+
+
+func _bevel_box(mesh, center: Vector3, size: Vector3, material: String, bone: int = 0, rotation: Basis = Basis.IDENTITY) -> void:
+	var half := size * 0.5
+	var radius := minf(half.x, minf(half.y, half.z)) * 0.42
+	var inner := half - Vector3.ONE * radius
+	# Six quiet face planes, twelve chamfers and eight clipped corners (44 triangles).
+	for axis in range(3):
+		var across := (axis + 1) % 3
+		var vertical := (axis + 2) % 3
+		for side: float in [-1.0, 1.0]:
+			var positions: Array[Vector3] = []
+			var normal := Vector3.ZERO
+			normal[axis] = side
+			for pair: Vector2 in [Vector2(-1, -1), Vector2(1, -1), Vector2(1, 1), Vector2(-1, 1)]:
+				var point := normal * half
+				point[across] = pair.x * inner[across]
+				point[vertical] = pair.y * inner[vertical]
+				positions.append(center + rotation * point)
+			normal = rotation * normal
+			mesh._triangle(positions[0], positions[1], positions[2], normal, normal, normal, material, bone)
+			mesh._triangle(positions[0], positions[2], positions[3], normal, normal, normal, material, bone)
+		# This axis is the length direction of four distinct chamfer strips.
+		for u: float in [-1.0, 1.0]:
+			for v: float in [-1.0, 1.0]:
+				var positions: Array[Vector3] = []
+				var na := Vector3.ZERO
+				var nb := Vector3.ZERO
+				na[across] = u
+				nb[vertical] = v
+				for pair: Vector2 in [Vector2(-1, 0), Vector2(1, 0), Vector2(1, 1), Vector2(-1, 1)]:
+					var point := inner * (na + nb)
+					point[axis] = pair.x * inner[axis]
+					point += (na if pair.y == 0 else nb) * radius
+					positions.append(center + rotation * point)
+				na = rotation * na
+				nb = rotation * nb
+				mesh._triangle(positions[0], positions[1], positions[2], na, na, nb, material, bone)
+				mesh._triangle(positions[0], positions[2], positions[3], na, nb, nb, material, bone)
+	for x: float in [-1.0, 1.0]:
+		for y: float in [-1.0, 1.0]:
+			for z: float in [-1.0, 1.0]:
+				var corner := Vector3(x, y, z) * inner
+				var na := Vector3(x, 0, 0)
+				var nb := Vector3(0, y, 0)
+				var nc := Vector3(0, 0, z)
+				mesh._triangle(center + rotation * (corner + na * radius), center + rotation * (corner + nb * radius), center + rotation * (corner + nc * radius), rotation * na, rotation * nb, rotation * nc, material, bone)
+
+
+func _cloth_mass(mesh, center: Vector3, radii: Vector3, material: String, bone: int, segments: int = 16, rings: int = 10) -> void:
+	# The superellipsoid keeps the source cardinal extents and soft joint overlaps.
+	const POWER := 2.55
+	segments = mini(segments, 12)
+	rings = mini(rings, 8)
+	for j in range(rings):
+		for i in range(segments):
+			var positions: Array[Vector3] = []
+			var normals: Array[Vector3] = []
+			for pair: Vector2i in [Vector2i(i, j), Vector2i(i, j + 1), Vector2i(i + 1, j + 1), Vector2i(i + 1, j)]:
+				var u := TAU * float(pair.x) / segments
+				var v := PI * float(pair.y) / rings
+				var direction := Vector3(sin(v) * cos(u), cos(v), sin(v) * sin(u))
+				var shaped := Vector3.ZERO
+				var normal := Vector3.ZERO
+				for axis in range(3):
+					shaped[axis] = signf(direction[axis]) * pow(absf(direction[axis]), 2.0 / POWER)
+					normal[axis] = signf(shaped[axis]) * pow(absf(shaped[axis]), POWER - 1.0) / radii[axis]
+				positions.append(center + shaped * radii)
+				normals.append(normal.normalized())
+			if j > 0:
+				mesh._triangle(positions[0], positions[1], positions[3], normals[0], normals[1], normals[3], material, bone)
+			if j < rings - 1:
+				mesh._triangle(positions[1], positions[2], positions[3], normals[1], normals[2], normals[3], material, bone)

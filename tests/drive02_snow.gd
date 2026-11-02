@@ -242,7 +242,7 @@ func _check_cross_fast() -> void:
 
 func _check_slow_spin() -> void:
 	# Нос на север, передние колёса — у кромки профиля (вал до z 25, снег до 25,6).
-	car.reset_to(Vector3(cross_x, 0, 25.0 + SnowField.MARGIN + Lada.WHEEL_AXLE + 0.05), 0.0)
+	car.reset_to(Vector3(cross_x, 0, 25.0 + SnowField.MARGIN - Lada.LadaVisual.FRONT_AXLE + 0.05), 0.0)
 	await _frames(2)
 	car.velocity = -car.global_basis.z * 1.0
 	Input.action_press(&"car_gas")

@@ -1225,7 +1225,7 @@ static func _parked_rects() -> Array:
 	var out := []
 	for car in Layout.PARKED:
 		var c: Vector2 = car[0]
-		var s := Vector2(4.1, 1.7) if car[1] else Vector2(1.7, 4.1)
+		var s := Vector2(Layout.LADA_SIZE.z, Layout.LADA_SIZE.x) if car[1] else Vector2(Layout.LADA_SIZE.x, Layout.LADA_SIZE.z)
 		out.append(Rect2(c - s * 0.5, s))
 	for spec in Layout.SOLIDS:
 		if spec[1] == "parked_car":

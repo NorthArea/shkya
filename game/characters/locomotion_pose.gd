@@ -6,9 +6,9 @@ const FULL_CYCLE_LEG_LENGTHS := 2.2
 const WALK_CYCLE_HZ := 1.7
 const RUN_CYCLE_HZ := 2.2
 const CONTACT_TRAVEL_LEG_LENGTHS := 1.15
-const SPRINT_CONTACT_TRAVEL_LEG_LENGTHS := 0.60
+const HERO_CONTACT_TRAVEL_M := 0.32
 const HERO_CYCLE_TRAVEL_M := 1.28
-const HERO_SWING_CLEARANCE_LEG_LENGTHS := 0.12
+const HERO_SWING_CLEARANCE_M := 0.05
 var rig: Rig
 var _short_sprint_contacts := false
 var _short_step_weight := 0.0
@@ -122,11 +122,14 @@ func update(velocity: Vector3, on_floor: bool, pose_mode: StringName, delta: flo
 	var cadence_ceiling := lerpf(WALK_CYCLE_HZ, RUN_CYCLE_HZ, smoothstep(4.0, 8.0, speed))
 	if _short_step_weight > 0.0:
 		cadence_ceiling = lerpf(cadence_ceiling, measured / HERO_CYCLE_TRAVEL_M, _short_step_weight)
-	cadence = minf(measured / maxf(0.01, world_leg_length * FULL_CYCLE_LEG_LENGTHS), cadence_ceiling) if walking else 0.0
+	var cycle_travel := world_leg_length * FULL_CYCLE_LEG_LENGTHS
+	if _short_step_weight > 0.0:
+		cycle_travel = lerpf(cycle_travel, HERO_CYCLE_TRAVEL_M, _short_step_weight)
+	cadence = minf(measured / maxf(0.01, cycle_travel), cadence_ceiling) if walking else 0.0
 	var stride := measured / (cadence * scale_y) if cadence > 0.0 else leg_length * FULL_CYCLE_LEG_LENGTHS
 	var contact_travel := CONTACT_TRAVEL_LEG_LENGTHS
 	if _short_step_weight > 0.0:
-		contact_travel = lerpf(CONTACT_TRAVEL_LEG_LENGTHS, SPRINT_CONTACT_TRAVEL_LEG_LENGTHS, _short_step_weight)
+		contact_travel = lerpf(CONTACT_TRAVEL_LEG_LENGTHS, HERO_CONTACT_TRAVEL_M / world_leg_length, _short_step_weight)
 	var stance := minf(0.62, leg_length * contact_travel / stride)
 	# A rotating hip socket cannot keep its old world contact for a full
 	# straight stride. Release earlier, rather than crouching to an unreachable foot.
@@ -153,7 +156,11 @@ func update(velocity: Vector3, on_floor: bool, pose_mode: StringName, delta: flo
 	skeleton.force_update_all_bone_transforms()
 	for index in 2:
 		var foot: Dictionary = _feet[index]
-		rig.solve_leg(index, foot.target, foot.target_basis, foot.pose_weight)
+		var leg_weight := float(foot.pose_weight)
+		# Targets already blend toward rest; the lowered landing hip still needs full support.
+		if _short_sprint_contacts and grounded and _land > 0.0:
+			leg_weight = 1.0
+		rig.solve_leg(index, foot.target, foot.target_basis, leg_weight)
 		var suffix: String = "_l" if index == 0 else "_r"
 		var side := 1.0 if index == 0 else -1.0
 		var arm := -transfer * side * lerpf(0.24, 0.52, run) * motion_weight
@@ -243,7 +250,7 @@ func _plan_foot(index: int, frame: Transform3D, cycle: float, stride: float, sta
 		sole = rest + _direction * offset
 		var clearance := maxf(leg_length * lerpf(0.24, 0.40, run), float(leg.ankle_rest.y) * 0.70)
 		if _short_step_weight > 0.0:
-			clearance = lerpf(clearance, leg_length * HERO_SWING_CLEARANCE_LEG_LENGTHS, _short_step_weight)
+			clearance = lerpf(clearance, HERO_SWING_CLEARANCE_M / rig.skeleton.global_basis.y.length(), _short_step_weight)
 		# Clear the ground during the release/landing windows, before fast foot
 		# recovery. A long low sine-squared tail would drag the boot at root speed.
 		var lift_window := minf(0.30, stance / (1.0 - stance) * 0.40)

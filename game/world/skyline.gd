@@ -389,11 +389,11 @@ func _streets_out() -> void:
 ## «Жигули» силуэтом: кузов, кабина с тёмными стёклами, снег на крыше и капоте (дальше 30 м деталей не видно).
 func _car(at: Vector3, yaw: float, color: Color) -> void:
 	var b := Basis(Vector3.UP, yaw)
-	_lit.append([Transform3D(b * Basis.from_scale(Vector3(4.1, 0.72, 1.62)), at + Vector3(0, 0.56, 0)), color])
-	_lit.append([Transform3D(b * Basis.from_scale(Vector3(2.1, 0.52, 1.42)), at + Vector3(0, 1.16, 0) + b * Vector3(0.2, 0, 0)), Color(0.08, 0.09, 0.11)])
-	_lit.append([Transform3D(b * Basis.from_scale(Vector3(1.9, 0.14, 1.34)), at + Vector3(0, 1.48, 0) + b * Vector3(0.2, 0, 0)), Color(0.86, 0.88, 0.92)])
+	_lit.append([Transform3D(b * Basis.from_scale(Vector3(Layout.LADA_SIZE.z, 0.72, Layout.LADA_SIZE.x)), at + Vector3(0, 0.56, 0)), color])
+	_lit.append([Transform3D(b * Basis.from_scale(Vector3(2.1, 0.52, 1.42)), at + Vector3(0, Layout.LADA_SIZE.y - 0.26, 0) + b * Vector3(0.2, 0, 0)), Color(0.08, 0.09, 0.11)])
+	_lit.append([Transform3D(b * Basis.from_scale(Vector3(1.9, 0.14, 1.34)), at + Vector3(0, Layout.LADA_SIZE.y + 0.07, 0) + b * Vector3(0.2, 0, 0)), Color(0.86, 0.88, 0.92)])
 	_lit.append([Transform3D(b * Basis.from_scale(Vector3(1.0, 0.1, 1.4)), at + Vector3(0, 0.96, 0) + b * Vector3(-1.4, 0, 0)), Color(0.86, 0.88, 0.92)])
-	_lit.append([Transform3D(b * Basis.from_scale(Vector3(4.15, 0.2, 1.66)), at + Vector3(0, 0.24, 0)), Color(0.10, 0.10, 0.10)])
+	_lit.append([Transform3D(b * Basis.from_scale(Vector3(Layout.LADA_SIZE.z, 0.2, Layout.LADA_SIZE.x)), at + Vector3(0, 0.24, 0)), Color(0.10, 0.10, 0.10)])
 
 ## Тополь полосы за краем — облегчённый (EnvDress.poplar дороже): ствол, 5–7 сучьев, ветви в куржаке; без теней.
 func _tree(base: Vector3, seed: int) -> void:

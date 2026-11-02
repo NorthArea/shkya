@@ -15,6 +15,9 @@ from PIL import Image, ImageDraw, ImageFont, PngImagePlugin
 ROOT = Path(__file__).resolve().parents[1]
 SOURCES = ["game/world/layout.gd", "game/world/ambient.gd", "game/world/props.gd",
            "game/world/level_geometry.gd", "game/world/perimeter.gd", "game/vehicles/er2k_train_visual.gd",
+           "game/vehicles/vehicle_dimensions.gd", "game/vehicles/lada.gd",
+           "game/vehicles/niva_visual.gd", "game/vehicles/samara_visual.gd",
+           "game/vehicles/gazelle_visual.gd", "game/vehicles/city_van.gd",
            "tools/export_arena_map.gd", "tools/generate_arena_map.py",
            "tools/godot.sh", "project.godot", "assets/fonts/Pangolin-Regular.ttf"]
 FONT = ROOT / "assets/fonts/Pangolin-Regular.ttf"

@@ -31,7 +31,7 @@ const DetectionSensorScript = preload("res://game/stealth/detection_sensor.gd")
 const Layout = preload("res://game/world/layout.gd")
 const InteractableScript = preload("res://game/interaction/interactable.gd")
 
-const SIZE := Gazelle.SIZE
+const SIZE := Gazelle.PASSENGER_SIZE
 const PLATE := "о282оо 154"
 const PROMPT := "ГОРОДСКОЙ ТРАНСПОРТ (?)"
 const BODY_PAINT := Color(0.93, 0.92, 0.88)

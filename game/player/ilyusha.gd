@@ -13,6 +13,7 @@ extends CharacterBody3D
 ## К Илюше узлов не добавляется (инвариант DEMO_ACCEPTANCE 3): запрос — через direct_space_state.
 
 const CharacterSpriteScript = preload("res://game/characters/character_sprite.gd")
+const CharacterCatalog = preload("res://game/characters/character_catalog.gd")
 const HideTuning = preload("res://game/stealth/hide_tuning.gd")
 
 const WALK_SPEED := 4.0
@@ -79,11 +80,11 @@ func _ready() -> void:
 	floor_snap_length = 0.0
 	var capsule := CapsuleShape3D.new()
 	capsule.radius = 0.35
-	capsule.height = 1.5
+	capsule.height = CharacterCatalog.ILYUSHA_VISIBLE_HEIGHT_M
 	var collider := CollisionShape3D.new()
 	collider.name = "CollisionShape3D"
 	collider.shape = capsule
-	collider.position.y = 0.75
+	collider.position.y = CharacterCatalog.ILYUSHA_VISIBLE_HEIGHT_M * 0.5
 	add_child(collider)
 	visual = _build_visual()
 	add_child(visual)

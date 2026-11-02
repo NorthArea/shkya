@@ -14,9 +14,9 @@ const DriverAI = preload("res://game/vehicles/driver_ai.gd")
 const DRIVER_STEER_RATE := 2.5
 
 const KINDS := {
-	&"zhiguli": {"size": Vector3(1.62, 1.44, 4.07), "wheelbase": 2.42, "radius": 0.32, "paint": Color(0.62, 0.12, 0.08), "plate": "в417ам 54"},
-	&"volga": {"size": Gaz3110.SIZE, "wheelbase": Gaz3110.WHEELBASE, "radius": Gaz3110.WHEEL_RADIUS, "paint": Color(0.80, 0.72, 0.52), "plate": "к208ро 154"},
-	&"gazelle": {"size": Gazelle.SIZE, "wheelbase": Gazelle.WHEELBASE, "radius": Gazelle.WHEEL_RADIUS, "paint": Color(0.16, 0.30, 0.55), "plate": "т655ес 54"},
+	&"zhiguli": {"axles": LadaVisual.SEDANS[LadaVisual.PLAYER_MODEL]["axles"], "size": LadaVisual.SIZE, "wheelbase": LadaVisual.PLAYER_SPEC["wheelbase_m"], "radius": LadaVisual.WHEEL_RADIUS, "paint": Color(0.62, 0.12, 0.08), "plate": "в417ам 54"},
+	&"volga": {"axles": Gaz3110.AXLES, "size": Gaz3110.SIZE, "wheelbase": Gaz3110.WHEELBASE, "radius": Gaz3110.WHEEL_RADIUS, "paint": Color(0.80, 0.72, 0.52), "plate": "к208ро 154"},
+	&"gazelle": {"axles": Gazelle.AXLES, "size": Gazelle.SIZE, "wheelbase": Gazelle.WHEELBASE, "radius": Gazelle.WHEEL_RADIUS, "paint": Color(0.16, 0.30, 0.55), "plate": "т655ес 54"},
 }
 
 var kind: StringName = &"zhiguli"
@@ -36,6 +36,8 @@ func _ready() -> void:
 	size = spec["size"]
 	wheelbase = spec["wheelbase"]
 	wheel_radius = spec["radius"]
+	front_axle_z = spec["axles"][0]
+	rear_axle_z = spec["axles"][1]
 	super._ready()
 	collision_mask = VehicleImpact.SAFE_MASK
 	var mass := 1045.0

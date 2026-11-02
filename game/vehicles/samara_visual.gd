@@ -7,17 +7,20 @@ extends RefCounted
 ## Только облик: перед −Z, шины касаются y=0; SIZE без зеркал/снега.
 
 const VehicleMesh = preload("res://game/vehicles/vehicle_mesh.gd")
-const SIZE := Vector3(1.65, 1.402, 4.006)
-const WHEELBASE := 2.46
+const Dimensions = preload("res://game/vehicles/vehicle_dimensions.gd")
+const SPEC: Dictionary = Dimensions.SPECS[&"samara2109"]
+const SIZE := Vector3(SPEC["width_m"], SPEC["height_m"], SPEC["length_m"])
+const WHEELBASE: float = SPEC["wheelbase_m"]
 const WHEEL_RADIUS := 0.2876
 const WHEEL_WIDTH := 0.175
-const AXLES := [-1.218, 1.242]
-const TRACK_HALF := [0.7, 0.685]
-const HALF_WIDTH := 0.825
+const FRONT_AXLE: float = -SIZE.z * 0.5 + SPEC["front_overhang_m"]
+const AXLES := [FRONT_AXLE, FRONT_AXLE + WHEELBASE]
+const TRACK_HALF := [SPEC["front_track_m"] * 0.5, SPEC["rear_track_m"] * 0.5]
+const HALF_WIDTH: float = SIZE.x * 0.5
 const ARCH_RADIUS := 0.345
 const HULL_LENGTH := 3.84
 const BELT := 0.98
-const ROOF_Y := 1.402
+const ROOF_Y: float = SIZE.y
 const GLASS_HALF_WIDTH := 0.771
 const ROOF_HALF_WIDTH := 0.665
 const TOP := [[-1.92, 0.815], [-1.84, 0.85], [-1.40, 0.915], [-0.73, 1.015],
@@ -50,7 +53,7 @@ static func build(paint: Color, plate: String = "", snow_depth: float = 0.08) ->
 		wheel.rotation.z = PI * 0.5
 		wheel.visibility_range_end = 120.0
 	if not plate.is_empty():
-		_plate_label(body, Vector3(0, 0.488, -2.016), PI, plate)
+		_plate_label(body, Vector3(0, 0.488, -SIZE.z * 0.5 - 0.001), PI, plate)
 		_plate_label(body, Vector3(0, 0.745, 1.948), 0.0, plate)
 	return visual
 
@@ -204,7 +207,7 @@ static func _front(body: VehicleMesh.Builder) -> void:
 		for k in 8:
 			body.box("chrome", Vector3(0.003, 0.162, 0.002), Vector3(s * 0.533 + (k - 3.5) * 0.035, 0.727, -1.953))
 	_bumper(body, -1.0)
-	_plate(body, Vector3(0, 0.488, -1.999))
+	_plate(body, Vector3(0, 0.488, -SIZE.z * 0.5 + 0.013))
 	body.box("dark", Vector3(0.66, 0.066, 0.014), Vector3(0, 0.333, -1.922))
 	for side in [-1.0, 1.0]:
 		var previous := Vector3(side * 0.657, 0.847, -1.84)

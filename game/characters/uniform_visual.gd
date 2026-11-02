@@ -5,6 +5,7 @@ const GuardModel = preload("res://game/characters/models/guard_model.gd")
 const CivilianModel = preload("res://game/characters/models/civilian_model.gd")
 const LocomotionRig = preload("res://game/characters/locomotion_rig.gd")
 const LocomotionPose = preload("res://game/characters/locomotion_pose.gd")
+const ImportedHeroVisual = preload("res://game/characters/imported_hero_visual.gd")
 const CIVILIANS_ENABLED_BY_DEFAULT := true
 const ENABLED_BY_DEFAULT := true
 const EMISSION_FLOOR := 0.12
@@ -34,8 +35,11 @@ var author_mesh: MeshInstance3D
 var rig: LocomotionRig
 var gait: LocomotionPose
 var _occupant := false
+var _selected_lada_occupant := false
+var _occupant_hand_targets: Array[Vector3] = []
 var _legacy_distance := 0.0
 var _xrays: Array[MeshInstance3D] = []
+var imported_hero: ImportedHeroVisual
 
 static func enabled() -> bool:
 	return ENABLED_BY_DEFAULT or "--uniform3d" in OS.get_cmdline_user_args() or "--uniform3d" in OS.get_cmdline_args()
@@ -54,6 +58,16 @@ static func use_for(drawing: String) -> bool:
 func configure(drawing: String, height: float, color: Color) -> void:
 	_kind = drawing
 	visible_height = height
+	if drawing == "ilyusha":
+		imported_hero = ImportedHeroVisual.new()
+		add_child(imported_hero)
+		imported_hero.configure(height, color)
+		model = imported_hero.model
+		skeleton = imported_hero.skeleton
+		uniform_mesh = imported_hero.uniform_mesh
+		author_skeleton = skeleton
+		author_mesh = uniform_mesh
+		return
 	if drawing == "police":
 		model = PoliceModel.new().build_model()
 	elif drawing == "guard":
@@ -117,6 +131,9 @@ func update_walk(distance: float, walking: bool, delta: float, _stride: float) -
 	update_locomotion(-global_basis.z.normalized() * speed, true, &"locomotion", delta)
 
 func update_locomotion(velocity: Vector3, grounded: bool, mode: StringName, delta: float, vertical_speed := 0.0, action_phase := 0.0) -> void:
+	if imported_hero != null:
+		imported_hero.update_locomotion(velocity, grounded, mode, delta, vertical_speed, action_phase)
+		return
 	if _occupant:
 		return
 	prepare_locomotion()
@@ -128,6 +145,9 @@ func update_locomotion(velocity: Vector3, grounded: bool, mode: StringName, delt
 	gait.update(velocity, grounded, mode, delta, vertical_speed, action_phase)
 
 func prepare_locomotion() -> void:
+	if imported_hero != null:
+		imported_hero.prepare_locomotion()
+		return
 	if rig != null or _occupant:
 		return
 	rig = LocomotionRig.new()
@@ -144,17 +164,29 @@ func _rotate(bone_name: String, axis: Vector3, angle: float) -> void:
 	skeleton.set_bone_pose_rotation(skeleton.find_bone(bone_name), Quaternion(axis, angle))
 
 func set_walk_speed(speed: float) -> void:
+	if imported_hero != null:
+		imported_hero.set_walk_speed(speed)
+		return
 	_walk_speed = speed
 	_manual_distance = 0.0
 	if speed == 0.0:
 		reset_pose()
 
 func reset_pose() -> void:
+	if imported_hero != null:
+		imported_hero.reset_pose()
+		return
 	skeleton.reset_bone_poses()
 	if gait != null:
 		gait.reset()
+	if _selected_lada_occupant:
+		_pose_selected_lada()
+		if _occupant_hand_targets.size() == 2:
+			reach_hands(_occupant_hand_targets[0], _occupant_hand_targets[1])
 
 func build_xray() -> MeshInstance3D:
+	if imported_hero != null:
+		return imported_hero.build_xray()
 	if _xray_shader == null:
 		_xray_shader = Shader.new()
 		_xray_shader.code = XRAY_SOURCE
@@ -183,25 +215,43 @@ func _rebind_xrays() -> void:
 		xray.skeleton = NodePath("..")
 
 ## Occupants retain fresh skeletons while sharing immutable mesh/material resources.
-## Lada uses a full model scaled to its cabin, never the legacy cropped-canvas height.
+## Lada retains the walking model's intrinsic scale and articulated ankles.
 func set_occupant_pose(profile: StringName) -> void:
+	if imported_hero != null:
+		imported_hero.set_occupant_pose(profile)
+		return
+	var selected_lada := profile == &"lada" and _kind == "ilyusha"
+	_selected_lada_occupant = false
+	_occupant_hand_targets.clear()
+	if selected_lada:
+		_occupant = false
+		prepare_locomotion()
 	_occupant = true
-	if rig != null:
+	if selected_lada:
+		skeleton = rig.skeleton
+		uniform_mesh = rig.mesh
+		uniform_mesh.visible = true
+		author_mesh.visible = false
+		_rebind_xrays()
+	elif rig != null:
 		rig.mesh.visible = false
 		skeleton = author_skeleton
 		uniform_mesh = author_mesh
 		author_mesh.visible = true
 		_rebind_xrays()
 	reset_pose()
+	if selected_lada:
+		_selected_lada_occupant = true
+		_pose_selected_lada()
+		return
 	if profile == &"trolley_standing":
 		_rotate("upper_arm_r", Vector3.RIGHT, 1.70)
 		_rotate("lower_arm_r", Vector3.RIGHT, 0.40)
 		skeleton.force_update_all_bone_transforms()
 		return
 	if profile == &"lada":
-		# The chin tuck clears the roof; Ilyusha sits back from the steering wheel.
 		var head := skeleton.find_bone("head")
-		var head_offset := Vector3(0, -0.075 if _kind == "ilyusha" else -0.018, 0.035 if _kind == "ilyusha" else 0.0)
+		var head_offset := Vector3(0, -0.018, 0)
 		skeleton.set_bone_pose_position(head, skeleton.get_bone_rest(head).origin + head_offset)
 	for suffix: String in ["_l", "_r"]:
 		_rotate("leg" + suffix, Vector3.RIGHT, 1.65 if profile == &"lada" else 1.35)
@@ -210,13 +260,32 @@ func set_occupant_pose(profile: StringName) -> void:
 		_rotate("lower_arm" + suffix, Vector3.RIGHT, 0.55)
 	skeleton.force_update_all_bone_transforms()
 
+func _pose_selected_lada() -> void:
+	# A low sedan seat puts the knees above the hips. Counter-rotate the head
+	# and ankles so the neck keeps its length and the boots rest flat.
+	var recline := deg_to_rad(35.0)
+	_rotate("hips", Vector3.RIGHT, recline)
+	_rotate("head", Vector3.RIGHT, -recline)
+	for suffix: String in ["_l", "_r"]:
+		_rotate("leg" + suffix, Vector3.RIGHT, deg_to_rad(110.0) - recline)
+		_rotate("foot" + suffix, Vector3.RIGHT, deg_to_rad(-75.0))
+		_rotate("ankle" + suffix, Vector3.RIGHT, deg_to_rad(-35.0))
+		_rotate("upper_arm" + suffix, Vector3.RIGHT, 0.95)
+		_rotate("lower_arm" + suffix, Vector3.RIGHT, 0.55)
+	skeleton.force_update_all_bone_transforms()
+
 func set_lod(distance: float, margin: float = 4.0) -> void:
+	if imported_hero != null:
+		imported_hero.set_lod(distance, margin)
+		return
 	uniform_mesh.visibility_range_end = distance
 	uniform_mesh.visibility_range_end_margin = margin
 
 ## A tilted boot rests on its heel, not its bind-space ankle projection.
 ## Use the real weighted mesh so raised pedals cannot push shoes below the floor.
 func occupant_sole_height() -> float:
+	if imported_hero != null:
+		return imported_hero.occupant_sole_height()
 	var lowest := INF
 	for surface in uniform_mesh.mesh.get_surface_count():
 		var arrays := uniform_mesh.mesh.surface_get_arrays(surface)
@@ -238,6 +307,11 @@ func occupant_sole_height() -> float:
 ## Two-bone arm reach in normalized model coordinates. Targets are authored by
 ## the vehicle consumer; no gameplay transforms or cached mesh resources change.
 func reach_hands(left_target: Vector3, right_target: Vector3) -> void:
+	if imported_hero != null:
+		imported_hero.reach_hands(left_target, right_target)
+		return
+	if _selected_lada_occupant:
+		_occupant_hand_targets.assign([left_target, right_target])
 	_reach_hand("_l", left_target)
 	_reach_hand("_r", right_target)
 	skeleton.force_update_all_bone_transforms()
@@ -246,7 +320,8 @@ func _reach_hand(suffix: String, target: Vector3) -> void:
 	var upper := skeleton.find_bone("upper_arm" + suffix)
 	var lower := skeleton.find_bone("lower_arm" + suffix)
 	var hand := skeleton.find_bone("hand" + suffix)
-	var shoulder := skeleton.get_bone_global_rest(upper).origin
+	var shoulder := skeleton.get_bone_global_pose(upper).origin
+	var parent_rotation := skeleton.get_bone_global_pose(skeleton.get_bone_parent(upper)).basis.get_rotation_quaternion()
 	var upper_rest := skeleton.get_bone_rest(lower).origin
 	var lower_rest := skeleton.get_bone_rest(hand).origin
 	var upper_length := upper_rest.length()
@@ -255,7 +330,7 @@ func _reach_hand(suffix: String, target: Vector3) -> void:
 	# after rotating that offset so the grip targets the palm, not the wrist.
 	var palm_offset := Vector3(0, -0.034, -0.008)
 	var wrist := target
-	for iteration in 3:
+	for iteration in (6 if _selected_lada_occupant else 3):
 		var reach := wrist - shoulder
 		var distance := clampf(reach.length(), absf(upper_length - lower_length) + 0.0001, upper_length + lower_length - 0.0001)
 		var toward := reach.normalized()
@@ -267,6 +342,26 @@ func _reach_hand(suffix: String, target: Vector3) -> void:
 		var elbow := shoulder + toward * along + bend * sqrt(maxf(0.0, upper_length * upper_length - along * along))
 		var upper_rotation := Quaternion(upper_rest.normalized(), (elbow - shoulder).normalized())
 		var lower_rotation := Quaternion(lower_rest.normalized(), (shoulder + toward * distance - elbow).normalized())
-		skeleton.set_bone_pose_rotation(upper, upper_rotation)
+		skeleton.set_bone_pose_rotation(upper, parent_rotation.inverse() * upper_rotation)
 		skeleton.set_bone_pose_rotation(lower, upper_rotation.inverse() * lower_rotation)
 		wrist = target - lower_rotation * palm_offset
+
+func supports_manual_bone_interpolation() -> bool:
+	return imported_hero == null
+
+func bone_index(semantic: String) -> int:
+	return imported_hero.bone_index(semantic) if imported_hero != null else skeleton.find_bone(semantic)
+
+func bone_transform(semantic: String) -> Transform3D:
+	if imported_hero != null:
+		return imported_hero.bone_transform(semantic)
+	return skeleton.transform * skeleton.get_bone_global_pose(bone_index(semantic))
+
+func posed_vertices() -> PackedVector3Array:
+	return imported_hero.posed_vertices() if imported_hero != null else PackedVector3Array()
+
+func hand_grip_position(side: String) -> Vector3:
+	if imported_hero != null:
+		return imported_hero.hand_grip_position(side)
+	var suffix := "_l" if side == "Left" else "_r"
+	return bone_transform("hand" + suffix) * Vector3(0, -0.034, -0.008)

@@ -1,6 +1,7 @@
 extends RefCounted
 ## ГАЗ-3110: собственная геометрия раннего седана с узкими чёрными бамперами.
-## Размерная схема: «За рулём», 2010, стр. 5, https://gaz-3110.ru/docs/volga-gaz-3110.pdf .
+## Габариты — заводское3110-3902008 РЭ1998 (Dimensions); панельная схема «За рулём»,2010:
+## https://gaz-3110.ru/docs/volga-gaz-3110.pdf .
 ## Фото формы: https://1cars.org/uploads/posts/2015-06/1433406336_gaz-3110-10.jpg
 ## и https://dar-web.ru/images/gaz/old/g3110_2.jpg ; фотографии в модель не включены.
 ## Размеры/оси по схеме; радиус вычислен из 195/65 R15. Панели/салон — приближение по фото.
@@ -8,17 +9,20 @@ extends RefCounted
 
 const VehicleMesh = preload("res://game/vehicles/vehicle_mesh.gd")
 
-const SIZE := Vector3(1.8, 1.422, 4.87)
-const WHEELBASE := 2.8
+const Dimensions = preload("res://game/vehicles/vehicle_dimensions.gd")
+const SPEC: Dictionary = Dimensions.SPECS[&"gaz3110"]
+const SIZE := Vector3(SPEC["width_m"], SPEC["height_m"], SPEC["length_m"])
+const WHEELBASE: float = SPEC["wheelbase_m"]
 const WHEEL_RADIUS := 0.31725
 const WHEEL_WIDTH := 0.195
 const AXLES := [-1.551, 1.249]
-const TRACK_HALF := [0.75, 0.722]
+const TRACK_HALF := [SPEC["front_track_m"] * 0.5, SPEC["rear_track_m"] * 0.5]
 const HULL_LENGTH := 4.70
-const HALF_WIDTH := 0.9
+const HALF_WIDTH: float = SPEC["width_m"] * 0.5
 const ARCH_RADIUS := 0.371
 const BELT := 0.992
-const ROOF_Y := 1.422
+const ROOF_Y: float = SPEC["height_m"]
+const ROOF_RISE := ROOF_Y - 1.422
 const GLASS_HALF_WIDTH := 0.823
 const ROOF_HALF_WIDTH := 0.716
 const TOP := [[-2.35, 0.87], [-2.30, 0.94], [-2.12, 0.984], [-1.61, 1.016],
@@ -131,58 +135,58 @@ static func body_meshes() -> Dictionary:
 
 static func _greenhouse(body: VehicleMesh.Builder, glass: VehicleMesh.Builder) -> void:
 	body.loft("paint", [
-		[-0.60, 1.350, 1.385, 0.708, 0.690, 0.012, 0.025],
-		[-0.49, 1.350, 1.412, 0.730, 0.705, 0.015, 0.050],
-		[0.10, 1.352, ROOF_Y, 0.736, 0.711, 0.015, 0.055],
-		[0.64, 1.350, 1.413, 0.727, 0.702, 0.015, 0.050],
-		[0.79, 1.344, 1.382, 0.699, 0.678, 0.012, 0.025],
+		[-0.60, 1.350 + ROOF_RISE, 1.385 + ROOF_RISE, 0.708, 0.690, 0.012, 0.025],
+		[-0.49, 1.350 + ROOF_RISE, 1.412 + ROOF_RISE, 0.730, 0.705, 0.015, 0.050],
+		[0.10, 1.352 + ROOF_RISE, ROOF_Y, 0.736, 0.711, 0.015, 0.055],
+		[0.64, 1.350 + ROOF_RISE, 1.413 + ROOF_RISE, 0.727, 0.702, 0.015, 0.050],
+		[0.79, 1.344 + ROOF_RISE, 1.382 + ROOF_RISE, 0.699, 0.678, 0.012, 0.025],
 	], true, 4)
 	for side in [-1.0, 1.0]:
 		var s: float = side
 		var outward := Vector3(s, 0.28, 0.0).normalized()
 		var a_bottom := Vector3(s * GLASS_HALF_WIDTH, BELT, -0.965)
-		var a_top := Vector3(s * ROOF_HALF_WIDTH, 1.365, -0.555)
+		var a_top := Vector3(s * ROOF_HALF_WIDTH, 1.365 + ROOF_RISE, -0.555)
 		body.tube("paint", a_bottom, a_top, 0.034, 8)
 		body.tube("chrome", a_bottom + Vector3(s * 0.005, 0.012, 0.024),
 			a_top + Vector3(s * 0.005, 0.0, 0.022), 0.008, 5)
 		# Стойка B разделяет именно переднюю и заднюю двери, а не длинное окно купе.
 		body.poly("paint", PackedVector3Array([
 			Vector3(s * GLASS_HALF_WIDTH, BELT, 0.065), Vector3(s * GLASS_HALF_WIDTH, BELT, 0.145),
-			Vector3(s * ROOF_HALF_WIDTH, 1.36, 0.145), Vector3(s * ROOF_HALF_WIDTH, 1.36, 0.065),
+			Vector3(s * ROOF_HALF_WIDTH, 1.36 + ROOF_RISE, 0.145), Vector3(s * ROOF_HALF_WIDTH, 1.36 + ROOF_RISE, 0.065),
 		]), outward, true)
 		body.poly("paint", PackedVector3Array([
 			Vector3(s * GLASS_HALF_WIDTH, BELT, 1.14), Vector3(s * 0.845, BELT, 1.51),
-			Vector3(s * 0.697, 1.36, 0.78), Vector3(s * ROOF_HALF_WIDTH, 1.36, 0.66),
+			Vector3(s * 0.697, 1.36 + ROOF_RISE, 0.78), Vector3(s * ROOF_HALF_WIDTH, 1.36 + ROOF_RISE, 0.66),
 		]), outward, true)
 		glass.pane("glass", Vector3(s * GLASS_HALF_WIDTH, BELT + 0.012, -0.915),
 			Vector3(s * GLASS_HALF_WIDTH, BELT + 0.012, 0.067),
-			Vector3(s * ROOF_HALF_WIDTH, 1.353, 0.067), Vector3(s * ROOF_HALF_WIDTH, 1.353, -0.518),
+			Vector3(s * ROOF_HALF_WIDTH, 1.353 + ROOF_RISE, 0.067), Vector3(s * ROOF_HALF_WIDTH, 1.353 + ROOF_RISE, -0.518),
 			outward, 0.005, 5, 3)
 		glass.pane("glass", Vector3(s * GLASS_HALF_WIDTH, BELT + 0.012, 0.143),
 			Vector3(s * GLASS_HALF_WIDTH, BELT + 0.012, 1.142),
-			Vector3(s * ROOF_HALF_WIDTH, 1.353, 0.658), Vector3(s * ROOF_HALF_WIDTH, 1.353, 0.143),
+			Vector3(s * ROOF_HALF_WIDTH, 1.353 + ROOF_RISE, 0.658), Vector3(s * ROOF_HALF_WIDTH, 1.353 + ROOF_RISE, 0.143),
 			outward, 0.004, 5, 3)
 		# Неподвижная треугольная форточка в задней двери.
 		body.tube("chrome", Vector3(s * 0.828, BELT + 0.01, 0.945),
-			Vector3(s * 0.72, 1.352, 0.555), 0.008, 5)
+			Vector3(s * 0.72, 1.352 + ROOF_RISE, 0.555), 0.008, 5)
 		body.tube("chrome", Vector3(s * 0.831, BELT + 0.003, -0.94),
 			Vector3(s * 0.831, BELT + 0.003, 1.145), 0.008, 5)
-		body.tube("chrome", Vector3(s * 0.73, 1.379, -0.55),
-			Vector3(s * 0.73, 1.379, 0.70), 0.008, 5)
+		body.tube("chrome", Vector3(s * 0.73, 1.379 + ROOF_RISE, -0.55),
+			Vector3(s * 0.73, 1.379 + ROOF_RISE, 0.70), 0.008, 5)
 	var front_out := Vector3(0.0, 0.43, -0.37).normalized()
 	glass.pane("glass", Vector3(-0.785, 1.027, -0.953), Vector3(0.785, 1.027, -0.953),
-		Vector3(0.682, 1.351, -0.565), Vector3(-0.682, 1.351, -0.565), front_out, 0.022, 8, 3)
+		Vector3(0.682, 1.351 + ROOF_RISE, -0.565), Vector3(-0.682, 1.351 + ROOF_RISE, -0.565), front_out, 0.022, 8, 3)
 	var rear_out := Vector3(0.0, 0.65, 0.37).normalized()
 	glass.pane("glass", Vector3(-0.78, 1.014, 1.45), Vector3(0.78, 1.014, 1.45),
-		Vector3(0.66, 1.352, 0.80), Vector3(-0.66, 1.352, 0.80), rear_out, 0.016, 8, 3)
+		Vector3(0.66, 1.352 + ROOF_RISE, 0.80), Vector3(-0.66, 1.352 + ROOF_RISE, 0.80), rear_out, 0.016, 8, 3)
 	for side in [-1.0, 1.0]:
 		body.poly("paint", PackedVector3Array([
 			Vector3(side * 0.78, 1.014, 1.45), Vector3(side * 0.845, BELT, 1.51),
-			Vector3(side * 0.697, 1.36, 0.78), Vector3(side * 0.66, 1.352, 0.80),
+			Vector3(side * 0.697, 1.36 + ROOF_RISE, 0.78), Vector3(side * 0.66, 1.352 + ROOF_RISE, 0.80),
 		]), rear_out, true)
 	for edge in [
 		[Vector3(-0.79, 1.026, -0.965), Vector3(0.79, 1.026, -0.965)],
-		[Vector3(-0.684, 1.36, -0.569), Vector3(0.684, 1.36, -0.569)],
+		[Vector3(-0.684, 1.36 + ROOF_RISE, -0.569), Vector3(0.684, 1.36 + ROOF_RISE, -0.569)],
 		[Vector3(-0.78, 1.018, 1.458), Vector3(0.78, 1.018, 1.458)],
 	]:
 		body.tube("trim", edge[0], edge[1], 0.010, 6)
@@ -271,7 +275,7 @@ static func _rear_strip(body: VehicleMesh.Builder, slot: String, side: float,
 
 
 static func _bumper(body: VehicleMesh.Builder, end: float) -> void:
-	body.rbox("trim", Vector3(1.78, 0.145, 0.142), Vector3(0.0, 0.546, end * 2.364), 0.035)
+	body.rbox("trim", Vector3(1.78, 0.145, 0.142), Vector3(0.0, 0.546, end * (SIZE.z * 0.5 - 0.071)), 0.035)
 	body.rbox("chrome", Vector3(1.66, 0.018, 0.022), Vector3(0.0, 0.613, end * 2.381), 0.007)
 	for side in [-1.0, 1.0]:
 		body.rbox("trim", Vector3(0.13, 0.145, 0.28), Vector3(side * 0.829, 0.546, end * 2.24), 0.035)
@@ -374,7 +378,7 @@ static func snow_mesh(depth: float) -> ArrayMesh:
 	if mesh != null:
 		return mesh
 	var snow := VehicleMesh.Builder.new()
-	snow.pillow("snow", Vector3(0.0, 0.0, 0.07), 1.30, 1.16, d, 1.412, 1.419, 71)
+	snow.pillow("snow", Vector3(0.0, 0.0, 0.07), 1.30, 1.16, d, ROOF_Y - 0.010, ROOF_Y - 0.003, 71)
 	snow.pillow("snow", Vector3(0.0, 0.0, -1.63), 1.35, 1.10, d * 0.58, 0.988, 1.033, 72)
 	snow.pillow("snow", Vector3(0.0, 0.0, 1.88), 1.35, 0.66, d * 0.56, 0.992, 0.949, 73)
 	mesh = VehicleMesh.finish(snow)
