@@ -567,14 +567,10 @@ func _monitor() -> void:
 		_inv("3: no 3D bread, loaf or bag in the world outside the kiosk display", outside.is_empty(), str(outside))
 		_inv("3: kiosk display never changes (purchase spawns nothing)", props == _kiosk_goods, str(props))
 	# Сценарий 4: тот же облик Илюши
-	if Uniform.civilians_enabled():
+	if w.player.get_node("Visual/Look").uses_uniform_3d():
 		_monitor_3d_outfit(w)
 	else:
-		var look := _ilyusha_sprite(w)
-		var texture_path: String = look.texture.resource_path if look and look.texture else ""
-		if texture_path != "":
-			textures_seen[texture_path.get_file()] = true
-		_inv("4: Ilyusha is drawn only with his own ilyusha_* winter costume pictures", texture_path.get_file().begins_with("ilyusha_"), texture_path)
+		_monitor_2d_outfit(w)
 	_inv("4: Ilyusha visible on foot, hidden in the car", w.player.visible == (w.control_mode == &"on_foot"), "mode %s, visible %s" % [w.control_mode, w.player.visible])
 	# Сценарий 7: мини-карта и ромб
 	_check_navigation(w)
@@ -594,7 +590,7 @@ func _bind(w: DemoWorld) -> void:
 	_outfit_heights = Vector2(look.height_m * Catalog.visible_height_ratio("ilyusha"), SeatedVisual.LADA_VISIBLE_HEIGHT)
 	_outfit_meshes.clear()
 	_seated_leg_poses.clear()
-	if Uniform.civilians_enabled():
+	if look.uses_uniform_3d():
 		var seated: Node = w.car.visual.get_node("Body/Driver")
 		_outfit_meshes.assign([look.uniform_visual.uniform_mesh.mesh, seated.uniform_visual.uniform_mesh.mesh])
 		var seated_rig: Skeleton3D = seated.uniform_visual.skeleton
@@ -606,6 +602,34 @@ func _bind(w: DemoWorld) -> void:
 	var capsule := collider.shape as CapsuleShape3D
 	_player_capsule = Vector2(capsule.radius, capsule.height)
 	_player_collider_transform = collider.transform
+
+func _monitor_2d_outfit(w: DemoWorld) -> void:
+	var on_foot: Node = w.player.get_node("Visual/Look")
+	var seated: Node = w.car.visual.get_node("Body/Driver")
+	var matches: bool = not on_foot.uses_uniform_3d() and not seated.uses_uniform_3d() and on_foot.uniform_visual == null and seated.uniform_visual == null
+	var expected_canvas := Catalog.canvas_height_for("ilyusha", Catalog.ILYUSHA_VISIBLE_HEIGHT_M)
+	for look: Node in [on_foot, seated]:
+		var sprite: Sprite3D = look.sprite
+		var texture_path: String = sprite.texture.resource_path if sprite and sprite.texture else ""
+		if texture_path != "":
+			textures_seen[texture_path.get_file()] = true
+		matches = matches and look.resolved_character() == "ilyusha" and texture_path.begins_with("res://assets/art/characters/ilyusha_")
+		matches = matches and is_equal_approx(look.height_m, expected_canvas) and look.global_basis.get_scale().is_equal_approx(Vector3.ONE)
+		if sprite and sprite.texture:
+			matches = matches and sprite.scale.is_equal_approx(Vector3.ONE) and is_equal_approx(sprite.pixel_size * sprite.texture.get_height(), expected_canvas)
+		else:
+			matches = false
+	var standing: Sprite3D = _ilyusha_sprite(w)
+	var driver: Sprite3D = seated.sprite
+	if standing and driver and standing.texture and driver.texture:
+		matches = matches and is_equal_approx(standing.pixel_size, driver.pixel_size) and not standing.region_enabled
+		matches = matches and driver.region_enabled and driver.region_rect.size.y > 0.0 and driver.region_rect.size.y < driver.texture.get_height()
+		var head_top: float = seated.position.y + driver.position.y + driver.region_rect.size.y * driver.pixel_size * 0.5
+		matches = matches and is_equal_approx(head_top, SeatedVisual.LADA_CANVAS_TOP_Y)
+	var collider: CollisionShape3D = w.player.get_node("CollisionShape3D")
+	var capsule := collider.shape as CapsuleShape3D
+	matches = matches and capsule != null and Vector2(capsule.radius, capsule.height).is_equal_approx(_player_capsule) and collider.transform.is_equal_approx(_player_collider_transform)
+	_inv("4: Ilyusha keeps his own 2D winter sprites on foot and at the wheel, with fixed intrinsic scale and gameplay body", matches, "mode=%s drawings=%s/%s canvas=%s" % [w.control_mode, on_foot.resolved_character(), seated.resolved_character(), expected_canvas])
 
 func _monitor_3d_outfit(w: DemoWorld) -> void:
 	var on_foot: Node = w.player.get_node("Visual/Look")
@@ -809,9 +833,8 @@ func _signature(node: Node) -> String:
 	return ",".join(parts)
 
 func _ilyusha_sprite(w: DemoWorld) -> SpriteBase3D:
-	for child in w.player.find_children("*", "Sprite3D", true, false):
-		return child
-	return null
+	var look := w.player.get_node_or_null("Visual/Look")
+	return look.sprite if look else null
 
 ## 3D-узлы, похожие на хлеб или пакет (по имени, мешу или текстуре). Иконки HUD — 2D и сюда не попадают.
 func _bread_props(w: DemoWorld) -> Array:
