@@ -19,6 +19,15 @@ var _process_started_tick := 0
 var _update_wall_us := 0
 var _workload_invalid := false
 var _removed_physical_events := 0
+var _render_queries_enabled := true
+var _render_cpu_query: Callable
+var _render_gpu_query: Callable
+var _sample_sequence := 0
+var _previous_sample_diagnostics := {}
+var _vsync_configuration := {"requested": "project", "applied": false}
+var _measurement_max_fps := 0
+var _render_capture_configuration := {"requested": "on", "enabled": true, "applied": false}
+var _dispatch_trace: Node
 
 func _initialize() -> void:
 	call_deferred("_run")
@@ -26,6 +35,17 @@ func _initialize() -> void:
 func _run() -> void:
 	if Engine.time_scale != 1.0 or OS.get_environment("GODOT_FIXED_FPS_WORKLOAD") == "1":
 		push_error("FPS workload requires real time (no fixed-fps or altered time_scale)")
+		quit(2)
+		return
+	_measurement_max_fps = Engine.max_fps
+	_vsync_configuration = configure_vsync(_argument("--vsync=", "project"), Callable())
+	if not _vsync_configuration.valid:
+		push_error("vsync must be project, enabled or disabled")
+		quit(2)
+		return
+	_render_capture_configuration = configure_render_capture(_argument("--render-capture=", "on"), Callable())
+	if not _render_capture_configuration.valid:
+		push_error("render-capture must be on or off")
 		quit(2)
 		return
 	if DisplayServer.get_name() == "headless":
@@ -37,6 +57,8 @@ func _run() -> void:
 	var started := Time.get_ticks_usec()
 	var main: Node = load("res://game/main.tscn").instantiate()
 	root.add_child(main)
+	_vsync_configuration = restore_measurement_pacing(_measurement_max_fps, _vsync_configuration.requested,
+		Engine.set_max_fps, DisplayServer.window_set_vsync_mode)
 	_removed_physical_events = isolate_physical_input()
 	await process_frame
 	if "--motion" in OS.get_cmdline_user_args():
@@ -135,7 +157,21 @@ func _run_motion(main: Node, started: int) -> void:
 		push_error("target-fps must be a level from the owner's FPS ladder")
 		quit(2)
 		return
-	RenderingServer.viewport_set_measure_render_time(root.get_viewport_rid(), true)
+	var render_queries := _argument("--render-queries=", "on")
+	if render_queries not in ["on", "off"]:
+		push_error("render-queries must be on or off")
+		quit(2)
+		return
+	_render_queries_enabled = render_queries == "on"
+	var dispatch_configuration := _configure_dispatch_trace(_argument("--dispatch-trace=", "off"))
+	if not dispatch_configuration.valid:
+		push_error(dispatch_configuration.reason)
+		await _abort_setup(main)
+		return
+	_render_cpu_query = RenderingServer.viewport_get_measured_render_time_cpu.bind(root.get_viewport_rid())
+	_render_gpu_query = RenderingServer.viewport_get_measured_render_time_gpu.bind(root.get_viewport_rid())
+	_render_capture_configuration = configure_render_capture(_render_capture_configuration.requested,
+		func(enabled: bool): RenderingServer.viewport_set_measure_render_time(root.get_viewport_rid(), enabled))
 	physics_frame.connect(_physics_started)
 	process_frame.connect(_process_started)
 	RenderingServer.frame_pre_draw.connect(_draw_started)
@@ -147,8 +183,11 @@ func _run_motion(main: Node, started: int) -> void:
 		"requested_scenarios": _argument("--only=", "all"),
 		"not_covered": ["complete mission", "every location/action combination", "simultaneous destruction", "long thermal soak"],
 		"whole_game_target_accepted": false, "report_io_us": [],
+		"sample_diagnostics_scope": "previous_sample_diagnostics belongs to the preceding sample's collection, inside the current wall interval; timestamps are absolute Time ticks; collection cost excludes final timer bookkeeping/return; raw intervals are never adjusted",
 		"report_io_scope": "preceding writes; each write including final is also printed as FPS_REPORT_IO",
 		"monitor_scope": "Performance counters refresh periodically; physics_tail_us covers this frame's physics steps, previous_update_wall_us is process_frame to pre_draw and previous_draw_wall_us is pre/post_draw CPU wall; GPU 0 on Metal means unavailable, not free GPU work"}
+	if _dispatch_trace != null:
+		_report.context["dispatch_trace"] = _dispatch_trace.metadata()
 	_last_sample_tick = Time.get_ticks_usec()
 	var initial := _frame_sample(_last_sample_tick - started, null, false)
 	_report.phases.append({"name": "main_initialization", "samples": [initial],
@@ -200,6 +239,10 @@ func _run_motion(main: Node, started: int) -> void:
 func _finish_motion(main: Node) -> void:
 	Input.action_release("move_forward")
 	Input.action_release("sprint")
+	_report["last_sample_diagnostics_without_next_interval"] = _previous_sample_diagnostics
+	if _dispatch_trace != null:
+		_dispatch_trace.free()
+		_dispatch_trace = null
 	_write_report()
 	main.queue_free()
 	for i in 5:
@@ -324,6 +367,8 @@ func _motion_scenario(label: String, world: DemoWorld, seconds: float, moving: b
 		"ui_blocking": world.ui_blocking if world != null else false})
 
 func _motion_frames(world: DemoWorld, seconds: float, turning: bool, driving := false) -> Array:
+	if _dispatch_trace != null:
+		_dispatch_trace.validate_priorities(root)
 	var samples: Array = []
 	var started := Time.get_ticks_usec()
 	while Time.get_ticks_usec() - started < seconds * 1_000_000.0:
@@ -368,6 +413,8 @@ func _motion_drive(world: DemoWorld) -> void:
 		{"scope": "same reset_to Layout.ROUTE_DRIVE as make fps; not real driving input"})
 
 func _frame_sample(interval: int, world: DemoWorld, driving: bool) -> Dictionary:
+	var started := Time.get_ticks_usec()
+	_sample_sequence += 1
 	var position := Vector3.ZERO
 	if world != null:
 		position = world.car.global_position if driving else world.player.global_position
@@ -382,7 +429,11 @@ func _frame_sample(interval: int, world: DemoWorld, driving: bool) -> Dictionary
 		"draw": Performance.get_monitor(Performance.PIPELINE_COMPILATIONS_DRAW),
 		"specialization": Performance.get_monitor(Performance.PIPELINE_COMPILATIONS_SPECIALIZATION)}
 	var query_us := Time.get_ticks_usec() - query_started
-	return {"sample_tick_us": Time.get_ticks_usec(), "frame_us": interval, "physics_steps": steps, "physics_tail_us": physics_tail,
+	var render_queries := render_query_sample(_render_queries_enabled, _render_cpu_query, _render_gpu_query)
+	render_queries["capture_enabled"] = _render_capture_configuration.enabled
+	var sample := {"sample_sequence": _sample_sequence, "sample_tick_us": started,
+		"frame_us": interval, "physics_steps": steps, "physics_tail_us": physics_tail,
+		"previous_sample_diagnostics": _previous_sample_diagnostics,
 		"pipeline_compilations": pipelines, "pipeline_monitor_query_us": query_us,
 		"previous_draw_wall_us": _draw_wall_us, "previous_update_wall_us": _update_wall_us,
 		"process_us": Performance.get_monitor(Performance.TIME_PROCESS) * 1_000_000.0,
@@ -390,11 +441,58 @@ func _frame_sample(interval: int, world: DemoWorld, driving: bool) -> Dictionary
 		"physics_active_objects": PhysicsServer3D.get_process_info(PhysicsServer3D.INFO_ACTIVE_OBJECTS),
 		"physics_collision_pairs": PhysicsServer3D.get_process_info(PhysicsServer3D.INFO_COLLISION_PAIRS),
 		"physics_islands": PhysicsServer3D.get_process_info(PhysicsServer3D.INFO_ISLAND_COUNT),
-		"render_cpu_ms": RenderingServer.viewport_get_measured_render_time_cpu(root.get_viewport_rid()),
-		"render_gpu_ms": RenderingServer.viewport_get_measured_render_time_gpu(root.get_viewport_rid()),
+		"render_cpu_ms": render_queries.cpu.value_ms if _render_queries_enabled and _render_capture_configuration.enabled else null,
+		"render_gpu_ms": render_queries.gpu.value_ms if _render_queries_enabled and _render_capture_configuration.enabled else null,
 		"draw_calls": Performance.get_monitor(Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME),
 		"objects": Performance.get_monitor(Performance.RENDER_TOTAL_OBJECTS_IN_FRAME),
 		"position_xz": [position.x, position.z], "workload_state": _workload_state(world)}
+	if _dispatch_trace != null:
+		sample["dispatch_trace"] = _dispatch_trace.take_sample()
+		_workload_invalid = _workload_invalid or not sample.dispatch_trace.valid
+	_previous_sample_diagnostics = {"sample_sequence": _sample_sequence, "started_tick_us": started,
+		"render_queries": render_queries, "ended_tick_us": 0, "wall_us": 0}
+	_previous_sample_diagnostics.ended_tick_us = Time.get_ticks_usec()
+	_previous_sample_diagnostics.wall_us = _previous_sample_diagnostics.ended_tick_us - started
+	return sample
+
+func _configure_dispatch_trace(requested: String) -> Dictionary:
+	var configuration: Dictionary = load("res://tools/frame_dispatch_trace.gd").install(root, requested)
+	_dispatch_trace = configuration.trace
+	return configuration
+
+static func render_query_sample(enabled: bool, cpu_query: Callable, gpu_query: Callable) -> Dictionary:
+	if not enabled:
+		return {"mode": "off", "cpu": null, "gpu": null}
+	var cpu_started := Time.get_ticks_usec()
+	var cpu_ms: float = cpu_query.call()
+	var cpu_ended := Time.get_ticks_usec()
+	var gpu_started := Time.get_ticks_usec()
+	var gpu_ms: float = gpu_query.call()
+	var gpu_ended := Time.get_ticks_usec()
+	return {"mode": "on",
+		"cpu": {"value_ms": cpu_ms, "started_tick_us": cpu_started, "ended_tick_us": cpu_ended, "wall_us": cpu_ended - cpu_started},
+		"gpu": {"value_ms": gpu_ms, "started_tick_us": gpu_started, "ended_tick_us": gpu_ended, "wall_us": gpu_ended - gpu_started}}
+
+static func configure_vsync(requested: String, set_mode: Callable) -> Dictionary:
+	var valid := requested in ["project", "enabled", "disabled"]
+	var applied := valid and requested != "project" and set_mode.is_valid()
+	if applied:
+		set_mode.call(DisplayServer.VSYNC_ENABLED if requested == "enabled" else DisplayServer.VSYNC_DISABLED)
+	return {"valid": valid, "requested": requested, "applied": applied}
+
+static func restore_measurement_pacing(max_fps: int, requested_vsync: String, set_cap: Callable, set_vsync: Callable) -> Dictionary:
+	var configuration := configure_vsync(requested_vsync, Callable())
+	if not configuration.valid:
+		return configuration
+	set_cap.call(max_fps)
+	return configure_vsync(requested_vsync, set_vsync)
+
+static func configure_render_capture(requested: String, set_capture: Callable) -> Dictionary:
+	var valid := requested in ["on", "off"]
+	var applied := valid and set_capture.is_valid()
+	if applied:
+		set_capture.call(requested == "on")
+	return {"valid": valid, "requested": requested, "enabled": requested == "on", "applied": applied}
 
 func _workload_state(world: DemoWorld) -> Dictionary:
 	var movement := Input.get_vector(&"move_left", &"move_right", &"move_forward", &"move_back")
@@ -472,14 +570,23 @@ func _append_scenario(label: String, warmup: Array, samples: Array, extra: Dicti
 
 func _context() -> Dictionary:
 	var render_size := Vector2(root.size) * root.scaling_3d_scale
+	var screen := DisplayServer.window_get_current_screen()
+	var effective_vsync := DisplayServer.window_get_vsync_mode()
 	return {"display": DisplayServer.get_name(), "renderer": RenderingServer.get_current_rendering_method(),
 		"adapter": RenderingServer.get_video_adapter_name(), "window_size": [root.size.x, root.size.y],
 		"render_scale": root.scaling_3d_scale, "render_size": [render_size.x, render_size.y],
-		"vsync": DisplayServer.window_get_vsync_mode(), "max_fps": Engine.max_fps,
+		"vsync": effective_vsync, "vsync_requested": _vsync_configuration.requested,
+		"vsync_effective": effective_vsync, "vsync_override_applied": _vsync_configuration.applied,
+		"window_current_screen": screen, "screen_refresh_hz": DisplayServer.screen_get_refresh_rate(screen),
+		"max_fps": Engine.max_fps, "max_fps_before_main": _measurement_max_fps,
 		"cmdline_args": OS.get_cmdline_args(), "user_args": OS.get_cmdline_user_args(), "time_scale": Engine.time_scale,
 		"fixed_fps_workload": OS.get_environment("GODOT_FIXED_FPS_WORKLOAD") == "1",
 		"gui_input_disabled": root.gui_disable_input, "no_focus": root.get_flag(Window.FLAG_NO_FOCUS),
 		"physical_input_events_removed": _removed_physical_events,
+		"render_queries": "on" if _render_queries_enabled else "off",
+		"render_capture_requested": _render_capture_configuration.requested,
+		"render_time_capture_enabled": _render_capture_configuration.enabled,
+		"render_capture_applied": _render_capture_configuration.applied,
 		"physics_hz": Engine.physics_ticks_per_second, "audio_driver": AudioServer.get_driver_name(),
 		"engine_version": Engine.get_version_info(),
 		"runner_sha256": FileAccess.get_sha256("res://tools/fps_probe.gd"),

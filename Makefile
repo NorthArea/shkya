@@ -78,6 +78,7 @@ test: map
 	$(call godot_test,motion01_pose_interpolation_test,60,MOTION01_POSE_INTERPOLATION,--max-fps 120,,realtime)
 	$(call godot_test,motion01_world_lifecycle_test,60,MOTION01_WORLD_LIFECYCLE,--max-fps 120 --resolution 1920x1080 -- --intro,render,realtime)
 	$(call godot_test,fps_probe_test,60,FPS_PROBE_TEST)
+	$(call godot_test,frame_dispatch_trace_test,60,FRAME_DISPATCH_TRACE_TEST)
 	$(call godot_test,motion01_skin_cache_test,60,MOTION01_SKIN_CACHE)
 	$(call godot_test,ip01_imported_reset_test,60,IP01_IMPORTED_RESET)
 	$(call godot_test,character07_scale_test,60,CHARACTER07_SCALE)

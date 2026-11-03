@@ -4,6 +4,12 @@ extends SceneTree
 var checks := 0
 var failures := 0
 
+class PacingOverwrite extends Node:
+	var fake_vsync: Array
+	func _ready() -> void:
+		Engine.max_fps = 60
+		fake_vsync[0] = DisplayServer.VSYNC_ENABLED
+
 func _initialize() -> void:
 	call_deferred("_run")
 
@@ -12,6 +18,31 @@ func _run() -> void:
 	if not check(probe.has_method("frame_stats"), "FPS runner exposes independently testable raw-frame statistics"):
 		_finish()
 		return
+	if not check(probe.get_script_method_list().any(func(method: Dictionary): return method.name == "_configure_dispatch_trace"),
+		"FPS probe exposes opt-in dispatch instrumentation"):
+		_finish()
+		return
+	var dispatch_probe: SceneTree = probe.new()
+	dispatch_probe._render_queries_enabled = false
+	load("res://game/input_setup.gd").install()
+	var child_count := dispatch_probe.root.get_child_count()
+	check(dispatch_probe._configure_dispatch_trace("off").valid
+		and dispatch_probe.root.get_child_count() == child_count,
+		"dispatch off installs no sentinels")
+	check(not dispatch_probe._frame_sample(12345, null, false).has("dispatch_trace"),
+		"default/off sample retains its previous JSON shape")
+	check(not dispatch_probe._configure_dispatch_trace("maybe").valid,
+		"probe rejects unsupported dispatch trace modes")
+	check(dispatch_probe._configure_dispatch_trace("on").valid, "probe can opt into dispatch trace")
+	dispatch_probe._dispatch_trace.record(4)
+	var traced: Dictionary = dispatch_probe._frame_sample(23456, null, false)
+	check(traced.frame_us == 23456 and traced.dispatch_trace.events.size() == 1,
+		"opt-in attaches bounded events without adjusting the raw wall interval")
+	check(dispatch_probe._frame_sample(34567, null, false).dispatch_trace.events.is_empty(),
+		"each probe sample drains events exactly once")
+	dispatch_probe._dispatch_trace.free()
+	dispatch_probe._dispatch_trace = null
+	dispatch_probe.free()
 	var spike: Dictionary = probe.call("frame_stats", [10000, 10000, 10000, 50000], 60)
 	check(is_equal_approx(spike.average_fps, 50.0), "average derives from elapsed time, not averaged instantaneous FPS")
 	check(is_equal_approx(spike.minimum_fps, 20.0), "one slow frame remains visible as the minimum")
@@ -28,6 +59,118 @@ func _run() -> void:
 	check(not empty.target_met and empty.frames == 0, "no samples cannot accept a level")
 	var invalid: Dictionary = probe.call("frame_stats", [10000, 0, -1], 60)
 	check(not invalid.target_met and invalid.invalid_frames == 2, "invalid raw intervals cannot turn into passing evidence")
+	if not check(probe.has_method("configure_vsync"), "FPS probe supports a runtime-only vsync override"):
+		_finish()
+		return
+	var vsync_calls := []
+	var effective := [DisplayServer.VSYNC_ADAPTIVE]
+	var set_vsync := func(mode: int):
+		vsync_calls.append(mode)
+		effective[0] = mode
+	var default_vsync: Dictionary = probe.call("configure_vsync", "project", set_vsync)
+	check(default_vsync.valid and default_vsync.requested == "project" and not default_vsync.applied
+		and vsync_calls.is_empty() and effective[0] == DisplayServer.VSYNC_ADAPTIVE,
+		"default project mode leaves an existing nondefault vsync untouched and never calls the setter")
+	var enabled: Dictionary = probe.call("configure_vsync", "enabled", set_vsync)
+	check(enabled.valid and enabled.applied and enabled.requested == "enabled"
+		and vsync_calls == [DisplayServer.VSYNC_ENABLED] and effective[0] == DisplayServer.VSYNC_ENABLED,
+		"enabled applies the exact enabled enum once and preserves requested provenance")
+	var disabled: Dictionary = probe.call("configure_vsync", "disabled", set_vsync)
+	check(disabled.valid and disabled.applied and disabled.requested == "disabled"
+		and vsync_calls == [DisplayServer.VSYNC_ENABLED, DisplayServer.VSYNC_DISABLED]
+		and effective[0] == DisplayServer.VSYNC_DISABLED, "disabled applies the exact disabled enum once")
+	var bad_vsync: Dictionary = probe.call("configure_vsync", "adaptive", set_vsync)
+	check(not bad_vsync.valid and not bad_vsync.applied and vsync_calls.size() == 2
+		and effective[0] == DisplayServer.VSYNC_DISABLED, "unsupported values are rejected without changing effective vsync")
+	var no_window: Dictionary = probe.call("configure_vsync", "enabled", Callable())
+	check(no_window.valid and not no_window.applied and no_window.requested == "enabled",
+		"headless validation can parse an override without activating or calling a window")
+	if not check(probe.has_method("restore_measurement_pacing") and probe.has_method("configure_render_capture"),
+		"FPS probe restores post-Main pacing and independently configures render capture"):
+		_finish()
+		return
+	var original_cap := Engine.max_fps
+	Engine.max_fps = 200
+	var measurement_cap := Engine.max_fps
+	var fake_main := PacingOverwrite.new()
+	fake_main.fake_vsync = effective
+	root.add_child(fake_main)
+	check(Engine.max_fps == 60 and effective[0] == DisplayServer.VSYNC_ENABLED,
+		"fake Main readiness really overwrites both initial pacing settings")
+	var restored: Dictionary = probe.call("restore_measurement_pacing", measurement_cap, "disabled", Engine.set_max_fps, set_vsync)
+	check(restored.valid and restored.applied and Engine.max_fps == 200 and effective[0] == DisplayServer.VSYNC_DISABLED,
+		"post-ready restore recovers the captured CLI cap and reapplies explicit vsync")
+	fake_main._ready()
+	var calls_before_project := vsync_calls.size()
+	var restored_project: Dictionary = probe.call("restore_measurement_pacing", 0, "project", Engine.set_max_fps, set_vsync)
+	check(restored_project.valid and Engine.max_fps == 0 and vsync_calls.size() == calls_before_project
+		and effective[0] == DisplayServer.VSYNC_ENABLED, "retry after Main overwrite preserves an uncapped run while project vsync keeps Main's choice")
+	Engine.max_fps = original_cap
+	fake_main.free()
+	var capture_calls := []
+	var set_capture := func(enabled_value: bool): capture_calls.append(enabled_value)
+	var capture_on: Dictionary = probe.call("configure_render_capture", "on", set_capture)
+	var capture_off: Dictionary = probe.call("configure_render_capture", "off", set_capture)
+	check(capture_on.valid and capture_on.enabled and capture_on.applied and capture_on.requested == "on"
+		and capture_off.valid and not capture_off.enabled and capture_off.applied and capture_off.requested == "off"
+		and capture_calls == [true, false], "capture on/off passes exact booleans to the real configuration helper independently of query mode")
+	var bad_capture: Dictionary = probe.call("configure_render_capture", "invalid", set_capture)
+	check(not bad_capture.valid and not bad_capture.applied and capture_calls.size() == 2,
+		"invalid render capture is rejected without changing the viewport")
+	if not check(probe.has_method("render_query_sample"), "FPS probe measures and can disable renderer getter calls"):
+		_finish()
+		return
+	load("res://game/input_setup.gd").install()
+	var instrumented: SceneTree = probe.new()
+	var calls := [0]
+	instrumented._render_cpu_query = func():
+		calls[0] += 1
+		OS.delay_usec(8000)
+		return 3.0
+	instrumented._render_gpu_query = func():
+		calls[0] += 1
+		OS.delay_usec(4000)
+		return 0.0
+	var first_tick := Time.get_ticks_usec()
+	var first: Dictionary = instrumented._frame_sample(1000, null, false)
+	check(first.previous_sample_diagnostics.is_empty(), "first sample cannot attribute its new getter pause to its preceding interval")
+	instrumented._render_queries_enabled = false
+	var second_tick := Time.get_ticks_usec()
+	var second: Dictionary = instrumented._frame_sample(second_tick - first_tick, null, false)
+	var previous: Dictionary = second.previous_sample_diagnostics
+	check(previous.sample_sequence == first.sample_sequence and previous.sample_sequence != second.sample_sequence,
+		"completed instrumentation costs identify the preceding sample, never the current sample")
+	check(previous.render_queries.cpu.wall_us >= 8000 and previous.render_queries.gpu.wall_us >= 4000,
+		"separate getter timers retain injected blocking CPU and GPU costs")
+	check(previous.started_tick_us <= previous.render_queries.cpu.started_tick_us
+		and previous.render_queries.cpu.ended_tick_us <= previous.render_queries.gpu.started_tick_us
+		and previous.render_queries.gpu.ended_tick_us <= previous.ended_tick_us
+		and previous.ended_tick_us <= second.sample_tick_us, "absolute timestamps place the query waits inside the previous collection and next interval")
+	check(previous.wall_us >= previous.render_queries.cpu.wall_us + previous.render_queries.gpu.wall_us,
+		"sample wall cost includes both getter waits and the remaining telemetry")
+	check(calls[0] == 2 and second.render_cpu_ms == null and second.render_gpu_ms == null,
+		"queries off calls neither getter and records unavailable timings, not free render work")
+	check(second.frame_us == second_tick - first_tick and not probe.call("frame_stats", [second.frame_us], 200).target_met,
+		"raw frame statistics retain the query-induced stall instead of subtracting instrumentation")
+	var third: Dictionary = instrumented._frame_sample(1000, null, false)
+	check(third.previous_sample_diagnostics.render_queries.mode == "off"
+		and third.previous_sample_diagnostics.render_queries.cpu == null
+		and third.previous_sample_diagnostics.render_queries.gpu == null and calls[0] == 2,
+		"next sample preserves off-mode provenance with absent per-query measurements")
+	instrumented._render_capture_configuration = capture_off
+	instrumented._render_queries_enabled = true
+	var fourth: Dictionary = instrumented._frame_sample(30000, null, false)
+	check(calls[0] == 4 and fourth.render_cpu_ms == null and fourth.render_gpu_ms == null,
+		"capture off leaves queries independently enabled for their cost, but cannot claim valid render timings")
+	instrumented._render_queries_enabled = false
+	var fifth: Dictionary = instrumented._frame_sample(40000, null, false)
+	check(fifth.previous_sample_diagnostics.render_queries.mode == "on"
+		and not fifth.previous_sample_diagnostics.render_queries.capture_enabled,
+		"next-sample provenance distinguishes disabled capture from enabled getters")
+	check(calls[0] == 4 and fifth.render_cpu_ms == null and fifth.render_gpu_ms == null
+		and fifth.frame_us == 40000 and not probe.call("frame_stats", [fifth.frame_us], 60).target_met,
+		"capture off plus queries off keeps timings unavailable and preserves raw-frame breaches")
+	instrumented.free()
 	var unknown: Dictionary = probe.call("hero_provenance")
 	if not check(unknown.get("backend", "") == "unknown" and unknown.get("files_sha256", {}).is_empty(), "menu cannot identify a hero that has not been instantiated"):
 		_finish()
