@@ -278,7 +278,16 @@ func _frame_sample(interval: int, world: DemoWorld, driving: bool) -> Dictionary
 	var physics_tail := Time.get_ticks_usec() - _physics_phase_start_tick if _physics_phase_steps > 0 else 0
 	var steps := _physics_phase_steps
 	_physics_phase_steps = 0
+	var query_started := Time.get_ticks_usec()
+	var pipelines := {
+		"canvas": Performance.get_monitor(Performance.PIPELINE_COMPILATIONS_CANVAS),
+		"mesh": Performance.get_monitor(Performance.PIPELINE_COMPILATIONS_MESH),
+		"surface": Performance.get_monitor(Performance.PIPELINE_COMPILATIONS_SURFACE),
+		"draw": Performance.get_monitor(Performance.PIPELINE_COMPILATIONS_DRAW),
+		"specialization": Performance.get_monitor(Performance.PIPELINE_COMPILATIONS_SPECIALIZATION)}
+	var query_us := Time.get_ticks_usec() - query_started
 	return {"frame_us": interval, "physics_steps": steps, "physics_tail_us": physics_tail,
+		"pipeline_compilations": pipelines, "pipeline_monitor_query_us": query_us,
 		"previous_draw_wall_us": _draw_wall_us, "previous_update_wall_us": _update_wall_us,
 		"process_us": Performance.get_monitor(Performance.TIME_PROCESS) * 1_000_000.0,
 		"physics_us": Performance.get_monitor(Performance.TIME_PHYSICS_PROCESS) * 1_000_000.0,
