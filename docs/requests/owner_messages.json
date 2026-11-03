@@ -2726,6 +2726,23 @@
       "task_ids": [
         "MOTION-01"
       ]
+    },
+    {
+      "id": "MSG-0250",
+      "timestamp_utc": "2026-11-03T19:02:53.574962+00:00",
+      "timestamp_basis": "archive_capture_time; original message timestamp unavailable",
+      "kind": "message",
+      "text": "делай пока есть таски и пока общие оценки не будут 9/10 и постарайся показать экспертм весь геймплей. обязательно сделай это после того как закочнишь с текущими моими и их правками",
+      "sha256": "8d3b0c99738a46d0cd6b6fa26acc6c89afb7202b46a2f332e170e2cd1d62efda",
+      "task_ids": [
+        "DEMO-READINESS-01",
+        "CRITIC-02",
+        "MOTION-01",
+        "SETTINGS-01",
+        "AUDIO-SETTINGS-01",
+        "STARTUP-01",
+        "LIGHT-01"
+      ]
     }
   ]
 }
