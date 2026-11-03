@@ -36,7 +36,11 @@ func _run() -> void:
 	var player_visual: CharacterSprite = main.world.player.visual.get_node("Look")
 	var shadow: MeshInstance3D = player_visual.get_node("Shadow")
 	var texture: GradientTexture2D = shadow.mesh.material.albedo_texture
-	check(texture.gradient.get_color(0).a <= 0.2, "3D contact blob avoids doubling the real shadow")
+	if player_visual.uniform_visual != null:
+		check(texture.gradient.get_color(0).a <= 0.2, "3D contact blob avoids doubling the real shadow")
+	else:
+		check(player_visual.sprite != null and texture.gradient.get_color(0).a > 0.0
+			and is_zero_approx(texture.gradient.get_color(1).a), "temporary 2D hero retains a fading ground contact")
 	var sky: DirectionalLight3D = main.world.get_node("LightingAndWeather/CoolSky")
 	check(sky.light_angular_distance > 0.5 and sky.shadow_opacity < 1.0, "diffuse winter sky casts soft moderate shadows")
 	check(is_equal_approx(main.world.get_node("LightingAndWeather/WorldEnvironment").environment.tonemap_exposure, 1.1),
