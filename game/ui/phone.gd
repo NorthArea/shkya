@@ -2,6 +2,7 @@ class_name Phone
 extends CanvasLayer
 ## PHONE-01: локальная лента и СМС. Только телефон владеет своим inbox и своей паузой.
 
+const AudioSettings = preload("res://game/audio/audio_settings.gd")
 const PhoneLines = preload("res://game/mission/phone_lines.gd")
 const DialogPanelScript = preload("res://game/ui/dialog_panel.gd")
 const PadInput = preload("res://game/ui/pad_input.gd")
@@ -277,7 +278,9 @@ func _swipe(delta: Vector2) -> void:
 		turn_page(-1 if along > 0.0 else 1)
 
 func _build() -> void:
+	AudioSettings.ensure_buses()
 	_swipe_sound = AudioStreamPlayer.new()
+	_swipe_sound.bus = AudioSettings.EFFECTS_BUS
 	_swipe_sound.stream = SWIPE_SOUND
 	_swipe_sound.volume_db = -10.0
 	add_child(_swipe_sound)

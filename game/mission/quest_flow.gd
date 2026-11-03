@@ -15,6 +15,7 @@ extends Node
 ## PatrolNpc.turn_away_from(Илюша): он сразу отворачивается на угол без Илюши; задержался рядом — провал через ~7 с
 ## (fix3, P3: защита 5 с — уйти от поста на юг к парковке через его второй угол успевают без провала).
 
+const AudioSettings = preload("res://game/audio/audio_settings.gd")
 const DialogPanelScript = preload("res://game/ui/dialog_panel.gd")
 const CoinLines = preload("res://game/mission/coin_lines.gd")   # COINS-01: отказ продавщицы при нехватке денег
 const PadInput = preload("res://game/ui/pad_input.gd")
@@ -104,7 +105,9 @@ func _ready() -> void:
 		hud.completion_closed.connect(_on_completion_closed)
 		if hud.has_signal("end_closed"):
 			hud.end_closed.connect(_on_end_closed)
+	AudioSettings.ensure_buses()
 	accept_player = AudioStreamPlayer.new()
+	accept_player.bus = AudioSettings.EFFECTS_BUS
 	accept_player.name = "AcceptSound"
 	accept_player.stream = ACCEPT_SOUND
 	accept_player.volume_db = -6.0  # в ряду сигналов квеста: итог ≈ −23 дБ (микс PLAY-03)

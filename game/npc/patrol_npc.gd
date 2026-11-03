@@ -24,6 +24,7 @@ extends "res://game/npc/npc.gd"
 ## идущего гэга). Силуэт сквозь стены (patrol_xray.gdshader) — пока герой ближе XRAY_RADIUS: голубой, перед разворотом
 ## жёлтый, когда сенсор видит Илюшу — красный. Время удержаний и углы не меняются — честный путь не проще (C7).
 
+const AudioSettings = preload("res://game/audio/audio_settings.gd")
 const DetectionSensorScript = preload("res://game/stealth/detection_sensor.gd")
 const XRAY_SHADER := preload("res://game/stealth/patrol_xray.gdshader")
 const CRACKLE := preload("res://assets/audio/radio_mumble.wav")
@@ -100,7 +101,9 @@ func _ready() -> void:
 	sensor.fov_deg = _fov_for(0)
 	sensor.rotation.y = _turn_from
 	add_child(sensor)
+	AudioSettings.ensure_buses()
 	crackle = AudioStreamPlayer3D.new()
+	crackle.bus = AudioSettings.EFFECTS_BUS
 	crackle.name = "TurnCrackle"
 	crackle.stream = CRACKLE
 	crackle.volume_db = -6.0

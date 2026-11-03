@@ -2,6 +2,7 @@ extends Node
 ## RADIO-02: первая погода после музыки; обычные передачи — только между треками.
 ## Очередь пополняют подтверждённые события мира. Срочный объезд принадлежит RoadClosure.
 
+const AudioSettings = preload("res://game/audio/audio_settings.gd")
 const RadioMusicScript = preload("res://game/audio/radio_music.gd")
 const FIRST_MUSIC_SECONDS := 5.0
 const EVENT_COOLDOWN := 90.0
@@ -33,7 +34,9 @@ var _last_event := {}
 func setup(director: Node) -> void:
 	sound = director
 	world = director.world
+	AudioSettings.ensure_buses()
 	player = AudioStreamPlayer3D.new()
+	player.bus = AudioSettings.EFFECTS_BUS
 	player.name = "RadioJingle"
 	world.car.add_child(player)
 	music = RadioMusicScript.new()

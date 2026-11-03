@@ -14,6 +14,7 @@ signal choice(id: StringName)
 ## Переключение на следующую реплику цепочки (для щелчка интерфейса).
 signal advanced(index: int)
 
+const AudioSettings = preload("res://game/audio/audio_settings.gd")
 const PAPER := Color(0.93, 0.87, 0.72)
 const PAPER_DARK := Color(0.84, 0.76, 0.58)
 const INK := Color(0.12, 0.10, 0.08)
@@ -97,7 +98,9 @@ func _ready() -> void:
 	_row.name = "Buttons"
 	_row.add_theme_constant_override("separation", 20)
 	column.add_child(_row)
+	AudioSettings.ensure_buses()
 	voice = AudioStreamPlayer.new()
+	voice.bus = AudioSettings.EFFECTS_BUS
 	voice.name = "Voice"
 	voice.volume_db = VOICE_DB
 	add_child(voice)

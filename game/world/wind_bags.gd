@@ -16,6 +16,7 @@ extends Node3D
 ## один раз отрисованная в SubViewport маска. Теней нет (C9: мелочь). Звук — шуршание у камеры (bag_rustle_loop.wav,
 ## tools/generate_audio.py). Всё детерминировано: SEED.
 
+const AudioSettings = preload("res://game/audio/audio_settings.gd")
 const Layout = preload("res://game/world/layout.gd")
 const SnowField = preload("res://game/world/snow_field.gd")
 const Lighting = preload("res://game/world/lighting.gd")
@@ -166,7 +167,9 @@ func _ready() -> void:
 		if bag.kind == &"plan_white":
 			bag.position.y += PLAN_WHITE_START_HEIGHT
 			_lift_off(bag, wind_mean(), 1.0)
+	AudioSettings.ensure_buses()
 	rustle = AudioStreamPlayer3D.new()
+	rustle.bus = AudioSettings.EFFECTS_BUS
 	rustle.name = "Rustle"
 	rustle.stream = RUSTLE
 	rustle.volume_db = RUSTLE_DB

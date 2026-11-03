@@ -6,6 +6,7 @@ extends PanelContainer
 signal back_requested
 
 const DialogPanelScript = preload("res://game/ui/dialog_panel.gd")
+const AudioSettingsSection = preload("res://game/ui/audio_settings_section.gd")
 const AchievementsPanel = preload("res://game/ui/achievements_panel.gd")
 const INK := Color(0.12, 0.10, 0.08)
 const INK_SOFT := Color(0.12, 0.10, 0.08, 0.6)
@@ -18,6 +19,11 @@ var _box: VBoxContainer
 var _display_settings: Node
 var _resolution_error: Label
 var _refreshing_resolution := false
+var graphics_options: Dictionary = {}
+var _scroll: ScrollContainer
+var _footer: VBoxContainer
+var audio_section: VBoxContainer
+var _control_help: Array[Control] = []
 
 func _ready() -> void:
 	name = "SettingsCard"
@@ -28,17 +34,28 @@ func _ready() -> void:
 	style.content_margin_top = 30
 	style.content_margin_bottom = 30
 	add_theme_stylebox_override("panel", style)
+	var outer := VBoxContainer.new()
+	_box = outer
+	outer.custom_minimum_size = Vector2(720, 0)
+	add_child(outer)
+	outer.add_child(_label("НАСТРОЙКИ", 44, INK, HORIZONTAL_ALIGNMENT_CENTER))
+	_scroll = ScrollContainer.new()
+	_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	_scroll.follow_focus = true
+	_scroll.custom_minimum_size.y = 560
+	outer.add_child(_scroll)
 	var box := VBoxContainer.new()
-	_box = box
-	box.custom_minimum_size = Vector2(640, 0)   # ширина как у карточки главного меню
+	box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	box.add_theme_constant_override("separation", 8)
-	add_child(box)
-	box.add_child(_label("НАСТРОЙКИ", 52, INK, HORIZONTAL_ALIGNMENT_CENTER))
+	_scroll.add_child(box)
 	var rule := ColorRect.new()
 	rule.color = INK
 	rule.custom_minimum_size = Vector2(0, 3)
 	box.add_child(rule)
 	_add_resolution_row(box)
+	_add_graphics_rows(box)
+	audio_section = AudioSettingsSection.new()
+	box.add_child(audio_section)
 	box.add_child(_label("УПРАВЛЕНИЕ", 26, INK, HORIZONTAL_ALIGNMENT_LEFT))
 	var grid := GridContainer.new()
 	grid.columns = 3
@@ -48,7 +65,22 @@ func _ready() -> void:
 	for head in ["", "Клавиатура", "Геймпад"]:
 		grid.add_child(_label(head, 20, INK_SOFT, HORIZONTAL_ALIGNMENT_LEFT))
 	for row in DialogPanelScript.CONTROLS:
-		grid.add_child(_label(row[0], 24, INK, HORIZONTAL_ALIGNMENT_LEFT))
+		var action := PanelContainer.new()
+		action.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		action.add_child(_label(row[0], 24, INK, HORIZONTAL_ALIGNMENT_LEFT))
+		var idle_style := StyleBoxEmpty.new()
+		action.add_theme_stylebox_override("panel", idle_style)
+		action.focus_mode = Control.FOCUS_ALL
+		var focus_style := StyleBoxFlat.new()
+		focus_style.bg_color = DialogPanelScript.PAPER_DARK
+		focus_style.border_color = INK
+		focus_style.set_border_width_all(2)
+		focus_style.set_content_margin_all(0)
+		focus_style.set_expand_margin_all(4)
+		action.focus_entered.connect(func(): action.add_theme_stylebox_override("panel", focus_style))
+		action.focus_exited.connect(func(): action.add_theme_stylebox_override("panel", idle_style))
+		_control_help.append(action)
+		grid.add_child(action)
 		grid.add_child(_caps(row[1]))
 		grid.add_child(_caps(row[2]))
 	var music_credit := RichTextLabel.new()
@@ -70,14 +102,16 @@ func _ready() -> void:
 	DialogPanelScript.style_button(achievements_button, false)
 	achievements_button.add_theme_font_size_override("font_size", 32)
 	achievements_button.pressed.connect(_open_achievements)
-	box.add_child(achievements_button)
+	_footer = VBoxContainer.new()
+	outer.add_child(_footer)
+	_footer.add_child(achievements_button)
 	back_button = Button.new()
 	back_button.text = "НАЗАД"
 	back_button.custom_minimum_size = Vector2(0, 64)
 	DialogPanelScript.style_button(back_button, true)
 	back_button.add_theme_font_size_override("font_size", 32)
 	back_button.pressed.connect(back_requested.emit)
-	box.add_child(back_button)
+	_footer.add_child(back_button)
 	achievements = AchievementsPanel.new()
 	add_child(achievements)
 	achievements.back_requested.connect(_close_achievements)
@@ -86,12 +120,15 @@ func _ready() -> void:
 		_display_settings.changed.connect(_refresh_resolution)
 	_refresh_resolution()
 	visibility_changed.connect(_on_visibility_changed)
+	get_viewport().size_changed.connect(_fit_height)
+	_fit_height()
 	hide()
 
 func open() -> void:
 	achievements.hide()
 	_box.show()
 	_refresh_resolution()
+	_fit_height()
 	show()
 	back_button.grab_focus.call_deferred()
 	DialogPanelScript.pop(self, 0.92)
@@ -120,7 +157,7 @@ func _add_resolution_row(box: VBoxContainer) -> void:
 	popup.add_theme_stylebox_override("hover", hover)
 	row.add_child(resolution_option)
 	box.add_child(row)
-	_resolution_error = _label("Не удалось сохранить разрешение.", 20, INK, HORIZONTAL_ALIGNMENT_LEFT)
+	_resolution_error = _label("Не удалось сохранить настройки.", 20, INK, HORIZONTAL_ALIGNMENT_LEFT)
 	_resolution_error.name = "ResolutionError"
 	_resolution_error.hide()
 	box.add_child(_resolution_error)
@@ -139,6 +176,14 @@ func _refresh_resolution() -> void:
 			resolution_option.set_item_metadata(index, int(option["width"]))
 			if int(option["width"]) == selected_width:
 				resolution_option.select(index)
+	for key: String in graphics_options:
+		var option: OptionButton = graphics_options[key]
+		option.disabled = not is_instance_valid(_display_settings)
+		if not option.disabled:
+			var value: Variant = _display_settings.graphics[key]
+			for index in option.item_count:
+				if option.get_item_metadata(index) == value:
+					option.select(index)
 	_refreshing_resolution = false
 	_update_focus_order()
 
@@ -156,6 +201,13 @@ func _update_focus_order() -> void:
 	var controls: Array[Control] = [achievements_button, back_button]
 	if not resolution_option.disabled:
 		controls.push_front(resolution_option)
+	for option: OptionButton in graphics_options.values():
+		if not option.disabled:
+			controls.insert(controls.size() - 2, option)
+	for control: Control in audio_section.get_focus_controls():
+		controls.insert(controls.size() - 2, control)
+	for action: Control in _control_help:
+		controls.insert(controls.size() - 2, action)
 	for index in controls.size():
 		var control := controls[index]
 		var before := control.get_path_to(controls[posmod(index - 1, controls.size())])
@@ -170,10 +222,12 @@ func _unhandled_input(event: InputEvent) -> void:
 		return
 	if visible and (event.is_action_pressed(&"ui_cancel") or event.is_action_pressed(&"pause")):
 		get_viewport().set_input_as_handled()
-		if resolution_option.get_popup().visible:
-			resolution_option.get_popup().hide()
-			resolution_option.grab_focus()
-			return
+		var options: Array = [resolution_option] + graphics_options.values()
+		for option: OptionButton in options:
+			if option.get_popup().visible:
+				option.get_popup().hide()
+				option.grab_focus()
+				return
 		back_requested.emit()
 
 func _open_achievements() -> void:
@@ -188,6 +242,8 @@ func _close_achievements() -> void:
 func _on_visibility_changed() -> void:
 	if not visible and achievements != null:
 		resolution_option.get_popup().hide()
+		for option: OptionButton in graphics_options.values():
+			option.get_popup().hide()
 		achievements.hide()
 		_box.show()
 
@@ -212,3 +268,44 @@ func _label(text: String, size: int, color: Color, align: HorizontalAlignment) -
 	label.add_theme_color_override("font_color", color)
 	label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	return label
+
+func _fit_height() -> void:
+	# Footer remains reachable while the content scrolls at smaller window sizes.
+	_scroll.custom_minimum_size.y = clampf(get_viewport_rect().size.y - 330.0, 140.0, 560.0)
+
+func _add_graphics_rows(box: VBoxContainer) -> void:
+	var labels := {
+		"vsync": "Синхронизация экрана", "fps_limit": "Предел кадров/с",
+		"shadows": "Тени", "ssao": "Мягкие тени в углах",
+		"ssil": "Отражённый свет", "ssr": "Отражения", "fog": "Объёмный туман",
+	}
+	for key: String in labels:
+		var row := HBoxContainer.new()
+		var label := _label(labels[key], 22, INK, HORIZONTAL_ALIGNMENT_LEFT)
+		label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		row.add_child(label)
+		var option := OptionButton.new()
+		option.name = key.to_pascal_case() + "Option"
+		option.custom_minimum_size = Vector2(245, 44)
+		DialogPanelScript.style_button(option, false)
+		option.add_theme_font_size_override("font_size", 22)
+		if key == "fps_limit":
+			for limit: int in [0, 60, 80, 100, 120, 140, 160, 180, 200]:
+				option.add_item("Без ограничения" if limit == 0 else str(limit))
+				option.set_item_metadata(option.item_count - 1, limit)
+		else:
+			option.add_item("Включено")
+			option.set_item_metadata(0, true)
+			option.add_item("Выключено")
+			option.set_item_metadata(1, false)
+		option.item_selected.connect(func(index: int): _on_graphics_selected(key, index))
+		graphics_options[key] = option
+		row.add_child(option)
+		box.add_child(row)
+
+func _on_graphics_selected(key: String, index: int) -> void:
+	if _refreshing_resolution or not is_instance_valid(_display_settings):
+		return
+	var error: Error = _display_settings.set_graphics_option(key, graphics_options[key].get_item_metadata(index))
+	_resolution_error.visible = error != OK
+	_refresh_resolution()

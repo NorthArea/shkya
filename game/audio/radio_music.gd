@@ -2,6 +2,7 @@ extends Node
 ## Две станции приёмника: музыка принадлежит водителю, новости — только «Радио Н.».
 ## Отдельные плееры музыки и настройки не занимают короткий канал диктора CarRadio.
 
+const AudioSettings = preload("res://game/audio/audio_settings.gd")
 const PadInput = preload("res://game/ui/pad_input.gd")
 const RadioTimeline = preload("res://game/audio/radio_timeline.gd")
 const LIVE_PATH := "res://assets/audio/radio/cold_funk.ogg"
@@ -57,6 +58,7 @@ var _between_tracks := false
 var _gap_claimed := false
 
 func setup(director: Node) -> void:
+	AudioSettings.ensure_buses()
 	sound = director
 	world = sound.world
 	# Узел следит за паузой, но сами плееры замирают вместе с миром.
@@ -79,13 +81,14 @@ func setup(director: Node) -> void:
 	player = AudioStreamPlayer.new()
 	player.name = "RadioBed"
 	player.process_mode = Node.PROCESS_MODE_PAUSABLE
-	player.bus = &"Master"
+	player.bus = AudioSettings.MUSIC_BUS
 	player.volume_db = BASE_DB
 	player.stream = _live[_live_index]
 	add_child(player)
 	player.finished.connect(_track_finished)
 	tuning = AudioStreamPlayer.new()
 	tuning.name = "RadioTune"
+	tuning.bus = AudioSettings.EFFECTS_BUS
 	tuning.process_mode = Node.PROCESS_MODE_PAUSABLE
 	tuning.stream = load(TUNE_PATH)
 	tuning.volume_db = TUNE_DB

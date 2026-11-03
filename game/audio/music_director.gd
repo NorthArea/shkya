@@ -8,6 +8,7 @@ extends Node
 ## Своя шина Music (создаётся при первом запуске) — отдельная громкость и фильтр паузы, мир не задевает.
 ## Состоянием владеет main.gd: to_menu() / to_game() / set_paused().
 
+const AudioSettings = preload("res://game/audio/audio_settings.gd")
 const THEME := preload("res://assets/audio/chopin_op9_no2_frank_levy.ogg")
 const BUS := &"Music"
 ## Измеренный RMS после декодирования Ogg; динамика исполнения сохранена без компрессора.
@@ -39,14 +40,15 @@ func _ready() -> void:
 	player.volume_db = SILENT_DB
 	add_child(player)
 
-## Шина Music → Master с выключенным ФНЧ паузы; общая на процесс (AudioServer), повторный вызов её находит.
+## Шина Music → SettingsMusic с выключенным ФНЧ паузы; общая на процесс (AudioServer), повторный вызов её находит.
 static func ensure_bus() -> int:
+	AudioSettings.ensure_buses()
 	var index := AudioServer.get_bus_index(BUS)
 	if index == -1:
 		index = AudioServer.bus_count
 		AudioServer.add_bus(index)
 		AudioServer.set_bus_name(index, BUS)
-		AudioServer.set_bus_send(index, &"Master")
+		AudioServer.set_bus_send(index, AudioSettings.MUSIC_BUS)
 		var lowpass := AudioEffectLowPassFilter.new()
 		lowpass.cutoff_hz = PAUSE_CUTOFF_HZ
 		AudioServer.add_bus_effect(index, lowpass, 0)

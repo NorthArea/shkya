@@ -50,7 +50,7 @@ func _run() -> void:
 	check(not music.player.playing, "bed is silent on foot")
 	check(music.player.stream is AudioStreamOggVorbis and not music.player.stream.loop, "Cold Funk has a natural end for between-track news")
 	check(music.player.stream.packet_sequence == load(music.LIVE_PATH).packet_sequence, "the first live track remains the selected Cold Funk recording")
-	check(music.player.bus == &"Master", "radio does not share Chopin's pause filter")
+	check(music.player.bus == &"SettingsMusic", "radio does not share Chopin's pause filter")
 	world.car.enter(world.player)
 	await _frames(2)
 	check(world.control_mode == &"on_foot" and not music.player.playing, "a driver reference alone does not start music while control remains on foot")

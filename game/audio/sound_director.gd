@@ -6,6 +6,7 @@ extends Node
 ## RADIO-02: единый диктор новостей; уступает диалогам и гэгам,
 ## управление не блокируют. Полицейская рация и звуковой фон города независимы.
 
+const AudioSettings = preload("res://game/audio/audio_settings.gd")
 const DialogPanelScript = preload("res://game/ui/dialog_panel.gd")
 const Layout = preload("res://game/world/layout.gd")
 const STEP_DISTANCE := 0.75
@@ -50,6 +51,7 @@ var _interrupted_radio_left := 0.0
 var radio_shown := 0
 
 func _ready() -> void:
+	AudioSettings.ensure_buses()
 	world = get_parent()
 	# Ссылки DemoWorld (player, car, mission) готовы только после его собственного _ready.
 	world.ready.connect(_setup, CONNECT_ONE_SHOT)
@@ -61,12 +63,15 @@ func _setup() -> void:
 	door = _player_3d(world.car, -2.0)
 	radio = _player_3d(world.car, -9.0, narrator_stream())  # тише мотора: радио «из-под панели»
 	ui = AudioStreamPlayer.new()
+	ui.bus = AudioSettings.EFFECTS_BUS
 	ui.volume_db = -6.0
 	add_child(ui)
 	chime = AudioStreamPlayer.new()
+	chime.bus = AudioSettings.EFFECTS_BUS
 	chime.volume_db = -6.0
 	add_child(chime)
 	ambience = AudioStreamPlayer.new()
+	ambience.bus = AudioSettings.EFFECTS_BUS
 	ambience.stream = AMBIENCE
 	ambience.volume_db = -12.0
 	add_child(ambience)
@@ -318,6 +323,7 @@ func _car_sounds(_delta: float) -> void:
 
 func _player_3d(parent: Node3D, volume: float, stream: AudioStream = null) -> AudioStreamPlayer3D:
 	var player := AudioStreamPlayer3D.new()
+	player.bus = AudioSettings.EFFECTS_BUS
 	player.volume_db = volume
 	player.unit_size = 6.0
 	player.stream = stream
@@ -435,6 +441,7 @@ func _setup_ambient() -> void:
 	_wind_weather = world.get_node("LightingAndWeather")
 	city_traffic = _bed(CITY_TRAFFIC, CITY_TRAFFIC_DB, "CityTrafficBed")
 	window_music = AudioStreamPlayer3D.new()
+	window_music.bus = AudioSettings.MUSIC_BUS
 	window_music.name = "WindowMusic"
 	window_music.stream = WINDOW_MUSIC
 	window_music.volume_db = MUSIC_DB
@@ -445,6 +452,7 @@ func _setup_ambient() -> void:
 	window_music.play()
 	for i in DOOR_POOL_SIZE:
 		var player := AudioStreamPlayer3D.new()
+		player.bus = AudioSettings.EFFECTS_BUS
 		player.name = "EntranceDoor%d" % i
 		player.volume_db = DOOR_SLAM_DB
 		player.unit_size = 6.0
@@ -495,6 +503,7 @@ func _wind_sound(delta: float) -> void:
 
 func _bed(stream: AudioStream, volume: float, node_name: String) -> AudioStreamPlayer:
 	var player := AudioStreamPlayer.new()
+	player.bus = AudioSettings.EFFECTS_BUS
 	player.name = node_name
 	player.stream = stream
 	player.volume_db = volume
@@ -618,6 +627,7 @@ var _coin_last := -100.0
 func _setup_coins() -> void:
 	played["coin"] = 0
 	coin_player = AudioStreamPlayer.new()
+	coin_player.bus = AudioSettings.EFFECTS_BUS
 	coin_player.name = "CoinSound"
 	coin_player.stream = COIN_PICKUP
 	coin_player.volume_db = -10.0

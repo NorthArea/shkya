@@ -13,6 +13,7 @@ extends CanvasLayer
 ## Где играет: Intro.attach(world) из main.gd; в headless, под тестовым SceneTree-скриптом и с аргументом
 ## --skip-intro заставки нет (мир как раньше), если только не выставлен Intro.force_enabled.
 
+const AudioSettings = preload("res://game/audio/audio_settings.gd")
 const IntroLines = preload("res://game/mission/intro_lines.gd")
 const DialogPanelScript = preload("res://game/ui/dialog_panel.gd")
 const Layout = preload("res://game/world/layout.gd")
@@ -391,7 +392,9 @@ func _finish(by_skip: bool) -> void:
 # --- сборка ---
 
 func _audio(stream: AudioStream, volume_db: float, node_name: String) -> AudioStreamPlayer:
+	AudioSettings.ensure_buses()
 	var audio := AudioStreamPlayer.new()
+	audio.bus = AudioSettings.EFFECTS_BUS
 	audio.name = node_name
 	audio.stream = stream
 	audio.volume_db = volume_db

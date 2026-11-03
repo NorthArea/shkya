@@ -10,6 +10,7 @@ const IntroScript = preload("res://game/ui/intro.gd")
 const CaughtPanelScript = preload("res://game/ui/caught_panel.gd")
 const PhoneScript = preload("res://game/ui/phone.gd")
 const PadInput = preload("res://game/ui/pad_input.gd")
+const AudioSettingsScript = preload("res://game/audio/audio_settings.gd")
 const MusicDirectorScript = preload("res://game/audio/music_director.gd")
 const AchievementsStore = preload("res://game/progression/achievements_store.gd")
 const AchievementsTracker = preload("res://game/progression/achievements_tracker.gd")
@@ -21,6 +22,8 @@ const UI_CLICK := preload("res://assets/audio/ui_click.wav")
 # Set before _ready in tests/captures; script runs isolate the owner's persistent profile.
 var achievement_path := ""
 var display_settings_path := ""
+var audio_settings_path := ""
+var audio_settings: Node
 var display_settings: Node
 var achievements: Node
 var achievement_toast: CanvasLayer
@@ -59,6 +62,14 @@ func _ready() -> void:
 	achievement_toast = AchievementToast.new()
 	add_child(achievement_toast)
 	achievement_toast.setup(achievements)
+	audio_settings = AudioSettingsScript.new()
+	audio_settings.name = "AudioSettings"
+	if not audio_settings_path.is_empty():
+		audio_settings.config_path = audio_settings_path
+	elif get_tree().get_script() != null:
+		DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path("res://builds/checks/AUDIO-SETTINGS-01"))
+		audio_settings.config_path = "res://builds/checks/AUDIO-SETTINGS-01/script-%d-%d.cfg" % [OS.get_process_id(), Time.get_ticks_usec()]
+	add_child(audio_settings)
 	menu = MainMenu.new()
 	menu.name = "MainMenu"
 	menu.start_requested.connect(start_game)
@@ -73,6 +84,7 @@ func _ready() -> void:
 	add_child(pause_menu)
 	ui_click = AudioStreamPlayer.new()
 	ui_click.name = "UiClick"
+	ui_click.bus = AudioSettingsScript.EFFECTS_BUS
 	ui_click.stream = UI_CLICK
 	ui_click.volume_db = -6.0
 	add_child(ui_click)
