@@ -9,7 +9,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class BackgroundChecks(unittest.TestCase):
-    def launch(self, *arguments, visible=False, launcher="run.command", fixed_environment=False, inherited_fixed=None):
+    def launch(self, *arguments, visible=False, audible=False, launcher="run.command", fixed_environment=False, inherited_fixed=None, make_target=None):
         with tempfile.TemporaryDirectory() as directory:
             directory = Path(directory)
             engine = directory / 'engine'
@@ -19,11 +19,15 @@ class BackgroundChecks(unittest.TestCase):
             env = dict(os.environ, GODOT_BIN=str(engine), CHECK_ARGV_LOG=str(output))
             env.pop('GODOT_VISIBLE_CHECKS', None)
             env.pop('GODOT_FIXED_FPS_WORKLOAD', None)
+            env.pop('GODOT_ALLOW_AUDIO', None)
             if inherited_fixed is not None:
                 env['GODOT_FIXED_FPS_WORKLOAD'] = inherited_fixed
             if visible:
                 env['GODOT_VISIBLE_CHECKS'] = '1'
-            subprocess.run([str(ROOT / 'tools' / launcher), *arguments], cwd=ROOT, env=env, check=True)
+            if audible:
+                env['GODOT_ALLOW_AUDIO'] = '1'
+            command = ['make', '-o', 'map', make_target] if make_target else [str(ROOT / 'tools' / launcher), *arguments]
+            subprocess.run(command, cwd=ROOT, env=env, check=True, stdout=subprocess.DEVNULL)
             import json
             calls = [json.loads(line) for line in output.read_text().splitlines()]
             return [call['fixed' if fixed_environment else 'argv'] for call in calls]
@@ -59,6 +63,37 @@ class BackgroundChecks(unittest.TestCase):
         self.assertIn('--fullscreen', arguments)
         self.assertNotIn('--headless', arguments)
 
+    def test_game_and_visible_checks_are_silent_by_default(self):
+        for launcher in ['godot.sh', 'run.command']:
+            for arguments in [(), ('--script', 'tests/smoke_runner.gd')]:
+                with self.subTest(launcher=launcher, arguments=arguments):
+                    for call in self.launch(*arguments, launcher=launcher, visible=True):
+                        self.assertEqual(self.last_audio_driver(call), 'Dummy')
+
+    def test_audio_driver_cannot_override_silence_without_explicit_permission(self):
+        args = self.launch('--audio-driver', 'CoreAudio', '--', '--audio-driver', 'payload', visible=True)[-1]
+        self.assertEqual(self.last_audio_driver(args), 'Dummy')
+        self.assertEqual(args[args.index('--') + 1:], ['--audio-driver', 'payload'])
+
+    def test_explicit_audio_permission_preserves_requested_driver(self):
+        args = self.launch('--audio-driver', 'CoreAudio', audible=True, visible=True)[-1]
+        self.assertEqual(self.last_audio_driver(args), 'CoreAudio')
+
+    def test_owner_make_run_preserves_audio(self):
+        calls = self.launch(make_target='run')
+        self.assertNotEqual(self.last_audio_driver(calls[-1]), 'Dummy')
+        self.assertIn('--fullscreen', calls[-1])
+
+    def test_agent_make_run_is_silent_even_with_inherited_audio_permission(self):
+        calls = self.launch(make_target='run-agent', audible=True)
+        self.assertTrue(all(self.last_audio_driver(args) == 'Dummy' for args in calls))
+        self.assertIn('--fullscreen', calls[-1])
+
+    def last_audio_driver(self, args):
+        options = args[:args.index('--')] if '--' in args else args
+        drivers = [options[i + 1] for i, option in enumerate(options[:-1]) if option == '--audio-driver']
+        return drivers[-1] if drivers else None
+
     def test_visible_check_is_an_explicit_override(self):
         arguments = self.launch('--script', 'tools/capture/capture.gd', visible=True)[-1]
         self.assertIn('--windowed', arguments)
@@ -70,7 +105,7 @@ class BackgroundChecks(unittest.TestCase):
     def test_driver_options_cannot_override_background_policy(self):
         args = self.launch('--script', 'tests/smoke_runner.gd', '--display-driver', 'macos', '--audio-driver', 'CoreAudio', '--', 'payload')[-1]
         separator = args.index('--')
-        self.assertEqual(args[separator - 1], '--headless')
+        self.assertIn('--headless', args[:separator])
         self.assertEqual(args[separator + 1:], ['payload'])
 
     def test_script_arguments_do_not_trigger_engine_script_mode(self):

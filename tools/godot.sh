@@ -15,8 +15,8 @@ else
     echo 'Нужен Godot 4.7.2. Укажите GODOT_BIN или установите Godot.app в /Applications.' >&2
     exit 1
 fi
-# Scripted checks are silent and windowless unless the owner requested a visible
-# diagnostic. Keep this guard in the shared entry point, including direct calls.
+# A visible window does not authorize sound. Every launch is silent by default;
+# real audio requires GODOT_ALLOW_AUDIO=1 for an explicitly authorized audio run.
 scripted=0
 fixed_fps_value=-1
 fixed_fps_next=0
@@ -38,7 +38,15 @@ export GODOT_FIXED_FPS_WORKLOAD=0
 if [ "$fixed_fps_value" -gt 0 ] 2>/dev/null; then
     export GODOT_FIXED_FPS_WORKLOAD=1
 fi
+background=0
 if [ "$scripted" -eq 1 ] && [ "${GODOT_VISIBLE_CHECKS:-0}" != 1 ]; then
+    background=1
+fi
+silent=1
+if [ "${GODOT_ALLOW_AUDIO:-0}" = 1 ]; then
+    silent=0
+fi
+if [ "$background" -eq 1 ] || [ "$silent" -eq 1 ]; then
     # Insert last among engine options so earlier display/audio options cannot
     # override it; preserve everything after -- as the script's own arguments.
     remaining=$#
@@ -48,14 +56,25 @@ if [ "$scripted" -eq 1 ] && [ "${GODOT_VISIBLE_CHECKS:-0}" != 1 ]; then
         shift
         remaining=$((remaining - 1))
         if [ "$argument" = -- ] && [ "$inserted" -eq 0 ]; then
-            set -- "$@" --headless --
+            if [ "$background" -eq 1 ]; then
+                set -- "$@" --headless
+            fi
+            if [ "$silent" -eq 1 ]; then
+                set -- "$@" --audio-driver Dummy
+            fi
+            set -- "$@" --
             inserted=1
         else
             set -- "$@" "$argument"
         fi
     done
     if [ "$inserted" -eq 0 ]; then
-        set -- "$@" --headless
+        if [ "$background" -eq 1 ]; then
+            set -- "$@" --headless
+        fi
+        if [ "$silent" -eq 1 ]; then
+            set -- "$@" --audio-driver Dummy
+        fi
     fi
 fi
 exec "$engine" "$@"

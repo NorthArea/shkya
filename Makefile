@@ -1,8 +1,10 @@
-.PHONY: run editor test test-headless test-native capture fps map
+.PHONY: run run-agent editor test test-headless test-native capture fps map
 # Visible GPU checks are opt-in; ordinary test invocations never open a window.
 HEADLESS_ONLY ?= 1
 run: map
-	./tools/run.command
+	GODOT_ALLOW_AUDIO=1 ./tools/run.command
+run-agent: map
+	GODOT_ALLOW_AUDIO=0 ./tools/run.command
 editor: map
 	./tools/run.command --editor
 map:
