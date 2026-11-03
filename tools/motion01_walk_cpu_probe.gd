@@ -4,6 +4,16 @@ extends SceneTree
 
 var _physics_started := 0
 
+class MeasuredHero extends "res://game/characters/imported_hero_visual.gd":
+	var skin_us := 0
+	var skin_calls := 0
+	func _posed_surface_vertices(surface: int, use_final := true) -> PackedVector3Array:
+		var started := Time.get_ticks_usec()
+		var result := super(surface, use_final)
+		skin_us += Time.get_ticks_usec() - started
+		skin_calls += 1
+		return result
+
 class MeasuredCamera extends CameraRig:
 	var samples := {}
 	var measuring := false
@@ -49,6 +59,9 @@ func _run() -> void:
 	if DisplayServer.get_name() != "headless":
 		push_error("CPU probe requires headless/Dummy")
 		quit(2)
+		return
+	if "--imported-hero" in OS.get_cmdline_user_args():
+		await _hero_microbench()
 		return
 	preload("res://game/input_setup.gd").install()
 	physics_frame.connect(func(): _physics_started = Time.get_ticks_usec())
@@ -139,6 +152,41 @@ func _run() -> void:
 	for frame in 5:
 		await process_frame
 	print("MOTION_CPU_DONE; native FPS/GPU NOT_RUN")
+	quit(0)
+
+func _hero_microbench() -> void:
+	var hero := MeasuredHero.new()
+	hero.configure(preload("res://game/characters/character_catalog.gd").ILYUSHA_VISIBLE_HEIGHT_M, Color.WHITE)
+	root.add_child(hero)
+	for i in 3:
+		await process_frame
+	hero.set_process(false)
+	var surfaces: Array = []
+	for surface in hero.uniform_mesh.mesh.get_surface_count():
+		var arrays: Array = hero.uniform_mesh.mesh.surface_get_arrays(surface)
+		surfaces.append({"surface": surface, "material": hero.uniform_mesh.mesh.surface_get_material(surface).resource_name,
+			"vertices": arrays[Mesh.ARRAY_VERTEX].size(), "is_sole": surface in hero._sole_surfaces})
+	print("MOTION_HERO_CONTEXT ", JSON.stringify({"scope": "isolated real imported hero; Dummy CPU, no world/GPU",
+		"model_sha256": FileAccess.get_sha256("res://assets/models/characters/ilyusha/ilyusha.glb"), "surfaces": surfaces}))
+	for speed in [0.0, 4.0, 8.0]:
+		hero.update_locomotion(Vector3(0, 0, -speed), true, &"locomotion", 1.0 / 60.0)
+		for i in 5:
+			hero._sample(1.0 / 60.0)
+		hero.skin_us = 0
+		hero.skin_calls = 0
+		var times: Array = []
+		for i in 60:
+			var started := Time.get_ticks_usec()
+			hero._sample(1.0 / 60.0)
+			# Skeleton modifiers are deferred by the server; invoke the actual
+			# foot modifier explicitly to include the skinning CPU work here.
+			hero._foot_orientation._process_modification_with_delta(1.0 / 60.0)
+			times.append(Time.get_ticks_usec() - started)
+		print("MOTION_HERO_SAMPLE ", JSON.stringify({"speed": speed, "total_sample_us": _stats(times),
+			"sole_skin_us_per_sample": hero.skin_us / 60.0, "skin_calls": hero.skin_calls}))
+	hero.queue_free()
+	for i in 3:
+		await process_frame
 	quit(0)
 
 func _stats(values: Array) -> Dictionary:

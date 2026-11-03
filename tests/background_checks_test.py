@@ -9,20 +9,39 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class BackgroundChecks(unittest.TestCase):
-    def launch(self, *arguments, visible=False, launcher="run.command"):
+    def launch(self, *arguments, visible=False, launcher="run.command", fixed_environment=False, inherited_fixed=None):
         with tempfile.TemporaryDirectory() as directory:
             directory = Path(directory)
             engine = directory / 'engine'
-            engine.write_text('#!/usr/bin/env python3\nimport json,os,sys\nwith open(os.environ["CHECK_ARGV_LOG"],"a") as f: f.write(json.dumps(sys.argv[1:])+"\\n")\n')
+            engine.write_text('#!/usr/bin/env python3\nimport json,os,sys\nwith open(os.environ["CHECK_ARGV_LOG"],"a") as f: f.write(json.dumps({"argv":sys.argv[1:],"fixed":os.getenv("GODOT_FIXED_FPS_WORKLOAD")})+"\\n")\n')
             engine.chmod(0o755)
             output = directory / 'argv.jsonl'
             env = dict(os.environ, GODOT_BIN=str(engine), CHECK_ARGV_LOG=str(output))
             env.pop('GODOT_VISIBLE_CHECKS', None)
+            env.pop('GODOT_FIXED_FPS_WORKLOAD', None)
+            if inherited_fixed is not None:
+                env['GODOT_FIXED_FPS_WORKLOAD'] = inherited_fixed
             if visible:
                 env['GODOT_VISIBLE_CHECKS'] = '1'
             subprocess.run([str(ROOT / 'tools' / launcher), *arguments], cwd=ROOT, env=env, check=True)
             import json
-            return [json.loads(line) for line in output.read_text().splitlines()]
+            calls = [json.loads(line) for line in output.read_text().splitlines()]
+            return [call['fixed' if fixed_environment else 'argv'] for call in calls]
+
+    def test_positive_fixed_fps_is_reported_to_the_engine(self):
+        for arguments in [('--fixed-fps', '60'), ('--fixed-fps=120',)]:
+            with self.subTest(arguments=arguments):
+                self.assertEqual(self.launch(*arguments, launcher='godot.sh', fixed_environment=True), ['1'])
+
+    def test_fixed_fps_uses_the_last_engine_option(self):
+        self.assertEqual(self.launch('--fixed-fps', '60', '--fixed-fps', '-1', launcher='godot.sh', fixed_environment=True), ['0'])
+        self.assertEqual(self.launch('--fixed-fps=-1', '--fixed-fps', '80', launcher='godot.sh', fixed_environment=True), ['1'])
+
+    def test_payload_fixed_fps_and_inherited_marker_do_not_change_workload(self):
+        self.assertEqual(self.launch('--', '--fixed-fps', '60', launcher='godot.sh', fixed_environment=True, inherited_fixed='1'), ['0'])
+
+    def test_import_and_runtime_get_their_own_fixed_fps_marker(self):
+        self.assertEqual(self.launch('--headless', '--fixed-fps', '60', '--script', 'tests/smoke_runner.gd', fixed_environment=True), ['0', '1'])
 
     def test_script_is_headless_and_audio_dummy_by_default(self):
         calls = self.launch('--script', 'tests/smoke_runner.gd')

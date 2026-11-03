@@ -18,12 +18,26 @@ fi
 # Scripted checks are silent and windowless unless the owner requested a visible
 # diagnostic. Keep this guard in the shared entry point, including direct calls.
 scripted=0
+fixed_fps_value=-1
+fixed_fps_next=0
 for argument in "$@"; do
+    if [ "$fixed_fps_next" -eq 1 ]; then
+        fixed_fps_value=$argument
+        fixed_fps_next=0
+        continue
+    fi
     case "$argument" in
         --) break ;;
         --script|-s|--script=*) scripted=1 ;;
+        --fixed-fps) fixed_fps_next=1 ;;
+        --fixed-fps=*) fixed_fps_value=${argument#*=} ;;
     esac
 done
+# Godot consumes this engine flag before exposing OS.get_cmdline_args().
+export GODOT_FIXED_FPS_WORKLOAD=0
+if [ "$fixed_fps_value" -gt 0 ] 2>/dev/null; then
+    export GODOT_FIXED_FPS_WORKLOAD=1
+fi
 if [ "$scripted" -eq 1 ] && [ "${GODOT_VISIBLE_CHECKS:-0}" != 1 ]; then
     # Insert last among engine options so earlier display/audio options cannot
     # override it; preserve everything after -- as the script's own arguments.
