@@ -2,6 +2,8 @@ extends "res://game/characters/character_sprite.gd"
 ## Visual-only occupant shared by Lada and trolley, with explicit consumer poses.
 ## Legacy cropped canvas remains available for the previous visual branch.
 const CUT_Y := 440.0
+const LADA_CUT_Y := 370.0
+const LADA_CANVAS_TOP_Y := 1.42
 const LADA_VISIBLE_HEIGHT := Catalog.ILYUSHA_VISIBLE_HEIGHT_M
 const LADA_FLOOR := 0.32
 const LADA_SEAT_X := -0.285
@@ -51,8 +53,12 @@ func _ready() -> void:
 	var texture: Texture2D = sprite.texture
 	var px_per_unit := texture.get_height() / CANVAS_HEIGHT
 	sprite.region_enabled = true
-	sprite.region_rect = Rect2(0.0, 0.0, texture.get_width(), CUT_Y * px_per_unit)
+	var crop_y := LADA_CUT_Y if occupant_profile == &"lada" else CUT_Y
+	sprite.region_rect = Rect2(0.0, 0.0, texture.get_width(), crop_y * px_per_unit)
 	sprite.position.y = (FEET_Y - CUT_Y * 0.5) * height_m / CANVAS_HEIGHT
+	if occupant_profile == &"lada":
+		# Place the uncropped head below the roof without shrinking the canvas.
+		sprite.position.y = LADA_CANVAS_TOP_Y - position.y - crop_y * height_m / CANVAS_HEIGHT * 0.5
 
 func _physics_process(_delta: float) -> void:
 	pass

@@ -15,6 +15,8 @@ const FRONT_DOT := 0.55       # cos ≈ 57°: ближе к оси — лицо�
 const WALK_SPEED_MIN := 0.4   # м/с: медленнее — стойка
 
 @export var character := "ilyusha"
+## Consumer-local fallback; shared NPC and vehicle geometry switches stay intact.
+@export var force_sprite_2d := false
 ## ART-09: рисунок задаётся до _ready, независимо от квестовой роли и interaction_id.
 ## Пустое значение сохраняет прежний облик. Имена ограничены готовыми комплектами.
 const APPEARANCES: Array[String] = ["police_long", "police_round", "guard_alt"]
@@ -64,7 +66,7 @@ func resolved_character() -> String:
 func _ready() -> void:
 	_actor = get_parent().get_parent() as Node3D if get_parent() != null else null
 	var drawing := resolved_character()
-	if UniformVisual.use_for(drawing):
+	if not force_sprite_2d and UniformVisual.use_for(drawing):
 		uniform_visual = UniformVisual.new()
 		uniform_visual.name = "UniformVisual"
 		uniform_visual.configure(drawing, _model_visible_height(drawing), tint)
@@ -118,6 +120,8 @@ func _process(_delta: float) -> void:
 			else:
 				_bone_pose_buffer.clear()
 		return
+	if not is_visible_in_tree():
+		return
 	var camera := get_viewport().get_camera_3d()
 	if not camera or not sprite:
 		return
@@ -166,9 +170,11 @@ func _physics_process(delta: float) -> void:
 	if teleport:
 		velocity = Vector3.ZERO
 	_last_root = at
-	var moving := velocity.length() >= WALK_SPEED_MIN and not teleport
+	# SVG cadence follows measured planar displacement, never desired input or falling.
+	var sprite_moving := delta > 0.0 and moved / delta >= WALK_SPEED_MIN and _grounded and _pose_mode == &"locomotion" and is_visible_in_tree()
+	var moving := sprite_moving if sprite != null else velocity.length() >= WALK_SPEED_MIN and not teleport
 	if moving:
-		_distance += Vector2(velocity.x, velocity.z).length() * delta
+		_distance += moved if sprite != null else Vector2(velocity.x, velocity.z).length() * delta
 		frame = int(_distance / walk_stride) % 4
 	else:
 		frame = -1
@@ -196,11 +202,19 @@ func submit_locomotion(world_velocity: Vector3, grounded: bool, mode: StringName
 	_action_phase = action_phase
 
 func reset_pose() -> void:
+	if sprite != null:
+		_distance = 0.0
+		frame = -1
+		_last = Vector3.INF
+		_last_root = Vector3.INF
+		_velocity = Vector3.ZERO
 	_bone_pose_buffer.clear()
 	if uniform_visual != null:
 		uniform_visual.reset_pose()
 
 func _clear_bone_interpolation() -> void:
+	if sprite != null:
+		reset_pose()
 	if uniform_visual != null and uniform_visual.supports_manual_bone_interpolation():
 		_bone_pose_buffer.restore_current(uniform_visual.skeleton)
 	elif uniform_visual != null and uniform_visual.imported_hero != null:

@@ -35,7 +35,7 @@ const VISIBLE_HEIGHT_RATIOS := {
 ## https://elifesciences.org/articles/13410
 const RF_ADULT_MALE_REFERENCE_M := 1.765
 const RF_ADULT_FEMALE_REFERENCE_M := 1.653
-const ILYUSHA_VISIBLE_HEIGHT_M := RF_ADULT_MALE_REFERENCE_M
+const ILYUSHA_VISIBLE_HEIGHT_M := 1.60
 const PORTRAIT_DIR := "res://assets/art/portraits3d/"
 const PORTRAIT_KEYS: Array[StringName] = [&"babka", &"vendor", &"ilyusha", &"officer", &"account_officer"]
 

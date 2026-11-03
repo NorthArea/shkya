@@ -48,9 +48,9 @@ func _run() -> void:
 	print("LOCOMOTION01_PROFILE ", JSON.stringify({"engine": Engine.get_version_info(), "physics_hz": Engine.physics_ticks_per_second, "test_sha256": FileAccess.get_sha256(get_script().resource_path), "scope": "runtime rigs, skinned soles, movement consumers, priorities", "contact_height_m": CONTACT_HEIGHT_M, "penetration_m": PENETRATION_M}))
 	check(Engine.physics_ticks_per_second == 60, "fixture uses 60 Hz")
 	_rigs_and_instances()
-	for drawing: String in ["ilyusha", "babka", "police"]:
+	for drawing: String in ["resident_man", "babka", "police"]:
 		_gait_contacts(drawing)
-	for drawing: String in ["ilyusha", "police"]:
+	for drawing: String in ["resident_man", "police"]:
 		_run_contacts(drawing)
 	_start_stop_air_turn()
 	_reverse_contacts()
@@ -76,6 +76,9 @@ func _visual(drawing: String, parent: Node3D) -> Node3D:
 
 func _rigs_and_instances() -> void:
 	for drawing: String in ["police", "guard"] + Array(Civilian.DRAWINGS):
+		# Imported hero provider has its own source-skin qualification; SVG runtime below.
+		if drawing == "ilyusha":
+			continue
 		var actor := Node3D.new()
 		root.add_child(actor)
 		var visual := _visual(drawing, actor)
@@ -169,7 +172,7 @@ func _gait_contacts(drawing: String) -> void:
 func _start_stop_air_turn() -> void:
 	var actor := Node3D.new()
 	root.add_child(actor)
-	var visual := _visual("ilyusha", actor)
+	var visual := _visual("resident_man", actor)
 	visual.update_locomotion(Vector3.ZERO, true, &"locomotion", DT)
 	var samples := _sole_samples(visual)
 	var previous := _soles(visual, samples)
@@ -288,7 +291,7 @@ func _run_contacts(drawing: String) -> void:
 func _action_priorities() -> void:
 	var actor := Node3D.new()
 	root.add_child(actor)
-	var visual := _visual("ilyusha", actor)
+	var visual := _visual("resident_man", actor)
 	for frame in 60:
 		visual.update_locomotion(Vector3.FORWARD * 1.2, true, &"locomotion", DT)
 	var phase: float = visual.gait.phase
@@ -311,7 +314,7 @@ func _action_priorities() -> void:
 func _reverse_contacts() -> void:
 	var actor := Node3D.new()
 	root.add_child(actor)
-	var visual := _visual("ilyusha", actor)
+	var visual := _visual("resident_man", actor)
 	visual.update_locomotion(Vector3.ZERO, true, &"locomotion", DT)
 	var samples := _sole_samples(visual)
 	var rest := _soles(visual, samples)
@@ -339,6 +342,7 @@ func _visual_offsets_are_not_travel() -> void:
 	presentation.name = "Visual"
 	actor.add_child(presentation)
 	var look := CharacterLook.new()
+	look.character = "resident_man"
 	look.name = "Look"
 	presentation.add_child(look)
 	look.set_physics_process(false)
@@ -359,7 +363,8 @@ func _occupant_priority() -> void:
 	var cabin := Node3D.new()
 	root.add_child(cabin)
 	var driver := Driver.new()
-	driver.character = "ilyusha"
+	driver.character = "resident_man"
+	driver.occupant_profile = &"trolley_driver"
 	cabin.add_child(driver)
 	var visual: Node3D = driver.uniform_visual
 	var skeleton: Skeleton3D = visual.skeleton
@@ -368,7 +373,7 @@ func _occupant_priority() -> void:
 	var sole: float = visual.occupant_sole_height() + visual.position.y
 	for frame in 120:
 		visual.update_locomotion(Vector3.FORWARD * 4.0, true, &"locomotion", DT)
-	check(visual.skeleton == skeleton and _poses(skeleton) == pose, "real Lada occupant pose has priority over stale locomotion input")
+	check(visual.skeleton == skeleton and _poses(skeleton) == pose, "generic trolley occupant pose has priority over stale locomotion input")
 	check(_hand_position(visual, "hand_l").distance_to(hands[0]) < 0.0001 and _hand_position(visual, "hand_r").distance_to(hands[1]) < 0.0001, "seated priority preserves actual steering hand placement")
 	check(absf(visual.occupant_sole_height() + visual.position.y - sole) < 0.0001, "seated priority preserves cabin sole clearance")
 	cabin.free()
@@ -387,12 +392,12 @@ func _player_wall() -> void:
 	await _ticks(90)
 	var look: Node = player.visual.get_node("Look")
 	var start := player.global_position
-	var phase: float = look.uniform_visual.gait.phase
+	var phase: float = look._distance
 	await _ticks(60)
 	check(player.is_on_wall() and player.is_on_floor(), "real held player input reaches the wall on grounded physics")
 	check(player.global_position.distance_to(start) < 0.005, "wall scenario has no permitted physical travel")
-	check(look.uniform_visual.gait.speed < 0.02 and look.uniform_visual.gait.motion_weight < 0.02, "wall-blocked input cannot make the skinned player walk in place")
-	check(absf(look.uniform_visual.gait.phase - phase) < 0.0001, "wall-blocked player accumulates no fictitious steps")
+	check(look.sprite != null and look.frame == -1, "wall-blocked input cannot make the SVG player walk in place")
+	check(absf(look._distance - phase) < 0.0001, "wall-blocked player accumulates no fictitious steps")
 	_release()
 	fixture.queue_free()
 	await _ticks(2)
@@ -406,9 +411,7 @@ func _player_walk_sprint_jump() -> void:
 	player.place(Vector3.ZERO, 0.0)
 	await _ticks(12)
 	var look: Node = player.visual.get_node("Look")
-	var visual: Node3D = look.uniform_visual
-	var samples := _sole_samples(visual)
-	check(player.is_on_floor(), "real movement fixture reaches grounded player state")
+	check(player.is_on_floor() and look.sprite != null, "actual SVG consumer starts grounded")
 	Input.action_press(&"move_forward")
 	var rates: Array[float] = []
 	for sprint: bool in [false, true]:
@@ -418,78 +421,53 @@ func _player_walk_sprint_jump() -> void:
 		var expected := PlayerScript.RUN_SPEED if sprint else PlayerScript.WALK_SPEED
 		var label := "sprint" if sprint else "walk"
 		var from := player.global_position
-		var phase: float = visual.gait.phase
-		var previous := _soles(visual, samples)
-		var grounded_samples := 0
-		var penetration := 0.0
-		var max_travel := 0.0
-		var phase_continuous := true
-		var last_phase := phase
+		var phase: float = look._distance
+		var grounded := true
+		var continuous := true
+		var previous: float = phase
 		for frame in 30:
 			await _ticks(1)
-			var current := _soles(visual, samples)
-			if player.is_on_floor() and visual.gait.grounded:
-				grounded_samples += 1
-			for side in 2:
-				penetration = maxf(penetration, -float(current[side].low))
-				max_travel = maxf(max_travel, current[side].center.distance_to(previous[side].center))
-			var phase_step: float = visual.gait.phase - last_phase
-			phase_continuous = phase_continuous and is_finite(visual.gait.phase) and phase_step > 0.0 and phase_step < 0.5
-			last_phase = visual.gait.phase
-			previous = current
-		var actual_speed := _planar(player.global_position - from).length() / (30.0 * DT)
-		var phase_rate: float = (visual.gait.phase - phase) / (30.0 * DT)
-		rates.append(phase_rate)
-		var travel_budget := 2.0 * expected * DT + _world_leg_length(visual) * 0.5
-		check(absf(actual_speed - expected) <= 0.1, "real Input " + label + " produces the actual configured player root speed")
-		check(grounded_samples == 30 and visual.gait.mode == &"locomotion", "real " + label + " state reaches the grounded locomotion consumer")
-		check(absf(visual.gait.speed - actual_speed) <= 0.15, "real " + label + " visual speed follows measured root travel")
-		check(phase_continuous, "real " + label + " has continuous forward phase under physical movement")
-		check(penetration <= PENETRATION_M and max_travel <= travel_budget, "real " + label + " actual skinned soles keep floor/continuity budgets")
-		print("LOCOMOTION01_PLAYER ", JSON.stringify({"state": label, "actual_speed_mps": actual_speed, "phase_hz": phase_rate, "penetration_m": penetration, "max_frame_travel_m": max_travel, "travel_budget_m": travel_budget}))
-	check(rates.size() == 2 and rates[1] > rates[0] * 1.2, "real sprint changes foot cadence positively beyond the walking profile")
+			grounded = grounded and player.is_on_floor() and look._grounded
+			continuous = continuous and look._distance > previous and look._distance - previous < expected * DT * 1.1
+			previous = look._distance
+		var travel := _planar(player.global_position - from).length()
+		var speed := travel / (30 * DT)
+		var travelled_phase: float = look._distance - phase
+		rates.append(travelled_phase / (30 * DT))
+		check(absf(speed - expected) < 0.1, "real " + label + " retains configured root speed")
+		check(grounded and continuous and look.frame >= 0, "real " + label + " advances continuous SVG distance while grounded")
+		check(absf(travelled_phase - travel) < expected * DT * 1.1, "real " + label + " cadence follows actual root metres")
+	check(rates[1] > rates[0] * 1.2, "sprint increases SVG cadence above walk")
 	Input.action_press(&"jump")
 	await _ticks(1)
 	Input.action_release(&"jump")
-	var takeoff_phase: float = visual.gait.phase
-	var airborne_samples := 0
-	var airborne_state_ok := true
-	var airborne_phase_ok := true
+	await _ticks(2)
+	var phase: float = look._distance
+	var airborne := 0
+	var frozen := true
 	var peak := player.global_position.y
-	var landed := false
-	var penetration := 0.0
-	var previous := _soles(visual, samples)
-	var max_travel := 0.0
 	for frame in 150:
-		if not player.is_on_floor():
-			airborne_samples += 1
-			airborne_state_ok = airborne_state_ok and not visual.gait.grounded
-			airborne_phase_ok = airborne_phase_ok and absf(visual.gait.phase - takeoff_phase) < 0.0001
-		elif airborne_samples > 0:
-			landed = true
-			break
 		await _ticks(1)
 		peak = maxf(peak, player.global_position.y)
-		var current := _soles(visual, samples)
-		for side in 2:
-			penetration = maxf(penetration, -float(current[side].low))
-			max_travel = maxf(max_travel, current[side].center.distance_to(previous[side].center))
-		previous = current
-	check(airborne_samples >= 20 and peak >= 0.3, "real jump input reaches a sustained physical airborne trajectory")
-	check(airborne_state_ok and airborne_phase_ok, "real airborne player publishes air state and freezes ground-contact phase")
-	check(landed and player.is_on_floor() and visual.gait.grounded, "real physics landing returns the same player visual to grounded state")
-	var travel_budget := 2.0 * PlayerScript.RUN_SPEED * DT + _world_leg_length(visual) * 0.5
-	check(penetration <= PENETRATION_M and max_travel <= travel_budget, "real takeoff/landing keeps actual sole geometry inside floor and continuity budgets")
+		if not player.is_on_floor():
+			airborne += 1
+			frozen = frozen and look.frame == -1 and absf(look._distance - phase) < 0.0001
+		elif airborne > 0:
+			break
+	check(airborne >= 20 and peak > 0.3, "real jump retains sustained physical trajectory")
+	check(frozen, "airborne SVG freezes ground-contact cadence")
+	check(player.is_on_floor(), "physical landing returns to ground")
 	_release()
 	await _ticks(60)
 	var stopped := player.global_position
-	var phase: float = visual.gait.phase
+	phase = look._distance
 	await _ticks(20)
-	var soles := _soles(visual, samples)
-	check(player.global_position.distance_to(stopped) < 0.005 and player.is_on_floor(), "landed player stops physically after releasing real movement input")
-	check(visual.gait.motion_weight < 0.01 and absf(visual.gait.phase - phase) < 0.0001, "landed stopped player settles without fictitious ground steps")
-	check(absf(soles[0].low) <= SOLE_CONTACT_M and absf(soles[1].low) <= SOLE_CONTACT_M, "landed stopped player returns both real soles to the physical floor")
-	print("LOCOMOTION01_JUMP ", JSON.stringify({"airborne_samples": airborne_samples, "peak_root_y_m": peak, "landed": landed, "penetration_m": penetration, "max_frame_travel_m": max_travel, "travel_budget_m": travel_budget}))
+	check(player.global_position.distance_to(stopped) < 0.005 and player.is_on_floor(), "landed player stops after releasing input")
+	check(look.frame == -1 and absf(look._distance - phase) < 0.0001, "landed SVG settles without fictitious steps")
+	var image: Image = look.sprite.texture.get_image()
+	var alpha := image.get_used_rect()
+	var floor_y: float = player.global_position.y + look.sprite.position.y + (image.get_height() * 0.5 - alpha.end.y) * look.sprite.pixel_size
+	check(absf(floor_y) < 0.015, "landed opaque SVG soles register on physical floor")
 	fixture.queue_free()
 	await _ticks(2)
 

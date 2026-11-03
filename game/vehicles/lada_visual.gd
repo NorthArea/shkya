@@ -33,9 +33,8 @@ const BEAM_ENERGY := 6.0
 const BEAM_COLOR := Color(1.0, 0.91, 0.76)   # тёплый белый лампы накаливания
 
 ## Переднее левое место: X общий с креслом и рулём; рост/поза 3D задаются LadaDriver/Catalog.
-## DRIVER_HEIGHT остаётся параметром прежнего холста для совместимого 2D режима.
+## SVG keeps the standing hero's intrinsic scale; seating crops the legs.
 const DRIVER_AT := Vector3(LadaDriver.LADA_SEAT_X, 0.497, LadaDriver.LADA_HIP_Z)
-const DRIVER_HEIGHT := 0.88
 
 ## Линии стёкол (y, z) «пятёрки»: лобовое и заднее — как в ART-03/POLISH-02 (по ним вписан водитель).
 const WINDSHIELD_BOTTOM := Vector2(0.99, -0.83)
@@ -118,7 +117,8 @@ static func build(paint := BEIGE, plate := PLATE, player := true, rust := 0.8, s
 		var driver: Node3D = LadaDriver.new()
 		driver.name = "Driver"
 		driver.character = "ilyusha"
-		driver.height_m = DRIVER_HEIGHT
+		driver.force_sprite_2d = true
+		driver.height_m = LadaDriver.Catalog.canvas_height_for("ilyusha", LadaDriver.Catalog.ILYUSHA_VISIBLE_HEIGHT_M)
 		driver.position = DRIVER_AT
 		driver.visible = false
 		body.add_child(driver)

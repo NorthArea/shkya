@@ -416,6 +416,7 @@ func _build_visual() -> Node3D:
 	var look = CharacterSpriteScript.new()
 	look.name = "Look"
 	look.character = "ilyusha"
+	look.force_sprite_2d = true
 	look.interpolate_bone_pose = true
 	look.height_m = CharacterSpriteScript.Catalog.canvas_height_for("ilyusha", CharacterSpriteScript.Catalog.ILYUSHA_VISIBLE_HEIGHT_M)
 	root.add_child(look)
