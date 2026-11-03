@@ -102,7 +102,7 @@ var _dot_on: StyleBoxFlat
 var _dot_off: StyleBoxFlat
 var _finger: Panel
 var _letterbox: Array[ColorRect] = []
-var _marker_layers := 1
+var _marker_transparency := 0.0
 var _swipe_player: AudioStreamPlayer
 var _voice_player: AudioStreamPlayer
 var _bubble_shown := false
@@ -165,9 +165,11 @@ func _ready() -> void:
 	player.velocity = Vector3.ZERO
 	if hud:
 		hud.visible = false
-	if marker is VisualInstance3D:
-		_marker_layers = (marker as VisualInstance3D).layers
-		(marker as VisualInstance3D).layers = 0
+	if marker is GeometryInstance3D:
+		_marker_transparency = (marker as GeometryInstance3D).transparency
+		# QuestFlow owns visible; changing layers can unbalance Forward+ light
+		# pairing when the marker is restored and its world is later removed.
+		(marker as GeometryInstance3D).transparency = 1.0
 	camera_rig.set_physics_process(false)
 	_build_phone_3d()
 	_build_bubble()
@@ -377,8 +379,8 @@ func _finish(by_skip: bool) -> void:
 		var card: Variant = hud.get("card")
 		if card is Control:
 			DialogPanelScript.pop(card, 0.85)
-	if marker is VisualInstance3D:
-		(marker as VisualInstance3D).layers = _marker_layers
+	if marker is GeometryInstance3D:
+		(marker as GeometryInstance3D).transparency = _marker_transparency
 		_pop_3d(marker)
 	var free_to_walk: bool = world.get("control_mode") == &"on_foot" and not world.get("ui_blocking")
 	if world.has_method("is_stealth_failing") and world.is_stealth_failing():

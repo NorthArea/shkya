@@ -29,6 +29,7 @@ func _run() -> void:
 	root.add_child(main)
 	await _frames(2)
 	await _default_skipped()
+	await _marker_state()
 	_texts()
 	await _full_play()
 	await _skip_by(_key(KEY_E), "E")
@@ -51,6 +52,20 @@ func _default_skipped() -> void:
 	check(IntroScript.should_play(self), "force_enabled turns the intro on")
 
 # --- тексты ---
+
+func _marker_state() -> void:
+	var marker: Label3D = world.quest_flow.marker
+	var original_layers := marker.layers
+	marker.transparency = 0.35
+	var intro: Intro = IntroScript.attach(world)
+	await _frames(2)
+	check(marker.layers == original_layers, "intro keeps renderer light-pairing layers unchanged")
+	check(is_equal_approx(marker.transparency, 1.0), "intro marker is fully transparent while QuestFlow owns visibility")
+	intro.skip()
+	await _frames(int(ceil((IntroScript.SKIP_FADE_OUT + IntroScript.SKIP_FADE_IN) * FPS)) + 4)
+	check(marker.layers == original_layers, "skip preserves the marker render layers")
+	check(is_equal_approx(marker.transparency, 0.35), "skip restores the marker's original partial transparency")
+	marker.transparency = 0.0
 
 func _texts() -> void:
 	var headlines := IntroLines.HEADLINES
@@ -92,7 +107,7 @@ func _full_play() -> void:
 	var hud: CanvasLayer = world.get_node("GameHUD")
 	check(not player.input_enabled, "play: input disabled during the intro")
 	check(not hud.visible, "play: HUD hidden during the intro")
-	check(marker.layers == 0, "play: '!' over Babka hidden during the intro")
+	check(marker.layers != 0 and is_equal_approx(marker.transparency, 1.0), "play: '!' is hidden without changing renderer layers")
 	check(not rig.is_physics_processing(), "play: the intro drives the camera")
 	check(intro.phase == &"phone" and intro.headline_index() == 0, "play: starts on the phone with headline 0")
 	var phone: Node3D = player.get_node_or_null("IntroPhone")
@@ -202,6 +217,7 @@ func _check_after(label: String) -> void:
 	var goal: Vector3 = player.global_position + Vector3.UP * profile["height"]
 	check(rig.global_position.distance_to(goal) < 0.05, "%s: camera behind Ilyusha at spawn" % label)
 	check(marker.layers != 0 and marker.visible and marker.text == "!", "%s: '!' over Babka visible" % label)
+	check(is_zero_approx(marker.transparency), "%s: marker opacity restored after intro" % label)
 	check(world.get_node("GameHUD").visible, "%s: HUD visible" % label)
 	check(world.mission.state == MissionDirector.NOT_STARTED and not world.mission.has_bread, "%s: mission still NOT_STARTED, no bread" % label)
 	check(player.get_node_or_null("IntroPhone") == null or player.get_node("IntroPhone").is_queued_for_deletion(), "%s: phone removed" % label)
