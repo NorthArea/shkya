@@ -214,7 +214,37 @@ static func _fbm(x: float, y: float) -> float:
 ## SnowField.profile (DRIVE-02, C10: та же форма, по которой едут колёса «Лады»), сетка шагом ≈0,2 × 0,15 м с запасом
 ## SnowField.MARGIN за кромкой. toward — знак стороны дороги по z. Цвет вершины для snow_bank_mesh.gdshader:
 ## r — брызги от колёс со стороны дороги, g — корка на гребне, b — срез (крутой склон к дороге, ступени лопаты).
+const BankMeshCache = preload("res://game/world/bank_mesh_cache.gd")
+const BANK_GEOMETRY_SOURCE_ID := "env:517f7255fe8df8f1e174df8743e19061cdb7caef48ed4e9ab66b6ab2f9ea91bb|snow:e6bcf2c966bb9010fa373a32cefaae489236b08be57bd3d9a68fc8a077e74f6b"
+
+static func bank_mesh_cache_key(length: float, width: float, height: float, seed: int, toward: float) -> PackedByteArray:
+	var key := PackedByteArray()
+	key.resize(80)
+	key.encode_double(0, length)
+	key.encode_double(8, width)
+	key.encode_double(16, height)
+	key.encode_s64(24, seed)
+	key.encode_double(32, toward)
+	key.encode_double(40, SnowField.CLOD)
+	key.encode_double(48, SnowField.RAG)
+	key.encode_double(56, SnowField.MARGIN)
+	key.encode_double(64, SnowField.STEP_U)
+	key.encode_double(72, SnowField.STEP_V)
+	key.append_array(BANK_GEOMETRY_SOURCE_ID.to_utf8_buffer())
+	return key
+
 static func bank_mesh(length: float, width: float, height: float, seed: int, toward: float) -> ArrayMesh:
+	var lookup_started := Time.get_ticks_usec()
+	var key := bank_mesh_cache_key(length, width, height, seed, toward)
+	var cached: ArrayMesh = BankMeshCache.get_mesh(key)
+	BankMeshCache.record_lookup(Time.get_ticks_usec() - lookup_started)
+	if cached != null:
+		return cached
+	var mesh := _bank_mesh_uncached(length, width, height, seed, toward)
+	BankMeshCache.store_mesh(key, mesh)
+	return mesh
+
+static func _bank_mesh_uncached(length: float, width: float, height: float, seed: int, toward: float) -> ArrayMesh:
 	var g := SnowField.grid(length, width)
 	var hl: float = g[0]
 	var hw: float = g[1]
