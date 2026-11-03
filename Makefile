@@ -17,8 +17,8 @@ define run_godot_test
 	@./tools/run.command $(if $(5),,--headless) $(if $(6),,--fixed-fps $(2)) --script tests/$(1).gd $(4) > builds/checks/make-test/$(1)-$(2).log 2>&1; \
 	status=$$?; grep -E '^$(3): [0-9]+ checks, [0-9]+ failures' builds/checks/make-test/$(1)-$(2).log; \
 	grep -qE '^$(3): [0-9]+ checks, 0 failures' builds/checks/make-test/$(1)-$(2).log && \
-	! grep -qE '^SCRIPT ERROR:|^ERROR: CameraRig:|^ERROR: Condition "p_elem->_root" is true' builds/checks/make-test/$(1)-$(2).log && [ $$status -eq 0 ] || \
-	{ echo "FAIL: $(1) ($(2) fps), лог builds/checks/make-test/$(1)-$(2).log"; grep -E 'FAIL|SCRIPT ERROR|Parse Error|CameraRig:|p_elem->_root' builds/checks/make-test/$(1)-$(2).log | head -20; exit 1; }
+	! grep -qE '^SCRIPT ERROR:|^ERROR: CameraRig:|^ERROR: Condition "p_elem->_root" is true|^ERROR: geom->softshadow_count' builds/checks/make-test/$(1)-$(2).log && [ $$status -eq 0 ] || \
+	{ echo "FAIL: $(1) ($(2) fps), лог builds/checks/make-test/$(1)-$(2).log"; grep -E 'FAIL|SCRIPT ERROR|Parse Error|CameraRig:|p_elem->_root|geom->softshadow_count' builds/checks/make-test/$(1)-$(2).log | head -20; exit 1; }
 endef
 
 # Безоконный набор явно пропускает проверки, которым нужен настоящий рендер.
@@ -51,6 +51,7 @@ test: map
 	$(call godot_test,play04_car_test,60,PLAY04_CAR)
 	$(call godot_test,drive01_acceptance,60,DRIVE01)
 	$(call godot_test,vehicle_impact_test,60,VEHICLE_IMPACT)
+	$(call godot_test,vehicle_damage_test,60,VEHICLE_DAMAGE)
 	$(call godot_test,vehicle_impact_acceptance,60,VEHICLE_INDEPENDENT)
 	$(call godot_test,driver_ai_test,60,DRIVER_AI)
 	$(call godot_test,driver_ai_acceptance,60,DRIVER_ACCEPTANCE)
@@ -69,7 +70,11 @@ test: map
 	$(call godot_test,art09_test,60,ART09)
 	$(call godot_test,ip01_runtime_test,60,IP01_INDEPENDENT_RUNTIME)
 	$(call godot_test,locomotion01_test,60,LOCOMOTION01)
+	$(call godot_test,hero2d_runtime_test,60,HERO2D_RUNTIME)
+	$(call godot_test,performance_overlay_test,60,PERF_HUD)
+	$(call godot_test,performance_overlay_integration_test,60,PERF_HUD_INTEGRATION)
 	$(call godot_test,motion01_pose_interpolation_test,60,MOTION01_POSE_INTERPOLATION,--max-fps 120,,realtime)
+	$(call godot_test,motion01_world_lifecycle_test,60,MOTION01_WORLD_LIFECYCLE,--max-fps 120 --resolution 1920x1080 -- --intro,render,realtime)
 	$(call godot_test,fps_probe_test,60,FPS_PROBE_TEST)
 	$(call godot_test,motion01_skin_cache_test,60,MOTION01_SKIN_CACHE)
 	$(call godot_test,ip01_imported_reset_test,60,IP01_IMPORTED_RESET)

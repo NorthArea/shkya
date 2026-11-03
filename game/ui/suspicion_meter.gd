@@ -26,6 +26,7 @@ const FAIL_DARK := 0.86
 const SHOW_SECONDS := 0.2      # появление индикатора
 const HIDE_SECONDS := 0.5      # исчезновение, когда шкала вернулась в ноль
 const PLATE_SIZE := Vector2(236, 112)
+const TOP := 112.0  # PERF-HUD-01: leave room for the performance panel above.
 
 var plate: PanelContainer
 var badge: Control
@@ -108,8 +109,8 @@ func _build_plate() -> void:
 	plate.anchor_right = 1.0
 	plate.offset_left = -40 - PLATE_SIZE.x
 	plate.offset_right = -40
-	plate.offset_top = 32
-	plate.offset_bottom = 32 + PLATE_SIZE.y
+	plate.offset_top = TOP
+	plate.offset_bottom = TOP + PLATE_SIZE.y
 	plate.custom_minimum_size = PLATE_SIZE
 	plate.visible = false
 	plate.modulate.a = 0.0
@@ -133,7 +134,7 @@ func _build_hint() -> void:
 	hint_plate.anchor_right = 1.0
 	hint_plate.offset_left = -800   # 760 px: подсказка из 42 знаков шрифтом 30 px обрезалась при 520 (приёмка EXT-01)
 	hint_plate.offset_right = -40
-	hint_plate.offset_top = 32 + PLATE_SIZE.y + 14
+	hint_plate.offset_top = TOP + PLATE_SIZE.y + 14
 	hint_plate.offset_bottom = hint_plate.offset_top + 64
 	hint_plate.visible = false
 	hint_label = _label(30)

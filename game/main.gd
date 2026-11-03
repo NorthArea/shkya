@@ -15,6 +15,7 @@ const AchievementsStore = preload("res://game/progression/achievements_store.gd"
 const AchievementsTracker = preload("res://game/progression/achievements_tracker.gd")
 const AchievementToast = preload("res://game/ui/achievement_toast.gd")
 const DisplaySettingsScript = preload("res://game/display_settings.gd")
+const PerformanceOverlayScript = preload("res://game/ui/performance_overlay.gd")
 const UI_CLICK := preload("res://assets/audio/ui_click.wav")
 
 # Set before _ready in tests/captures; script runs isolate the owner's persistent profile.
@@ -35,6 +36,7 @@ func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
 	get_tree().auto_accept_quit = false
 	InputSetup.install()
+	add_child(PerformanceOverlayScript.new())
 	PadInput.ensure(self)  # PAD-01: последнее устройство (геймпад или клавиатура) для подсказок HUD
 	display_settings = DisplaySettingsScript.new()
 	display_settings.name = "DisplaySettings"

@@ -2368,6 +2368,29 @@
         "LOCOMOTION-01",
         "MOTION-01"
       ]
+    },
+    {
+      "id": "MSG-0220",
+      "timestamp_utc": "2026-11-03T10:51:32+00:00",
+      "timestamp_basis": "archive_capture_time; original message timestamp unavailable",
+      "kind": "message",
+      "text": "выведи мне на экран сколько сейчас fps и другие важные показалетели для оценки скорости работы игры",
+      "sha256": "5826f0a812fe8687552643177cfab4886f529b5feb58460565fddb6b6f8ec1a5",
+      "task_ids": [
+        "PERF-HUD-01",
+        "MOTION-01"
+      ]
+    },
+    {
+      "id": "MSG-0221",
+      "timestamp_utc": "2026-11-03T10:51:32+00:00",
+      "timestamp_basis": "archive_capture_time; original message timestamp unavailable",
+      "kind": "message",
+      "text": "првый верхний угол для этой панели",
+      "sha256": "8d1ef7e54483db14359ce793495f985c955b7a01dde4737d58ec543c27e5d7eb",
+      "task_ids": [
+        "PERF-HUD-01"
+      ]
     }
   ]
 }

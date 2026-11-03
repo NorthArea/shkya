@@ -71,7 +71,8 @@ func _run() -> void:
 		check(hud.minimap.position.distance_to(Vector2(34, canvas.y - 292)) < 0.1, label + " minimap stays bottom-left")
 		check(hud.speed_gauge.position.distance_to(canvas - Vector2(280, 280)) < 0.1, label + " speed gauge stays bottom-right")
 		check(hud.speed_gauge.size.distance_to(Vector2(240, 240)) < 0.1, label + " speed gauge keeps a square shape")
-		check(hud.suspicion_meter.plate.position.distance_to(Vector2(canvas.x - 276, 32)) < 0.1, label + " suspicion follows the right edge")
+		check(hud.suspicion_meter.plate.position.distance_to(Vector2(canvas.x - 276, 112)) < 0.1, label + " suspicion follows the right edge below performance")
+		check(not main.get_node("PerformanceOverlay").panel.get_global_rect().intersects(hud.suspicion_meter.plate.get_global_rect()), label + " performance does not cover suspicion")
 		var map_point: Vector2 = hud.minimap.position + hud.minimap.size * 0.5
 		check(hud._avoid_hud(map_point).y < hud.minimap.position.y, label + " marker avoids the relocated minimap")
 		var speed_point: Vector2 = hud.speed_gauge.position + hud.speed_gauge.size * 0.5

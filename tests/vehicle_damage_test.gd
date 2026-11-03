@@ -71,12 +71,12 @@ func _same_attribute(a: Variant, b: Variant, attribute: int) -> bool:
 	if attribute in [Mesh.ARRAY_VERTEX, Mesh.ARRAY_NORMAL]:
 		for i in a.size():
 			maximum = maxf(maximum, a[i].distance_to(b[i]))
-		
+
 		return maximum < (0.00001 if attribute == Mesh.ARRAY_VERTEX else 0.0005)
 	if attribute == Mesh.ARRAY_TANGENT:
 		for i in a.size():
 			maximum = maxf(maximum, absf(a[i]-b[i]))
-		
+
 		return maximum < 0.0005
 	return false
 func _legacy_dent(visual: Node3D, world_contact: Vector3, inward_world: Vector3, closing_speed: float) -> bool:
