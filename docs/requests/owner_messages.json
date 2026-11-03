@@ -2548,6 +2548,150 @@
         "MOTION-01",
         "OWNER-ARCHIVE-01"
       ]
+    },
+    {
+      "id": "MSG-0235",
+      "timestamp_utc": "2026-11-03T14:10:22+00:00",
+      "timestamp_basis": "archive_capture_time; original message timestamp unavailable",
+      "kind": "message",
+      "text": "сделай мне простенькую заставку в нашем стиле сполосой загрузки и кнопокй нажать для начала игры",
+      "sha256": "df5e3cdb673b6db522821ea147345dcddece9aff4579fedf0551831cd4888687",
+      "task_ids": [
+        "STARTUP-01"
+      ]
+    },
+    {
+      "id": "MSG-0236",
+      "timestamp_utc": "2026-11-03T14:10:22+00:00",
+      "timestamp_basis": "archive_capture_time; original message timestamp unavailable",
+      "kind": "message",
+      "text": "мне нужны еще настройки графики - рабочие, а не как сейчасть, настрйоки уровня звука",
+      "sha256": "2c8d925f3e1874e8956483e00ffb0aa0137a1dab537d045c1d9c0357d542f397",
+      "task_ids": [
+        "SETTINGS-01",
+        "AUDIO-SETTINGS-01"
+      ]
+    },
+    {
+      "id": "MSG-0237",
+      "timestamp_utc": "2026-11-03T14:10:22+00:00",
+      "timestamp_basis": "archive_capture_time; original message timestamp unavailable",
+      "kind": "message",
+      "text": "продолжаем",
+      "sha256": "4e60a05557498f057d434045dadc94ae855954897ae4c1279eca77a36ff573af",
+      "task_ids": [
+        "SETTINGS-01",
+        "MOTION-01"
+      ]
+    },
+    {
+      "id": "MSG-0238",
+      "timestamp_utc": "2026-11-03T14:10:22+00:00",
+      "timestamp_basis": "archive_capture_time; original message timestamp unavailable",
+      "kind": "message",
+      "text": "распараллеливай работу по возможности и экономь токены",
+      "sha256": "15b28ed518e7a18be6b175bcd9e4fd771f87e14d794ca2eb9232000842cce443",
+      "task_ids": [
+        "AI-COST-01",
+        "SETTINGS-01",
+        "MOTION-01"
+      ]
+    },
+    {
+      "id": "MSG-0239",
+      "timestamp_utc": "2026-11-03T14:10:22+00:00",
+      "timestamp_basis": "archive_capture_time; original message timestamp unavailable",
+      "kind": "message",
+      "text": "что сейычас с фпс? отчет",
+      "sha256": "79b4274301d25ac70315f4b5aff420e92ed4b13cca224cfa60f283ca6059c4f8",
+      "task_ids": [
+        "MOTION-01"
+      ]
+    },
+    {
+      "id": "MSG-0240",
+      "timestamp_utc": "2026-11-03T14:10:22+00:00",
+      "timestamp_basis": "archive_capture_time; original message timestamp unavailable",
+      "kind": "message",
+      "text": "сразу добавь в обязанность к ревьюерам определения готовности игры к продакшену - к демо. пусть сразу скажут чего не хватает по их мнению",
+      "sha256": "62110204666c6dd5c4e9e4d7a6e9168c2b90999edf241bf5a7ccd9d44e321a5e",
+      "task_ids": [
+        "SKILLS-01",
+        "DEMO-READINESS-01"
+      ]
+    },
+    {
+      "id": "MSG-0241",
+      "timestamp_utc": "2026-11-03T14:10:22+00:00",
+      "timestamp_basis": "archive_capture_time; original message timestamp unavailable",
+      "kind": "message",
+      "text": "при следюущем ревью я хочу это знать",
+      "sha256": "cd4ff9f70e06e5db066e1fd2906d7ab3cc623cfec232638fc4781e7a352bec86",
+      "task_ids": [
+        "SKILLS-01",
+        "DEMO-READINESS-01"
+      ]
+    },
+    {
+      "id": "MSG-0242",
+      "timestamp_utc": "2026-11-03T16:15:25.433218+00:00",
+      "timestamp_basis": "archive_capture_time; original message timestamp unavailable",
+      "kind": "message",
+      "text": "делаем небольшую паузу, пока я не напишу продолжай",
+      "sha256": "d95d06cf71451485d5f237ceef514f949225ec56f092874ea327871ff28c5220",
+      "task_ids": [
+        "OWNER-ARCHIVE-01",
+        "MOTION-01"
+      ]
+    },
+    {
+      "id": "MSG-0243",
+      "timestamp_utc": "2026-11-03T17:23:45.650426+00:00",
+      "timestamp_basis": "archive_capture_time; original message timestamp unavailable",
+      "kind": "message",
+      "text": "продолжаем",
+      "sha256": "4e60a05557498f057d434045dadc94ae855954897ae4c1279eca77a36ff573af",
+      "task_ids": [
+        "MOTION-01",
+        "STARTUP-01",
+        "SETTINGS-01",
+        "AUDIO-SETTINGS-01",
+        "SKILLS-01"
+      ]
+    },
+    {
+      "id": "MSG-0244",
+      "timestamp_utc": "2026-11-03T14:10:22+00:00",
+      "timestamp_basis": "archive_capture_time; original message timestamp unavailable",
+      "kind": "message",
+      "text": "что сейчас с фпс?",
+      "sha256": "7efae2a441809e41031fb019b885220401016ece6901193320011d6388a332f9",
+      "task_ids": [
+        "MOTION-01"
+      ]
+    },
+    {
+      "id": "MSG-0245",
+      "timestamp_utc": "2026-11-03T14:10:22+00:00",
+      "timestamp_basis": "archive_capture_time; original message timestamp unavailable",
+      "kind": "message",
+      "text": "Составь топ просадок и бери по приоритету с самых худших показателей к лучшим, пока не достигнем стабильных 60",
+      "sha256": "bcf67053a723185328d10fa574aa885bbc8416cdc5514b0df4fcddc1251634ad",
+      "task_ids": [
+        "MOTION-01"
+      ]
+    },
+    {
+      "id": "MSG-0246",
+      "timestamp_utc": "2026-11-03T18:10:00.100434+00:00",
+      "timestamp_basis": "archive_capture_time; original message timestamp unavailable",
+      "kind": "message",
+      "text": "пока ты делаешь параллельно сделай ревью как я просил",
+      "sha256": "2b97d5403602c1700ec258d3a66f02c80bac45c217442e3cd1e2c7f0b2710ef4",
+      "task_ids": [
+        "CRITIC-02",
+        "DEMO-READINESS-01"
+      ]
     }
   ]
 }
