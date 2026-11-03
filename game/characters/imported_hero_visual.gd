@@ -58,6 +58,8 @@ var _jog_weight := 0.0
 var _run_weight := 0.0
 var _cycle_stride := 1.0
 var _hand_grip_offsets: Dictionary = {}
+var _skin_arrays_mesh: Mesh
+var _skin_arrays: Dictionary = {}
 
 class FootTargetModifier extends SkeletonModifier3D:
 	var controller: Node
@@ -80,7 +82,7 @@ class FootOrientationModifier extends SkeletonModifier3D:
 			return
 		var lowest: Array[float] = [INF, INF]
 		for surface: int in controller._sole_surfaces:
-			var arrays: Array = controller.uniform_mesh.mesh.surface_get_arrays(surface)
+			var arrays: Array = controller._skin_surface_arrays(surface)
 			var rest_vertices: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
 			var posed: PackedVector3Array = controller._posed_surface_vertices(surface, false)
 			for vertex in rest_vertices.size():
@@ -447,7 +449,7 @@ func _posed_surface_vertices(surface: int, use_final := true) -> PackedVector3Ar
 		assert(bone >= 0)
 		var pose := _final_bone_poses[bone] if use_final and _final_bone_poses.size() == skeleton.get_bone_count() else skeleton.get_bone_global_pose(bone)
 		binds.append(pose * skin.get_bind_pose(bind))
-	var arrays := uniform_mesh.mesh.surface_get_arrays(surface)
+	var arrays := _skin_surface_arrays(surface)
 	var vertices: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
 	var bones: PackedInt32Array = arrays[Mesh.ARRAY_BONES]
 	var weights: PackedFloat32Array = arrays[Mesh.ARRAY_WEIGHTS]
@@ -460,6 +462,23 @@ func _posed_surface_vertices(surface: int, use_final := true) -> PackedVector3Ar
 				point += binds[bones[slot]] * vertices[vertex] * weights[slot]
 		result.append(to_model * point)
 	return result
+
+func _skin_surface_arrays(surface: int) -> Array:
+	var mesh := uniform_mesh.mesh
+	if _skin_arrays_mesh != mesh:
+		if _skin_arrays_mesh != null and _skin_arrays_mesh.changed.is_connected(_invalidate_skin_arrays):
+			_skin_arrays_mesh.changed.disconnect(_invalidate_skin_arrays)
+		_skin_arrays_mesh = mesh
+		_skin_arrays.clear()
+		_skin_arrays_mesh.changed.connect(_invalidate_skin_arrays)
+	if not _skin_arrays.has(surface):
+		# ArrayMesh reads can synchronize with the renderer. Only mesh data is
+		# retained; bone poses and skinned positions are recomputed each call.
+		_skin_arrays[surface] = mesh.surface_get_arrays(surface)
+	return _skin_arrays[surface]
+
+func _invalidate_skin_arrays() -> void:
+	_skin_arrays.clear()
 
 func occupant_sole_height() -> float:
 	var lowest := INF
