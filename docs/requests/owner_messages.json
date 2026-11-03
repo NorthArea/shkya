@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "source_thread": "01a18dc0-9ae6-7c02-9b5f-70a15a73b205",
-  "snapshot_at_utc": "2026-11-03T04:35:45.403210+00:00",
+  "snapshot_at_utc": "2026-11-03T04:39:36.103640+00:00",
   "scope": "Все записи роли user текущего диалога до снимка. Служебные вставки отмечены отдельно. Исходный текст не исправлялся. Живые статусы только в docs/workflow/backlog.md, решения только в docs/DECISIONS.md.",
   "previous_independent_audit": {
     "record_count": 105,
@@ -2006,6 +2006,42 @@
       "sha256": "d9f316fcf3f84bcddb20932246203ba4f06cb9cb81f6a219d0c4958aa9fc7632",
       "task_ids": [
         "CHECK-01"
+      ]
+    },
+    {
+      "id": "MSG-0190",
+      "timestamp_utc": "2026-11-03T04:38:00.007652+00:00",
+      "timestamp_basis": "archive_capture_time; original message timestamp unavailable",
+      "kind": "message",
+      "text": "и давай переформулируем. Мы берем цель стабильные 60 во всей игре без просадок. Как только добились ставим цель 80, затем 100 и так с шагом 20 до 200 стабильных без просадок",
+      "sha256": "a37584c4ac26883867440b5647efa0dc1174f3b1c347aa296deaa90a8b7f6a59",
+      "task_ids": [
+        "MOTION-01",
+        "SPEC-01"
+      ]
+    },
+    {
+      "id": "MSG-0191",
+      "timestamp_utc": "2026-11-03T04:38:00.007652+00:00",
+      "timestamp_basis": "archive_capture_time; original message timestamp unavailable",
+      "kind": "message",
+      "text": "Эти две задачи делай параллельно",
+      "sha256": "cd5e778375da04ebfa898dc00f166c3af22361b183f9919fdb34f6e5ad5daebd",
+      "task_ids": [
+        "MOTION-01",
+        "IP-01"
+      ]
+    },
+    {
+      "id": "MSG-0192",
+      "timestamp_utc": "2026-11-03T04:39:36.103640+00:00",
+      "timestamp_basis": "archive_capture_time; original message timestamp unavailable",
+      "kind": "message",
+      "text": "я хочу персонажа 1 в 1 как на эом арте и с нормлаьной анимцией движения",
+      "sha256": "c5784cc124252af9b63d13af1f54a8860ce7667c9cb11ffd6cb08c0ad205eed9",
+      "task_ids": [
+        "IP-01",
+        "LOCOMOTION-01"
       ]
     }
   ]
