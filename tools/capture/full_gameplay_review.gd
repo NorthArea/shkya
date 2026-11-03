@@ -8,6 +8,15 @@ extends "res://tests/demo_acceptance.gd"
 const ReviewIntro = preload("res://game/ui/intro.gd")
 const ReviewCaught = preload("res://game/ui/caught_panel.gd")
 
+var _review_event_index := 0
+
+func check(scenario: int, ok: bool, label: String) -> bool:
+	var passed := super.check(scenario, ok, label)
+	_review_event_index += 1
+	# Movie60 frame mapping is approximate until sampled JPEGs verify its offset.
+	print("REVIEW_EVENT ", JSON.stringify({"process_frame": Engine.get_process_frames(), "physics_frame": Engine.get_physics_frames(), "sim_frames": sim_frames, "index": _review_event_index, "scenario": scenario, "passed": passed, "message": label}))
+	return passed
+
 class ReviewDriver extends "res://tests/playthrough_driver.gd":
 	func press_button(text: String, nav: StringName = &"ui_right", tries := 6) -> bool:
 		var ok: bool = await super.press_button(text, nav, tries)
