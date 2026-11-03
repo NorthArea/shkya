@@ -2692,6 +2692,40 @@
         "CRITIC-02",
         "DEMO-READINESS-01"
       ]
+    },
+    {
+      "id": "MSG-0247",
+      "timestamp_utc": "2026-11-03T18:31:33.121301+00:00",
+      "timestamp_basis": "archive_capture_time; original message timestamp unavailable",
+      "kind": "message",
+      "text": "что значит Недостаточно данных ? и что надо для плейлиста?",
+      "sha256": "a78e9255eaff12d798ebadb62e555f849fba924e33e409280d4c68a1f75dc730",
+      "task_ids": [
+        "CRITIC-02",
+        "DEMO-READINESS-01"
+      ]
+    },
+    {
+      "id": "MSG-0248",
+      "timestamp_utc": "2026-11-03T18:31:33.121441+00:00",
+      "timestamp_basis": "archive_capture_time; original message timestamp unavailable",
+      "kind": "message",
+      "text": "last-signal я закрыл сам",
+      "sha256": "2aff71bdb136368ead326ae93ed089ce7845fe682f6d76dfa1298f38e7a2ba9f",
+      "task_ids": [
+        "MOTION-01"
+      ]
+    },
+    {
+      "id": "MSG-0249",
+      "timestamp_utc": "2026-11-03T18:35:11.165754+00:00",
+      "timestamp_basis": "archive_capture_time; original message timestamp unavailable",
+      "kind": "message",
+      "text": "делай замеры фпс всегда на полном экране при нашем рабочем разрешении, если тестом не запланировано иное",
+      "sha256": "1e271a69947dc2bec337a1dce387aef86135f4e0141b893be5ca6452e97f90bc",
+      "task_ids": [
+        "MOTION-01"
+      ]
     }
   ]
 }

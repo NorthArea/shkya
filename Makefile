@@ -140,4 +140,4 @@ capture: map
 	./tools/run.command --fixed-fps 60 --resolution 1920x1080 --script tools/capture/capture.gd
 
 fps: map
-	./tools/run.command --resolution 1920x1080 --script tools/fps_probe.gd
+	GODOT_VISIBLE_CHECKS=1 GODOT_ALLOW_AUDIO=0 ./tools/run.command --fullscreen --script tools/fps_probe.gd
