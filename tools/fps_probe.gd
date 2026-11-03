@@ -3,6 +3,7 @@ extends SceneTree
 ## make fps → среднее, медиана, 1% худших кадров. Результат печатается строкой FPS:.
 
 const Layout = preload("res://game/world/layout.gd")
+const DisplayProbe = preload("res://tools/fps_display.gd")
 const SPEED := 14.0
 const WARMUP_FRAMES := 90
 
@@ -28,6 +29,10 @@ var _vsync_configuration := {"requested": "project", "applied": false}
 var _measurement_max_fps := 0
 var _render_capture_configuration := {"requested": "on", "enabled": true, "applied": false}
 var _dispatch_trace: Node
+var _window_policy := {"declared_mode": "native_fullscreen"}
+var _display_settle := {}
+var _initial_internal_render := {}
+var _active_internal_render := {}
 
 func _initialize() -> void:
 	call_deferred("_run")
@@ -54,13 +59,28 @@ func _run() -> void:
 		return
 	root.gui_disable_input = true
 	root.set_flag(Window.FLAG_NO_FOCUS, true)
+	_window_policy = measurement_window_policy(OS.get_environment("GODOT_WINDOW_MODE_WORKLOAD"),
+		"--borderless-fullscreen" in OS.get_cmdline_user_args())
+	if not _window_policy.valid:
+		push_error("Unsupported launcher window-mode hint")
+		quit(2)
+		return
+	if _window_policy.declared_mode == "agent_borderless_fullscreen" and root.mode >= Window.MODE_FULLSCREEN:
+		push_error("macOS agent fullscreen requires engine --windowed plus script --borderless-fullscreen; AppKit fullscreen was already requested")
+		quit(2)
+		return
+	DisplayProbe.apply_window(root, _window_policy)
 	var started := Time.get_ticks_usec()
 	var main: Node = load("res://game/main.tscn").instantiate()
 	root.add_child(main)
 	_vsync_configuration = restore_measurement_pacing(_measurement_max_fps, _vsync_configuration.requested,
 		Engine.set_max_fps, DisplayServer.window_set_vsync_mode)
 	_removed_physical_events = isolate_physical_input()
-	await process_frame
+	_display_settle = await DisplayProbe.settle(self, root, _window_policy)
+	_initial_internal_render = await DisplayProbe.capture_internal_size(self, root)
+	_initial_internal_render["validity"] = _actual_render_validity(_initial_internal_render)
+	_active_internal_render = _initial_internal_render
+	_workload_invalid = not _display_settle.valid or not _initial_internal_render.validity.valid
 	if "--motion" in OS.get_cmdline_user_args():
 		await _run_motion(main, started)
 		return
@@ -68,6 +88,12 @@ func _run() -> void:
 	for i in 5:
 		await process_frame
 	var world: DemoWorld = main.world
+	_active_internal_render = await DisplayProbe.capture_internal_size(self, root)
+	_active_internal_render["validity"] = _actual_render_validity(_active_internal_render)
+	_workload_invalid = _workload_invalid or not _active_internal_render.validity.valid
+	_report = {"schema_version": 1, "scope": "legacy scripted drive route; not real driving input",
+		"context": _context(), "actual_internal_render": _active_internal_render, "samples": [], "report_io_us": [],
+		"whole_game_target_accepted": false}
 	world.enter_car()
 	var car: Lada = world.car
 	var break_env := "--break-env" in OS.get_cmdline_user_args()
@@ -86,6 +112,8 @@ func _run() -> void:
 		var dt := (now - last) / 1_000_000.0
 		last = now
 		frame += 1
+		_report.samples.append({"frame_us": roundi(dt * 1_000_000.0), "warmup": frame <= WARMUP_FRAMES,
+			"display_state": _display_state()})
 		if frame > WARMUP_FRAMES:
 			times.append(dt)
 		var target := route[segment]
@@ -116,10 +144,16 @@ func _run() -> void:
 	var low := worst.size() / worst_total
 	var size := root.get_visible_rect().size
 	print("FPS: average %.1f, median %.1f, 1%% low %.1f, frames %d, viewport %dx%d, %s, %s" % [average, median, low, count, size.x, size.y, RenderingServer.get_video_adapter_name(), RenderingServer.get_current_rendering_method()])
+	_report["display_end"] = _display_state()
+	_report["display_validity"] = display_validity(_report.context, _report.samples + [{"display_state": _report.display_end}])
+	_workload_invalid = _workload_invalid or not _report.display_validity.valid
+	_report["status"] = "INVALID" if _workload_invalid else "VALID"
+	print("FPS_DISPLAY: ", JSON.stringify(_report.display_validity))
+	_write_report()
 	main.queue_free()
 	for i in 5:
 		await process_frame
-	quit(0)
+	quit(2 if _report_write_failed else (3 if _workload_invalid else 0))
 
 ## Raw wall intervals, never an average of instantaneous FPS. A single hitch fails
 ## this sampled target; passing a short scenario does not accept the whole game.
@@ -189,9 +223,8 @@ func _run_motion(main: Node, started: int) -> void:
 	if _dispatch_trace != null:
 		_report.context["dispatch_trace"] = _dispatch_trace.metadata()
 	_last_sample_tick = Time.get_ticks_usec()
-	var initial := _frame_sample(_last_sample_tick - started, null, false)
-	_report.phases.append({"name": "main_initialization", "samples": [initial],
-		"summary": frame_stats([initial.frame_us], target)})
+	_report.phases.append({"name": "main_initialization", "wall_us": _last_sample_tick - started, "samples": [],
+		"frame_coverage": "NOT_SAMPLED: initialization, display settle and initial render calibration; wall_us is not a frame interval"})
 	var idle_control := _argument("--idle-control=", "")
 	if not idle_control.is_empty():
 		if idle_control not in ["restart", "wait"] or (idle_control == "wait" and int(_argument("--idle-gap-us=", "0")) <= 0):
@@ -240,6 +273,9 @@ func _finish_motion(main: Node) -> void:
 	Input.action_release("move_forward")
 	Input.action_release("sprint")
 	_report["last_sample_diagnostics_without_next_interval"] = _previous_sample_diagnostics
+	_report["display_end"] = _display_state()
+	_report["display_end_validity"] = display_validity(_report.context, [{"display_state": _report.display_end}])
+	_workload_invalid = _workload_invalid or not _report.display_end_validity.valid
 	if _dispatch_trace != null:
 		_dispatch_trace.free()
 		_dispatch_trace = null
@@ -337,9 +373,18 @@ func _motion_world_phase(main: Node, label: String) -> void:
 		var now := Time.get_ticks_usec()
 		samples.append(_frame_sample(now - _last_sample_tick, main.world, false))
 		_last_sample_tick = now
+	var internal := await DisplayProbe.capture_internal_size(self, root, func():
+		var tick := Time.get_ticks_usec()
+		samples.append(_frame_sample(tick - _last_sample_tick, main.world, false))
+		_last_sample_tick = tick)
+	internal["validity"] = _actual_render_validity(internal)
+	_active_internal_render = internal
+	var display := display_validity(_report.context, samples)
+	_workload_invalid = _workload_invalid or not internal.validity.valid or not display.valid
 	var intervals: Array = samples.map(func(sample: Dictionary): return sample.frame_us)
 	_report.phases.append({"name": label, "wall_us": Time.get_ticks_usec() - started,
 		"request_call_us": call_us, "samples": samples, "summary": frame_stats(intervals, _report.target_fps),
+		"actual_internal_render": internal, "display_validity": display,
 		"hero_inputs": hero_provenance(main.world.player.get_node_or_null("Visual/Look"))})
 
 func _motion_scenario(label: String, world: DemoWorld, seconds: float, moving: bool, running: bool, turning: bool) -> void:
@@ -445,7 +490,8 @@ func _frame_sample(interval: int, world: DemoWorld, driving: bool) -> Dictionary
 		"render_gpu_ms": render_queries.gpu.value_ms if _render_queries_enabled and _render_capture_configuration.enabled else null,
 		"draw_calls": Performance.get_monitor(Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME),
 		"objects": Performance.get_monitor(Performance.RENDER_TOTAL_OBJECTS_IN_FRAME),
-		"position_xz": [position.x, position.z], "workload_state": _workload_state(world)}
+		"position_xz": [position.x, position.z], "workload_state": _workload_state(world),
+		"display_state": _display_state()}
 	if _dispatch_trace != null:
 		sample["dispatch_trace"] = _dispatch_trace.take_sample()
 		_workload_invalid = _workload_invalid or not sample.dispatch_trace.valid
@@ -540,6 +586,32 @@ static func workload_validity(label: String, samples: Array) -> Dictionary:
 	return {"valid": not samples.is_empty() and bad_frames == 0, "invalid_frames": bad_frames,
 		"reason_frame_counts": reasons, "frames": samples.size()}
 
+static func display_validity(reference: Dictionary, samples: Array) -> Dictionary:
+	var reasons := {}
+	var bad_frames := 0
+	var declared_mode: String = reference.get("declared_window_mode", "native_fullscreen")
+	for sample: Dictionary in samples:
+		var state: Dictionary = sample.get("display_state", {})
+		var issues: Array[String] = []
+		if state.is_empty():
+			issues.append("missing_display_state")
+		else:
+			issues = DisplayProbe.profile_issues(state, declared_mode)
+			for key: String in ["window_size", "window_position", "display_server_window_size", "display_server_window_position",
+				"display_server_outer_size", "display_server_outer_position", "window_mode", "display_server_window_mode",
+				"borderless", "no_focus", "render_scale", "render_size", "fullscreen_client_size", "fullscreen_client_position"]:
+				if not reference.has(key) or state.get(key) != reference[key]:
+					issues.append("changed_" + key)
+		if not issues.is_empty():
+			bad_frames += 1
+		for issue: String in issues:
+			reasons[issue] = int(reasons.get(issue, 0)) + 1
+	return {"valid": not samples.is_empty() and bad_frames == 0, "invalid_frames": bad_frames,
+		"reason_frame_counts": reasons, "frames": samples.size()}
+
+static func measurement_window_policy(hint: String, borderless_fullscreen: bool = false, platform: String = "") -> Dictionary:
+	return DisplayProbe.window_policy(hint, borderless_fullscreen, OS.get_name() if platform.is_empty() else platform)
+
 func _physics_started() -> void:
 	if _physics_phase_steps == 0:
 		_physics_phase_start_tick = Time.get_ticks_usec()
@@ -559,22 +631,41 @@ func _append_scenario(label: String, warmup: Array, samples: Array, extra: Dicti
 	var intervals: Array = samples.map(func(sample: Dictionary): return sample.frame_us)
 	var summary := frame_stats(intervals, _report.target_fps)
 	var validity := workload_validity(label, samples)
-	_workload_invalid = _workload_invalid or not validity.valid
+	var display := display_validity(_report.context, warmup + samples)
+	var actual_validity := _actual_render_validity(_active_internal_render)
+	var actual_render_valid: bool = actual_validity.valid
+	_workload_invalid = _workload_invalid or not validity.valid or not display.valid or not actual_render_valid
 	var scenario := {"name": label, "warmup_samples": warmup, "samples": samples,
 		"summary": summary, "extra": extra, "workload_validity": validity,
-		"sampled_target_accepted": summary.target_met and validity.valid}
+		"actual_internal_render": _active_internal_render,
+		"actual_render_validity": actual_validity,
+		"display_validity": display, "status": "VALID" if validity.valid and display.valid and actual_render_valid else "INVALID",
+		"sampled_target_accepted": summary.target_met and validity.valid and display.valid and actual_render_valid,
+		"working_fullscreen_target_accepted": summary.target_met and validity.valid and display.valid and actual_render_valid and _report.context.working_fullscreen_qualified}
 	_report.scenarios.append(scenario)
 	print("FPS_MOTION: ", label, " ", JSON.stringify(summary), " ", JSON.stringify(extra))
 	print("FPS_WORKLOAD: ", label, " ", JSON.stringify(validity))
+	print("FPS_DISPLAY: ", label, " ", JSON.stringify(display))
 	_write_report()
 
+func _display_state() -> Dictionary:
+	return DisplayProbe.snapshot(root)
+
+func _actual_render_validity(capture: Dictionary) -> Dictionary:
+	var settings := get_first_node_in_group(&"display_settings")
+	var width: int = settings.render_width if settings != null else DisplayProbe.Settings.DEFAULT_WIDTH
+	return DisplayProbe.internal_size_validity(capture, _display_state(), width)
+
 func _context() -> Dictionary:
-	var render_size := Vector2(root.size) * root.scaling_3d_scale
 	var screen := DisplayServer.window_get_current_screen()
 	var effective_vsync := DisplayServer.window_get_vsync_mode()
-	return {"display": DisplayServer.get_name(), "renderer": RenderingServer.get_current_rendering_method(),
-		"adapter": RenderingServer.get_video_adapter_name(), "window_size": [root.size.x, root.size.y],
-		"render_scale": root.scaling_3d_scale, "render_size": [render_size.x, render_size.y],
+	var context := _display_state()
+	context["declared_window_mode"] = _window_policy.declared_mode
+	context["working_fullscreen_qualified"] = _window_policy.declared_mode != "explicit_windowed" \
+		and display_validity(context, [{"display_state": context}]).valid \
+		and _initial_internal_render.get("validity", {}).get("valid", false)
+	context.merge({"display": DisplayServer.get_name(), "renderer": RenderingServer.get_current_rendering_method(),
+		"adapter": RenderingServer.get_video_adapter_name(),
 		"vsync": effective_vsync, "vsync_requested": _vsync_configuration.requested,
 		"vsync_effective": effective_vsync, "vsync_override_applied": _vsync_configuration.applied,
 		"window_current_screen": screen, "screen_refresh_hz": DisplayServer.screen_get_refresh_rate(screen),
@@ -591,7 +682,16 @@ func _context() -> Dictionary:
 		"engine_version": Engine.get_version_info(),
 		"runner_sha256": FileAccess.get_sha256("res://tools/fps_probe.gd"),
 		"project_sha256": FileAccess.get_sha256("res://project.godot"),
-		"hero_inputs": hero_provenance()}
+		"hero_inputs": hero_provenance()})
+	context["window_policy"] = _window_policy
+	context["display_settle"] = _display_settle
+	context["actual_internal_render"] = _initial_internal_render
+	context["display_helper_sha256"] = FileAccess.get_sha256("res://tools/fps_display.gd")
+	var settings := get_first_node_in_group(&"display_settings")
+	if settings != null:
+		context["display_settings"] = {"render_width": settings.render_width,
+			"graphics": settings.graphics.duplicate(true)}
+	return context
 
 static func hero_provenance(look: Node = null) -> Dictionary:
 	if not look is CharacterSprite:

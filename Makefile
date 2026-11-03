@@ -84,6 +84,7 @@ test: map
 	$(call godot_test,motion01_pose_interpolation_test,60,MOTION01_POSE_INTERPOLATION,--max-fps 120,,realtime)
 	$(call godot_test,motion01_world_lifecycle_test,60,MOTION01_WORLD_LIFECYCLE,--max-fps 120 --resolution 1920x1080 -- --intro,render,realtime)
 	$(call godot_test,fps_probe_test,60,FPS_PROBE_TEST)
+	$(call godot_test,fullscreen_settle_test,60,FULLSCREEN_SETTLE_TEST)
 	$(call godot_test,frame_dispatch_trace_test,60,FRAME_DISPATCH_TRACE_TEST)
 	$(call godot_test,motion01_skin_cache_test,60,MOTION01_SKIN_CACHE)
 	$(call godot_test,ip01_imported_reset_test,60,IP01_IMPORTED_RESET)
@@ -146,4 +147,4 @@ capture: map
 	./tools/run.command --fixed-fps 60 --resolution 1920x1080 --script tools/capture/capture.gd
 
 fps: map
-	GODOT_VISIBLE_CHECKS=1 GODOT_ALLOW_AUDIO=0 ./tools/run.command --fullscreen --script tools/fps_probe.gd
+	GODOT_VISIBLE_CHECKS=1 GODOT_ALLOW_AUDIO=0 ./tools/run.command --windowed --script tools/fps_probe.gd -- --borderless-fullscreen

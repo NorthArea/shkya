@@ -57,6 +57,72 @@ func _run() -> void:
 	check(boundary.target_met, "a frame exactly on the 80 FPS budget is allowed")
 	var empty: Dictionary = probe.call("frame_stats", [], 60)
 	check(not empty.target_met and empty.frames == 0, "no samples cannot accept a level")
+	var display := {"declared_window_mode": "agent_borderless_fullscreen",
+		"window_size": [3024, 1898], "display_server_window_size": [3024, 1898],
+		"window_position": [0, 66], "display_server_window_position": [0, 66],
+		"display_server_outer_size": [3024, 1898], "display_server_outer_position": [0, 66],
+		"window_mode": Window.MODE_WINDOWED, "display_server_window_mode": DisplayServer.WINDOW_MODE_WINDOWED,
+		"fullscreen_client_size": [3024, 1898], "fullscreen_client_position": [0, 66],
+		"borderless": true, "no_focus": true, "has_focus": false,
+		"render_scale": 1920.0 / 3024.0, "render_size": [1920.0, 1898.0 * 1920.0 / 3024.0]}
+	var good_display := {"display_state": display.duplicate(true)}
+	check(probe.call("display_validity", display, [good_display, good_display]).valid,
+		"declared borderless fullscreen validates exact physical coverage despite honest windowed mode")
+	var resized: Dictionary = good_display.duplicate(true)
+	resized.display_state.window_size = [1280, 720]
+	resized.display_state.display_server_window_size = [1280, 720]
+	check(not probe.call("display_validity", display, [good_display, resized, good_display]).valid,
+		"middle-frame resize invalidates the run even if final size recovers")
+	var displaced: Dictionary = good_display.duplicate(true)
+	displaced.display_state.window_position = [872, 66]
+	displaced.display_state.display_server_window_position = [872, 66]
+	displaced.display_state.display_server_outer_position = [872, 66]
+	check(not probe.call("display_validity", displaced.display_state, [displaced]).valid,
+		"native-sized but partly offscreen window cannot qualify physical fullscreen")
+	var decorated: Dictionary = good_display.duplicate(true)
+	decorated.display_state.display_server_outer_size = [3024, 1962]
+	check(not probe.call("display_validity", display, [decorated]).valid,
+		"title decorations cannot pass as borderless physical coverage")
+	var changed_scale: Dictionary = good_display.duplicate(true)
+	changed_scale.display_state.render_scale = 1.0
+	check(not probe.call("display_validity", display, [changed_scale]).valid,
+		"changed render scale cannot pass under original working profile")
+	var changed_focus: Dictionary = good_display.duplicate(true)
+	changed_focus.display_state.has_focus = true
+	check(not probe.call("display_validity", display, [changed_focus]).valid,
+		"borderless agent profile must retain its no-focus behavior")
+	var changed_border: Dictionary = good_display.duplicate(true)
+	changed_border.display_state.borderless = false
+	check(not probe.call("display_validity", display, [changed_border]).valid,
+		"borderless flag changes invalidate the working profile")
+	var native_display: Dictionary = display.duplicate(true)
+	native_display.declared_window_mode = "native_fullscreen"
+	native_display.window_mode = Window.MODE_FULLSCREEN
+	native_display.display_server_window_mode = DisplayServer.WINDOW_MODE_FULLSCREEN
+	check(probe.call("display_validity", native_display, [{"display_state": native_display}]).valid,
+		"other platforms can qualify genuine native fullscreen")
+	check(not probe.call("display_validity", display, [{}]).valid and not probe.call("display_validity", display, []).valid,
+		"missing display evidence cannot pass")
+	var limited_windowed: Dictionary = resized.display_state.duplicate(true)
+	limited_windowed.declared_window_mode = "explicit_windowed"
+	check(probe.call("display_validity", limited_windowed, [{"display_state": limited_windowed}]).valid,
+		"declared windowed diagnostic remains a valid limited workload")
+	check(not probe.call("display_validity", limited_windowed, [good_display]).valid,
+		"declared windowed workload still rejects size changes")
+	check(probe.call("measurement_window_policy", "windowed", true, "macOS").declared_mode == "agent_borderless_fullscreen"
+		and probe.call("measurement_window_policy", "windowed", false, "macOS").declared_mode == "explicit_windowed",
+		"script full-coverage request overrides consumed engine-windowed transport marker")
+	check(probe.call("measurement_window_policy", "fullscreen", false, "Linux").declared_mode == "native_fullscreen",
+		"native fullscreen policy uses preserved launcher hint on other platforms")
+	var display_helper: Script = load("res://tools/fps_display.gd")
+	check(display_helper.internal_size_validity({"status": "captured", "internal_size": [1920, 1205]}, display, 1920).valid,
+		"actual 3D buffer agrees with physical window, scale and selected rendering budget within one rounded pixel")
+	check(not display_helper.internal_size_validity({"status": "captured", "internal_size": [640, 360]}, display, 1920).valid,
+		"captured undersized buffer cannot qualify merely because a callback succeeded")
+	check(not display_helper.internal_size_validity({"status": "captured", "internal_size": [1920, 1205]}, display, 1280).valid,
+		"a buffer consistent with the viewport still fails a different selected render-width budget")
+	check(not display_helper.internal_size_validity({"status": "unavailable"}, display, 1920).valid,
+		"unavailable actual render dimensions cannot qualify a working profile")
 	var invalid: Dictionary = probe.call("frame_stats", [10000, 0, -1], 60)
 	check(not invalid.target_met and invalid.invalid_frames == 2, "invalid raw intervals cannot turn into passing evidence")
 	if not check(probe.has_method("configure_vsync"), "FPS probe supports a runtime-only vsync override"):

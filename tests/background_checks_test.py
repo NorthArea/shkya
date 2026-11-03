@@ -9,14 +9,14 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class BackgroundChecks(unittest.TestCase):
-    def launch(self, *arguments, visible=False, audible=False, launcher="run.command", fixed_environment=False, inherited_fixed=None, make_target=None):
+    def launch(self, *arguments, visible=False, audible=False, launcher="run.command", fixed_environment=False, inherited_fixed=None, make_target=None, window_environment=False):
         with tempfile.TemporaryDirectory() as directory:
             directory = Path(directory)
             engine = directory / 'engine'
-            engine.write_text('#!/usr/bin/env python3\nimport json,os,sys\nwith open(os.environ["CHECK_ARGV_LOG"],"a") as f: f.write(json.dumps({"argv":sys.argv[1:],"fixed":os.getenv("GODOT_FIXED_FPS_WORKLOAD")})+"\\n")\n')
+            engine.write_text('#!/usr/bin/env python3\nimport json,os,sys\nwith open(os.environ["CHECK_ARGV_LOG"],"a") as f: f.write(json.dumps({"argv":sys.argv[1:],"fixed":os.getenv("GODOT_FIXED_FPS_WORKLOAD"),"window":os.getenv("GODOT_WINDOW_MODE_WORKLOAD")})+"\\n")\n')
             engine.chmod(0o755)
             output = directory / 'argv.jsonl'
-            env = dict(os.environ, GODOT_BIN=str(engine), CHECK_ARGV_LOG=str(output))
+            env = dict(os.environ, GODOT_BIN=str(engine), CHECK_ARGV_LOG=str(output), GODOT_WINDOW_MODE_WORKLOAD='fullscreen')
             env.pop('GODOT_VISIBLE_CHECKS', None)
             env.pop('GODOT_FIXED_FPS_WORKLOAD', None)
             env.pop('GODOT_ALLOW_AUDIO', None)
@@ -30,7 +30,14 @@ class BackgroundChecks(unittest.TestCase):
             subprocess.run(command, cwd=ROOT, env=env, check=True, stdout=subprocess.DEVNULL)
             import json
             calls = [json.loads(line) for line in output.read_text().splitlines()]
-            return [call['fixed' if fixed_environment else 'argv'] for call in calls]
+            return [call['window' if window_environment else 'fixed' if fixed_environment else 'argv'] for call in calls]
+
+    def test_consumed_window_mode_is_reported_with_last_engine_option(self):
+        for arguments, expected in [(('--fullscreen', '-w'), 'windowed'),
+                                    (('--windowed', '-f'), 'fullscreen'),
+                                    (('--', '--windowed'), 'unspecified')]:
+            with self.subTest(arguments=arguments):
+                self.assertEqual(self.launch(*arguments, launcher='godot.sh', window_environment=True), [expected])
 
     def test_positive_fixed_fps_is_reported_to_the_engine(self):
         for arguments in [('--fixed-fps', '60'), ('--fixed-fps=120',)]:
@@ -88,6 +95,13 @@ class BackgroundChecks(unittest.TestCase):
         calls = self.launch(make_target='run-agent', audible=True)
         self.assertTrue(all(self.last_audio_driver(args) == 'Dummy' for args in calls))
         self.assertIn('--fullscreen', calls[-1])
+
+    def test_fps_target_requests_verified_fullscreen_without_appkit_transition(self):
+        args = self.launch(make_target='fps')[-1]
+        self.assertIn('--windowed', args)
+        self.assertNotIn('--fullscreen', args)
+        self.assertIn('--borderless-fullscreen', args[args.index('--') + 1:])
+        self.assertEqual(self.last_audio_driver(args), 'Dummy')
 
     def last_audio_driver(self, args):
         options = args[:args.index('--')] if '--' in args else args

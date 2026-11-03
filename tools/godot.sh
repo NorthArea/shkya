@@ -20,6 +20,7 @@ fi
 scripted=0
 fixed_fps_value=-1
 fixed_fps_next=0
+window_mode_workload=unspecified
 for argument in "$@"; do
     if [ "$fixed_fps_next" -eq 1 ]; then
         fixed_fps_value=$argument
@@ -31,10 +32,13 @@ for argument in "$@"; do
         --script|-s|--script=*) scripted=1 ;;
         --fixed-fps) fixed_fps_next=1 ;;
         --fixed-fps=*) fixed_fps_value=${argument#*=} ;;
+        --windowed|-w) window_mode_workload=windowed ;;
+        --fullscreen|-f) window_mode_workload=fullscreen ;;
     esac
 done
 # Godot consumes this engine flag before exposing OS.get_cmdline_args().
 export GODOT_FIXED_FPS_WORKLOAD=0
+export GODOT_WINDOW_MODE_WORKLOAD=$window_mode_workload
 if [ "$fixed_fps_value" -gt 0 ] 2>/dev/null; then
     export GODOT_FIXED_FPS_WORKLOAD=1
 fi

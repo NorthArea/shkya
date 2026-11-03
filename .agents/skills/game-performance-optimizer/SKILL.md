@@ -21,7 +21,7 @@ description: Измеряет и устраняет просадки FPS в Го
 Переиспользуй tools/fps_probe.gd и его валидатор tests/fps_probe_test.gd. Перед командой проверь актуальные аргументы. Пример адресного native-замера после проверки действующего разрешения:
 
 ```sh
-GODOT_VISIBLE_CHECKS=1 ./tools/godot.sh --path . --fullscreen --audio-driver Dummy --max-fps 0 --script tools/fps_probe.gd -- --motion --only=driving_input --seconds=15 --target-fps=60 --output=res://builds/checks/MOTION-01/driving-before.json
+GODOT_VISIBLE_CHECKS=1 ./tools/godot.sh --path . --windowed --audio-driver Dummy --max-fps 0 --script tools/fps_probe.gd -- --borderless-fullscreen --motion --only=driving_input --seconds=15 --target-fps=60 --output=res://builds/checks/MOTION-01/driving-before.json
 ```
 
 Это ограниченный baseline, а не FPS-приёмка всей игры. Цель/путь/длительность выбери под задачу. Не используй fixed-fps, ускоренное время, headless/Dummy renderer или прямой запуск Godot.app для доказательства FPS. Launcher и разрешения — по AGENTS; реальное аудио не требуется для обычного FPS-профиля. GPU-замеры разных веток проводи последовательно.
@@ -32,7 +32,7 @@ GODOT_VISIBLE_CHECKS=1 ./tools/godot.sh --path . --fullscreen --audio-driver Dum
 
 ## Причина → ограниченная правка → проверка
 
-По MSG-0249 FPS измеряется на полном экране при рабочем разрешении 3D-рендера; иной режим допустим только по явному плану конкретного теста. Всегда передавай `--fullscreen` штатному launcher: служебный скрипт без этого флага может открыться в окне. Перед сравнением проверь фактические размеры окна и рендера в JSON, сохраняя профиль качества.
+По MSG-0249 FPS измеряется на полном экране при рабочем разрешении 3D-рендера; иной режим допустим только по явному плану конкретного теста. Для фонового замера на macOS используй engine `--windowed` вместе со script `--borderless-fullscreen`: probe создаёт физически полноэкранное окно без рамки и фокуса. AppKit fullscreen с NoFocus может оставить ложный mode3 и маленькую поверхность. Режим квалифицируется по фактическим клиентским/внешним границам и положению на экране, а не одному mode. На других платформах этот script-флаг выбирает native fullscreen. Явный `--windowed` без него — ограниченная оконная диагностика, не полноэкранная приёмка. Перед сравнением проверь display_validity каждого сценария и конца, actual_internal_render/actual_render_validity и профиль качества в JSON. Startup aggregate с NOT_SAMPLED не считать одним кадром или покрытием FPS загрузки.
 
 1. Воспроизведи худший кадр; отдели CPU, physics, draw/presentation, GPU, загрузку/компиляцию и выделения памяти. Совпадение по времени — гипотеза; подтвердить её scoped timing или контролируемым A/B. Замерь цену самой телеметрии, не добавляй синхронные readback ради измерения.
 2. Для каждого кандидата дай конкретные функцию/файл, стоимость сейчас, предполагаемый механизм, правку, сохраняемые инварианты, риск, порядок и критерий выигрыша. Не обещай миллисекунды, пока они не измерены. Приоритет — худшие кадры и p99, затем запас; не счётчик средних FPS.
