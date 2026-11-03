@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "source_thread": "01a18dc0-9ae6-7c02-9b5f-70a15a73b205",
-  "snapshot_at_utc": "2026-11-03T04:39:36.103640+00:00",
+  "snapshot_at_utc": "2026-11-03T07:24:41.192532+00:00",
   "scope": "Все записи роли user текущего диалога до снимка. Служебные вставки отмечены отдельно. Исходный текст не исправлялся. Живые статусы только в docs/workflow/backlog.md, решения только в docs/DECISIONS.md.",
   "previous_independent_audit": {
     "record_count": 105,
@@ -2042,6 +2042,66 @@
       "task_ids": [
         "IP-01",
         "LOCOMOTION-01"
+      ]
+    },
+    {
+      "id": "MSG-0193",
+      "timestamp_utc": "2026-11-03T06:25:03.223014+00:00",
+      "timestamp_basis": "archive_capture_time; original message timestamp unavailable",
+      "kind": "message",
+      "text": "отчет",
+      "sha256": "e043a3d0ede0064e05d92936adccbae62a0daca451699f3ba0831e15461f8933",
+      "task_ids": [
+        "MOTION-01",
+        "IP-01"
+      ]
+    },
+    {
+      "id": "MSG-0194",
+      "timestamp_utc": "2026-11-03T06:28:35.317803+00:00",
+      "timestamp_basis": "archive_capture_time; original message timestamp unavailable",
+      "kind": "message",
+      "text": "что блять с главным героем? почему это 60 летний сгорболенный дед?",
+      "sha256": "d15621dbd1b07933263aff97dcaae5d9e0989323d41509e46e8bc9b9a29a155d",
+      "task_ids": [
+        "IP-01",
+        "LOCOMOTION-01"
+      ]
+    },
+    {
+      "id": "MSG-0195",
+      "timestamp_utc": "2026-11-03T06:38:26.034973+00:00",
+      "timestamp_basis": "archive_capture_time; original message timestamp unavailable",
+      "kind": "message",
+      "text": "не соответствует мягко говоря. Давай найдем в интернете среди открытых проектов пример уже готовых перонажей с готовой анимацией для анного движка и начнем с просто хорошего гг и над внешностью убдем работать позже",
+      "sha256": "4e778a02c0b2712f79bdd109e580d9b1163022efb97174c9fa10c22c94a10d05",
+      "task_ids": [
+        "IP-01",
+        "LOCOMOTION-01"
+      ]
+    },
+    {
+      "id": "MSG-0196",
+      "timestamp_utc": "2026-11-03T07:09:18.952153+00:00",
+      "timestamp_basis": "archive_capture_time; original message timestamp unavailable",
+      "kind": "message",
+      "text": "отчет",
+      "sha256": "e043a3d0ede0064e05d92936adccbae62a0daca451699f3ba0831e15461f8933",
+      "task_ids": [
+        "MOTION-01",
+        "IP-01"
+      ]
+    },
+    {
+      "id": "MSG-0197",
+      "timestamp_utc": "2026-11-03T07:24:41.192532+00:00",
+      "timestamp_basis": "archive_capture_time; original message timestamp unavailable",
+      "kind": "message",
+      "text": "делай",
+      "sha256": "26df94a959201b9568711695d21c7807b852301f3194157df29b94d54fe24bac",
+      "task_ids": [
+        "IP-01",
+        "MOTION-01"
       ]
     }
   ]
