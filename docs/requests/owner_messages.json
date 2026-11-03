@@ -2460,6 +2460,94 @@
       "task_ids": [
         "PERF-HUD-01"
       ]
+    },
+    {
+      "id": "MSG-0228",
+      "timestamp_utc": "2026-11-03T10:51:32+00:00",
+      "timestamp_basis": "archive_capture_time; original message timestamp unavailable",
+      "kind": "message",
+      "text": "класснО. результат где? где результат работы дух сессий? алгоримолога и света-тени?",
+      "sha256": "b2bbc1556effa0dc99ae2d8c763fda8510ef9edd34657dce84d44b5f30d2220f",
+      "task_ids": [
+        "MOTION-01",
+        "LIGHT-01"
+      ]
+    },
+    {
+      "id": "MSG-0229",
+      "timestamp_utc": "2026-11-03T10:51:32+00:00",
+      "timestamp_basis": "archive_capture_time; original message timestamp unavailable",
+      "kind": "message",
+      "text": "когда можно будет смотреть",
+      "sha256": "909e8224f4c3076a69a88ff839b9db60d9f38ef2be2e21f3c4d580c252f9ac46",
+      "task_ids": [
+        "MOTION-01",
+        "LIGHT-01"
+      ]
+    },
+    {
+      "id": "MSG-0230",
+      "timestamp_utc": "2026-11-03T13:25:32+00:00",
+      "timestamp_basis": "archive_capture_time; original command timestamp unavailable",
+      "kind": "shell_command",
+      "text": "make run",
+      "sha256": "77bcebc6dff94211d960d24bb7418137abd2816f98972052201ae2a739b1cdc4",
+      "task_ids": [
+        "MOTION-01"
+      ],
+      "result_summary": {
+        "exit_code": 0,
+        "duration_seconds": 244.4578,
+        "renderer": "MetalForward",
+        "hardware": "M5Pro",
+        "environment": "GODOT_ALLOW_AUDIO=1"
+      }
+    },
+    {
+      "id": "MSG-0231",
+      "timestamp_utc": "2026-11-03T13:25:32+00:00",
+      "timestamp_basis": "archive_capture_time; original message timestamp unavailable",
+      "kind": "message",
+      "text": "фпс откровенное плохой. очень плохой. давай делай стабильные 60",
+      "sha256": "bcae99850f6b3e710462d7d02413693660cc921a054684827e9cd6caffdf83ba",
+      "task_ids": [
+        "MOTION-01"
+      ]
+    },
+    {
+      "id": "MSG-0232",
+      "timestamp_utc": "2026-11-03T13:25:32+00:00",
+      "timestamp_basis": "archive_capture_time; original message timestamp unavailable",
+      "kind": "message",
+      "text": "а что насчет ревью - скилла про который я просил",
+      "sha256": "ecbf1d7e81283290a54631d48795d2cba0731415f00a0b63689c0024a6da4cc7",
+      "task_ids": [
+        "SKILLS-01",
+        "DEMO-READINESS-01"
+      ]
+    },
+    {
+      "id": "MSG-0233",
+      "timestamp_utc": "2026-11-03T13:25:32+00:00",
+      "timestamp_basis": "archive_capture_time; original message timestamp unavailable",
+      "kind": "message",
+      "text": "так, найди мне файл с тем, что я просил сделал и\n    вычерки от туда то что однохнанчо уже закрыто и\n    вычерки от туда то, что уже есть в тасках. оставшееся",
+      "sha256": "5716fa5e91bfc7ff2bc95a7ffd321438cfa6680d0df034f6316dcdd050d95e5c",
+      "task_ids": [
+        "OWNER-ARCHIVE-01"
+      ]
+    },
+    {
+      "id": "MSG-0234",
+      "timestamp_utc": "2026-11-03T14:10:22+00:00",
+      "timestamp_basis": "archive_capture_time; original message timestamp unavailable",
+      "kind": "message",
+      "text": "ок, когда смотреть?",
+      "sha256": "58e339354e2c5efc291ec5a43cfc84bc6d0005cfbd59f5dc57d09f19a9db8c19",
+      "task_ids": [
+        "MOTION-01",
+        "OWNER-ARCHIVE-01"
+      ]
     }
   ]
 }
