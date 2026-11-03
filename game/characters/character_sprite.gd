@@ -203,6 +203,8 @@ func reset_pose() -> void:
 func _clear_bone_interpolation() -> void:
 	if uniform_visual != null and uniform_visual.supports_manual_bone_interpolation():
 		_bone_pose_buffer.restore_current(uniform_visual.skeleton)
+	elif uniform_visual != null and uniform_visual.imported_hero != null:
+		uniform_visual.reset_pose()
 	_bone_pose_buffer.clear()
 
 func _uses_manual_bone_interpolation() -> bool:

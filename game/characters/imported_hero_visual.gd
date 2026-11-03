@@ -58,6 +58,7 @@ var _jog_weight := 0.0
 var _run_weight := 0.0
 var _cycle_stride := 1.0
 var _hand_grip_offsets: Dictionary = {}
+var _reset_contact_frame := false
 var _skin_arrays_mesh: Mesh
 var _skin_arrays: Dictionary = {}
 
@@ -306,7 +307,8 @@ func _update_foot_targets() -> void:
 	if not _leg_ik.active:
 		_foot_anchors.assign([Vector3.INF, Vector3.INF])
 		return
-	var render_skeleton := skeleton.get_global_transform_interpolated()
+	var render_skeleton := skeleton.global_transform if _reset_contact_frame else skeleton.get_global_transform_interpolated()
+	_reset_contact_frame = false
 	for index in 2:
 		var side := "Left" if index == 0 else "Right"
 		var foot := skeleton.find_bone(side + "Foot")
@@ -391,6 +393,9 @@ func reset_pose() -> void:
 		animation_tree.set("parameters/LocomotionSeek/seek_request", 0.0)
 		_sample(0.0)
 	skeleton.force_update_all_bone_transforms()
+	# Descendants' interpolated transforms can retain the old frame until draw.
+	_foot_anchors.assign([Vector3.INF, Vector3.INF])
+	_reset_contact_frame = true
 
 func set_lod(distance: float, margin := 4.0) -> void:
 	uniform_mesh.visibility_range_end = distance
