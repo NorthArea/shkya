@@ -4,6 +4,7 @@ extends RefCounted
 const MIN_SPEED := 2.3
 const RADIUS := 0.95
 const MAX_DEPTH := 0.34
+const CPU_ARRAYS := &"vehicle_damage_cpu_arrays"
 const ORIGINAL := &"vehicle_undamaged_mesh"
 
 static func dent(visual: Node3D, world_contact: Vector3, inward_world: Vector3, closing_speed: float) -> bool:
@@ -20,11 +21,14 @@ static func dent(visual: Node3D, world_contact: Vector3, inward_world: Vector3, 
 	var inward := (part.global_basis.inverse() * inward_world).normalized()
 	var depth := clampf((closing_speed - MIN_SPEED) * 0.017 + 0.025, 0.025, 0.19)
 	var replacement := ArrayMesh.new()
+	var current_arrays := _cpu_arrays(current)
+	var original_arrays := _cpu_arrays(original)
+	var replacement_arrays: Array = []
 	var changed := false
 	for s in current.get_surface_count():
-		var arrays := current.surface_get_arrays(s)
-		var vertices: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
-		var base_vertices: PackedVector3Array = original.surface_get_arrays(s)[Mesh.ARRAY_VERTEX]
+		var arrays: Array = current_arrays[s].duplicate()
+		var vertices: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX].duplicate()
+		var base_vertices: PackedVector3Array = original_arrays[s][Mesh.ARRAY_VERTEX]
 		for i in vertices.size():
 			# Original coordinates keep a second hit at the same body panel cumulative.
 			var distance := base_vertices[i].distance_to(point)
@@ -35,20 +39,19 @@ static func dent(visual: Node3D, world_contact: Vector3, inward_world: Vector3, 
 			vertices[i] = base_vertices[i] + displacement.limit_length(MAX_DEPTH)
 			changed = true
 		arrays[Mesh.ARRAY_VERTEX] = vertices
-		var temporary := ArrayMesh.new()
-		temporary.add_surface_from_arrays(current.surface_get_primitive_type(s), arrays)
 		var tool := SurfaceTool.new()
-		tool.create_from(temporary, 0)
+		tool.create_from_arrays(arrays, current.surface_get_primitive_type(s))
 		tool.generate_normals()
-		var normals_mesh := tool.commit()
-		var normals: PackedVector3Array = normals_mesh.surface_get_arrays(0)[Mesh.ARRAY_NORMAL]
+		var normals: PackedVector3Array = tool.commit_to_arrays()[Mesh.ARRAY_NORMAL]
 		# SurfaceTool preserves the provider's vertex order (these meshes are unindexed).
 		if normals.size() == vertices.size():
 			arrays[Mesh.ARRAY_NORMAL] = normals
+		replacement_arrays.append(arrays)
 		replacement.add_surface_from_arrays(current.surface_get_primitive_type(s), arrays)
 		replacement.surface_set_material(s, current.surface_get_material(s))
 	if not changed:
 		return false
+	replacement.set_meta(CPU_ARRAYS, replacement_arrays)
 	replacement.set_meta("slots", current.get_meta("slots", []))
 	part.mesh = replacement
 	visual.set_meta("vehicle_dent_count", int(visual.get_meta("vehicle_dent_count", 0)) + 1)
@@ -62,3 +65,14 @@ static func reset(visual: Node3D) -> void:
 		part.mesh = part.get_meta(ORIGINAL)
 		part.remove_meta(ORIGINAL)
 	visual.set_meta("vehicle_dent_count", 0)
+
+# Provider snapshots avoid renderer synchronization on the first impact. Other
+# ArrayMesh providers remain supported and are read once, then cached immutably.
+static func _cpu_arrays(mesh: ArrayMesh) -> Array:
+	if mesh.has_meta(CPU_ARRAYS):
+		return mesh.get_meta(CPU_ARRAYS)
+	var arrays: Array = []
+	for surface in mesh.get_surface_count():
+		arrays.append(mesh.surface_get_arrays(surface))
+	mesh.set_meta(CPU_ARRAYS, arrays)
+	return arrays

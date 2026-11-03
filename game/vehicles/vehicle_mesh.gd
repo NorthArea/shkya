@@ -619,12 +619,17 @@ class Builder:
 	func commit(materials := {}) -> ArrayMesh:
 		var mesh := ArrayMesh.new()
 		var slots: Array = []
+		var cpu_arrays: Array = []
 		for slot in order:
 			var st: SurfaceTool = surfaces[slot]
 			st.commit(mesh)
+			# Snapshot decoded/generated renderer attributes once at provider creation,
+			# including default tangents; impacts never read back these shared meshes.
+			cpu_arrays.append(mesh.surface_get_arrays(mesh.get_surface_count() - 1))
 			var m: Material = materials.get(slot)
 			if m != null:
 				mesh.surface_set_material(mesh.get_surface_count() - 1, m)
 			slots.append(slot)
+		mesh.set_meta(&"vehicle_damage_cpu_arrays", cpu_arrays)
 		mesh.set_meta("slots", slots)
 		return mesh
