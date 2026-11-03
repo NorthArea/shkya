@@ -2,6 +2,7 @@ extends SceneTree
 ## GREY-01: настоящий main.tscn, мир из Layout, ввод через Input. Критерии — карточка GREY-01.
 
 const Layout = preload("res://game/world/layout.gd")
+const LayoutOracle = preload("res://tests/helpers/grey_layout_oracle.gd")
 
 var failures: Array[String] = []
 var checks := 0
@@ -46,16 +47,9 @@ func _run() -> void:
 
 func _check_layout(world: DemoWorld) -> void:
 	var b := Layout.BOUNDS
-	var outside := []
-	for body in world.get_node("LevelGeometry").get_children():
-		if not body is StaticBody3D or body.name.begins_with("Bound_") or body.name == "Ground":
-			continue
-		var shape: BoxShape3D = body.get_child(0).shape
-		var lo: Vector3 = body.position - shape.size * 0.5
-		var hi: Vector3 = body.position + shape.size * 0.5
-		if lo.x < b.position.x or hi.x > b.end.x or lo.z < b.position.y or hi.z > b.end.y or lo.y < -0.001:
-			outside.append(body.name)
-	check(outside.is_empty(), "all solids inside 200x250 bounds and on the ground %s" % [outside])
+	var expected := LayoutOracle.expected_inventory(Layout.SOLIDS+Layout.decor_solids(), Layout.perimeter_solids(), Layout.SOLIDS.size(), [{"name":"Canopy", "position":Layout.CANOPY[0], "size":Layout.CANOPY[1]}])
+	var errors := LayoutOracle.validate(LayoutOracle.snapshot(world.get_node("LevelGeometry")), expected, b)
+	check(errors.is_empty(), "canonical solid inventory, strict gameplay bounds and grounded perimeter %s" % [errors])
 	check(is_equal_approx(b.size.x, 200.0) and is_equal_approx(b.size.y, 250.0), "map is 200x250 m")
 	var points := {"spawn": Layout.SPAWN, "babka": Layout.BABKA, "car": Layout.CAR_SPAWN, "window": Layout.VENDOR_WINDOW}
 	for i in Layout.ROUTE_WALK.size():
