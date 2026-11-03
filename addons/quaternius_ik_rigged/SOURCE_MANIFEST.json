@@ -1,0 +1,154 @@
+{
+  "clips": {
+    "Driving": {
+      "all_keys_exact": true,
+      "duration": 1.66666662693024,
+      "keys": 289,
+      "loop": 1,
+      "source_resource": "res://addons/quaternius_ik_rigged/Animations/Driving.res",
+      "tracks": 59
+    },
+    "Idle": {
+      "all_keys_exact": true,
+      "duration": 2.5,
+      "keys": 1072,
+      "loop": 1,
+      "source_resource": "res://addons/quaternius_ik_rigged/Animations/Idle.res",
+      "tracks": 59
+    },
+    "Jog_Fwd": {
+      "all_keys_exact": true,
+      "duration": 0.933333337306976,
+      "keys": 553,
+      "loop": 1,
+      "source_resource": "res://addons/quaternius_ik_rigged/Animations/Jog_Fwd.res",
+      "tracks": 59
+    },
+    "Jump": {
+      "all_keys_exact": true,
+      "duration": 2.5,
+      "keys": 926,
+      "loop": 1,
+      "source_resource": "res://addons/quaternius_ik_rigged/Animations/Jump.res",
+      "tracks": 59
+    },
+    "Jump_Land": {
+      "all_keys_exact": true,
+      "duration": 1.26666665077209,
+      "keys": 1093,
+      "loop": 0,
+      "source_resource": "res://addons/quaternius_ik_rigged/Animations/Jump_Land.res",
+      "tracks": 59
+    },
+    "Jump_Start": {
+      "all_keys_exact": true,
+      "duration": 1.33333337306976,
+      "keys": 1294,
+      "loop": 0,
+      "source_resource": "res://addons/quaternius_ik_rigged/Animations/Jump_Start.res",
+      "tracks": 59
+    },
+    "Punch_Jab": {
+      "all_keys_exact": true,
+      "duration": 0.866666674613953,
+      "keys": 454,
+      "loop": 0,
+      "source_resource": "res://addons/quaternius_ik_rigged/Animations/Punch_Jab.res",
+      "tracks": 59
+    },
+    "Sitting_Idle": {
+      "all_keys_exact": true,
+      "duration": 1.66666662693024,
+      "keys": 585,
+      "loop": 1,
+      "source_resource": "res://addons/quaternius_ik_rigged/Animations/Sitting_Idle.res",
+      "tracks": 59
+    },
+    "Sprint": {
+      "all_keys_exact": true,
+      "duration": 0.666666686534882,
+      "keys": 417,
+      "loop": 1,
+      "source_resource": "res://addons/quaternius_ik_rigged/Animations/Sprint.res",
+      "tracks": 59
+    },
+    "Walk": {
+      "all_keys_exact": true,
+      "duration": 1.33333337306976,
+      "keys": 872,
+      "loop": 1,
+      "source_resource": "res://addons/quaternius_ik_rigged/Animations/Walk.res",
+      "tracks": 59
+    }
+  },
+  "copied_prefab_sha256": "1dfa5deac9219eebb7586084970b269a3b2c4d5ee6b19be0dea338efa74e7c31",
+  "dependencies": {
+    "res://addons/quaternius_ik_rigged/Godot - UE/T_Eye_Brown.png": {
+      "copied_sha256": "d08e3356a83211bc6ca21fe3a8e39f4b5c1a3b8f85457fc2c0fb57be09935025",
+      "source_sha256": "d08e3356a83211bc6ca21fe3a8e39f4b5c1a3b8f85457fc2c0fb57be09935025"
+    },
+    "res://addons/quaternius_ik_rigged/Godot - UE/T_Hair_1_BaseColor.png": {
+      "copied_sha256": "bc7aa863bd22ab0a995cd838cceb4d3a5186ee54ee2fb0108fad85d20c057e6e",
+      "source_sha256": "bc7aa863bd22ab0a995cd838cceb4d3a5186ee54ee2fb0108fad85d20c057e6e"
+    },
+    "res://addons/quaternius_ik_rigged/Godot - UE/T_Superhero_Male_Dark.png": {
+      "copied_sha256": "df680cbc1967a61e85998bfafb8f7bc0a36dd604bb3266486c4b06b1a184bb45",
+      "source_sha256": "df680cbc1967a61e85998bfafb8f7bc0a36dd604bb3266486c4b06b1a184bb45"
+    },
+    "res://addons/quaternius_ik_rigged/Godot - UE/T_Superhero_Male_Normal.png": {
+      "copied_sha256": "9b25cf9200216eb754b79cf4c63b5380c419780788322f3c57cdd2b3e02679a6",
+      "source_sha256": "9b25cf9200216eb754b79cf4c63b5380c419780788322f3c57cdd2b3e02679a6"
+    },
+    "res://addons/quaternius_ik_rigged/Godot - UE/T_Superhero_Male_Roughness.png": {
+      "copied_sha256": "c70dabf48574cda55644d556beae1ee7cf1bdcf68a50d259d20f2f2358f27991",
+      "source_sha256": "c70dabf48574cda55644d556beae1ee7cf1bdcf68a50d259d20f2f2358f27991"
+    },
+    "res://addons/quaternius_ik_rigged/Quaternius Meshes/Superhero_Male_FullBody_Eyebrows.res": {
+      "copied_sha256": "3b75d3a0bc2807fd8519887478a9cff1e6f93ee36d2ba16ae5613f80ab14fe88",
+      "source_sha256": "3b75d3a0bc2807fd8519887478a9cff1e6f93ee36d2ba16ae5613f80ab14fe88"
+    },
+    "res://addons/quaternius_ik_rigged/Quaternius Meshes/Superhero_Male_FullBody_Eyes.res": {
+      "copied_sha256": "3e15dda7d89e3258de6b12f3851605a49a9fb2b165f076247d44779ab7961f67",
+      "source_sha256": "3e15dda7d89e3258de6b12f3851605a49a9fb2b165f076247d44779ab7961f67"
+    },
+    "res://addons/quaternius_ik_rigged/Quaternius Meshes/Superhero_Male_FullBody_Superhero_Male.res": {
+      "copied_sha256": "43f50134842d6ff4128b16633d239dcbb809bcb6d8fe232e738a77f6dc264b43",
+      "source_sha256": "43f50134842d6ff4128b16633d239dcbb809bcb6d8fe232e738a77f6dc264b43"
+    },
+    "res://addons/quaternius_ik_rigged/Godot - UE/T_Eye_Brown.png.import": {
+      "source_sha256": "eb7bee7c1ae21f4003cac14270b8c186ad386d8f2c44e4f8fd0f853a58b661ff",
+      "copied_sha256": "eb7bee7c1ae21f4003cac14270b8c186ad386d8f2c44e4f8fd0f853a58b661ff",
+      "role": "Pinned original texture import UID/config; preserves binary material references"
+    },
+    "res://addons/quaternius_ik_rigged/Godot - UE/T_Hair_1_BaseColor.png.import": {
+      "source_sha256": "dfa62014f3fc2a697ff1b2b8537f078486110ebf96c90ab0cf5a69cf67ebb082",
+      "copied_sha256": "dfa62014f3fc2a697ff1b2b8537f078486110ebf96c90ab0cf5a69cf67ebb082",
+      "role": "Pinned original texture import UID/config; preserves binary material references"
+    },
+    "res://addons/quaternius_ik_rigged/Godot - UE/T_Superhero_Male_Dark.png.import": {
+      "source_sha256": "7b7156acfad75b1af391cdfeb2fe9cfff2c3550963281d9378dfc63f96b44082",
+      "copied_sha256": "7b7156acfad75b1af391cdfeb2fe9cfff2c3550963281d9378dfc63f96b44082",
+      "role": "Pinned original texture import UID/config; preserves binary material references"
+    },
+    "res://addons/quaternius_ik_rigged/Godot - UE/T_Superhero_Male_Normal.png.import": {
+      "source_sha256": "b736e4b767625a16441280933631c2697218d26e2d80d880aacd268687842564",
+      "copied_sha256": "b736e4b767625a16441280933631c2697218d26e2d80d880aacd268687842564",
+      "role": "Pinned original texture import UID/config; preserves binary material references"
+    },
+    "res://addons/quaternius_ik_rigged/Godot - UE/T_Superhero_Male_Roughness.png.import": {
+      "source_sha256": "82fe8e8b5388274e413910b77f16e9e6a437e072a5f6ee1be61ce3248057e66f",
+      "copied_sha256": "82fe8e8b5388274e413910b77f16e9e6a437e072a5f6ee1be61ce3248057e66f",
+      "role": "Pinned original texture import UID/config; preserves binary material references"
+    }
+  },
+  "key_checks": 7555,
+  "library_delta": "Binary serialization of selected original Animation resources; no baking or key edits",
+  "library_sha256": "8d476dbfc521cb88580ef2f9266f32a63ffca48a37a845b74e9996e3de2b28e8",
+  "license": "CC0-1.0",
+  "pin": "0cc5dc351f4fffbe13a25381e73cb0a1aea67f47",
+  "prefab_delta": "Only original AnimationLibrary path and that resource UID reference replaced; original nodes/65-bone skeleton/mesh/skin/IK influence0 unchanged",
+  "source_prefab_sha256": "0acb292fba64db517002328e57a9d873b36eec5cc077d5e9fcf0d2d651a5eca7",
+  "upstream": "https://codeberg.org/jamesonBradfield/Quaternius_IK_Rigged_with_animations",
+  "license_sha256": "c22d40244fb5eb874158bcf16cfb19197b10ce853831a594306807bb8caf54fd",
+  "normal_map_proof": "Active transitive resource dependency walk resolved and copied all referenced textures. Missing T_Hair_1_Normal_png.png and T_Eye_Normal_png.png occurred only in unselected source GLB imports, which are not production dependencies."
+}
