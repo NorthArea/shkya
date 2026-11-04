@@ -14,3 +14,5 @@
 - **Приёмка:** причинное появление цели, один счётчик, welcome/detour, неблокирующая подача, однократность и разные реальные итоги; применимые прежние DEMO/POLISH03A, полный `make test` и FPS на интегрированном дереве. Старые оракулы менять только по новому требованию.
 - **Evidence:** `builds/checks/STORY-02/demo-capture-current.log` и `builds/screenshots/qa01/`; обычные NN-кадры — игровая камера, `_front` — дополнительный ракурс. Старый путь `screenshots/STORY-02/` не содержит этих кадров. Остальные логи — `builds/checks/STORY-02/`; engine сериализуется с игрой владельца.
 - **Открыто:** общая квалификация, FPS и ручной маршрут; адресный PASS не означает принятия демо.
+
+- Review04.11 выявило фактическое нарушение обещанного порядка: fullraw14030 protocol перекрывает второйthanksbubble,14275 endcard конкурирует сlastphrase. Слова/канон не меняются; focused sequencing/cancel fix проверяется, текущий статус — backlog. Evidence `builds/checks/STORY-02/final-readability/`.
