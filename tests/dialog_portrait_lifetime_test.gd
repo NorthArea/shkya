@@ -38,6 +38,7 @@ func frames(count: int) -> void:
 		await process_frame
 
 func run() -> void:
+	DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path(EVIDENCE))
 	capture = "--capture-portraits" in OS.get_cmdline_user_args()
 	if capture and DisplayServer.get_name() == "headless":
 		push_error("Native portrait capture requires a real renderer")

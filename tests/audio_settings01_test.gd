@@ -9,6 +9,7 @@ func _initialize() -> void:
 	_run.call_deferred()
 
 func _run() -> void:
+	DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path(OUTPUT.get_base_dir()))
 	if not check(ResourceLoader.exists(SETTINGS), "audio settings controller exists"):
 		_finish()
 		return

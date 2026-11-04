@@ -27,6 +27,7 @@ func snapshot(label: String) -> void:
 	root.get_texture().get_image().save_png(SHOTS + label + ".png")
 
 func _run() -> void:
+	DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path(OUT))
 	root.size = Vector2i(1920, 1080)
 	for file in ["display.cfg", "audio.cfg", "achievements.json"]:
 		DirAccess.remove_absolute(OUT + file)

@@ -21,6 +21,7 @@ func _initialize() -> void:
 	call_deferred("_run")
 
 func _run() -> void:
+	DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path(EVIDENCE))
 	main = load("res://game/main.tscn").instantiate()
 	main.achievement_path = EVIDENCE + "achievements-%d.json" % OS.get_process_id()
 	root.add_child(main)
