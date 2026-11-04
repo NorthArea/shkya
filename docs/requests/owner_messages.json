@@ -2792,6 +2792,32 @@
         "CRITIC-02",
         "DEMO-READINESS-01"
       ]
+    },
+    {
+      "id": "MSG-0255",
+      "timestamp_utc": "2026-11-04T02:46:09.969503+00:00",
+      "timestamp_basis": "archive_capture_time; original message timestamp unavailable",
+      "kind": "message",
+      "text": "сконцентрируйся на FPS и 9/10",
+      "sha256": "c98849d17a78c0f76902bd3d14424744caa3f41d52115b0976652e4dbf86aa97",
+      "task_ids": [
+        "MOTION-01",
+        "CRITIC-02",
+        "DEMO-READINESS-01"
+      ]
+    },
+    {
+      "id": "MSG-0256",
+      "timestamp_utc": "2026-11-04T02:46:09.969503+00:00",
+      "timestamp_basis": "archive_capture_time; original message timestamp unavailable",
+      "kind": "message",
+      "text": "особенно хочу, тчобы в паре с фпс ты сразу работал же с освящением/тенями как я просил скилл",
+      "sha256": "531663c6bc1b385c4d11119a2337bf45112bac6a5d2cd514443622ac80b97149",
+      "task_ids": [
+        "MOTION-01",
+        "LIGHT-01",
+        "CRITIC-02"
+      ]
     }
   ]
 }
