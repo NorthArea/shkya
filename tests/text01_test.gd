@@ -31,6 +31,8 @@ const STREET_MAX_WORDS := 7
 const STREET_MAX_CHARS := 40
 const DIALOG_MAX_WORDS := 8
 
+var whole_word_forbidden := RegEx.create_from_string("(?<![\\p{L}\\p{N}_])жид(?:а|у|ом|е|ы|ов|ам|ами|ах)?(?![\\p{L}\\p{N}_])")
+
 var failures: Array[String] = []
 var checks := 0
 var main: Node
@@ -47,6 +49,7 @@ func _run() -> void:
 	_formula()
 	_street_pools()
 	_quest_texts()
+	_forbidden_matcher()
 	_forbidden()
 	_timings()
 	_bag()
@@ -148,6 +151,19 @@ func _all_texts() -> Array:
 		QuestLines.PROTOCOL_KNOCKS_OK] + QuestLines.PROTOCOL_ROWS.map(func(r): return r[1]))
 	return texts
 
+func _contains_forbidden(text: String, stem: String) -> bool:
+	if stem == "жид":
+		return whole_word_forbidden.search(text) != null
+	return text.contains(stem)
+
+func _forbidden_matcher() -> void:
+	check(not _contains_forbidden("ожидается", "жид"), "whole-word matcher allows an unrelated weather verb")
+	check(not _contains_forbidden("жидкость", "жид"), "whole-word matcher allows an unrelated material noun")
+	var forms := ["жид", "жида", "жиду", "жидом", "жиде", "жиды", "жидов", "жидам", "жидами", "жидах"]
+	check(forms.all(func(form): return _contains_forbidden("«" + form + "!»", "жид")), "whole-word matcher rejects the standalone banned word and every case form")
+	check(not _contains_forbidden("нежидовский", "жид"), "whole-word matcher requires boundaries on both sides")
+	check(_contains_forbidden("мобилизация", "мобилизац"), "other forbidden stems keep substring matching")
+
 func _forbidden() -> void:
 	print("--- forbidden words ---")
 	var texts := _all_texts()
@@ -155,7 +171,7 @@ func _forbidden() -> void:
 	for text: String in texts:
 		var low := text.to_lower()
 		for w: String in FORBIDDEN:
-			if low.contains(w):
+			if _contains_forbidden(low, w):
 				bad.append([text, w])
 	check(bad.is_empty(), "no forbidden words in %d texts %s" % [texts.size(), bad])
 
@@ -231,7 +247,7 @@ func _in_world() -> void:
 	main = load("res://game/main.tscn").instantiate()
 	root.add_child(main)
 	await _frames(2)
-	main.menu.start_button.pressed.emit()
+	main.start_game()
 	await _frames(20)
 	world = main.world
 	var hub: Node = get_first_node_in_group(&"residents")
