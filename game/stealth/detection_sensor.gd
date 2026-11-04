@@ -92,6 +92,27 @@ var _exclude: Array[RID] = []
 ## Сколько секунд подряд машина почти стоит на проезжей части B в car_area (fix4); 0 — едет, не на дороге или вне области.
 var car_road_still := 0.0
 
+## MOTION-01 diagnostic capture: opt-in, bounded RAM; no output in the measured loop.
+static var _cone_trace_enabled := false
+static var _cone_trace_limit := 0
+static var _cone_trace_dropped := 0
+static var _cone_trace_rows: Array[Dictionary] = []
+var _cone_trace_current: Dictionary = {}
+
+static func start_cone_trace(limit: int = 16384) -> void:
+	_cone_trace_rows = []
+	_cone_trace_dropped = 0
+	_cone_trace_limit = clampi(limit, 1, 65536)
+	_cone_trace_enabled = true
+
+static func stop_cone_trace() -> Dictionary:
+	_cone_trace_enabled = false
+	var result := {"rows": _cone_trace_rows, "capacity": _cone_trace_limit,
+		"dropped": _cone_trace_dropped,
+		"scope": "CPU wall time; asynchronous GPU upload execution is not measured. Absolute Time ticks; engine physics/process/render frame IDs captured at update entry."}
+	_cone_trace_rows = []
+	return result
+
 func _ready() -> void:
 	add_to_group(&"detection_sensors")
 	# Собственное тело наблюдателя (StaticBody родителя или соседа) луч не задевает.
@@ -305,6 +326,25 @@ func _world() -> Node:
 # --- сектор видимости на земле (P3: лучами до первой преграды) ---
 
 func _update_cone() -> void:
+	if not _cone_trace_enabled:
+		_update_cone_geometry()
+		return
+	if _cone_trace_rows.size() >= _cone_trace_limit:
+		_cone_trace_dropped += 1
+		_update_cone_geometry()
+		return
+	var started := Time.get_ticks_usec()
+	_cone_trace_current = {"started_tick_us": started, "sensor_id": get_instance_id(),
+		"physics_frame": Engine.get_physics_frames(), "process_frame": Engine.get_process_frames(),
+		"render_frame": Engine.get_frames_drawn(), "rebuild_us": 0, "near_us": 0,
+		"clear_count": 0, "commit_count": 0, "clear_us": 0, "commit_us": 0}
+	_update_cone_geometry()
+	_cone_trace_current["ended_tick_us"] = Time.get_ticks_usec()
+	_cone_trace_current["update_us"] = _cone_trace_current.ended_tick_us - started
+	_cone_trace_rows.append(_cone_trace_current)
+	_cone_trace_current = {}
+
+func _update_cone_geometry() -> void:
 	var wanted := show_cone and cone_wanted and enabled
 	if wanted and _cone == null:
 		_cone = _build_cone()
@@ -319,6 +359,14 @@ func _update_cone() -> void:
 ## fix6: круг близости NEAR_RING на земле вне сектора (внутри сектора его уже покрывает веер) — лучами до первой
 ## преграды, как сектор: в кольце луч учитывается. Бледнее сектора (near_color).
 func _update_near_disc(wanted: bool) -> void:
+	if _cone_trace_current.is_empty():
+		_update_near_disc_geometry(wanted)
+		return
+	var started := Time.get_ticks_usec()
+	_update_near_disc_geometry(wanted)
+	_cone_trace_current["near_us"] += Time.get_ticks_usec() - started
+
+func _update_near_disc_geometry(wanted: bool) -> void:
 	if wanted and _near_disc == null:
 		_near_mesh = ImmediateMesh.new()
 		_near_material = _cone_material.duplicate() if _cone_material else StandardMaterial3D.new()
@@ -354,7 +402,11 @@ func _update_near_disc(wanted: bool) -> void:
 			var p: Vector3 = hit["position"]
 			length = maxf(Vector2(p.x - global_position.x, p.z - global_position.z).length(), NEAR_RADIUS)
 		lengths[i] = length
+	var clear_started := Time.get_ticks_usec() if not _cone_trace_current.is_empty() else 0
 	_near_mesh.clear_surfaces()
+	if not _cone_trace_current.is_empty():
+		_cone_trace_current["clear_us"] += Time.get_ticks_usec() - clear_started
+		_cone_trace_current["clear_count"] += 1
 	_near_mesh.surface_begin(Mesh.PRIMITIVE_TRIANGLES)
 	for i in rays:
 		var a0 := half + arc * i / rays
@@ -362,7 +414,11 @@ func _update_near_disc(wanted: bool) -> void:
 		_near_mesh.surface_add_vertex(Vector3.ZERO)
 		_near_mesh.surface_add_vertex(Vector3(0, 0, -lengths[i]).rotated(Vector3.UP, a0))
 		_near_mesh.surface_add_vertex(Vector3(0, 0, -lengths[i + 1]).rotated(Vector3.UP, a1))
+	var commit_started := Time.get_ticks_usec() if not _cone_trace_current.is_empty() else 0
 	_near_mesh.surface_end()
+	if not _cone_trace_current.is_empty():
+		_cone_trace_current["commit_us"] += Time.get_ticks_usec() - commit_started
+		_cone_trace_current["commit_count"] += 1
 
 ## Круг близости на земле сейчас рисуется (fix6, для тестов и кадров).
 func near_circle_visible() -> bool:
@@ -372,6 +428,14 @@ func near_circle_visible() -> bool:
 ## (TARGET_HEIGHT), как луч зрения в _line_of_sight; длина — до первой преграды слоя World. Перестраивается каждый
 ## физический кадр, пока виден: корпус поворачивается, автобус и транспорт кольца двигаются.
 func _rebuild_cone() -> void:
+	if _cone_trace_current.is_empty():
+		_rebuild_cone_geometry()
+		return
+	var started := Time.get_ticks_usec()
+	_rebuild_cone_geometry()
+	_cone_trace_current["rebuild_us"] += Time.get_ticks_usec() - started
+
+func _rebuild_cone_geometry() -> void:
 	var full := fov_deg >= 359.0
 	var half := deg_to_rad(minf(fov_deg, 360.0) * 0.5)
 	var rays := CONE_RAYS_FULL if full else CONE_RAYS
@@ -393,7 +457,11 @@ func _rebuild_cone() -> void:
 			var p: Vector3 = hit["position"]
 			length = Vector2(p.x - global_position.x, p.z - global_position.z).length()
 		lengths[i] = length
+	var clear_started := Time.get_ticks_usec() if not _cone_trace_current.is_empty() else 0
 	_cone_mesh.clear_surfaces()
+	if not _cone_trace_current.is_empty():
+		_cone_trace_current["clear_us"] += Time.get_ticks_usec() - clear_started
+		_cone_trace_current["clear_count"] += 1
 	_cone_mesh.surface_begin(Mesh.PRIMITIVE_TRIANGLES)
 	for i in rays:
 		var a0 := -half + 2.0 * half * i / rays
@@ -401,7 +469,11 @@ func _rebuild_cone() -> void:
 		_cone_mesh.surface_add_vertex(Vector3.ZERO)
 		_cone_mesh.surface_add_vertex(Vector3(0, 0, -lengths[i]).rotated(Vector3.UP, a0))
 		_cone_mesh.surface_add_vertex(Vector3(0, 0, -lengths[i + 1]).rotated(Vector3.UP, a1))
+	var commit_started := Time.get_ticks_usec() if not _cone_trace_current.is_empty() else 0
 	_cone_mesh.surface_end()
+	if not _cone_trace_current.is_empty():
+		_cone_trace_current["commit_us"] += Time.get_ticks_usec() - commit_started
+		_cone_trace_current["commit_count"] += 1
 
 func _build_cone() -> MeshInstance3D:
 	_cone_mesh = ImmediateMesh.new()
