@@ -2830,6 +2830,47 @@
         "LIGHT-01",
         "MOTION-01"
       ]
+    },
+    {
+      "id": "MSG-0258",
+      "timestamp_utc": "2026-11-04T05:35:18.660202+00:00",
+      "timestamp_basis": "archive_capture_time; original message timestamp unavailable",
+      "kind": "message",
+      "text": "что у нас по ревью экспертов?",
+      "sha256": "0ea0f750c08e43f2dd7408f3ee8bd4d28b9498453160b98c9f45b95d0ac6306e",
+      "task_ids": [
+        "CRITIC-02",
+        "DEMO-READINESS-01"
+      ]
+    },
+    {
+      "id": "MSG-0259",
+      "timestamp_utc": "2026-11-04T05:35:49.220609+00:00",
+      "timestamp_basis": "archive_capture_time; original message timestamp unavailable",
+      "kind": "message",
+      "text": "ты всен исправления которые предложили эксперты?",
+      "sha256": "d1f362fd7c899cfdd8d73dc03a839a0e009071145c088d9f19c5735d8b984118",
+      "task_ids": [
+        "CRITIC-02",
+        "DEMO-READINESS-01",
+        "POLISH-03",
+        "STORY-02"
+      ]
+    },
+    {
+      "id": "MSG-0260",
+      "timestamp_utc": "2026-11-04T05:38:04.425669+00:00",
+      "timestamp_basis": "archive_capture_time; original message timestamp unavailable",
+      "kind": "message",
+      "text": "делай работу в трех треках - 1) фпс 2) исправление эксперов 2) агент работающий с тем, что видит и воспринимает пользовталеь. Мне нужно чтобы он прочитал наш главный промт про треки которые я скидывал и чтобы он привел локацию к этому же вайбу из треков",
+      "sha256": "0d3c4b35c6079444e37ca95fa370d5d70120883257aa0c9d4950b26aea0a37d3",
+      "task_ids": [
+        "MOTION-01",
+        "LIGHT-01",
+        "CRITIC-02",
+        "ART-DIRECTION-01",
+        "DEMO-READINESS-01"
+      ]
     }
   ]
 }
