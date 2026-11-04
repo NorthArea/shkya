@@ -1,6 +1,6 @@
 # TRANSFER-01 — сохранность работы и перенос через Git
 
-Статус — только [backlog](../backlog.md). Поручения MSG-0263–0267.
+Статус — только [backlog](../backlog.md). Поручения MSG-0263–0268.
 
 - Основной путь — clone из Git, инструкция docs/TRANSFER.md. Код, ресурсы и исходные сообщения сохранены атомарными коммитами; push разрешён владельцем.
 - Полный архив builds/transfer/2026-11-04/repository.tar.gz: 35082 entries, SHA256/readback и сравнение с исходниками; изменялся только .idea/workspace.xml. Внешний manifest, verify_backup.py. Финальные коммиты — также final-history.bundle; проверены bundle verify и clone/fsck.

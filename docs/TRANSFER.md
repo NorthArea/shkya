@@ -23,6 +23,26 @@ GODOT_BIN=/path/to/Godot make test-headless
 
 `make test-headless` явно пропускает графические наборы. Проверка FPS и визуального качества на новом компьютере требует новых замеров; старые результаты сохраняют сведения об исходном Mac.
 
+## Развернуть без GitHub из подготовленного bundle
+
+Можно перенести и распаковать `shkya-git-transfer.zip` либо скопировать `final-history.bundle`, `final-history.bundle.sha256` и `FINAL_HEAD.txt` из пакета `builds/transfer/2026-11-04/`. В bundle входят полная Git-история, основная ветка и все архивные теги с изолированными работами.
+
+Из каталога с этими файлами:
+
+```sh
+shasum -a 256 -c final-history.bundle.sha256
+git clone --branch main final-history.bundle shkya
+cd shkya
+git fsck --full
+git rev-parse HEAD
+cat ../FINAL_HEAD.txt
+git remote set-url origin git@github.com:NorthArea/shkya.git
+```
+
+Два выведенных SHA должны совпасть. После установки Godot запускайте `make run`. Bundle не содержит кэш импорта: первый запуск создаст его штатным launcher. Новая рабочая копия будет чистой; очередь и ограничения проверок — `docs/workflow/backlog.md`, исходные поручения — `docs/requests/OWNER_MESSAGES.md`.
+
+Когда GitHub восстановит доступ, выполните `git fetch origin`, затем `git push origin main` без force. Если на сервере появились новые коммиты, сначала сопоставьте истории и сохраните обе стороны. После push сравните `git rev-parse HEAD` с `git ls-remote origin refs/heads/main`; несовпадение оставляет передачу через GitHub незавершённой.
+
 ## Дополнительная полная копия
 
 Полный архив нужен для сохранения локальных доказательств проверок, программ из `tools/local`, ignored-файлов и незакоммиченного состояния. Он дополняет развёртывание из Git.
