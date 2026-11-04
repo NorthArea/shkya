@@ -51,6 +51,7 @@ test: map
 	$(call godot_test,screen01_test,60,SCREEN01,--windowed --resolution 960x600,render)
 	$(call godot_test,intro_test,60,INTRO)
 	$(call godot_test,mission_director_test,60,MISSION)
+	$(call godot_test,talk_target_readability_test,60,TALK_TARGET_READABILITY)
 	$(call godot_test,story02_test,60,STORY02)
 	$(call godot_test,story02_final_readability_test,60,STORY02_FINAL_READABILITY)
 	$(call godot_test,grey01_acceptance,60,GREY01)

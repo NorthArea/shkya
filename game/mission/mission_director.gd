@@ -44,6 +44,7 @@ const START_MONEY := 0
 const REWARD_XP := 50
 
 const PROMPT_TALK := "E — ПОГОВОРИТЬ"
+const PROMPT_VENDOR_TALK := "E — ПОГОВОРИТЬ С ПРОДАВЩИЦЕЙ"
 const PROMPT_TURN_IN := "E — СДАТЬ ЗАДАНИЕ"
 const PROMPT_CAR := "E — СЕСТЬ В МАШИНУ"
 
@@ -236,7 +237,7 @@ func prompt_for(id: StringName) -> String:
 				return PROMPT_TURN_IN
 			return PROMPT_TALK
 		&"vendor":
-			return PROMPT_TALK if state == BUY_BREAD else ""
+			return PROMPT_VENDOR_TALK if state == BUY_BREAD else ""
 		&"car":
 			return PROMPT_CAR
 		&"officer", &"account_officer":

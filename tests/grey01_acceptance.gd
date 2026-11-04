@@ -313,7 +313,7 @@ func _check_interaction(world: DemoWorld) -> void:
 	mission.notify_arrived_kiosk()
 	check(mission.state == MissionDirector.BUY_BREAD, "mission driven to BUY_BREAD through its API")
 	await _frames(2)
-	check(world.get_hud_state()["prompt"] == "E — ПОГОВОРИТЬ", "vendor prompt in BUY_BREAD")
+	check(world.get_hud_state()["prompt"] == "E — ПОГОВОРИТЬ С ПРОДАВЩИЦЕЙ", "vendor prompt in BUY_BREAD")
 	await _press_interact()
 	check(counts["vendor"] == 1, "E at the kiosk window fires vendor interaction")
 	await _close_dialog(world, &"leave")

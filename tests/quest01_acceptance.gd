@@ -286,7 +286,7 @@ func _step07_vendor_dialog() -> void:
 	var player := world.player
 	player.place(Layout.VENDOR_WINDOW, 0.0)
 	await _frames(4)
-	check(hud.prompt_label.visible and hud.prompt_label.text == "E — ПОГОВОРИТЬ", "07: E prompt at the kiosk window")
+	check(hud.prompt_label.visible and hud.prompt_label.text == "E — ПОГОВОРИТЬ С ПРОДАВЩИЦЕЙ", "07: E prompt at the kiosk window")
 	mission.money = 10  # условно не хватает денег (монеты — COINS: не хватает 25 ₽)
 	for i in 180:   # камера ещё возвращается после прошлого диалога — дождаться прежнего взгляда
 		if not world.camera_rig.is_talk_framing():
