@@ -2743,6 +2743,55 @@
         "STARTUP-01",
         "LIGHT-01"
       ]
+    },
+    {
+      "id": "MSG-0251",
+      "timestamp_utc": "2026-11-04T02:38:56.037684+00:00",
+      "timestamp_basis": "archive_capture_time; original message timestamp unavailable",
+      "kind": "message",
+      "text": "Продолжай под текущей нагрузкой",
+      "sha256": "d6e1619dbbc3216dc644fef859a0cf766d1321a20311128d347878c97e1f394f",
+      "task_ids": [
+        "MOTION-01"
+      ],
+      "reply_to_question": "Контрольный FPS заметно изменился даже без правок игры. На Mac сейчас виртуальная машина потребляет около 195% CPU; это может мешать сравнению. Продолжать оптимизацию под текущую рабочую нагрузку или дождаться, пока ты приостановишь VM для чистого замера?"
+    },
+    {
+      "id": "MSG-0252",
+      "timestamp_utc": "2026-11-04T02:38:56.037684+00:00",
+      "timestamp_basis": "archive_capture_time; original message timestamp unavailable",
+      "kind": "message",
+      "text": "Сначала пройду сам",
+      "sha256": "04761bcb7e2074f9fe7728e38e1e008418fb7efc9b1408e02c2e3a9459a10b37",
+      "task_ids": [
+        "CRITIC-02",
+        "DEMO-READINESS-01"
+      ],
+      "reply_to_question": "Эксперты отдельно требуют человеческого прохождения: автоскрипт не проверяет, понятна ли игра новичку. После текущих исправлений сможешь дать демо нескольким новым игрокам, или пока планируем твой проход? Я продолжаю исправления и FPS-проверки."
+    },
+    {
+      "id": "MSG-0253",
+      "timestamp_utc": "2026-11-04T02:38:56.037684+00:00",
+      "timestamp_basis": "archive_capture_time; original message timestamp unavailable",
+      "kind": "message",
+      "text": "какая оценка сейчас у экспертов?",
+      "sha256": "33a65bcd8002a8f10644fa5212c2e8085f0d289cfdca8130e0ccb1f662d368f1",
+      "task_ids": [
+        "CRITIC-02",
+        "DEMO-READINESS-01"
+      ]
+    },
+    {
+      "id": "MSG-0254",
+      "timestamp_utc": "2026-11-04T02:38:56.037684+00:00",
+      "timestamp_basis": "archive_capture_time; original message timestamp unavailable",
+      "kind": "message",
+      "text": "› от меня что сейчас надо? чтобы поулчить 9/10 от        \n  экспертов?",
+      "sha256": "4e7750497d880af76d73708df80578b443fc48e4013b330c413695dd715e9512",
+      "task_ids": [
+        "CRITIC-02",
+        "DEMO-READINESS-01"
+      ]
     }
   ]
 }
