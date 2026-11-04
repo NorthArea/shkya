@@ -23,6 +23,7 @@ const DIAMOND_HIDE_DISTANCE := 15.0  # м: ближе и в кадре — ро�
 ## POLISH-03 A (критик): под ромбом — расстояние до цели в метрах; цель «киоск» — ромб над коробом «ХЛЕБ» на крыше.
 const DIAMOND_DISTANCE_FONT := 26
 const KIOSK_DIAMOND_ABOVE_SIGN := 0.9   # м над верхом короба Layout.KIOSK_ROOF_SIGN
+const VENDOR_WINDOW_DIAMOND_Y := 1.75  # метка у окна обслуживания
 const DIAMOND_Y := 3.8
 const MARKER_LIFT := 1.3                # м: ромб выше, пока над Бабкой «!»/«?» (маркер издалека крупнее, QuestFlow)
 ## Конусы обзора постов на мини-карте — только когда герой в районе киоска (KIOSK_SQUARE, расширенный на это число м).
@@ -206,7 +207,9 @@ func _update_map_and_diamond(world: Node, target: Variant, in_car := false, rout
 	if rig and rig.camera and target is Vector3 and target != Vector3.INF:
 		var camera := rig.camera
 		var canvas := _canvas_size()
-		var anchor: Vector3 = diamond_anchor(target, _marker_lift)
+		var distance := focus.distance_to(Vector2(target.x, target.z))
+		var near_vendor_window: bool = not in_car and target.is_equal_approx(Layout.VENDOR_WINDOW) and distance < DIAMOND_HIDE_DISTANCE
+		var anchor: Vector3 = target + Vector3.UP * VENDOR_WINDOW_DIAMOND_Y if near_vendor_window else diamond_anchor(target, _marker_lift)
 		# Проекция считается здесь по трансформу и fov камеры (fov вертикальный), в координатах логического холста:
 		# так результат не зависит от размера окна и совпадает в headless.
 		var local := camera.global_transform.affine_inverse() * anchor
@@ -224,10 +227,11 @@ func _update_map_and_diamond(world: Node, target: Variant, in_car := false, rout
 		p = Vector2(clampf(p.x, rect.position.x, rect.end.x), clampf(p.y, rect.position.y, rect.end.y))
 		diamond_position = _avoid_hud(p)
 		# Цель в кадре и рядом: ромб не нужен, над Бабкой уже !/?, машина и киоск видны сами (п. 17).
-		var distance := focus.distance_to(Vector2(target.x, target.z))
-		diamond_near_hidden = not diamond_clamped and distance < DIAMOND_HIDE_DISTANCE
+		diamond_near_hidden = not near_vendor_window and not diamond_clamped and distance < DIAMOND_HIDE_DISTANCE
 		diamond_visible = not diamond_near_hidden
 		diamond_distance_text = "%d м" % roundi(distance) if distance >= 2.0 else ""   # у самой цели «0 м» не нужен
+		if near_vendor_window:
+			diamond_distance_text = "ОКНО КИОСКА" + (" · " + diamond_distance_text if diamond_distance_text != "" else "")
 		# Новая цель (скачок больше 5 м) или ромб вернулся — «выпрыгнуть».
 		var jumped: bool = _last_target == null or (_last_target as Vector3).distance_to(target) > 5.0
 		if diamond_visible and (jumped or not was_visible):
