@@ -9,6 +9,7 @@ const ReviewIntro = preload("res://game/ui/intro.gd")
 const ReviewCaught = preload("res://game/ui/caught_panel.gd")
 
 var _review_event_index := 0
+var _review_focus_fault := false
 
 func check(scenario: int, ok: bool, label: String) -> bool:
 	var passed := super.check(scenario, ok, label)
@@ -36,6 +37,12 @@ class ReviewDriver extends "res://tests/playthrough_driver.gd":
 		last_error = "normal intro did not finish within 100 simulated seconds"
 		return false
 
+	func click(control: Control) -> void:
+		if control is Button and (control as Button).text == QuestLines.PROTOCOL_BUTTON:
+			print("REVIEW_HOLD ", JSON.stringify({"message": "ordinary protocol reading hold before mouse click", "process_frame": Engine.get_process_frames(), "physics_frames": 360}))
+			await frames(360)
+		await super.click(control)
+
 func _initialize() -> void:
 	root.set_flag(Window.FLAG_NO_FOCUS, true)
 	if "--capture" in OS.get_cmdline_user_args():
@@ -47,6 +54,41 @@ func _initialize() -> void:
 	print("REVIEW: automated input-only; one full quest + restart regression + intentional detection/retry")
 	print("REVIEW: startup loader excluded; intro/caught presentation enabled; fixed-fps/movie is NOT FPS evidence")
 	super._initialize()
+
+func _run() -> void:
+	# Native initialization can reset flags set during SceneTree._initialize().
+	root.set_flag(Window.FLAG_NO_FOCUS, true)
+	print("REVIEW_VERSION ", JSON.stringify({"wrapper_sha256": FileAccess.get_sha256("res://tools/capture/full_gameplay_review.gd"), "base_sha256": FileAccess.get_sha256("res://tests/demo_acceptance.gd"), "driver_sha256": FileAccess.get_sha256("res://tests/playthrough_driver.gd"), "quest_flow_sha256": FileAccess.get_sha256("res://game/mission/quest_flow.gd"), "dialog_panel_sha256": FileAccess.get_sha256("res://game/ui/dialog_panel.gd"), "finale_sha256": FileAccess.get_sha256("res://game/mission/finale.gd"), "project_sha256": FileAccess.get_sha256("res://project.godot")}))
+	if not check(1, AudioServer.get_driver_name() == "Dummy", "review capture uses Dummy audio; no speaker output"):
+		quit(2)
+		return
+	if DisplayServer.get_name() != "headless":
+		for i in 2:
+			await process_frame
+		root.set_flag(Window.FLAG_NO_FOCUS, true)
+		_review_native_focus_guard()
+		if _review_focus_fault:
+			return
+		if not check(1, root.get_flag(Window.FLAG_NO_FOCUS) and not root.has_focus(), "review native root NoFocus=true and has_focus=false"):
+			quit(3)
+			return
+		process_frame.connect(_review_native_focus_guard)
+	else:
+		print("SKIP review OS focus assertion: headless ignores NoFocus; not a native PASS")
+	print("REVIEW_FOCUS_SCOPE ", JSON.stringify({"display": DisplayServer.get_name(), "no_focus": root.get_flag(Window.FLAG_NO_FOCUS), "has_focus": root.has_focus(), "scope": "native root OS window only; embedded GUI focus excluded", "every_process_frame": DisplayServer.get_name() != "headless"}))
+	await super._run()
+
+func _review_native_focus_guard() -> void:
+	if _review_focus_fault or DisplayServer.get_name() == "headless":
+		return
+	if root.get_flag(Window.FLAG_NO_FOCUS) and not root.has_focus():
+		return
+	_review_focus_fault = true
+	if drv != null:
+		drv.release_all()
+	print("REVIEW_FOCUS_GUARD_FAIL ", JSON.stringify({"process_frame": Engine.get_process_frames(), "no_focus": root.get_flag(Window.FLAG_NO_FOCUS), "has_focus": root.has_focus()}))
+	push_error("Review root OS focus drift: reject movie; quit without freeing Main beneath pending input coroutines")
+	quit(3)
 
 func _pass_one() -> bool:
 	drv = ReviewDriver.new(self, main)
