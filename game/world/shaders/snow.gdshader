@@ -50,9 +50,12 @@ void vertex() {
 
 void fragment() {
 	vec2 p = world_pos.xz * scale + world_pos.y * 0.7;
-	float n = noise(p) * 0.6 + noise(p * 3.1) * 0.3 + noise(p * 9.0) * 0.1;
+	float broad_noise = noise(p);
+	float n = broad_noise * 0.6 + noise(p * 3.1) * 0.3 + noise(p * 9.0) * 0.1;
 	float dirt = smoothstep(0.55 - trodden * 0.35, 0.85, n);
-	vec3 color = mix(clean, dirty, clamp(dirt + trodden * 0.35, 0.0, 1.0));
+	// Keep fine dirt/roughness masks; reduce only broad diffuse stains.
+	float albedo_dirt = smoothstep(0.55 - trodden * 0.35, 0.85, n - (broad_noise - 0.5) * 0.36);
+	vec3 color = mix(clean, dirty, clamp(albedo_dirt + trodden * 0.35, 0.0, 1.0));
 	if (roadside > 0.5) {
 		// Вал — светлый слежавшийся снег (POLISH-02, п. 4: был темнее дороги). Грязь от колёс — только в нижних
 		// 20–30 см с рваной кромкой, выше — редкие бурые брызги; сверху светлая шапка (ART-06, С1).
