@@ -346,7 +346,7 @@ static func style_button(button: Button, primary: bool) -> void:
 ## Портрет — вырезка головы и плеч из рисунка персонажа ART-01 (тот же облик, что в мире, кадр 07).
 ## Область — в единицах холста 400×600 (текстура в 2 раза крупнее).
 ## Илюша — голова с хохолком (HEAD_FRONT 86…302 по высоте, хохолок на 44 в tools/generate_characters.py).
-## Полицейский и «военком» — рисунки исполнителя N (EXT-01); пока их нет, рисуется подложка без портрета.
+## Полицейский и сотрудник ГСУМ — действующие рисунки исполнителя N (EXT-01).
 const UniformPortrait = preload("res://game/characters/uniform_visual.gd")
 const PortraitCatalog = preload("res://game/characters/character_catalog.gd")
 const PORTRAIT_REGION := {
@@ -360,30 +360,36 @@ const PORTRAIT_REGION := {
 ## (&"account_officer") — как officer_* (имена генератора EXT-01 N). Приёмка EXT-01, P2 4–5.
 const PORTRAIT_FILE := {&"officer": "police", &"account_officer": "officer"}
 
-static var _portrait_textures_3d: Dictionary = {}
+# Canvas draw commands retain RIDs, not Resource references. Keep SVG textures
+# alive too, otherwise a portrait loaded only here is freed before rendering.
+var _portrait_textures: Dictionary = {}
 
 static func portrait_source_path(kind: StringName) -> String:
 	# Approved drawings stay current until the revised 3D faces have GPU portraits.
 	return "res://assets/art/characters/%s_front_idle.svg" % PORTRAIT_FILE.get(kind, kind)
 
+func _portrait_texture(path: String) -> Texture2D:
+	var texture: Texture2D = _portrait_textures.get(path)
+	if texture == null and not path.is_empty() and ResourceLoader.exists(path):
+		texture = load(path) as Texture2D
+		if texture != null:
+			_portrait_textures[path] = texture
+	return texture
+
 func _draw_portrait() -> void:
 	var rect := Rect2(Vector2.ZERO, portrait.size)
 	portrait.draw_rect(rect, PAPER_DARK)
 	var path := portrait_source_path(_portrait_kind)
-	if path.ends_with(".png"):
-		if not _portrait_textures_3d.has(path) and not path.is_empty() and ResourceLoader.exists(path):
-			_portrait_textures_3d[path] = load(path)
-		var texture_3d: Texture2D = _portrait_textures_3d.get(path)
-		if texture_3d != null:
-			portrait.draw_texture_rect(texture_3d, rect, false)
+	var texture := _portrait_texture(path)
+	if texture != null:
+		if path.ends_with(".png"):
+			portrait.draw_texture_rect(texture, rect, false)
 		else:
-			# Explicit neutral placeholder until the native same-model PNG pack is imported.
-			portrait.draw_circle(rect.size * Vector2(0.5, 0.36), rect.size.x * 0.17, Color(0.48, 0.46, 0.41))
-			portrait.draw_circle(rect.size * Vector2(0.5, 1.0), rect.size.x * 0.34, Color(0.48, 0.46, 0.41))
-	else:
-		var region: Rect2 = PORTRAIT_REGION.get(_portrait_kind, PORTRAIT_REGION[&"babka"])
-		if ResourceLoader.exists(path):
-			var texture: Texture2D = load(path)
+			var region: Rect2 = PORTRAIT_REGION.get(_portrait_kind, PORTRAIT_REGION[&"babka"])
 			var scale := texture.get_width() / 400.0
 			portrait.draw_texture_rect_region(texture, rect, Rect2(region.position * scale, region.size * scale))
+	else:
+		# Missing resources use a neutral silhouette; failed loads are not cached.
+		portrait.draw_circle(rect.size * Vector2(0.5, 0.36), rect.size.x * 0.17, Color(0.48, 0.46, 0.41))
+		portrait.draw_circle(rect.size * Vector2(0.5, 1.0), rect.size.x * 0.34, Color(0.48, 0.46, 0.41))
 	portrait.draw_rect(rect, INK, false, 3.0)

@@ -46,6 +46,7 @@ test: map
 	$(call godot_test,settings01_controls_test,60,SETTINGS01_CONTROLS)
 	$(call godot_test,startup01_test,60,STARTUP01)
 	$(call godot_test,startup01_acceptance,60,STARTUP01_ACCEPTANCE)
+	$(call godot_test,dialog_portrait_lifetime_test,60,DIALOG_PORTRAIT_LIFETIME)
 	$(call godot_test,bank_mesh_cache_test,60,BANK_MESH_CACHE)
 	$(call godot_test,screen01_test,60,SCREEN01,--windowed --resolution 960x600,render)
 	$(call godot_test,intro_test,60,INTRO)

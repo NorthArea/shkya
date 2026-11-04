@@ -16,3 +16,5 @@
 - **Evidence:** текущие прогоны — `builds/checks/POLISH-03C/`, финальная общая граница — `builds/checks/make-test/`; кадры — `builds/screenshots/POLISH-03/`. Первичные ошибки и старые проверки сохранены, не объявляются текущим PASS.
 
 - Review04.11: root подтвердил белыйпортрет raw7552. Причина — SVG Texture2D освобождалась после drawcallback, CanvasItem хранитRID. Scoped per-Dialog cache проверяет lifetime/positive retries/cleanup; новое3D и ассеты не нужны. Nativeприёмка и результаты — `builds/checks/POLISH-03/dialog-portraits/`, текущийстатус — backlog.
+
+- Портретный fix принят root в ограниченном scope: headless54/0; native96/0,10кадров150/220, rootпросмотрелvendor/hero/accountface — белого поля нет. Все5textureWeakRefs освобождаютсясDialogPanel. Nativeexit3objects/1resourcewarning не приравниваетсякcleanexit; киосквсвежемInput-проходеостаётсяотдельнойпроверкой. `dialog-portraits/root-review.json`.
