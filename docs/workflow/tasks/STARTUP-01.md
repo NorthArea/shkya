@@ -1,10 +1,9 @@
-# STARTUP-01 — простая заставка загрузки
+# STARTUP-01 — заставка после меню
 
-Статус — только [backlog](../backlog.md). Поручение MSG-0235.
+Статус — только [backlog](../backlog.md). Поручение MSG-0235/0263.
 
-- Результат: лёгкий экран в стиле тёплого окна в зимнем городе, реальная полоса загрузки и доступная после готовности кнопка. Сохраняет прежнее меню/settings/intro/profile.
-- Владение: startup_loading_screen — новая boot сцена/скрипт, точка входа project.godot и developer tests; startup_screen_qa — независимый acceptance; root — канон/Makefile/Git.
-- Контракт: без preload тяжёлой Main из boot; ResourceLoader threaded progress, ошибка/retry, защита повторной активации, keyboard/gamepad и focus, освобождение boot после handoff. Загрузка ресурсов не является прогрессом процедурной сборки мира.
-- Проверка: реальная main.tscn без предварительного preload; изолированные profile paths до Main._ready; прежнее единственное меню/фон и world=null после перехода. Dummy/NoFocus native только адресно, сам закрывается.
-- Кадры: builds/screenshots/STARTUP-01/startup-1920x1080.png и startup-1920x1200.png; root просмотрел 1080p.
-- Evidence: builds/checks/STARTUP-01/: gamepad blocker исправлен; independent handoff22headless/23native, новые aggregate developer19/0 и acceptance22/0 headless. В lifecycle-final пять циклов не показали роста objects/resources/orphans после одинаковой очистки; shutdown warning74RefCounted0 сохраняется. Это не clean teardown и не доказанная причина FPS. Native2resources ещё требуют отдельной проверки.
+- Результат: главное меню → реальная загрузка demo_world → кнопка готовности → прежнее вступление и геймплей.
+- Точка входа Main; меню, пауза и финальная карточка запускают встроенный loading screen. Прямой start_game сохраняет hook headless-проверок.
+- Контракт: ResourceLoader threaded progress, ошибка/retry, защита повторного старта, keyboard/gamepad focus; возврат в меню отменяет pending handoff. Ресурсная загрузка не выдаётся за прогресс процедурной сборки мира.
+- Evidence: builds/checks/STARTUP-01/menu-order-before.log (5/1), menu-order-after.log (26/0), startup01_test-development.log (19/0). Независимая QA и проверка чистого clone — TRANSFER-01.
+- Визуальная/ручная приёмка открыта; headless не подтверждает рендер/FPS. Старые startup-before-menu evidence остаются историческими. Известное предупреждение ObjectDB при teardown мира не объявляется исправленным.

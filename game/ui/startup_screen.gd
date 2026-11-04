@@ -1,5 +1,7 @@
 extends Control
-## Лёгкая точка входа: только 2D; сцена меню и её ресурсы загружаются потоком.
+## Экран перед геймплеем: только 2D; PackedScene мира загружается потоком.
+
+signal scene_ready(scene: PackedScene)
 
 const InputSetup = preload("res://game/input_setup.gd")
 
@@ -7,7 +9,9 @@ const INK := Color("292b35")
 const PAPER := Color("eee4cf")
 const WARM := Color("edc078")
 
-var scene_path := "res://game/main.tscn"
+var scene_path := "res://game/world/demo_world.tscn"
+## В Main возвращаем ресурс; standalone fixture сохраняет change_scene_to_packed.
+var embedded := false
 var loaded_scene: PackedScene
 var start_button: Button
 var retry_button: Button
@@ -152,6 +156,9 @@ func _activate() -> void:
 	_handoff.call_deferred()
 
 func _handoff() -> void:
+	if embedded:
+		scene_ready.emit(loaded_scene)
+		return
 	var error := get_tree().change_scene_to_packed(loaded_scene)
 	if error != OK:
 		_activated = false

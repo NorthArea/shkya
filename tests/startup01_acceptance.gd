@@ -44,48 +44,77 @@ func _run() -> void:
 			break
 	check(retry.loaded_scene != null and not retry.retry_button.visible and retry.start_button.has_focus(), "retry performs threaded loading and restores start focus")
 	retry.free()
-	var boot: Control = load(ProjectSettings.get_setting("application/run/main_scene")).instantiate()
-	root.add_child(boot)
-	current_scene = boot
-	check(boot.scene_path == "res://game/main.tscn", "project boot targets real main scene")
-	check(boot.loaded_scene == null and boot.start_button.disabled, "no loaded Main or enabled start before actual threaded request finishes")
-	check(root.find_children("MainMenu", "", true, false).is_empty(), "no menu instantiated during loading")
+	var entry_path: String = ProjectSettings.get_setting("application/run/main_scene")
+	check(entry_path == "res://game/main.tscn", "project opens the existing menu before the loading screen")
+	if entry_path != "res://game/main.tscn":
+		print("STARTUP01_ACCEPTANCE: %d checks, %d failures" % [checks, failures])
+		quit(1)
+		return
+	var main: Node = load(entry_path).instantiate()
+	root.add_child(main)
+	current_scene = main
+	check(main.menu.visible and main.world == null, "menu is visible before any gameplay world")
+	check(main.get("startup_screen") == null, "loading screen is absent before menu Start")
+	check(not ResourceLoader.has_cached("res://game/world/demo_world.tscn"), "menu does not preload gameplay PackedScene")
+	main.menu.start_requested.emit()
+	main.menu.start_requested.emit()
+	await process_frame
+	await process_frame
+	var boot: Control = main.get("startup_screen")
+	check(boot != null, "menu Start opens embedded loading screen")
+	if boot == null:
+		main.free()
+		quit(1)
+		return
+	check(not main.menu.visible and main.menu.backdrop == null, "loading replaces menu and releases its backdrop")
+	check(main.world == null, "menu Start does not create world before ready confirmation")
+	check(boot.scene_path == "res://game/world/demo_world.tscn", "threaded loader targets the actual gameplay scene")
+	check(main.find_children("StartupScreen", "", true, false).size() == 1, "duplicate menu Start creates one loader")
+	if boot.loaded_scene == null:
+		boot.start_button.pressed.emit()
+		check(main.world == null, "early ready activation cannot create gameplay")
 	for frame in range(1800):
 		await process_frame
 		if boot.loaded_scene != null:
 			break
-	check(boot.loaded_scene != null and boot.loaded_scene.resource_path == "res://game/main.tscn", "real Main completes threaded loading")
-	check(boot.progress_bar.value == 100 and not boot.start_button.disabled, "completed load reaches 100 and enables start")
-	check(boot.start_button.has_focus(), "ready start has default keyboard/gamepad focus")
+	check(boot.loaded_scene != null and boot.loaded_scene.resource_path == "res://game/world/demo_world.tscn", "real gameplay scene completes threaded loading")
+	check(boot.progress_bar.value == 100 and not boot.start_button.disabled, "actual completed load enables ready button at 100 percent")
+	check(main.world == null and boot.start_button.has_focus(), "loaded world waits for focused ready confirmation")
+	var old_boot: WeakRef = weakref(boot)
 	var accept := InputEventJoypadButton.new()
 	accept.button_index = JOY_BUTTON_A
-	check(InputMap.action_has_event("ui_accept", accept), "gamepad A mapped to ui_accept before Main installation")
-	var old_boot: WeakRef = weakref(boot)
 	accept.pressed = true
 	root.push_input(accept)
 	var release := InputEventJoypadButton.new()
 	release.button_index = JOY_BUTTON_A
 	release.pressed = false
 	root.push_input(release)
-	check(boot._activated, "actual gamepad A press/release activates focused startup button")
+	check(boot._activated, "actual gamepad A activates ready button")
 	boot.start_button.pressed.emit()
-	for frame in range(10):
+	for frame in range(4):
 		await process_frame
-	check(main_count == 1, "double activation instantiates Main once")
-	check(old_boot.get_ref() == null, "startup fully freed after real handoff")
-	check(current_scene != null and current_scene.name == "Main", "real Main is current scene")
-	check(current_scene.get("world") == null, "handoff does not start a gameplay World")
-	check(root.find_children("MainMenu", "", true, false).size() == 1, "exactly one previous MainMenu exists")
-	check(root.find_children("MenuBackdrop", "", true, false).size() == 1, "exactly one menu backdrop exists")
-	check(current_scene.get("menu").visible, "previous menu is visible")
-	check(current_scene.get("achievement_path").begins_with("res://builds/checks/STARTUP-01/"), "owner achievement profile isolated before Main ready")
-	check(current_scene.get("display_settings").get("config_path").begins_with("res://builds/checks/STARTUP-01/"), "owner display profile isolated before Main ready")
-	check(current_scene.get("audio_settings").get("config_path").begins_with("res://builds/checks/STARTUP-01/"), "owner audio profile isolated before Main ready")
-	if DisplayServer.get_name() != "headless":
-		await RenderingServer.frame_post_draw
-		check(root.get_texture().get_image().save_png("res://builds/checks/STARTUP-01/independent-menu-handoff.png") == OK, "native real menu handoff captured")
+	check(main_count == 1 and current_scene == main, "ready keeps the existing Main instead of replacing it")
+	check(old_boot.get_ref() == null and main.get("startup_screen") == null, "ready fully frees embedded loader")
+	check(main.world != null and main.world.get_parent() == main, "ready creates gameplay world under existing Main")
+	check(root.find_children("DemoWorld", "", true, false).size() == 1, "double ready creates exactly one world")
+	check(main.get("achievement_path").begins_with("res://builds/checks/STARTUP-01/"), "owner achievement profile isolated")
+	main.pause_menu.restart_requested.emit()
+	await process_frame
+	await process_frame
+	check(main.world == null and main.get("startup_screen") != null, "restart also waits at the loading screen")
+	main.return_to_menu()
+	await process_frame
+	await process_frame
+	check(main.menu.visible and main.get("startup_screen") == null and main.world == null, "return to menu cancels pending loading handoff")
+	main.start_game()
+	await process_frame
+	await process_frame
+	check(main.world != null and main.get("startup_screen") == null, "direct start_game remains available to existing headless checks")
+	for player in root.find_children("*", "AudioStreamPlayer", true, false):
+		player.stop()
 	current_scene.free()
 	current_scene = null
-	await process_frame
+	for frame in range(4):
+		await process_frame
 	print("STARTUP01_ACCEPTANCE: %d checks, %d failures" % [checks, failures])
 	quit(1 if failures else 0)

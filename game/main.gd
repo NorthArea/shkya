@@ -1,9 +1,10 @@
 extends Node
-## Точка входа: главное меню → DemoWorld → пауза. Каждый запуск создаёт мир заново,
+## Точка входа: главное меню → загрузка → DemoWorld → пауза. Каждый запуск создаёт мир заново,
 ## поэтому миссия всегда начинается с NOT_STARTED (раздел 6 канона).
 
 const InputSetup = preload("res://game/input_setup.gd")
-const WorldScene = preload("res://game/world/demo_world.tscn")
+const WORLD_SCENE_PATH := "res://game/world/demo_world.tscn"
+const StartupScreen = preload("res://game/ui/startup_screen.gd")
 const MainMenu = preload("res://game/ui/main_menu.gd")
 const PauseMenu = preload("res://game/ui/pause_menu.gd")
 const IntroScript = preload("res://game/ui/intro.gd")
@@ -28,6 +29,8 @@ var display_settings: Node
 var achievements: Node
 var achievement_toast: CanvasLayer
 var world: DemoWorld
+var startup_screen: Control
+var _start_pending := false
 var menu: CanvasLayer
 var pause_menu: CanvasLayer
 ## Щелчок кнопок меню и паузы (POLISH-01): плеер вне мира, играет и на паузе.
@@ -72,14 +75,14 @@ func _ready() -> void:
 	add_child(audio_settings)
 	menu = MainMenu.new()
 	menu.name = "MainMenu"
-	menu.start_requested.connect(start_game)
+	menu.start_requested.connect(request_start_game)
 	menu.quit_requested.connect(quit_game)
 	add_child(menu)
 	pause_menu = PauseMenu.new()
 	pause_menu.name = "PauseMenu"
 	pause_menu.resume_requested.connect(set_paused.bind(false))
 	pause_menu.reset_car_requested.connect(reset_car)
-	pause_menu.restart_requested.connect(start_game)
+	pause_menu.restart_requested.connect(request_start_game)
 	pause_menu.menu_requested.connect(return_to_menu)
 	add_child(pause_menu)
 	ui_click = AudioStreamPlayer.new()
@@ -96,28 +99,68 @@ func _ready() -> void:
 	add_child(music)
 	music.to_menu()
 
-## Смена мира откладывается до конца кадра: её можно вызвать из сигнала самого мира
-## (кнопка на панели финала, физический callback) без освобождения узла посреди обработки.
+## UI запускает настоящий загрузчик; повторный сигнал до готовности не создаёт второй мир.
+func request_start_game() -> void:
+	if _start_pending or startup_screen != null:
+		return
+	_start_pending = true
+	_show_startup.call_deferred()
+
+func _show_startup() -> void:
+	if not _start_pending:
+		return
+	_clear_world()
+	set_paused(false)
+	menu.hide()
+	music.to_game()
+	startup_screen = StartupScreen.new()
+	startup_screen.name = "StartupScreen"
+	startup_screen.scene_path = WORLD_SCENE_PATH
+	startup_screen.embedded = true
+	startup_screen.scene_ready.connect(_start_loaded_world)
+	add_child(startup_screen)
+
+func _start_loaded_world(scene: PackedScene) -> void:
+	if startup_screen == null or not _start_pending:
+		return
+	_swap_world(true, scene)
+
+## Прямой hook для headless-проверок: без UI-подтверждения, с ленивой загрузкой.
+## Смена мира отложена: сигнал мира не освобождает свой узел посреди callback.
 func start_game() -> void:
 	_swap_world.call_deferred(true)
 
 func return_to_menu() -> void:
+	_start_pending = false
 	_swap_world.call_deferred(false)
 
-func _swap_world(new_game: bool) -> void:
+func _clear_startup() -> void:
+	_start_pending = false
+	if startup_screen != null:
+		remove_child(startup_screen)
+		startup_screen.queue_free()
+		startup_screen = null
+
+func _clear_world() -> void:
 	achievement_toast.bind_world(null)
 	if world:
 		remove_child(world)
 		world.queue_free()
 		world = null
+
+func _swap_world(new_game: bool, scene: PackedScene = null) -> void:
+	_clear_startup()
+	_clear_world()
 	if new_game:
-		menu.hide()  # до мира: двор за меню (POLISH-02) освобождается, его камера и свет не мешают миру
+		menu.hide()
 		music.to_game()
-		world = WorldScene.instantiate()
+		if scene == null:
+			scene = load(WORLD_SCENE_PATH) as PackedScene
+		world = scene.instantiate()
 		world.process_mode = Node.PROCESS_MODE_PAUSABLE
 		add_child(world)
 		_connect_end_card(world)
-		# INTRO-01: заставка «Ничего не происходит»; в тестах, headless и с --skip-intro её нет — мир как раньше.
+		# INTRO-01: после загрузки прежний Intro сохраняет свой приоритет ввода.
 		IntroScript.attach(world)
 		_connect_caught_panel(world)
 		PhoneScript.attach(world)
@@ -137,7 +180,7 @@ func _connect_end_card(new_world: Node) -> void:
 	var hud := new_world.get_node_or_null("GameHUD")
 	if hud == null or not hud.has_signal("restart_requested"):
 		return
-	hud.restart_requested.connect(start_game)
+	hud.restart_requested.connect(request_start_game)
 	hud.menu_requested.connect(return_to_menu)
 	for button in hud.end_buttons.values():
 		button.pressed.connect(ui_click.play)
