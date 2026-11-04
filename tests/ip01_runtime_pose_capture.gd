@@ -66,6 +66,20 @@ func _run() -> void:
 	Input.action_release("move_forward")
 	for frame in 45: await physics_frame
 	await _save("stopped_side")
+	Input.action_press("move_right")
+	for frame in 6: await physics_frame
+	await _save("turn_start")
+	for frame in 18: await physics_frame
+	await _save("turn_finished")
+	Input.action_release("move_right")
+	for frame in 35: await physics_frame
+	Input.action_press("jump")
+	await physics_frame
+	Input.action_release("jump")
+	for frame in 105:
+		await physics_frame
+		if frame in [1, 13, 29, 43, 57, 71, 84, 103]:
+			await _save("jump_%03d" % frame)
 	var manifest := {"scope": "Real Main and Player, original world light and CameraRig on_foot profile; source-only comparison is labelled", "graphics": DisplayServer.get_name(), "provider_scene":hero.model.scene_file_path,"provider_scene_sha256":FileAccess.get_sha256(hero.model.scene_file_path), "adapter_sha256": FileAccess.get_sha256("res://game/characters/imported_hero_visual.gd"), "library_sha256": FileAccess.get_sha256("res://assets/animations/quaternius/original_locomotion.res"), "records": records}
 	FileAccess.open(output.path_join("manifest.json"),FileAccess.WRITE).store_string(JSON.stringify(manifest,"\t"))
 	main.queue_free()
@@ -81,7 +95,7 @@ func _orbit(yaw: float) -> void:
 
 func _save(label: String) -> void:
 	await RenderingServer.frame_post_draw
-	var pose := {"label":label,"player_position":_v(world.player.global_position),"camera_yaw":world.camera_rig.yaw,"speed":hero._speed,"phase":hero.get("_cycle_phase"),"joints":{}}
+	var pose := {"label":label,"player_position":_v(world.player.global_position),"camera_yaw":world.camera_rig.yaw,"speed":hero._speed,"phase":hero.get("_cycle_phase"),"grounded":world.player.is_on_floor(),"vertical_speed":world.player.velocity.y,"state":hero._playback.get_current_node() if hero.get("_playback") != null else "legacy","joints":{}}
 	for bone: String in ["Hips","Spine","Chest","UpperChest","Neck","Head","LeftUpperLeg","LeftLowerLeg","LeftFoot","RightUpperLeg","RightLowerLeg","RightFoot"]:
 		var transform: Transform3D = hero.model.global_transform * hero.bone_transform(bone)
 		pose.joints[bone] = {"position":_v(transform.origin),"up":_v(transform.basis.y.normalized()),"forward":_v(transform.basis.z.normalized())}
