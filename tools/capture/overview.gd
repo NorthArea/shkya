@@ -22,7 +22,7 @@ func _run() -> void:
 	root.add_child(main)
 	await _frames(40)
 	await _photo("01-menu")
-	main.menu.start_button.pressed.emit()
+	main.start_game()
 	await _frames(20)
 	world = main.world
 	flow = world.get_node("QuestFlow")

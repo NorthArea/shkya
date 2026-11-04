@@ -28,10 +28,7 @@ func _run() -> void:
 	check(boot.start_button.disabled, "start is disabled before threaded load completes")
 	boot.start_button.pressed.emit()
 	check(current_scene == boot, "early activation cannot leave loading")
-	for frame in range(600):
-		await process_frame
-		if boot.loaded_scene != null:
-			break
+	await _wait_for_load(boot)
 	check(boot.loaded_scene is PackedScene, "actual threaded fixture loading completes")
 	check(not boot.start_button.disabled, "loaded fixture enables start")
 	check(boot.start_button.has_focus(), "ready button takes keyboard/gamepad focus")
@@ -80,12 +77,15 @@ func _run() -> void:
 	check(retry.retry_button.visible, "load failure offers retry")
 	retry.scene_path = FIXTURE
 	retry.retry_button.pressed.emit()
-	for frame in range(600):
-		await process_frame
-		if retry.loaded_scene != null:
-			break
+	await _wait_for_load(retry)
 	check(retry.loaded_scene is PackedScene and not retry.start_button.disabled, "retry uses a real loader request and recovers")
 	check(not retry.retry_button.visible, "retry action disappears after recovery")
 	retry.free()
 	print("STARTUP01: %d checks, %d failures" % [checks, failures])
 	quit(1 if failures else 0)
+
+## Uncapped headless frames can outrun cold asynchronous I/O; wait in wall time.
+func _wait_for_load(screen: Control) -> void:
+	var deadline_ms := Time.get_ticks_msec() + 30000
+	while screen.loaded_scene == null and screen._loading and Time.get_ticks_msec() < deadline_ms:
+		await create_timer(0.01, true, false, true).timeout

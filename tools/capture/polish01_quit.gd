@@ -15,7 +15,7 @@ func _run() -> void:
 	main = load("res://game/main.tscn").instantiate()
 	root.add_child(main)
 	await _f(3)
-	main.menu.start_button.pressed.emit()
+	main.start_game()
 	await _f(90)
 	match mode:
 		"pause":

@@ -33,7 +33,7 @@ func _run() -> void:
 	for i in 8:
 		await process_frame
 	await _shot("menu_return")
-	menu.start_button.pressed.emit()
+	main.start_game()
 	for i in 4:
 		await process_frame
 	await _shot("gameplay_low_bag")

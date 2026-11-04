@@ -27,7 +27,7 @@ func _run() -> void:
 	main = load("res://game/main.tscn").instantiate()
 	root.add_child(main)
 	await _frames(2)
-	main.menu.start_button.pressed.emit()
+	main.start_game()
 	await _frames(10)
 	_bind()
 	check(world != null and flow != null and hud != null, "world, QuestFlow and GameHUD exist")
@@ -462,6 +462,7 @@ func _step_restart() -> void:
 	check(flow.is_dialog_open() and world.ui_blocking, "restart: a dialog is open before restarting")
 	main.set_paused(true)
 	main.pause_menu.restart_requested.emit()
+	await _confirm_startup()
 	await _frames(6)
 	check(not is_instance_valid(old), "restart: old world freed")
 	_bind()
@@ -474,7 +475,7 @@ func _step_restart() -> void:
 	main.pause_menu.menu_requested.emit()
 	await _frames(3)
 	check(main.world == null and main.menu.visible, "restart: back to the main menu")
-	main.menu.start_button.pressed.emit()
+	main.start_game()
 	await _frames(6)
 	_bind()
 	_check_clean_start("start from menu")
@@ -699,8 +700,26 @@ func _real_car_pass() -> void:
 	# «ЕЩЁ РАЗ»: новый мир с NOT_STARTED, как из меню (POLISH-02, п. 11).
 	var old: DemoWorld = world
 	hud.end_buttons[&"again"].pressed.emit()
+	await _confirm_startup()
 	await _frames(6)
 	check(not is_instance_valid(old) and main.world != null, "again: ЕЩЁ РАЗ replaces the world")
 	_bind()
 	_check_clean_start("again")
 	check(not main.menu.visible and not hud.is_end_card_open(), "again: no menu and no end card in the new world")
+
+## UI restart still exercises the actual loader; gameplay setup uses Main's direct hook.
+func _confirm_startup() -> void:
+	await process_frame
+	await process_frame
+	var screen: Control = main.startup_screen
+	check(screen != null and main.world == null, "UI restart waits for loading confirmation")
+	if screen == null:
+		return
+	var deadline_ms := Time.get_ticks_msec() + 30000
+	while screen.loaded_scene == null and Time.get_ticks_msec() < deadline_ms:
+		await create_timer(0.01, true, false, true).timeout
+	check(screen.loaded_scene != null, "UI restart finishes real threaded world loading")
+	if screen.loaded_scene != null:
+		screen.start_button.pressed.emit()
+		await process_frame
+		await process_frame

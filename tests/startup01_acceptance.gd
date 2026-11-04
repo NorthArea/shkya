@@ -38,10 +38,7 @@ func _run() -> void:
 	enter_release.pressed = false
 	root.push_input(enter_release)
 	check(retry._loading, "actual Enter press/release activates focused retry button")
-	for frame in range(600):
-		await process_frame
-		if retry.loaded_scene != null:
-			break
+	await _wait_for_load(retry)
 	check(retry.loaded_scene != null and not retry.retry_button.visible and retry.start_button.has_focus(), "retry performs threaded loading and restores start focus")
 	retry.free()
 	var entry_path: String = ProjectSettings.get_setting("application/run/main_scene")
@@ -73,11 +70,12 @@ func _run() -> void:
 	if boot.loaded_scene == null:
 		boot.start_button.pressed.emit()
 		check(main.world == null, "early ready activation cannot create gameplay")
-	for frame in range(1800):
-		await process_frame
-		if boot.loaded_scene != null:
-			break
+	await _wait_for_load(boot)
 	check(boot.loaded_scene != null and boot.loaded_scene.resource_path == "res://game/world/demo_world.tscn", "real gameplay scene completes threaded loading")
+	if boot.loaded_scene == null:
+		main.free()
+		quit(1)
+		return
 	check(boot.progress_bar.value == 100 and not boot.start_button.disabled, "actual completed load enables ready button at 100 percent")
 	check(main.world == null and boot.start_button.has_focus(), "loaded world waits for focused ready confirmation")
 	var old_boot: WeakRef = weakref(boot)
@@ -118,3 +116,9 @@ func _run() -> void:
 		await process_frame
 	print("STARTUP01_ACCEPTANCE: %d checks, %d failures" % [checks, failures])
 	quit(1 if failures else 0)
+
+## Uncapped headless frames can outrun cold asynchronous I/O; wait in wall time.
+func _wait_for_load(screen: Control) -> void:
+	var deadline_ms := Time.get_ticks_msec() + 30000
+	while screen.loaded_scene == null and screen._loading and Time.get_ticks_msec() < deadline_ms:
+		await create_timer(0.01, true, false, true).timeout

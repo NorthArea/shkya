@@ -25,7 +25,7 @@ func _run() -> void:
 	root.add_child(main)
 	drv = Driver.new(self, main)
 	for i in 30: await process_frame
-	main.menu.start_button.pressed.emit()
+	main.start_game()
 	for i in 30: await process_frame
 	w = main.world
 	var m := w.mission

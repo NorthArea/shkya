@@ -21,7 +21,7 @@ func _run() -> void:
 	main = load("res://game/main.tscn").instantiate()
 	root.add_child(main)
 	await _frames(3)
-	main.menu.start_button.pressed.emit()
+	main.start_game()
 	await _frames(30)
 	world = main.world
 	var flow: Node = world.get_node("QuestFlow")

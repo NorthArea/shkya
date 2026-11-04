@@ -32,7 +32,7 @@ func _frames(out: String) -> void:
 	var main: Node = load("res://game/main.tscn").instantiate()
 	root.add_child(main)
 	for i in 3: await physics_frame
-	main.menu.start_button.pressed.emit()
+	main.start_game()
 	for i in 30: await physics_frame
 	var cam := Camera3D.new()
 	cam.fov = 70.0

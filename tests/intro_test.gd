@@ -41,10 +41,10 @@ func _run() -> void:
 
 func _default_skipped() -> void:
 	check(not IntroScript.should_play(self), "default: no intro under a test SceneTree / headless")
-	main.menu.start_button.pressed.emit()
+	main.start_game()
 	await _frames(10)
 	world = main.world
-	check(world.get_node_or_null("Intro") == null, "default: start button gives the world without an intro node")
+	check(world.get_node_or_null("Intro") == null, "default: direct start gives the world without an intro node")
 	check(world.player.input_enabled, "default: input is enabled right away")
 	check(world.quest_flow.marker.layers != 0 and world.quest_flow.marker.visible, "default: '!' over Babka is visible")
 	check(world.get_node("GameHUD").visible, "default: HUD visible")

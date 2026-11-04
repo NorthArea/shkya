@@ -19,7 +19,7 @@ func _run() -> void:
 	root.add_child(main)
 	for i in 3:
 		await process_frame
-	main.menu.start_button.pressed.emit()
+	main.start_game()
 	for i in 2:
 		await process_frame
 	var intro: Intro = main.world.get_node("Intro")

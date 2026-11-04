@@ -32,7 +32,7 @@ func _run() -> void:
 	main = load("res://game/main.tscn").instantiate()
 	root.add_child(main)
 	await _frames(2)
-	main.menu.start_button.pressed.emit()
+	main.start_game()
 	await _frames(20)
 	world = main.world
 	hud = world.get_node("GameHUD")

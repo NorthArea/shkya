@@ -36,6 +36,22 @@ func _run() -> void:
 	await _frames(2)
 	main.menu.start_button.pressed.emit()  # настоящая кнопка меню: щелчок вне мира
 	check(main.ui_click.playing and main.ui_click.stream == main.UI_CLICK, "main menu button clicks")
+	await process_frame
+	await process_frame
+	var screen: Control = main.startup_screen
+	check(screen != null and main.world == null, "menu click opens loader before gameplay")
+	if screen == null:
+		await _finish()
+		return
+	var deadline_ms := Time.get_ticks_msec() + 30000
+	while screen.loaded_scene == null and Time.get_ticks_msec() < deadline_ms:
+		await create_timer(0.01, true, false, true).timeout
+	check(screen.loaded_scene != null, "menu click loads gameplay before ready confirmation")
+	if screen.loaded_scene == null:
+		await _finish()
+		return
+	check(screen.start_button.has_focus(), "ready button has keyboard/gamepad focus before gameplay")
+	screen.start_button.pressed.emit()
 	await _frames(10)
 	var world: DemoWorld = main.world
 	var sound = world.get_node("SoundDirector")

@@ -16,7 +16,7 @@ func _run() -> void:
 	main = load("res://game/main.tscn").instantiate()
 	root.add_child(main)
 	for i in 3: await physics_frame
-	main.menu.start_button.pressed.emit()
+	main.start_game()
 	for i in 30: await physics_frame
 	var world = main.world
 	var traffic = world.get_node("LevelGeometry/Traffic")

@@ -20,7 +20,7 @@ func _run() -> void:
 	root.add_child(main)
 	await _frames(2)
 	check(main.menu.visible and main.world == null, "menu shown on launch, no world yet")
-	main.menu.start_button.pressed.emit()
+	main.start_game()
 	await _frames(10)
 	var world: DemoWorld = main.world
 	check(world != null and not main.menu.visible, "НАЧАТЬ creates DemoWorld and hides menu")
@@ -515,6 +515,7 @@ func _check_pause(world: DemoWorld) -> void:
 func _check_restart(old_world: DemoWorld) -> void:
 	main.set_paused(true)
 	main.pause_menu.restart_requested.emit()
+	await _confirm_startup()
 	await _frames(5)
 	var world: DemoWorld = main.world
 	check(not is_instance_valid(old_world), "НАЧАТЬ ЗАНОВО frees the old world")
@@ -525,7 +526,7 @@ func _check_restart(old_world: DemoWorld) -> void:
 	main.pause_menu.menu_requested.emit()
 	await _frames(3)
 	check(main.world == null and main.menu.visible and not paused, "В ГЛАВНОЕ МЕНЮ returns to the menu")
-	main.menu.start_button.pressed.emit()
+	main.start_game()
 	await _frames(5)
 	check(main.world != null and main.world.mission.state == MissionDirector.NOT_STARTED, "start from menu again begins at NOT_STARTED")
 
@@ -549,3 +550,20 @@ func _finish() -> void:
 		main.queue_free()
 	await process_frame
 	quit(0 if failures.is_empty() else 1)
+
+## UI restart still exercises the actual loader; gameplay setup uses Main's direct hook.
+func _confirm_startup() -> void:
+	await process_frame
+	await process_frame
+	var screen: Control = main.startup_screen
+	check(screen != null and main.world == null, "UI restart waits for loading confirmation")
+	if screen == null:
+		return
+	var deadline_ms := Time.get_ticks_msec() + 30000
+	while screen.loaded_scene == null and Time.get_ticks_msec() < deadline_ms:
+		await create_timer(0.01, true, false, true).timeout
+	check(screen.loaded_scene != null, "UI restart finishes real threaded world loading")
+	if screen.loaded_scene != null:
+		screen.start_button.pressed.emit()
+		await process_frame
+		await process_frame
