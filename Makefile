@@ -82,6 +82,7 @@ test: map
 	$(call godot_test,art09_test,60,ART09)
 	$(call godot_test,ip01_runtime_test,60,IP01_INDEPENDENT_RUNTIME)
 	$(call godot_test,locomotion01_test,60,LOCOMOTION01)
+	$(call godot_test,locomotion_sole_cache_test,60,SOLE_CACHE)
 	$(call godot_test,hero2d_runtime_test,60,HERO2D_RUNTIME)
 	$(call godot_test,performance_overlay_test,60,PERF_HUD)
 	$(call godot_test,performance_overlay_integration_test,60,PERF_HUD_INTEGRATION)

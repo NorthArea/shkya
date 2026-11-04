@@ -4,8 +4,11 @@ static var _resources: Dictionary = {}
 var skeleton: Skeleton3D
 var mesh: MeshInstance3D
 var legs: Array[Dictionary] = []
+var civilian_mode := false
+var _resource_data: Dictionary = {}
 
 func build(author: Skeleton3D, authored_mesh: MeshInstance3D, civilian: bool) -> void:
+	civilian_mode = civilian
 	skeleton = Skeleton3D.new()
 	skeleton.name = "LocomotionSkeleton3D"
 	for index in author.get_bone_count():
@@ -40,6 +43,7 @@ func build(author: Skeleton3D, authored_mesh: MeshInstance3D, civilian: bool) ->
 	if not _resources.has(key):
 		_resources[key] = _build_resources(authored_mesh, civilian)
 	var resources: Dictionary = _resources[key]
+	_resource_data = resources
 	for index in legs.size():
 		legs[index].rest_sole = resources.soles[index]
 	mesh = MeshInstance3D.new()
@@ -102,7 +106,7 @@ func _build_resources(source: MeshInstance3D, civilian: bool) -> Dictionary:
 		result.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
 		result.surface_set_name(surface, source.mesh.surface_get_name(surface))
 		result.surface_set_material(surface, source.mesh.surface_get_material(surface))
-	return {"mesh": result, "skin": skin, "soles": soles}
+	return {"mesh": result, "skin": skin, "soles": soles, "footprints": [{}, {}]}
 
 func solve_leg(index: int, sole: Vector3, sole_basis: Basis, weight: float) -> void:
 	var leg: Dictionary = legs[index]

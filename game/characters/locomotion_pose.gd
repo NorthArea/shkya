@@ -45,6 +45,14 @@ func configure(adapter: Rig, short_sprint_contacts := false) -> void:
 
 func _sole_footprint(index: int) -> PackedVector3Array:
 	var leg: Dictionary = rig.legs[index]
+	# Final meshes in _resources are immutable, as are their decoded bind arrays.
+	# Changed mesh identity or bind inputs use the original scan without retention.
+	var signature := var_to_bytes([rig.civilian_mode, leg.ankle, leg.ankle_rest, leg.rest_sole])
+	var cached: Dictionary = rig._resource_data.footprints[index]
+	var shared_mesh := is_same(rig.mesh.mesh, rig._resource_data.mesh)
+	if shared_mesh and cached.get("signature") == signature:
+		var saved: PackedVector3Array = cached.corners
+		return saved.duplicate()
 	var low: Vector3 = leg.rest_sole
 	var high: Vector3 = leg.rest_sole
 	for surface in rig.mesh.mesh.get_surface_count():
@@ -60,10 +68,14 @@ func _sole_footprint(index: int) -> PackedVector3Array:
 					high = high.max(vertices[vertex])
 	# A conservative sole footprint gives the tilted boot a heel/toe support,
 	# instead of pivoting its whole bottom plane around one arbitrary vertex.
-	return PackedVector3Array([Vector3(low.x, low.y, low.z) - leg.ankle_rest,
+	var corners := PackedVector3Array([Vector3(low.x, low.y, low.z) - leg.ankle_rest,
 		Vector3(low.x, low.y, high.z) - leg.ankle_rest,
 		Vector3(high.x, low.y, low.z) - leg.ankle_rest,
 		Vector3(high.x, low.y, high.z) - leg.ankle_rest])
+	if shared_mesh and cached.is_empty():
+		cached.signature = signature
+		cached.corners = corners.duplicate()
+	return corners
 
 func reset() -> void:
 	motion_weight = 0.0
