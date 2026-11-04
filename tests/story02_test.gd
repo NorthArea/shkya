@@ -146,6 +146,7 @@ func _protocol_events() -> void:
 	check(world.quest_flow.thanks_after_back.visible and not hud.completion_panel.visible, "second Babka bubble gets its reading time before protocol")
 	await _frames(ceili(QuestLines.read_seconds(QuestLines.THANKS_AFTER) * 60.0) + 5)
 	check(hud.completion_panel.visible, "protocol appears after both final bubbles")
+	check(not world.quest_flow.thanks_bubble.is_visible_in_tree() and not world.quest_flow.thanks_after_bubble.is_visible_in_tree(), "protocol opens after both thanks bubbles are hidden")
 	var protocol: Dictionary = world.get_hud_state()["protocol"]
 	check(protocol.size() == 8 and hud.protocol_values.size() == 8, "all eight actual result rows reach the displayed protocol")
 	check(protocol[&"coins"] == "%d ₽" % coins.collected_count and protocol[&"spent"] == "35 ₽" and protocol[&"left"] == "%d ₽" % mission.money, "protocol shows actual collected, spent and remaining money")

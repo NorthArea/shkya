@@ -52,6 +52,7 @@ test: map
 	$(call godot_test,intro_test,60,INTRO)
 	$(call godot_test,mission_director_test,60,MISSION)
 	$(call godot_test,story02_test,60,STORY02)
+	$(call godot_test,story02_final_readability_test,60,STORY02_FINAL_READABILITY)
 	$(call godot_test,grey01_acceptance,60,GREY01)
 	$(call godot_test,grey01_layout_oracle_test,60,GREY_LAYOUT_ORACLE)
 	$(call godot_test,play04_motion_test,60,PLAY04_MOTION)

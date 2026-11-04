@@ -393,8 +393,13 @@ func _step10_complete() -> void:
 	check(world.ui_blocking and not world.player.input_enabled, "10: input is blocked while the completion panel is open")
 	await _frames(3)
 	check(not hud.completion_panel.visible, "10: protocol waits for Babka's conversation to finish")
-	await _frames(ceili((QuestLines.read_seconds(QuestLines.THANKS) + QuestLines.read_seconds(QuestLines.THANKS_AFTER)) * 60.0) + 3)
+	await _frames(ceili(maxf(QuestLines.THANKS_PAUSE, QuestLines.read_seconds(QuestLines.THANKS)) * 60.0) + 3)
+	check(flow.thanks_after_bubble.visible and flow.thanks_after_bubble.text == QuestLines.THANKS_AFTER and flow.thanks_bubble.visible, "10: second bubble '%s' follows the first before the protocol" % QuestLines.THANKS_AFTER)
+	check(flow.thanks_after_back.global_position.y < flow.thanks_back.global_position.y, "10: second bubble sits below the first")
+	check(not hud.completion_panel.visible, "10: second bubble has its own reading interval")
+	await _frames(ceili(QuestLines.read_seconds(QuestLines.THANKS_AFTER) * 60.0) + 3)
 	check(hud.completion_panel.visible, "10: completion panel is shown after the conversation")
+	check(not flow.thanks_bubble.is_visible_in_tree() and not flow.thanks_after_bubble.is_visible_in_tree(), "10: both thanks bubbles finish before the protocol")
 	check(_all_text(hud.completion_panel).has("ЗАДАНИЕ ВЫПОЛНЕНО") and _all_text(hud.completion_panel).has("+50 опыта"), "10: panel shows ЗАДАНИЕ ВЫПОЛНЕНО and +50 опыта")
 	# POLISH-03 B: панель — протокол прохода справа, героев в середине кадра не закрывает.
 	var panel_text := _all_text(hud.completion_panel)
@@ -408,10 +413,6 @@ func _step10_complete() -> void:
 	check(not hud.diamond_visible and not hud.diamond.visible and not hud.minimap.has_target, "10: no diamond and no minimap target after completion")
 	check(_hands() == hands_before, "10: hands are empty")
 	check(hud.completion_close.has_focus() and hud.completion_close.text == QuestLines.PROTOCOL_BUTTON, "10: «%s» has keyboard focus (closable without the mouse)" % QuestLines.PROTOCOL_BUTTON)
-	await _frames(60)
-	check(flow.thanks_after_bubble.visible and flow.thanks_after_bubble.text == QuestLines.THANKS_AFTER and flow.thanks_bubble.visible, "10: second bubble '%s' after ~%.1f s, first stays" % [QuestLines.THANKS_AFTER, QuestLines.THANKS_PAUSE])
-	# EXT-01 fix2 (P3): второй пузырь — на месте первого, у головы Бабки; первый поднимается над ним (читается сверху вниз).
-	check(flow.thanks_after_back.global_position.y < flow.thanks_back.global_position.y, "10: second bubble sits below the first")
 	var accept := InputEventAction.new()
 	accept.action = &"ui_accept"
 	accept.pressed = true
@@ -433,6 +434,7 @@ func _step10_complete() -> void:
 	check(world.camera_rig.target != world.player, "10: the camera pulls back from Ilyusha during the scene")
 	await _frames(int(QuestLines.FINALE_LOOK_SECONDS * 60.0) + 10)
 	check(not flow.finale.playing and hud.is_end_card_open(), "10: «Конец демо» card after the scene")
+	check(not flow.finale.is_bubble_visible(), "10: last phrase finishes before the end card")
 	var card_rect: Rect2 = hud.end_panel.get_global_rect()
 	check(card_rect.position.y >= 1080 * 0.7, "10: «Конец демо» card at the bottom, heroes are not covered (%s)" % card_rect)
 	check(world.ui_blocking and flow.is_dialog_open() and not world.player.input_enabled, "10: input stays blocked under the «Конец демо» card")
@@ -633,8 +635,9 @@ func _real_car_pass() -> void:
 	var drove: bool = await driver.drive(route, 12.0, 6.0)
 	check(drove, "real: Lada drove along ROUTE_DRIVE_HUNT (one detour behind the yard garages) to the kiosk by WASD input")
 	var max_kmh := 0.0
-	check(mission.state == MissionDirector.BUY_BREAD, "real: arrival switched the mission to BUY_BREAD (state %s)" % mission.state)
 	check(await driver.stop(), "real: Lada stopped at the kiosk")
+	check(Layout.KIOSK_ZONE.has_point(car.global_position + Vector3.UP), "real: stopped Lada is inside the actual kiosk parking zone")
+	check(mission.state == MissionDirector.BUY_BREAD, "real: arrival switched the mission to BUY_BREAD (state %s)" % mission.state)
 	check(world.get_hud_state()["speed_kmh"] >= 0.0 and hud.speed_gauge.visible, "real: speed gauge is shown in the car")
 	await _press_interact()
 	await _frames(6)

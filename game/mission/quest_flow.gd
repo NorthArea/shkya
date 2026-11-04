@@ -88,6 +88,7 @@ var _thanks_left := 0.0
 var _observer_zones: Dictionary = {}
 var _earn_hint_shown := false
 var _protocol_wait := 0.0
+var _protocol_ready := false
 
 func _ready() -> void:
 	world = get_parent()
@@ -159,11 +160,15 @@ func _process(delta: float) -> void:
 			thanks_after_back.visible = true
 			thanks_after_bubble.visible = true
 			_pop_3d(thanks_after_back)
+			_protocol_wait = QuestLines.read_seconds(QuestLines.THANKS_AFTER)
 	elif _protocol_wait > 0.0:
 		_protocol_wait = maxf(0.0, _protocol_wait - delta)
+		if _protocol_wait <= 0.0 and _kind == &"thanks":
+			_show_thanks(false)
+			_protocol_ready = true
 
 func protocol_ready() -> bool:
-	return _kind == &"thanks" and _thanks_left <= 0.0 and _protocol_wait <= 0.0
+	return _kind == &"thanks" and _protocol_ready
 
 func _physics_process(_delta: float) -> void:
 	_earn_hint()
@@ -306,14 +311,15 @@ func _on_choice(id: StringName) -> void:
 func _on_bread_received() -> void:
 	_toast_left = TOAST_SECONDS
 
-## Одна композиция как на кадре 10: реплика над Бабкой + панель финала внизу (HUD), без второй панели.
+## Обе реплики над Бабкой получают время чтения и гаснут до открытия протокола HUD.
 func _turn_in_shown() -> void:
 	_kind = &"thanks"
 	world.camera_rig.shoulder = 0.0
 	_show_thanks(true)
 	_pop_3d(thanks_back)
 	_thanks_left = maxf(QuestLines.THANKS_PAUSE, QuestLines.read_seconds(QuestLines.THANKS))
-	_protocol_wait = QuestLines.read_seconds(QuestLines.THANKS_AFTER)
+	_protocol_wait = 0.0
+	_protocol_ready = false
 	dialog.play_voice(&"babka")
 	_face(&"babka")
 	_block()
@@ -375,11 +381,11 @@ func _block() -> void:
 	wants_mouse_captured = false
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 
-## «ЗАКРЫТЬ» на панели финала (POLISH-03 B: протокол, кнопка «НЕ ПОДПИСЫВАТЬ»): пузыри гаснут, сцена этапа 10 — Бабка
+## «ЗАКРЫТЬ» на панели финала (POLISH-03 B: протокол, кнопка «НЕ ПОДПИСЫВАТЬ»): сцена этапа 10 — Бабка
 ## смотрит на улицу, «Или не сходишь», камера отъезжает (Finale) — и открывается карточка «Конец демо» (HUD).
 ## Ввод остаётся заблокирован, пока игрок не выберет «ЕЩЁ РАЗ», «В МЕНЮ» или «ПОГУЛЯТЬ».
 func _on_completion_closed() -> void:
-	if _kind != &"thanks":
+	if not protocol_ready():
 		return
 	if hud == null or not hud.has_method("show_end_card"):
 		_close()
@@ -397,11 +403,11 @@ func _on_completion_closed() -> void:
 ## «ПОГУЛЯТЬ» на карточке «Конец демо»: вернуть управление и камеру за Илюшей.
 func _on_end_closed() -> void:
 	if _kind == &"end":
-		finale.finish()
 		_close()
 
 func _close() -> void:
 	var was: StringName = _kind
+	finale.finish()
 	dialog.close()
 	world.camera_rig.shoulder = 0.0
 	world.camera_rig.release_talk()
@@ -535,6 +541,8 @@ func _show_thanks(on: bool) -> void:
 	thanks_back.visible = on
 	thanks_bubble.visible = on
 	if not on:
+		_protocol_ready = false
+		_protocol_wait = 0.0
 		thanks_after_back.visible = false
 		thanks_after_bubble.visible = false
 		_thanks_left = 0.0

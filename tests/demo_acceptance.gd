@@ -370,11 +370,21 @@ func _pass_one() -> bool:
 	check(3, not m.has_bread, "10: has_bread cleared on turn-in")
 	check(1, _hud_has(w, QuestLines.THANKS), "10: line «%s»" % QuestLines.THANKS)
 	check(1, not _hud_has(w, "ЗАДАНИЕ ВЫПОЛНЕНО"), "10: conversation is readable before the protocol")
-	await drv.frames(ceili((QuestLines.read_seconds(QuestLines.THANKS) + QuestLines.read_seconds(QuestLines.THANKS_AFTER)) * 60.0) + 3)
+	# Observe the second reading window before the protocol replaces the world bubbles.
+	for i in 600:
+		if _hud_has(w, QuestLines.THANKS_AFTER):
+			break
+		await drv.frames(1)
+	check(1, _hud_has(w, QuestLines.THANKS_AFTER) and _hud_has(w, QuestLines.THANKS) and not _hud_has(w, QuestLines.PROTOCOL_TITLE), "10: second bubble «%s» is readable before the protocol" % QuestLines.THANKS_AFTER)
+	for i in 600:
+		if w.quest_flow.protocol_ready():
+			break
+		await drv.frames(1)
+	await drv.frames(3)
 	check(1, _hud_has(w, "ЗАДАНИЕ ВЫПОЛНЕНО") and _hud_has(w, "+50 опыта"), "10: «ЗАДАНИЕ ВЫПОЛНЕНО» and «+50 опыта»")
 	check(2, _babka_symbol(w) == "", "10: no marker above Babka after completion")
+	check(1, w.quest_flow.protocol_ready() and not _hud_has(w, QuestLines.THANKS) and not _hud_has(w, QuestLines.THANKS_AFTER), "10: ready protocol replaces both world thanks bubbles")
 	await drv.frames(50)
-	check(1, _hud_has(w, QuestLines.THANKS_AFTER) and _hud_has(w, QuestLines.THANKS), "10: second bubble «%s» after the pause" % QuestLines.THANKS_AFTER)
 	await _shot("10_complete", false)
 	await _front_shot("10_complete")
 	pass_frames[1] = sim_frames - start_frame

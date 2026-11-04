@@ -16,3 +16,5 @@
 - **Открыто:** общая квалификация, FPS и ручной маршрут; адресный PASS не означает принятия демо.
 
 - Review04.11 выявило фактическое нарушение обещанного порядка: fullraw14030 protocol перекрывает второйthanksbubble,14275 endcard конкурирует сlastphrase. Слова/канон не меняются; focused sequencing/cancel fix проверяется, текущий статус — backlog. Evidence `builds/checks/STORY-02/final-readability/`.
+
+- Scoped fix принят root: focused23/0, STORY52/0, QUEST255/0; настоящаяпарковка после stop проверяетсяотдельнооттеста thanks. Два frozen baseline различалисьТОЛЬКОquest_flow/finale, arrival/car/camera traceсовпали: прежнийdrive tol6 заканчивалсяза4,263см дозоныдоbraking. Native5фаз1920×1080,0ошибок/предупреждений; rootпросмотрелвсе5: thanksчитаютсядопротокола,lastphraseотдельнадоendcard. Это UIfixture, неfullInput/FPS/слух. QUESTshutdown46objects/12resourcesсохранён; `final-readability/root-review.json`.

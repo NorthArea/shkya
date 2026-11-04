@@ -109,6 +109,8 @@ static func _times(n: int) -> String:
 # --- сцена этапа 10 ---
 
 func play(done: Callable) -> void:
+	if playing:
+		return
 	_done = done
 	_t = 0.0
 	playing = true
@@ -162,19 +164,21 @@ func _tick(delta: float) -> void:
 		_show_bubble()
 	if _t >= QuestLines.FINALE_LOOK_PAUSE + QuestLines.FINALE_LOOK_SECONDS:
 		playing = false
+		_hide_bubble()
 		if is_instance_valid(_focus):
 			_focus.global_position = _to_pos
 		rig.yaw = _to_yaw
 		rig.pitch = CAMERA_PITCH
-		if _done.is_valid():
-			_done.call()
+		var done := _done
+		_done = Callable()
+		if done.is_valid():
+			done.call()
 
 ## «ПОГУЛЯТЬ» или сброс: камера — снова за Илюшей, реплика гаснет, Бабка смотрит как обычно.
 func finish() -> void:
 	playing = false
-	if bubble_back:
-		bubble_back.visible = false
-		bubble.visible = false
+	_done = Callable()
+	_hide_bubble()
 	var babka: Node = world.babka
 	if babka and babka.has_method("stop_looking"):
 		babka.stop_looking()
@@ -184,6 +188,15 @@ func finish() -> void:
 	if is_instance_valid(_focus):
 		_focus.queue_free()
 	_focus = null
+
+func _hide_bubble() -> void:
+	if is_instance_valid(bubble_back):
+		bubble_back.visible = false
+		bubble.visible = false
+
+func _exit_tree() -> void:
+	playing = false
+	_done = Callable()
 
 func is_bubble_visible() -> bool:
 	return bubble_back != null and bubble_back.visible
