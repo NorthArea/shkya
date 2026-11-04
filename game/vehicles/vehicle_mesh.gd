@@ -43,7 +43,7 @@ void fragment() {
 	vec3 col = mix(tint.rgb, frost_color, f * 0.85);
 	ALBEDO = mix(col, vec3(0.02, 0.02, 0.025), s);
 	ALPHA = mix(mix(tint.a, 0.88, f), 1.0, s);
-	ROUGHNESS = mix(mix(0.12, 0.75, f), 0.7, s);
+	ROUGHNESS = mix(mix(0.28, 0.75, f), 0.7, s);
 	METALLIC = 0.0;
 	SPECULAR = 0.5;
 }
