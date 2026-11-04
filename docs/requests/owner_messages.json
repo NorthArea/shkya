@@ -2818,6 +2818,18 @@
         "LIGHT-01",
         "CRITIC-02"
       ]
+    },
+    {
+      "id": "MSG-0257",
+      "timestamp_utc": "2026-11-04T04:15:37.857324+00:00",
+      "timestamp_basis": "archive_capture_time; original message timestamp unavailable",
+      "kind": "message",
+      "text": "что со светом?",
+      "sha256": "d8c47ec4d1d99c0ac263e035a5dd22090911984501cfc803b68bb7e01c723212",
+      "task_ids": [
+        "LIGHT-01",
+        "MOTION-01"
+      ]
     }
   ]
 }
